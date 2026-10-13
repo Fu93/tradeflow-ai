@@ -1,0 +1,7 @@
+requests>=2.31
+numpy>=1.26
+matplotlib>=3.8
+fastapi>=0.110
+uvicorn>=0.29
+# 可選 GPU 加速（MI300X）：裝得上 cupy-rocm 或 torch rocm build 就啟用 use_gpu=True
+# cupy-rocm 或 torch (ROCm)  — 裝不上則引擎自動降回 numpy CPU

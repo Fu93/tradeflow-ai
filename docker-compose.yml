@@ -1,0 +1,10 @@
+services:
+  tradeflow:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    # 引擎在 MI300X 上批量跑；vLLM 由你自建 AMD droplet 提供，
+    # 這裡不包 vLLM（避免把 GPU 綁進容器），走 VLLM_BASE_URL 指向外部。
+    command: python -m src.app.main

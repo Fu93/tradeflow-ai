@@ -1,0 +1,16 @@
+{
+  "product": "auto umbrella (UV, compact)",
+  "hs_code": "6601.10",
+  "target_price_cny": 12.0,
+  "moq": 500,
+  "market": {
+    "source": "UN Comtrade / TradeMap (HS 6601) — 待 Day 2 拉取真實 FOB 區間",
+    "fob_usd_low": 0.8,
+    "fob_usd_high": 2.5,
+    "note": "用真實區間校準 prior_reserve_mean/std；此處為佔位"
+  },
+  "compliance": {
+    "uk": ["UKCA", "CE", "REACH"],
+    "note": "英國市場合規要求，Demo 提及即可"
+  }
+}
