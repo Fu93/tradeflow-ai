@@ -45,23 +45,20 @@ class WebhookHub:
 
     def dispatch_command(self, session_id: str, raw_command: str) -> Tuple[RemoteAuthCommand, Optional[float]]:
         """解析手機端回傳之文字/按鈕指令並解鎖對應橋樑。"""
-        cmd_clean = str(raw_command).strip().upper()
-        custom_price: Optional[float] = None
+        from ..engine.bilingual import EnglishExecutiveCommandParser, ExecutiveActionEnum
+        parsed = EnglishExecutiveCommandParser.parse(raw_command)
+        custom_price: Optional[float] = parsed.override_price
 
-        if cmd_clean in ("1", "CONCEDE", "妥協", "讓步"):
+        if parsed.action == ExecutiveActionEnum.CONCEDE:
             resolved = RemoteAuthCommand.CONCEDE
-        elif cmd_clean in ("2", "HOLD_FIRM", "HOLD", "堅持", "不讓步"):
+        elif parsed.action == ExecutiveActionEnum.HOLD_FIRM:
             resolved = RemoteAuthCommand.HOLD_FIRM
-        elif cmd_clean in ("3", "WALK_AWAY", "QUIT", "撤退", "破局"):
+        elif parsed.action == ExecutiveActionEnum.WALK_AWAY:
             resolved = RemoteAuthCommand.WALK_AWAY
+        elif parsed.action in (ExecutiveActionEnum.OVERRIDE_PRICE, ExecutiveActionEnum.CUSTOM_TACTIC):
+            resolved = RemoteAuthCommand.OVERRIDE_PRICE
         else:
-            # 嘗試解析自訂價格 (如 "13.2" 或 "¥13.20")
-            cleaned_price = cmd_clean.replace("¥", "").replace("$", "").replace("元", "").strip()
-            try:
-                custom_price = float(cleaned_price)
-                resolved = RemoteAuthCommand.OVERRIDE_PRICE
-            except ValueError:
-                raise ValueError(f"Unrecognized mobile command: '{raw_command}'. Expected 1, 2, 3 or custom price.")
+            resolved = RemoteAuthCommand.HOLD_FIRM
 
         bridge = self.get_bridge(session_id)
         if bridge:

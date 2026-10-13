@@ -229,6 +229,110 @@ class TestBilingualCognitiveBridge(unittest.TestCase):
         self.assertIn("[ 2 ] HOLD FIRM", card)
         self.assertIn("[ 3 ] WALK AWAY", card)
 
+    # -----------------------------------------------------------------------
+    # 反向鏈路：英文高管指令解析器與雙向一致性測試 (Reverse Pipeline Tests)
+    # -----------------------------------------------------------------------
+    def test_executive_command_parser_codes(self):
+        """驗證高管指令代碼 1、2、3 正確解析。"""
+        from src.engine.bilingual import EnglishExecutiveCommandParser, ExecutiveActionEnum
+        c1 = EnglishExecutiveCommandParser.parse("1")
+        self.assertEqual(c1.action, ExecutiveActionEnum.CONCEDE)
+
+        c2 = EnglishExecutiveCommandParser.parse("2")
+        self.assertEqual(c2.action, ExecutiveActionEnum.HOLD_FIRM)
+
+        c3 = EnglishExecutiveCommandParser.parse("3")
+        self.assertEqual(c3.action, ExecutiveActionEnum.WALK_AWAY)
+
+    def test_executive_command_parser_numeric_price(self):
+        """驗證直接輸入價格 (如 13.80 或 $14.20) 正確解析。"""
+        from src.engine.bilingual import EnglishExecutiveCommandParser, ExecutiveActionEnum
+        cp1 = EnglishExecutiveCommandParser.parse("13.80")
+        self.assertEqual(cp1.action, ExecutiveActionEnum.OVERRIDE_PRICE)
+        self.assertEqual(cp1.override_price, 13.80)
+
+        cp2 = EnglishExecutiveCommandParser.parse("$14.20")
+        self.assertEqual(cp2.action, ExecutiveActionEnum.OVERRIDE_PRICE)
+        self.assertEqual(cp2.override_price, 14.20)
+
+    def test_executive_command_parser_natural_language(self):
+        """驗證英文自然語言商務指令 (條款打包) 正確解析。"""
+        from src.engine.bilingual import EnglishExecutiveCommandParser, ExecutiveActionEnum
+        cmd = EnglishExecutiveCommandParser.parse("offer 13.50 with 50% deposit within 15 days and waive tooling fee")
+        self.assertEqual(cmd.action, ExecutiveActionEnum.OVERRIDE_PRICE)
+        self.assertEqual(cmd.override_price, 13.50)
+        self.assertEqual(cmd.demanded_deposit_pct, 0.50)
+        self.assertEqual(cmd.demanded_lead_days, 15)
+        self.assertTrue(cmd.waive_mold_fee)
+
+    def test_reverse_pipeline_hold_firm_zh_generation(self):
+        """驗證高管回覆 2 (Hold Firm) 時，中文渲染器生成強硬底線話術且零洩漏。"""
+        from src.engine.bilingual import EnglishExecutiveCommandParser, CrossLingualSanityChecker
+        parsed = EnglishExecutiveCommandParser.parse("2")
+        action_obj = TacticalActionObject(
+            source_round_id="SESS_402_R2_EXEC",
+            authorized_price=14.50,
+            walk_away_ceiling=16.00,
+            tactical_mode=TacticalModeEnum.FIRM_HOLD,
+            product_name="客製CNC金屬件",
+            supplier_contact_name="張廠長",
+            deposit_pct=0.30,
+        )
+        zh_script = ChineseSurfaceRenderer.render(action_obj)
+        en_card = EnglishExecutiveRenderer.render_executive_confirmation_card(action_obj, parsed.action.value)
+
+        self.assertIn("張廠長", zh_script)
+        self.assertIn("¥14.50", zh_script)
+        self.assertIn("預算卡死", zh_script)
+        # 驗證一致性
+        self.assertTrue(CrossLingualSanityChecker.verify_bidirectional_consistency(action_obj, zh_script, en_card))
+
+    def test_reverse_pipeline_concede_zh_generation(self):
+        """驗證高管回覆 1 (Concede) 時，中文渲染器生成特批讓步話術且零洩漏。"""
+        from src.engine.bilingual import EnglishExecutiveCommandParser, CrossLingualSanityChecker
+        parsed = EnglishExecutiveCommandParser.parse("1")
+        action_obj = TacticalActionObject(
+            source_round_id="SESS_402_R3_EXEC",
+            authorized_price=13.20,
+            walk_away_ceiling=15.00,
+            tactical_mode=TacticalModeEnum.LEAN_IN,
+            product_name="自動折疊傘",
+            supplier_contact_name="李總",
+            deposit_pct=0.30,
+        )
+        zh_script = ChineseSurfaceRenderer.render(action_obj)
+        en_card = EnglishExecutiveRenderer.render_executive_confirmation_card(action_obj, parsed.action.value)
+
+        self.assertIn("李總", zh_script)
+        self.assertIn("¥13.20", zh_script)
+        self.assertIn("出廠價", zh_script)
+        self.assertTrue(CrossLingualSanityChecker.verify_bidirectional_consistency(action_obj, zh_script, en_card))
+
+    def test_schema_version_rejection(self):
+        """驗證 TacticalActionObject 版本不匹配時渲染器主動拒絕。"""
+        action_obj = TacticalActionObject(
+            schema_version="3.0.0",
+            authorized_price=12.00,
+            walk_away_ceiling=15.00,
+        )
+        with self.assertRaises(ValueError):
+            ChineseSurfaceRenderer.render(action_obj)
+
+        with self.assertRaises(ValueError):
+            EnglishExecutiveRenderer.render_executive_card(action_obj)
+
+    def test_cross_lingual_sanity_checker_catches_leak(self):
+        """驗證防穿幫檢查器能識別外商溢價詞彙與非法中文字符。"""
+        from src.engine.bilingual import CrossLingualSanityChecker
+        bad_zh = "老闆，我們是歐美專案採購，董事會要求用美元結算"
+        leaks = CrossLingualSanityChecker.check_chinese_leaks(bad_zh)
+        self.assertIn("歐美專案", leaks)
+        self.assertIn("美元", leaks)
+        self.assertIn("董事會", leaks)
+
+        bad_en = "=== [TradeFlow Telemetry] === 價格: 12.00"
+        self.assertFalse(CrossLingualSanityChecker.check_english_card_purity(bad_en))
+
 
 if __name__ == "__main__":
     unittest.main()

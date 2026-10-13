@@ -124,20 +124,90 @@ async def receive_mobile_command(request: Request):
         raise HTTPException(status_code=400, detail="Missing command in payload.")
 
     try:
+        from ..engine.bilingual import (
+            EnglishExecutiveCommandParser,
+            ExecutiveActionEnum,
+            TacticalActionObject,
+            TacticalModeEnum,
+            VendorTacticEnum,
+            ActionObjectASTGuardrail,
+            ChineseSurfaceRenderer,
+            EnglishExecutiveRenderer,
+            CURRENT_SCHEMA_VERSION,
+        )
+        parsed_cmd = EnglishExecutiveCommandParser.parse(user_command)
         cmd, custom_price = hub.dispatch_command(session_id, user_command)
         sess = session_mgr.get_session(session_id)
-        if sess and sess.state == AutopilotState.CIRCUIT_TRIPPED_ESCALATED:
-            if cmd == RemoteAuthCommand.WALK_AWAY:
-                session_mgr.transition_state(session_id, AutopilotState.WALK_AWAY, reason="Remote supervisor aborted negotiation")
+
+        reply_script_zh = None
+        confirmation_card_en = None
+        action_obj_dump = None
+        source_round_id = f"{session_id}_EXEC"
+
+        if sess:
+            source_round_id = f"{session_id}_R{sess.current_round}_EXEC"
+            # 計算結算價格
+            if custom_price:
+                settled_price = custom_price
+            elif parsed_cmd.action == ExecutiveActionEnum.CONCEDE:
+                settled_price = round(sess.spec.target_price * 1.05, 2)
             else:
-                session_mgr.transition_state(session_id, AutopilotState.AUTOPILOT_CRUISING, reason=f"Remote unlocked via command {cmd.value}")
+                settled_price = sess.spec.target_price
+
+            if parsed_cmd.action == ExecutiveActionEnum.CONCEDE:
+                t_mode = TacticalModeEnum.LEAN_IN
+            elif parsed_cmd.action == ExecutiveActionEnum.HOLD_FIRM:
+                t_mode = TacticalModeEnum.FIRM_HOLD
+            elif parsed_cmd.action == ExecutiveActionEnum.WALK_AWAY:
+                t_mode = TacticalModeEnum.WALK_AWAY
+            else:
+                t_mode = TacticalModeEnum.LOGROLL if parsed_cmd.waive_mold_fee else TacticalModeEnum.LEAN_IN
+
+            action_obj = TacticalActionObject(
+                schema_version=CURRENT_SCHEMA_VERSION,
+                source_round_id=source_round_id,
+                authorized_price=settled_price,
+                walk_away_ceiling=sess.spec.ceiling_price,
+                breakdown_risk=0.05 if parsed_cmd.action == ExecutiveActionEnum.CONCEDE else 0.12,
+                expected_margin=round(max(0.0, sess.spec.ceiling_price - settled_price), 2),
+                tactical_mode=t_mode,
+                product_name=sess.spec.product_name,
+                supplier_contact_name="老闆",
+                lead_days=parsed_cmd.demanded_lead_days or 25,
+                deposit_pct=parsed_cmd.demanded_deposit_pct or 0.30,
+                moq=sess.spec.moq,
+                mold_fee_exempted=parsed_cmd.waive_mold_fee,
+                waive_mold_fee_amount=3000.0 if parsed_cmd.waive_mold_fee else 0.0,
+                counterpart_intent=VendorTacticEnum.NORMAL_COUNTER_OFFER,
+            )
+
+            # AST 護欄驗證
+            ActionObjectASTGuardrail.verify(action_obj)
+
+            # 雙向表面渲染
+            reply_script_zh = ChineseSurfaceRenderer.render(action_obj)
+            confirmation_card_en = EnglishExecutiveRenderer.render_executive_confirmation_card(
+                action_obj, command_executed=parsed_cmd.action.value
+            )
+            action_obj_dump = action_obj.model_dump()
+
+            if sess.state == AutopilotState.CIRCUIT_TRIPPED_ESCALATED:
+                if cmd == RemoteAuthCommand.WALK_AWAY:
+                    session_mgr.transition_state(session_id, AutopilotState.WALK_AWAY, reason="Remote supervisor aborted negotiation")
+                else:
+                    session_mgr.transition_state(session_id, AutopilotState.AUTOPILOT_CRUISING, reason=f"Remote unlocked via command {cmd.value}")
+
         action_name = "concede_step" if cmd == RemoteAuthCommand.CONCEDE else cmd.value.lower()
         return {
             "status": "success",
             "session_id": session_id,
             "resolved_command": cmd.value,
+            "source_round_id": source_round_id,
             "custom_price": custom_price,
             "action": action_name,
+            "reply_script_zh": reply_script_zh,
+            "confirmation_card_en": confirmation_card_en,
+            "action_object": action_obj_dump,
         }
     except KeyError as e:
         return {"status": "ignored", "reason": str(e)}
@@ -233,6 +303,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         ActionObjectASTGuardrail,
         ChineseSurfaceRenderer,
         EnglishExecutiveRenderer,
+        CURRENT_SCHEMA_VERSION,
     )
     inbound_classification = InboundIntentClassifier.classify(raw_text)
     if opp_price is None and inbound_classification.mentioned_price is not None:
@@ -314,6 +385,8 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     if trip_reason:
         # 觸發熔斷！構建結構化策略對象並派發高階英文決策卡
         trip_action_obj = TacticalActionObject(
+            schema_version=CURRENT_SCHEMA_VERSION,
+            source_round_id=f"{session_id}_R{current_round}_{sess.spec.supplier_id}",
             authorized_price=recommended_offer_price,
             walk_away_ceiling=ceiling_price,
             breakdown_risk=p_break,
@@ -460,6 +533,8 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         waive_mold_amount = 0.0
 
     action_obj = TacticalActionObject(
+        schema_version=CURRENT_SCHEMA_VERSION,
+        source_round_id=f"{session_id}_R{current_round}_{sess.spec.supplier_id}",
         authorized_price=auth_price,
         walk_away_ceiling=ceiling_price,
         breakdown_risk=p_break,

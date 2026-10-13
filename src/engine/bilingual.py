@@ -4,13 +4,19 @@
 1. 嚴格禁止 Emoji（Zero Emoji 政策）。
 2. 解耦原則：策略語言中立核心 (Language-Agnostic Decision Core)
    - MCTS、貝氏更新與 Logrolling 求解器僅輸出純數字、多維約束與戰術枚舉之 TacticalActionObject。
-   - 單一真相源：決策不依賴自然語言反向正則解析。
+   - 單一真相源 (Single Source of Truth)：決策不依賴自然語言反向正則解析。
+   - 契約版本控制 (schema_version = "4.1.0") 與來源輪次追蹤 (source_round_id)。
 3. 抽象語法樹硬不變量護欄 (ActionObjectASTGuardrail & NumericGuardrailValidator)：
    - AST 編譯驗證策略對象之數值不變量，物理阻斷越界與未經授權之妥協。
 4. 供應商 6 大核心博弈套路分類器 (InboundIntentClassifier)。
 5. 雙向表面渲染器 (Dual Surface Renderers)：
    - 中文表面渲染器 (ChineseSurfaceRenderer)：沿海地道金牌買家商務行話，動態插值，嚴禁外商溢價洩漏。
-   - 英文高管渲染器 (EnglishExecutiveRenderer)：西方 CPO 決策卡片與即時手機遙測推播。
+   - 英文高管渲染器 (EnglishExecutiveRenderer)：西方 CPO 決策卡片、即時手機遙測推播與指令確認卡。
+6. 反向鏈路：英文高管指令解析器 (EnglishExecutiveCommandParser)：
+   - 解析高管手機 WhatsApp 回覆（1=妥協, 2=堅持, 3=離場, 具體價格, 或自然語言商務指令）。
+   - 輸出結構化 ExecutiveCommandObject，經 AST 護欄驗證後驅動雙向渲染。
+7. 雙向一致性與防穿幫審計器 (CrossLingualSanityChecker)：
+   - 杜絕外商溢價詞彙洩漏，保證中文與英文雙邊數值完全一致。
 """
 from __future__ import annotations
 import ast
@@ -18,6 +24,8 @@ import re
 from enum import Enum
 from typing import Optional, Dict, Any, List, Tuple
 from pydantic import BaseModel, Field
+
+CURRENT_SCHEMA_VERSION = "4.1.0"
 
 
 class VendorTacticEnum(str, Enum):
@@ -37,6 +45,14 @@ class TacticalModeEnum(str, Enum):
     LOGROLL = "LOGROLL"                  # 企業授權多維條款置換 (定金換交期/模具費減免)
     FIRM_HOLD = "FIRM_HOLD"              # 鎖死底線價 (寸步不讓)
     WALK_AWAY = "WALK_AWAY"              # 終止談判/啟動離場
+
+
+class ExecutiveActionEnum(str, Enum):
+    CONCEDE = "CONCEDE"                  # 指令 1: 妥協並讓步至推薦階梯
+    HOLD_FIRM = "HOLD_FIRM"              # 指令 2: 堅持底線價，不讓步
+    WALK_AWAY = "WALK_AWAY"              # 指令 3: 終止談判/啟動離場
+    OVERRIDE_PRICE = "OVERRIDE_PRICE"    # 數字指令: 指定特定覆寫單價
+    CUSTOM_TACTIC = "CUSTOM_TACTIC"      # 自然語言進階商業置換指令
 
 
 class InboundTacticalClassification(BaseModel):
@@ -93,7 +109,6 @@ class InboundIntentClassifier:
         ),
     ]
 
-    # 嚴格價格正則：必須具備貨幣標識 (¥/￥/$/RMB)、單價前綴 (報價/單價/出廠價) 或單位後綴 (元/塊/件)
     PRICE_PATTERN = re.compile(
         r"(?:(?:[¥￥$]|RMB)\s*(\d+(?:\.\d{1,2})?)|(?:報價|單價|價格|給您|算您|出廠價|特價|低至)\s*[:：=]?\s*(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:元|塊)(?:/件|/把|/個|/套|/pcs)?)",
         re.IGNORECASE,
@@ -231,6 +246,9 @@ class TacticalActionObject(BaseModel):
     此對象為博弈核心運算 (MCTS + 貝氏信念 + Logrolling) 輸出的唯一單一真相源 (Single Source of Truth)，
     完全解耦自然語言表面表達。
     """
+    schema_version: str = Field(default=CURRENT_SCHEMA_VERSION, description="策略契約版本號")
+    source_round_id: Optional[str] = Field(default=None, description="決策來源輪次與會話追蹤 ID")
+
     # 價格與安全約束
     authorized_price: float = Field(..., gt=0.0, description="法定授權出價單價 (元)")
     walk_away_ceiling: float = Field(..., gt=0.0, description="買方最高容忍上限 (元)")
@@ -263,6 +281,147 @@ class TacticalActionObject(BaseModel):
     urgency_signal: str = Field(default="routine", description="緊迫度訊號")
     circuit_tripped: bool = Field(default=False, description="是否觸發安全熔斷")
     trip_reason: Optional[str] = Field(default=None, description="熔斷原因")
+
+
+# ---------------------------------------------------------------------------
+# 反向鏈路：英文高管指令解析器 (English Executive Command Parser)
+# ---------------------------------------------------------------------------
+class ExecutiveCommandObject(BaseModel):
+    """英文高管手機端指令解析後的結構化對象。"""
+    action: ExecutiveActionEnum
+    override_price: Optional[float] = None
+    demanded_lead_days: Optional[int] = None
+    demanded_deposit_pct: Optional[float] = None
+    waive_mold_fee: bool = False
+    raw_command: str = ""
+    confidence: float = 1.0
+    rationale: str = ""
+
+
+class EnglishExecutiveCommandParser:
+    """
+    英文高管指令結構化解析器 (English Executive Command Parser)。
+    職責：
+    1. 接收高管手機端 (WhatsApp / Telegram / 微信 Webhook) 發送的英文代碼或自然語言商務指令。
+    2. 解析為語言中立之 ExecutiveCommandObject。
+    3. 支持 direct code (1/2/3)、純數字 (13.5)、與英文自然語言指令。
+    """
+
+    PRICE_REGEX = re.compile(r"(?:price|offer|at|to|¥|\$|rmb)?\s*(\d+(?:\.\d{1,2})?)", re.IGNORECASE)
+    DEPOSIT_REGEX = re.compile(r"(\d+)\s*%\s*(?:deposit|down\s*payment)?", re.IGNORECASE)
+    LEAD_TIME_REGEX = re.compile(r"(\d+)\s*(?:days?|d)\s*(?:delivery|lead|lead\s*time)?", re.IGNORECASE)
+    TOOLING_REGEX = re.compile(r"(?:waive|exempt|free|no)\s*(?:tooling|mold|mould|sample)\s*fee", re.IGNORECASE)
+
+    @classmethod
+    def parse(cls, raw_command: str) -> ExecutiveCommandObject:
+        text = str(raw_command).strip()
+        if not text:
+            return ExecutiveCommandObject(
+                action=ExecutiveActionEnum.HOLD_FIRM,
+                raw_command=text,
+                rationale="Empty input defaulted to HOLD_FIRM",
+            )
+
+        upper = text.upper()
+
+        # 1. 直接按鈕/數字代碼
+        if upper in ("1", "CONCEDE", "ACCEPT", "APPROVE", "YES"):
+            return ExecutiveCommandObject(
+                action=ExecutiveActionEnum.CONCEDE,
+                raw_command=text,
+                rationale="Direct concession directive code 1",
+            )
+
+        if upper in ("2", "HOLD", "HOLD FIRM", "HOLD_FIRM", "STAY", "REJECT", "NO"):
+            return ExecutiveCommandObject(
+                action=ExecutiveActionEnum.HOLD_FIRM,
+                raw_command=text,
+                rationale="Direct hold firm directive code 2",
+            )
+
+        if upper in ("3", "WALK AWAY", "WALK_AWAY", "QUIT", "ABORT", "TERMINATE", "CANCEL"):
+            return ExecutiveCommandObject(
+                action=ExecutiveActionEnum.WALK_AWAY,
+                raw_command=text,
+                rationale="Direct walk away directive code 3",
+            )
+
+        # 2. 純數值報價 (例如 "13.2" 或 "$14.50" 或 "¥14.50")
+        clean_num = text.replace("¥", "").replace("$", "").replace("RMB", "").replace("元", "").strip()
+        try:
+            val = float(clean_num)
+            if 0.1 <= val <= 50000.0:
+                return ExecutiveCommandObject(
+                    action=ExecutiveActionEnum.OVERRIDE_PRICE,
+                    override_price=val,
+                    raw_command=text,
+                    rationale="Direct numeric price override parsed",
+                )
+        except ValueError:
+            pass
+
+        # 3. 英文自然語言商務指令解析 (Deterministic Pattern Ladder)
+        found_dep = None
+        dep_match = cls.DEPOSIT_REGEX.search(text)
+        if dep_match and dep_match.group(1):
+            try:
+                dep_val = float(dep_match.group(1)) / 100.0
+                if 0.0 < dep_val <= 1.0:
+                    found_dep = dep_val
+            except ValueError:
+                pass
+
+        found_days = None
+        days_match = cls.LEAD_TIME_REGEX.search(text)
+        if days_match and days_match.group(1):
+            try:
+                days_val = int(days_match.group(1))
+                if 1 <= days_val <= 365:
+                    found_days = days_val
+            except ValueError:
+                pass
+
+        # 搜索明確價格 (排除定金百分比與交期天數)
+        found_price = None
+        for m in re.finditer(r"(?:do|at|to|offer|price|\$|¥)\s*(\d+(?:\.\d{1,2})?)", text, re.IGNORECASE):
+            try:
+                p_cand = float(m.group(1))
+                if p_cand != found_days and (found_dep is None or abs(p_cand - found_dep * 100) > 0.01):
+                    found_price = p_cand
+                    break
+            except ValueError:
+                pass
+
+        if found_price is None:
+            # 尋找孤立浮點數 (如 14.5)
+            for m in re.finditer(r"\b(\d+\.\d{1,2})\b", text):
+                try:
+                    p_cand = float(m.group(1))
+                    found_price = p_cand
+                    break
+                except ValueError:
+                    pass
+
+        has_tooling_waiver = bool(cls.TOOLING_REGEX.search(text))
+
+        if found_price is not None or found_days is not None or found_dep is not None or has_tooling_waiver:
+            action_enum = ExecutiveActionEnum.OVERRIDE_PRICE if found_price else ExecutiveActionEnum.CUSTOM_TACTIC
+            return ExecutiveCommandObject(
+                action=action_enum,
+                override_price=found_price,
+                demanded_lead_days=found_days,
+                demanded_deposit_pct=found_dep,
+                waive_mold_fee=has_tooling_waiver,
+                raw_command=text,
+                rationale="Extracted structured terms from executive natural instruction",
+            )
+
+        # 預設維持底線
+        return ExecutiveCommandObject(
+            action=ExecutiveActionEnum.HOLD_FIRM,
+            raw_command=text,
+            rationale="Unrecognized instruction defaulted to HOLD_FIRM",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -317,13 +476,19 @@ class ChineseSurfaceRenderer:
     """
     中文地道沿海買家表面渲染器 (Chinese Coastal Sourcing Surface Renderer)。
     職責：
-    1. 將語言中立之 TacticalActionObject 渲染為符合中國沿海（義烏、慈溪、深圳、泉州）老買家專業商務行話。
+    1. 將語言中立之 TacticalActionObject 渲染為符合中國沿海老買家專業商務行話。
     2. 動態插值品類名稱與聯絡人稱呼，嚴禁硬編碼。
-    3. 嚴格杜絕「歐美專案」、「外商」、「美元」等外商溢價洩漏詞彙。
+    3. 嚴格杜絕「歐美專案」、「外商」、「美元」、「董事會」等外商溢價洩漏詞彙。
     """
 
     @classmethod
+    def _check_schema_version(cls, obj: TacticalActionObject) -> None:
+        if not obj.schema_version.startswith("4."):
+            raise ValueError(f"Incompatible schema version '{obj.schema_version}'. Expected 4.x")
+
+    @classmethod
     def render(cls, obj: TacticalActionObject) -> str:
+        cls._check_schema_version(obj)
         p_val = obj.authorized_price
         contact = obj.supplier_contact_name or "老闆"
         product = obj.product_name or "產品"
@@ -385,8 +550,8 @@ class ChineseSurfaceRenderer:
 
         elif obj.tactical_mode == TacticalModeEnum.FIRM_HOLD:
             return (
-                f"我方預算上限已由採購會審定，¥{p_val:.2f} 是首批排單的底線價。"
-                f"該報價具備充足同行競爭力，請貴司慎重評估。"
+                f"{contact}，該批{product}訂單核算預算卡死在 ¥{p_val:.2f}。我們有誠意長期配合，"
+                f"若貴廠此價格能接我們立即蓋章下 PO，否則確實無法超出採購底線。"
             )
 
         elif obj.tactical_mode == TacticalModeEnum.WALK_AWAY:
@@ -395,7 +560,7 @@ class ChineseSurfaceRenderer:
                 f"感謝貴司報價，期待未來其他專案合作。"
             )
 
-        else:  # LEAN_IN (預設)
+        else:  # LEAN_IN (預設進攻/讓步)
             return (
                 f"{contact}誠意我們認可，這批{product}是我們下半年的核心走量訂單。"
                 f"首批試單給到 ¥{p_val:.2f} 出廠價，現款現結 {deposit_pct_str} 定金見單走帳，"
@@ -410,14 +575,22 @@ class EnglishExecutiveRenderer:
     1. 將同一個 TacticalActionObject 渲染為西方採購主管 / CPO 儀表板及 WhatsApp 手機決策卡。
     2. 包含貝氏底價估算 (Estimated Floor Price)、貝氏置信度 (Confidence)、破裂風險 (Risk)、利潤空間 (Margin)。
     3. 清楚呈現 [1] Concede / [2] Hold / [3] Walk Away / [Direct Price] 移動指令。
+    4. 輸出執行確認卡 (Confirmation Card)。
     """
 
     @classmethod
+    def _check_schema_version(cls, obj: TacticalActionObject) -> None:
+        if not obj.schema_version.startswith("4."):
+            raise ValueError(f"Incompatible schema version '{obj.schema_version}'. Expected 4.x")
+
+    @classmethod
     def render_executive_card(cls, obj: TacticalActionObject) -> str:
+        cls._check_schema_version(obj)
         floor_str = f"¥{obj.estimated_floor_price:.2f}" if obj.estimated_floor_price else "Estimating..."
         offer_str = f"¥{obj.counterpart_offered_price:.2f}" if obj.counterpart_offered_price else "Pending"
         t_price_str = f"¥{obj.authorized_price:.2f}"
         ceiling_str = f"¥{obj.walk_away_ceiling:.2f}"
+        round_tag = f"• Source Round ID: {obj.source_round_id}\n" if obj.source_round_id else ""
 
         circuit_warning = ""
         if obj.circuit_tripped:
@@ -428,6 +601,7 @@ class EnglishExecutiveRenderer:
 
         card = (
             f"=== [TradeFlow CPO Executive Telemetry] ===\n"
+            f"{round_tag}"
             f"• Target Product: {obj.product_name}\n"
             f"• Inbound Offer: {offer_str} vs Authorized Target: {t_price_str}\n"
             f"• Walk-Away Ceiling: {ceiling_str}\n"
@@ -446,8 +620,27 @@ class EnglishExecutiveRenderer:
         return card
 
     @classmethod
+    def render_executive_confirmation_card(cls, obj: TacticalActionObject, command_executed: str) -> str:
+        """生成高管執行指令後的確認卡片 (Confirmation Card)。"""
+        cls._check_schema_version(obj)
+        floor_str = f"¥{obj.estimated_floor_price:.2f}" if obj.estimated_floor_price else "N/A"
+        card = (
+            f"=== [TradeFlow Action Execution Confirmation] ===\n"
+            f"• Source Round ID: {obj.source_round_id or 'N/A'}\n"
+            f"• Executed Directive: {command_executed}\n"
+            f"• Target Product: {obj.product_name}\n"
+            f"• Settled Authorized Price: ¥{obj.authorized_price:.2f}\n"
+            f"• Package Terms: Lead Time: {obj.lead_days}d | Deposit: {obj.deposit_pct*100:.0f}% | MOQ: {obj.moq}\n"
+            f"• Bayesian Anchor: Floor: {floor_str} (Confidence: {obj.bayesian_confidence:.1%})\n"
+            f"• Risk Telemetry: Breakdown Risk: {obj.breakdown_risk:.1%}\n"
+            f"• Counterparty Action: Injected native Chinese procurement response to supplier chat"
+        )
+        return card
+
+    @classmethod
     def render_telemetry_summary(cls, obj: TacticalActionObject) -> str:
         """單行英文遙測摘要。"""
+        cls._check_schema_version(obj)
         quote_str = f"¥{obj.counterpart_offered_price:.2f}" if obj.counterpart_offered_price else "N/A"
         floor_str = f"¥{obj.estimated_floor_price:.2f}" if obj.estimated_floor_price else "N/A"
         return (
@@ -456,6 +649,63 @@ class EnglishExecutiveRenderer:
             f"Floor Est: {floor_str} (Conf: {obj.bayesian_confidence:.1%}) | "
             f"Breakdown Risk: {obj.breakdown_risk:.1%}"
         )
+
+
+# ---------------------------------------------------------------------------
+# 跨語言雙向一致性與防穿幫審計器 (Cross-Lingual Sanity & Anti-Leak Checker)
+# ---------------------------------------------------------------------------
+class CrossLingualSanityChecker:
+    """跨語言雙向一致性與防穿幫審計器 (Anti-Leak & Consistency Checker)。"""
+
+    FORBIDDEN_LEAK_WORDS = [
+        "歐美專案", "外商", "美元", "董事會", "西方", "海外總部", "外國人"
+    ]
+
+    @classmethod
+    def check_chinese_leaks(cls, text: str) -> List[str]:
+        """檢測中文話術中是否存在外商身分溢價洩漏詞彙。"""
+        return [w for w in cls.FORBIDDEN_LEAK_WORDS if w in text]
+
+    @classmethod
+    def check_english_card_purity(cls, text: str, allowed_product_name: Optional[str] = None) -> bool:
+        """檢查英文卡片中不得含有中文字符 (允許貨幣符號 ¥ 與常規標點；若 product_name 原生為中文則豁免該名稱)。"""
+        clean = text.replace("¥", "")
+        if allowed_product_name:
+            clean = clean.replace(allowed_product_name, "")
+        has_chinese = bool(re.search(r"[\u4e00-\u9fff]", clean))
+        return not has_chinese
+
+    @classmethod
+    def verify_bidirectional_consistency(
+        cls,
+        action_obj: TacticalActionObject,
+        zh_script: str,
+        en_card: str,
+    ) -> bool:
+        """
+        全量驗證雙向一致性：
+        1. 中文話術零洩漏
+        2. 英文卡片純度 100%
+        3. 授權價格在雙邊 100% 精確一致
+        4. 來源溯源 ID 一致
+        """
+        leaks = cls.check_chinese_leaks(zh_script)
+        if leaks:
+            raise ValueError(f"Chinese script contains forbidden leak words: {leaks}")
+
+        if not cls.check_english_card_purity(en_card, allowed_product_name=action_obj.product_name):
+            raise ValueError("English card contains prohibited Chinese characters outside product name")
+
+        expected_p = f"{action_obj.authorized_price:.2f}"
+        if expected_p not in zh_script:
+            raise ValueError(f"Authorized price ¥{expected_p} missing from Chinese script")
+        if expected_p not in en_card:
+            raise ValueError(f"Authorized price ¥{expected_p} missing from English card")
+
+        if action_obj.source_round_id and action_obj.source_round_id not in en_card:
+            raise ValueError(f"Source round ID {action_obj.source_round_id} missing from English card")
+
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -487,12 +737,10 @@ class NumericGuardrailValidator:
         - 文本中出現的所有價格均不得高於最高上限 walk_away_ceiling。
         - 不得含有私下線下妥協詞彙。
         """
-        # 1. 敏感妥協詞彙檢查
         for word in cls.FORBIDDEN_COMPROMISE_WORDS:
             if word in draft_text:
                 raise GuardrailViolationError(f"Forbidden compromise phrase detected: '{word}'")
 
-        # 2. 抽取所有價格數值 (要求帶貨幣符號或明確價格後綴，避免 30% 定金或數量被誤認為價格)
         prices_found = []
         for m in re.finditer(r"(?:[¥￥$]|RMB)\s*(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:元|塊|/件|/把|/個)", draft_text):
             val_str = m.group(1) or m.group(2)
@@ -503,14 +751,12 @@ class NumericGuardrailValidator:
                 except ValueError:
                     pass
 
-        # 3. 檢查授權價格是否至少出現一次
         has_authorized = any(abs(p - authorized_price) <= tolerance for p in prices_found)
         if not has_authorized:
             raise GuardrailViolationError(
                 f"Draft lacks authorized target price ¥{authorized_price:.2f}"
             )
 
-        # 4. 嚴格不變量：所有出現的價位均不得突破買方最大放棄上限
         for p in prices_found:
             if p > walk_away_ceiling + tolerance:
                 raise GuardrailViolationError(
@@ -537,7 +783,6 @@ class BilingualTacticalBridge:
         supplier_contact_name: str = "老闆",
     ) -> str:
         """根據戰術類型、意圖反擊槓桿與鎖死價格生成地道國產採購話術。"""
-        # 轉發至語言中立決策對象與 ChineseSurfaceRenderer
         t_mode = (
             TacticalModeEnum(tactic)
             if tactic in TacticalModeEnum.__members__

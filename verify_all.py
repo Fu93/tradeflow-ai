@@ -95,10 +95,59 @@ def audit_system():
         print(f"[FAIL] 5. Cross-Lingual Intent Classifier: {e}")
         all_passed = False
 
+    # Pillar 6: Bidirectional Cross-Lingual Invariant & Anti-Leak Audit
+    try:
+        from src.engine.bilingual import (
+            EnglishExecutiveCommandParser,
+            ExecutiveActionEnum,
+            TacticalActionObject,
+            TacticalModeEnum,
+            ActionObjectASTGuardrail,
+            ChineseSurfaceRenderer,
+            EnglishExecutiveRenderer,
+            CrossLingualSanityChecker,
+            CURRENT_SCHEMA_VERSION,
+        )
+        # 1. 測試高管自然語言指令反向解析
+        exec_cmd = EnglishExecutiveCommandParser.parse("offer 13.80 with 50% deposit and waive mold fee")
+        assert exec_cmd.action == ExecutiveActionEnum.OVERRIDE_PRICE
+        assert exec_cmd.override_price == 13.80
+        assert exec_cmd.demanded_deposit_pct == 0.50
+        assert exec_cmd.waive_mold_fee is True
+
+        # 2. 構建策略對象並經 AST 護欄驗證
+        action_obj = TacticalActionObject(
+            schema_version=CURRENT_SCHEMA_VERSION,
+            source_round_id="AUDIT_VERIFY_R1_EXEC",
+            authorized_price=exec_cmd.override_price,
+            walk_away_ceiling=16.00,
+            breakdown_risk=0.08,
+            bayesian_confidence=0.95,
+            estimated_floor_price=12.96,
+            tactical_mode=TacticalModeEnum.LOGROLL,
+            product_name="Aerospace Aluminum Case",
+            supplier_contact_name="陳總",
+            deposit_pct=exec_cmd.demanded_deposit_pct,
+            mold_fee_exempted=exec_cmd.waive_mold_fee,
+            waive_mold_fee_amount=3000.0,
+        )
+        assert ActionObjectASTGuardrail.verify(action_obj) is True
+
+        # 3. 雙向表面渲染
+        zh_script = ChineseSurfaceRenderer.render(action_obj)
+        en_card = EnglishExecutiveRenderer.render_executive_card(action_obj)
+
+        # 4. 雙向一致性、純度與防穿幫審計
+        assert CrossLingualSanityChecker.verify_bidirectional_consistency(action_obj, zh_script, en_card) is True
+        print("[PASS] 6. Bidirectional Cross-Lingual Invariant & Anti-Leak Audit: Verified (Zero leaks, 100% numeric fidelity)")
+    except Exception as e:
+        print(f"[FAIL] 6. Bidirectional Cross-Lingual Invariant & Anti-Leak Audit: {e}")
+        all_passed = False
+
     total_time = time.perf_counter() - start_time
     print("--------------------------------------------------------------------------------")
     if all_passed:
-        print(f"VERDICT: ALL 5 PILLARS HEALTHY - PRODUCTION READY (Completed in {total_time:.2f}s)")
+        print(f"VERDICT: ALL 6 PILLARS HEALTHY - PRODUCTION READY (Completed in {total_time:.2f}s)")
         print("Ready for AMD Hackathon ACT III Evaluation.")
     else:
         print("VERDICT: CRITICAL FAILURES DETECTED. Check logs above.")
