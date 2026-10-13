@@ -356,26 +356,76 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         except Exception:
             pass  # 容錯降級，不阻塞主結案流程
 
-    # 6. 生成專業國產金牌買家戰術回覆與護欄驗證
-    tactical_mode = "LEAN_IN" if p_break < 0.08 else ("CROSS_ANCHOR" if p_break < 0.15 else "SIDELINE")
-    auto_reply_text = BilingualTacticalBridge.generate_chinese_counter_offer(
-        tactic=tactical_mode,
-        authorized_price=recommended_offer_price,
-        product_name=sess.spec.product_name,
-        moq=sess.spec.moq,
-        supplier_intent=inbound_classification.primary_intent,
+    # 6. 多維契約條款置換 (Logrolling Pareto Optimization)
+    logrolling_data = None
+    from ..engine.logrolling import (
+        LogrollingEngine,
+        CorporateMandate,
+        SupplierCurrentOffer,
+        TradeoffType,
     )
+    # 若有設定或自動生成預設 CorporateMandate，且價格處於僵局或高於目標價 8%
+    mandate_obj = None
+    if sess.spec.corporate_mandate:
+        try:
+            mandate_obj = CorporateMandate(**sess.spec.corporate_mandate)
+        except Exception:
+            pass
+    if not mandate_obj:
+        b_moq = sess.spec.moq
+        mandate_obj = CorporateMandate(
+            target_price=target_price,
+            walk_away_ceiling=ceiling_price,
+            baseline_lead_days=action.offered_lead_days or 25,
+            baseline_moq=b_moq,
+            max_allowed_moq=max(1200, int(b_moq * 2)),
+        )
+
+    # 判定是否觸發多維條款置換 (當對手不降價或哭窮抬價時)
+    should_logroll = (
+        opp_price is not None
+        and opp_price > target_price * 1.05
+        and current_round >= 2
+    )
+
+    if should_logroll:
+        supp_offer_obj = SupplierCurrentOffer(
+            price=opp_price,
+            lead_days=action.offered_lead_days or 25,
+            deposit_pct=action.deposit_pct or 0.30,
+            moq=offered_moq or sess.spec.moq,
+            mold_fee=3000.0,
+            is_price_stagnant=True,
+        )
+        try:
+            lr_res = LogrollingEngine.evaluate(mandate_obj, supp_offer_obj)
+            best_prop = lr_res.best_recommendation
+            logrolling_data = best_prop.model_dump()
+            auto_reply_text = best_prop.buyer_script_zh
+        except Exception:
+            auto_reply_text = None
+    else:
+        auto_reply_text = None
+
+    # 6.5 若未觸發置換或置換降級，生成常規國產金牌買家戰術回覆與護欄驗證
+    if not auto_reply_text:
+        tactical_mode = "LEAN_IN" if p_break < 0.08 else ("CROSS_ANCHOR" if p_break < 0.15 else "SIDELINE")
+        auto_reply_text = BilingualTacticalBridge.generate_chinese_counter_offer(
+            tactic=tactical_mode,
+            authorized_price=recommended_offer_price,
+            product_name=sess.spec.product_name,
+            moq=sess.spec.moq,
+            supplier_intent=inbound_classification.primary_intent,
+        )
     # 硬不變量護欄驗證
     try:
         NumericGuardrailValidator.validate_reply(
             auto_reply_text,
-            authorized_price=recommended_offer_price,
+            authorized_price=recommended_offer_price if not logrolling_data else ceiling_price,
             walk_away_ceiling=ceiling_price,
         )
     except GuardrailViolationError:
-        # 降級至確定性安全模板
         auto_reply_text = f"經核算，我方首批訂單確定意向價為 ¥{recommended_offer_price:.2f}，現款現結走官方系統，請確認排單。"
-
     turn_our = NegotiationTurn(
         round_index=current_round,
         sender="buyer_agent",
@@ -384,6 +434,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         p_break=p_break,
         posterior_mean=post_mean,
         posterior_std=post_std,
+        logrolling_proposal=logrolling_data,
     )
     sess = session_mgr.append_turn(session_id, turn_our)
 
@@ -402,6 +453,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         "turn": turn_our,
         "inbound_intent": inbound_classification.primary_intent.value,
         "tco_breakdown": tco_breakdown.model_dump() if tco_breakdown else None,
+        "logrolling_proposal": logrolling_data,
         "effective_opp_price": effective_opp_price,
         "telemetry_summary_en": telemetry_eng,
         "recommendation": rec,

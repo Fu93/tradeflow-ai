@@ -42,6 +42,7 @@ class NegotiationTurn(BaseModel):
     posterior_mean: Optional[float] = None
     posterior_std: Optional[float] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    logrolling_proposal: Optional[Dict[str, Any]] = None
 
 
 class SessionSpec(BaseModel):
@@ -55,6 +56,7 @@ class SessionSpec(BaseModel):
     prior_reserve_std: float = 0.10
     supplier_id: str = "default_supplier"
     supplier_channel: str = "web_chat"                # "web_chat" | "email" | "manual"
+    corporate_mandate: Optional[Dict[str, Any]] = None
 
 
 class NegotiationSession(BaseModel):
