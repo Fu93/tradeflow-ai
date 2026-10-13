@@ -76,6 +76,25 @@ class TestBilingualCognitiveBridge(unittest.TestCase):
         self.assertIn("AUDIT ESCALATION", summary)
         self.assertIn("14.50", summary)
 
+    def test_llm_semantic_fallback_mock(self):
+        from unittest.mock import patch, MagicMock
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "choices": [{
+                "message": {
+                    "content": '{"primary_intent": "CRY_POVERTY_COST_HIKE", "confidence": 0.95, "mentioned_price": 14.5, "demanded_moq": null, "tactical_rationale": "Cost pressure inferred", "requires_escalation": false}'
+                }
+            }]
+        }
+        # 使用沒有觸發 Stage 1 正則的口語句子
+        text_without_regex = "工廠開工水電開銷都平不掉，暫時給到14.50"
+        with patch("requests.post", return_value=mock_resp), patch.dict("os.environ", {"EVOLUS_API_KEY": "dummy_key"}):
+            res = InboundIntentClassifier.classify(text_without_regex, enable_llm_fallback=True)
+            self.assertEqual(res.primary_intent, VendorTacticEnum.CRY_POVERTY_COST_HIKE)
+            self.assertEqual(res.mentioned_price, 14.50)
+
+
 
 if __name__ == "__main__":
     unittest.main()

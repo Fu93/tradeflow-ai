@@ -47,33 +47,40 @@ class InboundIntentClassifier:
             0.95,
             True,  # 脫離平台直接觸發風控警報
         ),
+        # (Intent, Regex Pattern, Default Confidence, Requires Escalation)
+        (
+            VendorTacticEnum.OFFLINE_BYPASS_DIVERT,
+            re.compile(r"(加個?微信|私下聊|電話聊|wx|私聊|轉私帳|線下付|1[3-9]\d{9}|v信|微\s*信|\+v|加v|私發|私下交易)", re.IGNORECASE),
+            0.95,
+            True,  # 脫離平台直接觸發風控警報
+        ),
         (
             VendorTacticEnum.MATERIAL_SPEC_DEGRADE,
-            re.compile(r"(換成?便宜|回料|水口料|減薄|普通料|換成201|降低規格|改用常規|非標)", re.IGNORECASE),
+            re.compile(r"(換成?便宜|回料|水口料|減薄|普通料|換成201|降低規格|改用常規|非標|換料|非正品|二料)", re.IGNORECASE),
             0.90,
             True,  # 品質降級需主管確認
         ),
         (
             VendorTacticEnum.CRY_POVERTY_COST_HIKE,
-            re.compile(r"(原料.*漲|人工.*貴|虧本|賠錢|喝西北風|沒利潤|電費|成本都不夠|純虧)", re.IGNORECASE),
+            re.compile(r"(原料.*漲|人工.*貴|虧本|賠錢|喝西北風|沒利潤|電費|成本都不夠|純虧|壓不住|貼錢)", re.IGNORECASE),
             0.85,
             False,
         ),
         (
             VendorTacticEnum.TIER_VOLUME_BLACKMAIL,
-            re.compile(r"(起訂量|至少要|量太小|樣品價|開機費|加單|翻倍才|起訂|MOQ)", re.IGNORECASE),
+            re.compile(r"(起訂量|至少要|量太小|樣品價|開機費|加單|翻倍才|起訂|MOQ|小單|幾百個)", re.IGNORECASE),
             0.85,
             False,
         ),
         (
             VendorTacticEnum.TAX_PACKAGING_UNBUNDLING,
-            re.compile(r"(未稅|不含稅|專票.*加|稅點|包裝另算|彩盒.*加|外箱.*加|不包.*港口|港雜費)", re.IGNORECASE),
+            re.compile(r"(未稅|不含稅|專票.*加|稅點|包裝另算|彩盒.*加|外箱.*加|不包.*港口|港雜費|裸價|要票.*加)", re.IGNORECASE),
             0.85,
             False,
         ),
         (
             VendorTacticEnum.FINAL_DEAL_CONCESSION,
-            re.compile(r"(行吧|服了你|就按你|發合同|打款吧|簽單|成交|定金打哪|虧本做給你)", re.IGNORECASE),
+            re.compile(r"(行吧|服了你|就按你|發合同|打款吧|簽單|成交|定金打哪|虧本做給你|按你說的|可以做)", re.IGNORECASE),
             0.90,
             False,
         ),
@@ -83,8 +90,71 @@ class InboundIntentClassifier:
     MOQ_PATTERN = re.compile(r"(\d{3,7})\s*(?:個|把|件|套|pcs)", re.IGNORECASE)
 
     @classmethod
-    def classify(cls, raw_text: str) -> InboundTacticalClassification:
-        """分析工廠訊息，提取數值並識別博弈套路。"""
+    def classify_with_llm(cls, raw_text: str) -> Optional[InboundTacticalClassification]:
+        """
+        Stage 2: 結構化語意 AI 推理分類器 (LLM Semantic Parser)。
+        當 Stage 1 正則無法高確信度識別或文本存在口語反諷、隱晦暗示時觸發。
+        支援 Evolus AI Agent 或本地 vLLM 兼容端點。
+        若未配置金鑰或請求超時，自動降級。
+        """
+        import os
+        import json
+        
+        # 1. 優先嘗試 Evolus / OpenAI 兼容端點
+        api_key = os.getenv("EVOLUS_API_KEY") or os.getenv("VLLM_API_KEY")
+        base_url = os.getenv("VLLM_BASE_URL", "https://api.evolus.ai/v1")
+        if not api_key:
+            return None
+
+        prompt = (
+            "Analyze the B2B Chinese supplier message below and output STRICT JSON format with keys:\n"
+            "\"primary_intent\": one of [\"CRY_POVERTY_COST_HIKE\", \"TIER_VOLUME_BLACKMAIL\", \"MATERIAL_SPEC_DEGRADE\", \"TAX_PACKAGING_UNBUNDLING\", \"OFFLINE_BYPASS_DIVERT\", \"FINAL_DEAL_CONCESSION\", \"NORMAL_COUNTER_OFFER\"],\n"
+            "\"confidence\": float between 0.0 and 1.0,\n"
+            "\"mentioned_price\": float or null,\n"
+            "\"demanded_moq\": int or null,\n"
+            "\"tactical_rationale\": short explanation string,\n"
+            "\"requires_escalation\": boolean (true if attempts off-platform or material degradation).\n"
+            f"Supplier message: \"{raw_text}\"\n"
+            "JSON:"
+        )
+
+        try:
+            import requests
+            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            payload = {
+                "model": os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-14B-Instruct"),
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.0,
+                "max_tokens": 150,
+            }
+            resp = requests.post(f"{base_url}/chat/completions", headers=headers, json=payload, timeout=3.0)
+            if resp.status_code == 200:
+                content = resp.json()["choices"][0]["message"]["content"]
+                # 提取 JSON 區塊
+                match = re.search(r"\{.*\}", content, re.DOTALL)
+                if match:
+                    data = json.loads(match.group(0))
+                    intent_str = data.get("primary_intent", "NORMAL_COUNTER_OFFER")
+                    intent_enum = getattr(VendorTacticEnum, intent_str, VendorTacticEnum.NORMAL_COUNTER_OFFER)
+                    return InboundTacticalClassification(
+                        primary_intent=intent_enum,
+                        confidence=float(data.get("confidence", 0.85)),
+                        mentioned_price=data.get("mentioned_price"),
+                        demanded_moq=data.get("demanded_moq"),
+                        tactical_rationale=data.get("tactical_rationale", "LLM zero-shot inference"),
+                        requires_escalation=bool(data.get("requires_escalation", False)),
+                    )
+        except Exception:
+            pass
+        return None
+
+    @classmethod
+    def classify(cls, raw_text: str, enable_llm_fallback: bool = True) -> InboundTacticalClassification:
+        """
+        兩段式意圖解析管線 (Two-Stage Intent Pipeline)：
+        - Stage 1: 微秒級確定性正則階梯 (Deterministic Regex Ladder)
+        - Stage 2: 複雜語意與長文本語意 LLM 意圖推理 (Semantic LLM Fallback)
+        """
         if not raw_text:
             return InboundTacticalClassification(
                 primary_intent=VendorTacticEnum.NORMAL_COUNTER_OFFER,
@@ -111,10 +181,10 @@ class InboundIntentClassifier:
             except ValueError:
                 pass
 
-        # 3. 匹配套路特徵
+        # 3. Stage 1: 匹配確定性套路特徵
         for intent, pattern, conf, escalate in cls.PATTERNS:
             if pattern.search(raw_text):
-                rationale = f"Matched pattern '{pattern.pattern}' in inbound text"
+                rationale = f"Matched deterministic pattern in inbound text"
                 return InboundTacticalClassification(
                     primary_intent=intent,
                     confidence=conf,
@@ -124,6 +194,15 @@ class InboundIntentClassifier:
                     requires_escalation=escalate,
                 )
 
+        # 4. Stage 2: 若正則未命中且啟用 LLM，進行深度語意推理
+        if enable_llm_fallback:
+            llm_res = cls.classify_with_llm(raw_text)
+            if llm_res:
+                if price_val and llm_res.mentioned_price is None:
+                    llm_res.mentioned_price = price_val
+                return llm_res
+
+        # 5. 常規報價對話保底
         return InboundTacticalClassification(
             primary_intent=VendorTacticEnum.NORMAL_COUNTER_OFFER,
             confidence=0.70,
