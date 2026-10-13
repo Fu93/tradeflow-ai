@@ -228,6 +228,11 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         BilingualTacticalBridge,
         NumericGuardrailValidator,
         GuardrailViolationError,
+        TacticalActionObject,
+        TacticalModeEnum,
+        ActionObjectASTGuardrail,
+        ChineseSurfaceRenderer,
+        EnglishExecutiveRenderer,
     )
     inbound_classification = InboundIntentClassifier.classify(raw_text)
     if opp_price is None and inbound_classification.mentioned_price is not None:
@@ -282,6 +287,8 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
 
     p_break = rec["breakdown_prob"]
     recommended_offer_price = rec["opening_offer_price"]
+    floor_price_est = round(post_mean * target_price, 2)
+    bayesian_confidence = round(max(0.50, min(0.98, 1.0 - post_std)), 3)
 
     # 3. 記錄對手發言輪次
     turn_opp = NegotiationTurn(
@@ -305,7 +312,27 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         trip_reason = f"Opponent offer ¥{opp_price:.2f} breaches ceiling ¥{ceiling_price:.2f}."
 
     if trip_reason:
-        # 觸發熔斷！切換狀態並派發手機推播
+        # 觸發熔斷！構建結構化策略對象並派發高階英文決策卡
+        trip_action_obj = TacticalActionObject(
+            authorized_price=recommended_offer_price,
+            walk_away_ceiling=ceiling_price,
+            breakdown_risk=p_break,
+            expected_margin=rec.get("expected_margin_price", 0.0),
+            concession_step=rec.get("concession_step", 0.0),
+            posterior_reserve_mean=post_mean,
+            posterior_reserve_std=post_std,
+            bayesian_confidence=bayesian_confidence,
+            estimated_floor_price=floor_price_est,
+            tactical_mode=TacticalModeEnum.FIRM_HOLD if p_break < 0.15 else TacticalModeEnum.WALK_AWAY,
+            product_name=sess.spec.product_name,
+            lead_days=action.offered_lead_days or 25,
+            deposit_pct=action.deposit_pct or 0.30,
+            moq=offered_moq or sess.spec.moq,
+            counterpart_intent=inbound_classification.primary_intent,
+            counterpart_offered_price=opp_price,
+            circuit_tripped=True,
+            trip_reason=trip_reason,
+        )
         sess = session_mgr.transition_state(
             session_id, AutopilotState.CIRCUIT_TRIPPED_ESCALATED, reason=trip_reason
         )
@@ -316,6 +343,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             p_break=p_break,
             advice_text=prop["advice_text"],
             proposed_price=recommended_offer_price,
+            action_object=trip_action_obj,
         )
         return {
             "session": sess,
@@ -324,6 +352,8 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             "trip_reason": trip_reason,
             "recommendation": rec,
             "proposal": prop,
+            "action_object": trip_action_obj.model_dump(),
+            "executive_card_en": EnglishExecutiveRenderer.render_executive_card(trip_action_obj),
             "reply_text": None,  # 阻斷回覆，等待主管手機授權
         }
 
@@ -407,47 +437,84 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     else:
         auto_reply_text = None
 
-    # 6.5 若未觸發置換或置換降級，生成常規國產金牌買家戰術回覆與護欄驗證
-    if not auto_reply_text:
-        tactical_mode = "LEAN_IN" if p_break < 0.08 else ("CROSS_ANCHOR" if p_break < 0.15 else "SIDELINE")
-        auto_reply_text = BilingualTacticalBridge.generate_chinese_counter_offer(
-            tactic=tactical_mode,
-            authorized_price=recommended_offer_price,
-            product_name=sess.spec.product_name,
-            moq=sess.spec.moq,
-            supplier_intent=inbound_classification.primary_intent,
+    # 6.5 構建語言中立策略決策對象 (TacticalActionObject) 作為單一真相源
+    if logrolling_data:
+        t_mode = TacticalModeEnum.LOGROLL
+        auth_price = logrolling_data["proposed_price"]
+        lead_days_val = logrolling_data["proposed_lead_days"]
+        deposit_pct_val = logrolling_data["proposed_deposit_pct"]
+        moq_val = logrolling_data["proposed_moq"]
+        mold_exempt = logrolling_data.get("mold_fee_exempted", False)
+        waive_mold_amount = 3000.0 if mold_exempt else 0.0
+    else:
+        t_mode = (
+            TacticalModeEnum.LEAN_IN
+            if p_break < 0.08
+            else (TacticalModeEnum.CROSS_ANCHOR if p_break < 0.15 else TacticalModeEnum.SIDELINE)
         )
-    # 硬不變量護欄驗證
-    expected_auth_price = (
-        logrolling_data["proposed_price"] if (logrolling_data and "proposed_price" in logrolling_data) else recommended_offer_price
+        auth_price = recommended_offer_price
+        lead_days_val = action.offered_lead_days or 25
+        deposit_pct_val = action.deposit_pct or 0.30
+        moq_val = offered_moq or sess.spec.moq
+        mold_exempt = False
+        waive_mold_amount = 0.0
+
+    action_obj = TacticalActionObject(
+        authorized_price=auth_price,
+        walk_away_ceiling=ceiling_price,
+        breakdown_risk=p_break,
+        expected_margin=rec.get("expected_margin_price", 0.0),
+        concession_step=rec.get("concession_step", 0.0),
+        posterior_reserve_mean=post_mean,
+        posterior_reserve_std=post_std,
+        bayesian_confidence=bayesian_confidence,
+        estimated_floor_price=floor_price_est,
+        tactical_mode=t_mode,
+        product_name=sess.spec.product_name,
+        supplier_contact_name="老闆",
+        lead_days=lead_days_val,
+        deposit_pct=deposit_pct_val,
+        moq=moq_val,
+        mold_fee_exempted=mold_exempt,
+        waive_mold_fee_amount=waive_mold_amount,
+        counterpart_intent=inbound_classification.primary_intent,
+        counterpart_offered_price=opp_price,
+        competing_lead_price=target_price * 1.05,
+        circuit_tripped=False,
     )
+
+    # 6.6 AST 不變量硬護欄驗證單一真相源
+    ActionObjectASTGuardrail.verify(action_obj)
+
+    # 6.7 雙向表面渲染
+    # 中文表面渲染 (面向供應商對話)：沿海地道行話，徹底消除外商溢價
+    auto_reply_text = ChineseSurfaceRenderer.render(action_obj)
+
+    # 文本層數值護欄複核 (防止任何渲染偏差)
     try:
         NumericGuardrailValidator.validate_reply(
             auto_reply_text,
-            authorized_price=expected_auth_price,
+            authorized_price=auth_price,
             walk_away_ceiling=ceiling_price,
         )
     except GuardrailViolationError:
-        auto_reply_text = f"經核算，我方首批訂單確定意向價為 ¥{recommended_offer_price:.2f}，現款現結走官方系統，請確認排單。"
+        auto_reply_text = f"經核算，我方首批訂單確定意向價為 ¥{auth_price:.2f}，現款現結走官方系統，請確認排單。"
+
+    # 英文高管決策卡與遙測摘要 (面向西方採購主管 / CPO 儀表板)
+    executive_card_en = EnglishExecutiveRenderer.render_executive_card(action_obj)
+    telemetry_eng = EnglishExecutiveRenderer.render_telemetry_summary(action_obj)
+
     turn_our = NegotiationTurn(
         round_index=current_round,
         sender="buyer_agent",
         raw_text=auto_reply_text,
-        parsed_price=recommended_offer_price,
+        parsed_price=auth_price,
         p_break=p_break,
         posterior_mean=post_mean,
         posterior_std=post_std,
         logrolling_proposal=logrolling_data,
     )
     sess = session_mgr.append_turn(session_id, turn_our)
-
-    # 英文遙測摘要
-    telemetry_eng = BilingualTacticalBridge.telemetry_english_summary(
-        intent=inbound_classification.primary_intent,
-        quoted_price=opp_price,
-        target_price=target_price,
-        p_break=p_break,
-    )
 
     return {
         "session": sess,
@@ -459,9 +526,11 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         "logrolling_proposal": logrolling_data,
         "effective_opp_price": effective_opp_price,
         "telemetry_summary_en": telemetry_eng,
+        "executive_card_en": executive_card_en,
+        "action_object": action_obj.model_dump(),
         "recommendation": rec,
         "proposal": prop,
-        "recommended_offer_price": recommended_offer_price,
+        "recommended_offer_price": auth_price,
         "reply_text": auto_reply_text,
     }
 

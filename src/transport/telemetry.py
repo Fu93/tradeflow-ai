@@ -5,7 +5,9 @@
    - WhatsApp: CallMeBot API (HTTP GET 直接推播個人 WhatsApp)
    - 微信 (WeChat): Server醬 Turbo / PushPlus (HTTP POST 直達微信服務號彈窗)
    - Telegram: Bot API
-2. 結構化卡片排版：發送熔斷警報卡片、指令選單、以及成交祝賀戰報。
+2. 結構化卡片排版：
+   - 整合 EnglishExecutiveRenderer 渲染高階 CPO 英文決策卡片
+   - 包含 Bayesian Confidence、Floor Price、即時破裂風險與 Directives 選單
 3. 離線自適應：若無環境變數憑證，自動以記憶體隊列記錄，確保單元測試與離線展示 100% 穩定。
 """
 from __future__ import annotations
@@ -45,23 +47,29 @@ class TelemetryNotifier:
         p_break: float,
         advice_text: str,
         proposed_price: Optional[float] = None,
+        action_object: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """派發緊急熔斷警報至主管手機 (支援英文與雙語主管)。"""
         title = f"[TradeFlow ESCALATION] {product} - Authorization Required"
-        advice_line = f"• Recommended Counter: ¥{proposed_price:.2f}" if proposed_price else ""
-        content = (
-            f"=== [TradeFlow Safety Circuit Breaker Tripped] ===\n"
-            f"• Product: {product}\n"
-            f"• Inbound Offer: ¥{opponent_offer:.2f}\n"
-            f"• Breakdown Risk: {p_break:.1%} (Exceeded 15.0% Safety Ceiling!)\n"
-            f"{advice_line}\n"
-            f"• Tactical Rationale: {advice_text}\n\n"
-            f"REPLY VIA MOBILE TO EXECUTE ACTION:\n"
-            f"[ 1 ] CONCEDE: Accept proposed step\n"
-            f"[ 2 ] HOLD FIRM: Reject & maintain position\n"
-            f"[ 3 ] WALK AWAY: Terminate & declare impasse\n"
-            f"[ Direct Price ]: e.g., Reply '13.20' to override."
-        )
+
+        if action_object is not None:
+            from ..engine.bilingual import EnglishExecutiveRenderer
+            content = EnglishExecutiveRenderer.render_executive_card(action_object)
+        else:
+            advice_line = f"• Recommended Counter: ¥{proposed_price:.2f}" if proposed_price else ""
+            content = (
+                f"=== [TradeFlow Safety Circuit Breaker Tripped] ===\n"
+                f"• Product: {product}\n"
+                f"• Inbound Offer: ¥{opponent_offer:.2f}\n"
+                f"• Breakdown Risk: {p_break:.1%} (Exceeded 15.0% Safety Ceiling!)\n"
+                f"{advice_line}\n"
+                f"• Tactical Rationale: {advice_text}\n\n"
+                f"REPLY VIA MOBILE TO EXECUTE ACTION:\n"
+                f"[ 1 ] CONCEDE: Accept proposed step\n"
+                f"[ 2 ] HOLD FIRM: Reject & maintain position\n"
+                f"[ 3 ] WALK AWAY: Terminate & declare impasse\n"
+                f"[ Direct Price ]: e.g., Reply '13.20' to override."
+            )
         return self._dispatch_all(session_id, title, content, event_type="CIRCUIT_BREAKER")
 
     def notify_deal_closed(
@@ -83,6 +91,18 @@ class TelemetryNotifier:
             f"• 執行狀態: 100% 無人值守自動談判完成！"
         )
         return self._dispatch_all(session_id, title, content, event_type="DEAL_CLOSED")
+
+    def notify_whatsapp(self, message: str) -> bool:
+        """單次發送 WhatsApp 訊息 (供 Web Portal 測試或自定義通知)。"""
+        return self._send_whatsapp(message)
+
+    def notify_telegram(self, message: str) -> bool:
+        """單次發送 Telegram 訊息。"""
+        return self._send_telegram(message)
+
+    def notify_pushplus(self, message: str) -> bool:
+        """單次發送微信服務號訊息。"""
+        return self._send_wechat("[TradeFlow Mobile Alert]", message)
 
     def _dispatch_all(
         self, session_id: str, title: str, content: str, event_type: str
