@@ -4,13 +4,21 @@
   "target_price_cny": 12.0,
   "moq": 500,
   "market": {
-    "source": "UN Comtrade / TradeMap (HS 6601) — 待 Day 2 拉取真實 FOB 區間",
-    "fob_usd_low": 0.8,
-    "fob_usd_high": 2.5,
-    "note": "用真實區間校準 prior_reserve_mean/std；此處為佔位"
+    "source": "manual (comtradeplus/trademap)",
+    "status": "FETCH_FAILED",
+    "note": "Expecting value: line 1 column 1 (char 0)",
+    "manual_steps": [
+      "開 https://comtradeplus.un.org/ → 查 HS 6601, reporter=China, flow=Import/Export, 取 FOB value ÷ quantity → 單價區間",
+      "或 https://www.trademap.org/ → 按 HS 6601 查 CIF/FOB",
+      "把 low/high 填進 seed_data/price_anchor.json 的 market.fob_usd_*"
+    ]
   },
   "compliance": {
-    "uk": ["UKCA", "CE", "REACH"],
+    "uk": [
+      "UKCA",
+      "CE",
+      "REACH"
+    ],
     "note": "英國市場合規要求，Demo 提及即可"
   }
 }

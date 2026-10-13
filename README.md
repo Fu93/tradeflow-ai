@@ -5,8 +5,10 @@ AMD Developer Hackathon: ACT III (lablab.ai, 2026/10/12–18) 參賽專案。
 **一句話**：在不確定性下，用貝氏信念 + 在 AMD MI300X 上向量化蒙地卡羅搜尋，
 算出採購談判的最優讓步策略；LLM 只負責寫信、讀信、解釋策略。
 
+- 公開倉庫：https://github.com/Fu93/tradeflow-ai
 - 策略文件：[TradeFlow_PlanB_Final.md](../TradeFlow_PlanB_Final.md)
 - 執行手冊：[TradeFlow_Execution_Manual.md](../TradeFlow_Execution_Manual.md)
+- 提交清單：[SUBMIT.md](SUBMIT.md)
 
 ## 快速開始（無 GPU、無外部依賴也能跑）
 
@@ -71,6 +73,11 @@ docker compose up --build   # 一個指令跑起；.env 提供 key，絕不 comm
 - **Reinvent Commerce（主賽事）**：改善採購端 margin。
 - **Evolus Business Agents on AMD**：event workspace + BYO vLLM + ≥2 building blocks + REST API 驅動。
 - **AMD 技術**：引擎批量 rollout 在 MI300X 上跑（CPU 約 1s / 純 loop ~46s / MI300X ~0.4s）。
+
+## 資料錨點（price anchor）
+
+- `seed_data/price_anchor.json` 目前為**佔位**：UN Comtrade Plus / OEC 現已改為需登入 session，自動抓取（見 `scripts/fetch_price_anchor.py`）未取得即時 FOB 區間。
+- 手動步驟已寫在該檔的 `market.manual_steps`；在 Demo 前填入 HS6601 真實 low/high 即可校準 prior。
 
 ## 注意
 
