@@ -63,6 +63,8 @@ class InboundTacticalClassification(BaseModel):
     confidence: float = Field(default=0.8, ge=0.0, le=1.0)
     mentioned_price: Optional[float] = None
     demanded_moq: Optional[int] = None
+    is_mixed_signal: bool = Field(default=False, description="是否同時包含商務報價與非商務試探/雜訊")
+    mixed_signal_note: Optional[str] = None
     tactical_rationale: str = ""
     requires_escalation: bool = False
 
@@ -242,11 +244,23 @@ class InboundIntentClassifier:
         for intent, pattern, conf, escalate in cls.PATTERNS:
             if pattern.search(raw_text):
                 rationale = "Matched deterministic pattern in inbound text"
+                # 檢驗是否為混合信號 (同時有實質報價/交期要素且有套路/試探)
+                is_mixed = price_val is not None and intent in (
+                    VendorTacticEnum.IDENTITY_PROBE_TEST,
+                    VendorTacticEnum.CRY_POVERTY_COST_HIKE,
+                    VendorTacticEnum.TIER_VOLUME_BLACKMAIL,
+                )
+                mixed_note = (
+                    f"Extracted Price ¥{price_val:.2f} while deflecting {intent.value}"
+                    if is_mixed else None
+                )
                 return InboundTacticalClassification(
                     primary_intent=intent,
                     confidence=conf,
                     mentioned_price=price_val,
                     demanded_moq=moq_val,
+                    is_mixed_signal=is_mixed,
+                    mixed_signal_note=mixed_note,
                     tactical_rationale=rationale,
                     requires_escalation=escalate,
                 )
@@ -312,6 +326,8 @@ class TacticalActionObject(BaseModel):
     counterpart_offered_price: Optional[float] = Field(default=None, description="對手當前報價")
     competing_lead_price: Optional[float] = Field(default=None, description="備選供應商錨定價")
     urgency_signal: str = Field(default="routine", description="緊迫度訊號")
+    is_mixed_signal: bool = Field(default=False, description="是否為混合信號 (含報價且含試探/抱怨)")
+    mixed_signal_note: Optional[str] = Field(default=None, description="混合信號摘要說明")
     circuit_tripped: bool = Field(default=False, description="是否觸發安全熔斷")
     trip_reason: Optional[str] = Field(default=None, description="熔斷原因")
 
@@ -538,13 +554,35 @@ class ChineseSurfaceRenderer:
         product = obj.product_name or "產品"
         deposit_pct_str = f"{int(round(obj.deposit_pct * 100))}%"
 
-        # 1. 策略原生原語：交易邊界拉回 (Defensive Pivot)
-        if obj.tactical_mode == TacticalModeEnum.DEFENSIVE_PIVOT or obj.counterpart_intent == VendorTacticEnum.IDENTITY_PROBE_TEST:
+        # 0. 混合信號處理：若對手同時給出報價與非商務試探/抱怨，邊界鎖定直接壓制試探，鎖定商務價格
+        if obj.is_mixed_signal:
             return (
-                f"{contact}，開票走 13 個點專票，具體條款財務後台走合同。"
-                f"你先確認這批{product} ¥{p_val:.2f} 出廠價能不能接，能做今天預付 {deposit_pct_str} 定金秒排，"
-                f"合適的話現在把合同簽了排單；不能做我們手頭備案產能就放出去了。"
+                f"{contact}，問那麼多幹嘛，開13個點專票走合同。"
+                f"這批{product}按 ¥{p_val:.2f} 出廠價落定，首批預付 {deposit_pct_str} 定金現款秒排，"
+                f"合適的話現在把合同簽了排單。"
             )
+
+        # 1. 策略原生原語：交易邊界拉回 (Defensive Pivot - 3大實戰情境變體)
+        if obj.tactical_mode == TacticalModeEnum.DEFENSIVE_PIVOT or obj.counterpart_intent == VendorTacticEnum.IDENTITY_PROBE_TEST:
+            # 變體 A: 面對抱怨/行情套話
+            if obj.counterpart_intent == VendorTacticEnum.CRY_POVERTY_COST_HIKE:
+                return (
+                    f"{contact}，行情波動我清楚，所以給你們現款現結。"
+                    f"這批{product} ¥{p_val:.2f} 出廠價，合適的話現在把合同簽了排單；不能做我們不佔檔期。"
+                )
+            # 變體 B: 面對以量壓價/小單推託
+            elif obj.counterpart_intent == VendorTacticEnum.TIER_VOLUME_BLACKMAIL:
+                return (
+                    f"首批 {obj.moq} 件試單看品控，跑順了下半年翻單一萬起。¥{p_val:.2f} 出廠價，"
+                    f"能做今天下 PO，別因小失大。"
+                )
+            # 變體 C: 面對背景刺探/閒聊雜訊 (標準邊界鎖定)
+            else:
+                return (
+                    f"{contact}，開票走 13 個點專票，具體條款財務後台走合同。"
+                    f"你先確認這批{product} ¥{p_val:.2f} 出廠價能不能接，能做今天預付 {deposit_pct_str} 定金秒排，"
+                    f"合適的話現在把合同簽了排單；不能做我們手頭備案產能就放出去了。"
+                )
 
         # 2. 策略原生原語：戰略沉默與冷卻威懾 (Silence / Cooling Off)
         if obj.tactical_mode == TacticalModeEnum.SILENCE:
@@ -655,6 +693,8 @@ class EnglishExecutiveRenderer:
                 f"Reason: {obj.trip_reason or 'Risk parameter ceiling breached'}\n"
             )
 
+        mixed_note = f"• [MIXED SIGNAL DETECTED]: {obj.mixed_signal_note or 'Offer extracted; non-commercial probe deflected'}\n" if obj.is_mixed_signal else ""
+
         card = (
             f"=== [TradeFlow CPO Executive Telemetry] ===\n"
             f"{round_tag}"
@@ -665,6 +705,7 @@ class EnglishExecutiveRenderer:
             f"• Risk Telemetry: Breakdown Risk: {obj.breakdown_risk:.1%} | Expected Margin: ¥{obj.expected_margin:.2f}\n"
             f"• Active Tactical Mode: {obj.tactical_mode.value}\n"
             f"• Inbound Counterpart Intent: {obj.counterpart_intent.value}\n"
+            f"{mixed_note}"
             f"• Package Terms: Lead Time: {obj.lead_days}d | Deposit: {obj.deposit_pct*100:.0f}% | MOQ: {obj.moq}"
             f"{circuit_warning}\n\n"
             f"DIRECTIVES (Reply to execute):\n"

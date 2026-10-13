@@ -70,3 +70,24 @@ class NegotiationSession(BaseModel):
     silence_until_ts: Optional[float] = Field(default=None, description="該供應商獨立戰略沉默截止時間戳 (Epoch Seconds)")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def check_break_silence(self, new_offer: Optional[float], concession_made: bool = False) -> bool:
+        """
+        沉默狀態機即時破冰喚醒 (Break Silence Trigger):
+        當對手主動降價 >= 3% (低於上次報價之 97%) 或給出交期/定金等實質讓步時，
+        瞬間解除沉默，恢復活躍博弈跟進。
+        """
+        if self.silence_until_ts is None:
+            return False
+
+        if concession_made:
+            self.silence_until_ts = None
+            return True
+
+        if new_offer is not None and self.latest_opponent_offer is not None:
+            # 降價幅度 >= 3%
+            if new_offer <= self.latest_opponent_offer * 0.97:
+                self.silence_until_ts = None
+                return True
+
+        return False

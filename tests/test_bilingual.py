@@ -433,6 +433,68 @@ class TestBilingualCognitiveBridge(unittest.TestCase):
             res = InboundIntentClassifier.has_actionable_commercial_content(msg)
             self.assertEqual(res, expected_actionable, f"Failed on Group B message: {msg}")
 
+    def test_mixed_signal_detection_and_suppression(self):
+        """驗證混合信號 (同時含價格與身份試探) 被識別，並在英文卡標註、中文話術邊界鎖定。"""
+        raw = "你們是做外貿還是內貿？這個價 14.50 元能做的話，我這週給你排單。"
+        classification = InboundIntentClassifier.classify(raw)
+        self.assertTrue(classification.is_mixed_signal)
+        self.assertEqual(classification.mentioned_price, 14.50)
+
+        action_obj = TacticalActionObject(
+            authorized_price=14.50,
+            walk_away_ceiling=16.00,
+            product_name="金屬件",
+            supplier_contact_name="李總",
+            is_mixed_signal=True,
+            mixed_signal_note=classification.mixed_signal_note,
+        )
+        en_card = EnglishExecutiveRenderer.render_executive_card(action_obj)
+        zh_script = ChineseSurfaceRenderer.render(action_obj)
+
+        self.assertIn("[MIXED SIGNAL DETECTED]", en_card)
+        self.assertIn("問那麼多幹嘛", zh_script)
+        self.assertIn("¥14.50", zh_script)
+
+    def test_defensive_pivot_variants(self):
+        """驗證 DEFENSIVE_PIVOT 面對抱怨行情、小單推託與刺探的三大話術變體。"""
+        # 變體 A: 抱怨行情
+        obj_cry = TacticalActionObject(
+            authorized_price=13.50,
+            walk_away_ceiling=15.00,
+            tactical_mode=TacticalModeEnum.DEFENSIVE_PIVOT,
+            counterpart_intent=VendorTacticEnum.CRY_POVERTY_COST_HIKE,
+        )
+        res_cry = ChineseSurfaceRenderer.render(obj_cry)
+        self.assertIn("行情波動我清楚", res_cry)
+
+        # 變體 B: 以量壓價
+        obj_moq = TacticalActionObject(
+            authorized_price=13.50,
+            walk_away_ceiling=15.00,
+            tactical_mode=TacticalModeEnum.DEFENSIVE_PIVOT,
+            counterpart_intent=VendorTacticEnum.TIER_VOLUME_BLACKMAIL,
+        )
+        res_moq = ChineseSurfaceRenderer.render(obj_moq)
+        self.assertIn("別因小失大", res_moq)
+
+    def test_session_silence_break_trigger(self):
+        """驗證多供應商獨立會話在對手主動降價 >= 3% 或實質讓步時瞬間破冰喚醒。"""
+        from src.session.schema import NegotiationSession, SessionSpec
+        session = NegotiationSession(
+            spec=SessionSpec(session_id="S_TEST", product_name="殼體", target_price=12.0, ceiling_price=15.0),
+            latest_opponent_offer=15.00,
+            silence_until_ts=9999999999.0,  # 沉默冷卻中
+        )
+        # 對手只降價 1% (14.90) -> 不足以解除沉默
+        unbroken = session.check_break_silence(new_offer=14.90)
+        self.assertFalse(unbroken)
+        self.assertIsNotNone(session.silence_until_ts)
+
+        # 對手降價超過 3% (14.50 <= 15.00 * 0.97 = 14.55) -> 瞬間破冰解除
+        broken = session.check_break_silence(new_offer=14.50)
+        self.assertTrue(broken)
+        self.assertIsNone(session.silence_until_ts)
+
 
 if __name__ == "__main__":
     unittest.main()
