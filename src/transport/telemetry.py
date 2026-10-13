@@ -46,21 +46,21 @@ class TelemetryNotifier:
         advice_text: str,
         proposed_price: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """派發緊急熔斷警報至主管手機。"""
-        title = f"[TradeFlow 熔斷警報] {product} 談判需授權"
-        advice_line = f"• 引擎建議還價: ¥{proposed_price:.2f}" if proposed_price else ""
+        """派發緊急熔斷警報至主管手機 (支援英文與雙語主管)。"""
+        title = f"[TradeFlow ESCALATION] {product} - Authorization Required"
+        advice_line = f"• Recommended Counter: ¥{proposed_price:.2f}" if proposed_price else ""
         content = (
-            f"【TradeFlow 採購自駕斷路器觸發】\n"
-            f"• 標的商品: {product}\n"
-            f"• 對手當前報價: ¥{opponent_offer:.2f}\n"
-            f"• 破局風險: {p_break:.1%} (已超過 15% 安全閾值!)\n"
+            f"=== [TradeFlow Safety Circuit Breaker Tripped] ===\n"
+            f"• Product: {product}\n"
+            f"• Inbound Offer: ¥{opponent_offer:.2f}\n"
+            f"• Breakdown Risk: {p_break:.1%} (Exceeded 15.0% Safety Ceiling!)\n"
             f"{advice_line}\n"
-            f"• 策略說明: {advice_text}\n\n"
-            f"請直接在手機回覆數字指令：\n"
-            f"[ 1 ] 妥協: 依引擎建議讓步報價\n"
-            f"[ 2 ] 堅持: 維持當前底線不退讓\n"
-            f"[ 3 ] 撤退: 立即終止並宣告破局\n"
-            f"[ 自訂金額 ]: 如直接回覆 13.0"
+            f"• Tactical Rationale: {advice_text}\n\n"
+            f"REPLY VIA MOBILE TO EXECUTE ACTION:\n"
+            f"[ 1 ] CONCEDE: Accept proposed step\n"
+            f"[ 2 ] HOLD FIRM: Reject & maintain position\n"
+            f"[ 3 ] WALK AWAY: Terminate & declare impasse\n"
+            f"[ Direct Price ]: e.g., Reply '13.20' to override."
         )
         return self._dispatch_all(session_id, title, content, event_type="CIRCUIT_BREAKER")
 

@@ -418,10 +418,13 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             supplier_intent=inbound_classification.primary_intent,
         )
     # 硬不變量護欄驗證
+    expected_auth_price = (
+        logrolling_data["proposed_price"] if (logrolling_data and "proposed_price" in logrolling_data) else recommended_offer_price
+    )
     try:
         NumericGuardrailValidator.validate_reply(
             auto_reply_text,
-            authorized_price=recommended_offer_price if not logrolling_data else ceiling_price,
+            authorized_price=expected_auth_price,
             walk_away_ceiling=ceiling_price,
         )
     except GuardrailViolationError:

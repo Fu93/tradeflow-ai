@@ -169,8 +169,9 @@ def evaluate_mandate_invariants(props, mandate):
                     f"AST: 話術承諾定金 {pct_str}% 超出公司最高授權 {mandate.max_allowed_deposit_pct*100:.1f}%"
                 )
 
-        day_matches = re.findall(r"(\d+)\s*天", script)
-        for day_str in day_matches:
+        # 嚴格僅校驗買方承諾交付之目標交期（如「壓縮至 XX 天內交付」或「XX 天交付」），排除對手原交期引述
+        promised_day_matches = re.findall(r"(?:壓縮至|壓至|內|目標交期|承諾)\s*(\d+)\s*天", script)
+        for day_str in promised_day_matches:
             val = int(day_str)
             if val > mandate.max_acceptable_lead_days:
                 raise ASTMandateViolationError(
@@ -207,15 +208,16 @@ class BuyerScriptGenerator:
         if mold_exempt:
             demand_parts.append(f"本期首批模具/打樣費 ¥{offer.mold_fee:.0f} 由貴廠全額減免")
         if p < offer.price:
-            demand_parts.append(f"單價最終落定在 ¥{p:.2f}")
+            demand_parts.append(f"單價按批量折讓落定在 ¥{p:.2f}")
 
         concession_str = "，同時".join(concession_parts) if concession_parts else "維持我方優質付款條件"
         demand_str = "、".join(demand_parts)
 
+        premise = f"若單價維持在貴廠報價 ¥{offer.price:.2f}" if abs(p - offer.price) < 1e-4 else f"若單價按批量折讓落定在 ¥{p:.2f}"
         zh_script = (
-            f"王總，理解貴廠在成本上的考量。若您堅持單價 ¥{p:.2f} 不動，我方展現最大的合作誠意：{concession_str}。"
+            f"老闆，理解貴廠在製程與排單成本上的考量。{premise}，我方展現充分的合作誠意：{concession_str}。"
             f"但作為對等條件，{demand_str}。"
-            f"這是我們公司董事會特批的閉環置換方案。若貴方確認，我們今天下班前立即蓋章回傳 PO，首筆款項秒到賬；若此方案仍無法達成，我方只得啟動備案產能。"
+            f"這是我們採購總監與財務剛特批的打包條件。若貴方確認，我們今天立即蓋章回傳 PO，首筆定金即刻按約定走帳；若此條件仍無法達成，我方受限於專案預算只得啟動備案產能。"
         )
 
         # 英文外貿金牌買家話術

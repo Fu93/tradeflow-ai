@@ -43,13 +43,6 @@ class InboundIntentClassifier:
         # (Intent, Regex Pattern, Default Confidence, Requires Escalation)
         (
             VendorTacticEnum.OFFLINE_BYPASS_DIVERT,
-            re.compile(r"(加個?微信|私下聊|電話聊|wx|私聊|轉私帳|線下付|1[3-9]\d{9})", re.IGNORECASE),
-            0.95,
-            True,  # 脫離平台直接觸發風控警報
-        ),
-        # (Intent, Regex Pattern, Default Confidence, Requires Escalation)
-        (
-            VendorTacticEnum.OFFLINE_BYPASS_DIVERT,
             re.compile(r"(加個?微信|私下聊|電話聊|wx|私聊|轉私帳|線下付|1[3-9]\d{9}|v信|微\s*信|\+v|加v|私發|私下交易)", re.IGNORECASE),
             0.95,
             True,  # 脫離平台直接觸發風控警報
@@ -86,7 +79,11 @@ class InboundIntentClassifier:
         ),
     ]
 
-    PRICE_PATTERN = re.compile(r"(?:[¥￥$]|RMB|元|塊)?\s*(\d+(?:\.\d{1,2})?)\s*(?:元|塊|/件|/把|/個)?")
+    # 嚴格價格正則：必須具備貨幣標識 (¥/￥/$/RMB)、單價前綴 (報價/單價/出廠價) 或單位後綴 (元/塊/件)
+    PRICE_PATTERN = re.compile(
+        r"(?:(?:[¥￥$]|RMB)\s*(\d+(?:\.\d{1,2})?)|(?:報價|單價|價格|給您|算您|出廠價|特價|低至)\s*[:：=]?\s*(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:元|塊)(?:/件|/把|/個|/套|/pcs)?)",
+        re.IGNORECASE,
+    )
     MOQ_PATTERN = re.compile(r"(\d{3,7})\s*(?:個|把|件|套|pcs)", re.IGNORECASE)
 
     @classmethod
@@ -166,9 +163,11 @@ class InboundIntentClassifier:
         p_match = cls.PRICE_PATTERN.search(raw_text)
         if p_match:
             try:
-                candidate = float(p_match.group(1))
-                if candidate > 0.1:  # 排除誤判
-                    price_val = candidate
+                matched_str = p_match.group(1) or p_match.group(2) or p_match.group(3)
+                if matched_str:
+                    candidate = float(matched_str)
+                    if 0.1 <= candidate <= 50000.0:  # 排除誤判與超長手機號
+                        price_val = candidate
             except ValueError:
                 pass
 
@@ -311,9 +310,10 @@ class BilingualTacticalBridge:
             )
 
         # 標准三階戰術範本 (LEAN_IN / CROSS_ANCHOR / SIDELINE)
+        p_name = product_name or "項目"
         if tactic == "LEAN_IN":
             return (
-                f"老闆誠意我們認可，我們是歐美專案採購，這批傘是核心訂單。"
+                f"老闆誠意我們認可，我們是歐美專案採購，這批{p_name}是核心訂單。"
                 f"首批試單給到 ¥{authorized_price:.2f} 出廠價，現款現結 30% 定金見單走帳，週五前出簽字封樣，合適的話現在走合同。"
             )
         elif tactic == "CROSS_ANCHOR":
