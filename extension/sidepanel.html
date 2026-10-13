@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TradeFlow Autopilot</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <div class="logo-group">
+      <div class="logo-badge">TF-AI</div>
+      <div>
+        <div class="title">Autopilot Hub</div>
+        <div class="version">v4.0 Production Grade</div>
+      </div>
+    </div>
+    <div id="status-badge" class="status-pill">
+      <span style="font-size: 8px;">●</span>
+      <span id="status-text">CRUISING</span>
+    </div>
+  </header>
+
+  <!-- Active Session Config -->
+  <div class="card">
+    <div class="card-title">
+      <span>Negotiation Session</span>
+      <button id="btn-refresh" style="padding: 2px 8px; font-size: 10px;">Refresh</button>
+    </div>
+    <div style="font-size: 11px; margin-bottom: 8px;">
+      <span style="color: var(--text-muted);">Session ID:</span>
+      <strong id="session-id-display" style="color: var(--accent-cyan);">live-session-001</strong>
+    </div>
+    <div class="metric-grid">
+      <div class="metric-box">
+        <div class="metric-label">Target Price</div>
+        <div class="metric-value" id="val-target-price">¥12.00</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">Reserve Ceiling</div>
+        <div class="metric-value" id="val-reserve-ceiling" style="color: var(--accent-rose);">¥16.20</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Real-time Bayesian Belief -->
+  <div class="card">
+    <div class="card-title">
+      <span>Bayesian Opponent Belief</span>
+      <span style="color: var(--accent-emerald); font-size: 10px;">MI300X MCTS</span>
+    </div>
+    <div class="metric-grid">
+      <div class="metric-box">
+        <div class="metric-label">Posterior Mean (&mu;)</div>
+        <div class="metric-value" id="val-posterior-mean">1.080</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">Uncertainty (&sigma;)</div>
+        <div class="metric-value" id="val-posterior-std" style="color: var(--accent-amber);">0.095</div>
+      </div>
+    </div>
+    <div style="margin-top: 12px;">
+      <div style="display: flex; justify-content: space-between; font-size: 11px;">
+        <span style="color: var(--text-muted);">Breakdown Probability</span>
+        <strong id="val-breakdown-risk" style="color: var(--accent-emerald);">4.8%</strong>
+      </div>
+      <div class="progress-bar-bg">
+        <div id="progress-breakdown" class="progress-bar-fill"></div>
+      </div>
+      <div style="font-size: 9px; color: var(--text-muted); margin-top: 3px;">
+        Safety threshold: 15.0% (Triggers emergency mobile escalation)
+      </div>
+    </div>
+  </div>
+
+  <!-- Negotiation Turns Timeline -->
+  <div class="card">
+    <div class="card-title">
+      <span>Live Round History</span>
+      <span id="round-counter" style="color: var(--accent-cyan); font-size: 11px;">Round 1 / 5</span>
+    </div>
+    <div class="timeline" id="turns-timeline">
+      <div class="timeline-turn">
+        <div style="display: flex; justify-content: space-between;">
+          <strong>Round 1 (Opening)</strong>
+          <span style="color: var(--accent-emerald);">¥12.96 Proposed</span>
+        </div>
+        <div style="color: var(--text-muted); margin-top: 2px;">
+          Awaiting supplier quote via in-browser chat...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Two-Way Mobile Telemetry Status -->
+  <div class="card">
+    <div class="card-title">
+      <span>Mobile Telemetry Bridge</span>
+      <span style="color: var(--accent-emerald); font-size: 10px;">ACTIVE</span>
+    </div>
+    <div class="telemetry-channel">
+      <span>WhatsApp (CallMeBot)</span>
+      <span class="channel-status" id="status-whatsapp">ONLINE</span>
+    </div>
+    <div class="telemetry-channel">
+      <span>WeChat (Server醬 / PushPlus)</span>
+      <span class="channel-status" id="status-wechat">ONLINE</span>
+    </div>
+    <div class="telemetry-channel">
+      <span>Telegram Bot Webhook</span>
+      <span class="channel-status" id="status-telegram">STANDBY</span>
+    </div>
+    <div style="margin-top: 10px; font-size: 11px; color: var(--text-muted);">
+      Last Mobile Signal: <strong id="val-last-signal" style="color: var(--text-main);">None</strong>
+    </div>
+  </div>
+
+  <!-- Manual Overrides -->
+  <div class="card">
+    <div class="card-title">
+      <span>Tactical Manual Overrides</span>
+    </div>
+    <div class="btn-group">
+      <button id="btn-concede">Concede 1 Step (1)</button>
+      <button id="btn-hold">Hold Firm (2)</button>
+    </div>
+    <div style="margin-top: 8px;">
+      <button id="btn-abort" class="danger" style="width: 100%;">Emergency Abort / Walk Away (3)</button>
+    </div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

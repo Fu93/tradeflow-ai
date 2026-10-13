@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "TradeFlow Autopilot — Autonomous Negotiation Agent",
+  "version": "4.0.0",
+  "description": "Autonomous in-browser procurement negotiation autopilot with Bayesian game-theoretic pricing and mobile escalation safety guardrails.",
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "*://*.1688.com/*",
+    "*://*.alibaba.com/*",
+    "*://web.whatsapp.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.1688.com/*",
+        "*://*.alibaba.com/*",
+        "*://web.whatsapp.com/*",
+        "http://localhost:8000/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_title": "Open TradeFlow Autopilot Panel"
+  }
+}

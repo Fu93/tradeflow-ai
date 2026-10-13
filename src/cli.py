@@ -1,13 +1,16 @@
-"""TradeFlow CLI — 一個指令跑端到端 demo / 穩健性 / 視覺化（不依賴 Evolus / GPU）。
+"""TradeFlow CLI — 一個指令跑端到端 demo / 穩健性 / 視覺化 / 對抗式自博弈競技場。
 
 python -m src.cli              # 端到端 demo（含信念更新）
 python -m src.cli --robustness # 穩健性報告 (regret + prior 敏感度)
 python -m src.cli --figures    # 產出 results/posterior.png + belief_update.png
+python -m src.cli --self-play  # 5 大非 LLM 對抗式自博弈錦標賽評測
 """
 from __future__ import annotations
-import sys, time, argparse
+import sys, time, argparse, os
+from pathlib import Path
 import numpy as np
 from .engine import solve, recommend, bayes_update, model, robustness, viz, benchmark
+from .benchmark import AdversarialArena
 from .app.demo_data import DEMO_SPEC, SUPPLIER_REPLIES
 
 
@@ -79,14 +82,34 @@ def run_figures():
     print("\nresults/: posterior.png, belief_update.png, prior_decomp.png, benchmark.png, robustness.png, bench.json")
 
 
+def run_self_play(matches=20, out_dir="results"):
+    print(f"=== Adversarial Self-Play Tournament (n_matches={matches} per adversary) ===")
+    t0 = time.perf_counter()
+    arena = AdversarialArena(max_rounds=5, n_opp_samples=1000)
+    results = arena.run_tournament(n_matches_per_adversary=matches)
+    elapsed = time.perf_counter() - t0
+    md_table = arena.export_markdown_table(results)
+    print(f"\nCompleted {matches * 5 * 2} matches across 5 adversary archetypes in {elapsed:.2f}s\n")
+    print(md_table)
+    
+    out_path = Path(out_dir) / "self_play_benchmark.md"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(f"# TradeFlow v4 Adversarial Self-Play Tournament Results\n\nGenerated: {time.strftime('%Y-%m-%d %H:%M:%S')}\nMatches per Archetype: {matches}\n\n{md_table}\n", encoding="utf-8")
+    print(f"\n[Saved benchmark report] -> {out_path}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--robustness", action="store_true")
     ap.add_argument("--figures", action="store_true")
+    ap.add_argument("--self-play", action="store_true", help="Run 5-adversary tournament benchmark")
+    ap.add_argument("--matches", type=int, default=20, help="Matches per adversary for self-play")
     ap.add_argument("--n", type=int, default=20000)
     args = ap.parse_args()
 
-    if args.robustness:
+    if args.self_play:
+        run_self_play(matches=args.matches)
+    elif args.robustness:
         run_robustness(args.n)
     elif args.figures:
         run_figures()

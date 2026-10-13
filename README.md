@@ -6,8 +6,10 @@ AMD Developer Hackathon: ACT III (lablab.ai, 2026/10/12–18) 參賽專案。
 算出採購談判的最優讓步策略；LLM 只負責寫信、讀信、解釋策略。
 
 - 公開倉庫：https://github.com/Fu93/tradeflow-ai
-- 策略文件：[TradeFlow_PlanB_Final.md](../TradeFlow_PlanB_Final.md)
-- 執行手冊：[TradeFlow_Execution_Manual.md](../TradeFlow_Execution_Manual.md)
+- 🚀 **v4 全自主架構規格**：[TradeFlow_Upgrade_Plan_Final.md](TradeFlow_Upgrade_Plan_Final.md)（網頁自駕 Autopilot + 手機雙向遙測）
+- 🛠️ **v4 工程實作藍圖**：[TradeFlow_Implementation_Plan_Master.md](TradeFlow_Implementation_Plan_Master.md)
+- 策略文件：[TradeFlow_PlanB_Final.md](TradeFlow_PlanB_Final.md)
+- 執行手冊：[TradeFlow_Execution_Manual.md](TradeFlow_Execution_Manual.md)
 - 提交清單：[SUBMIT.md](SUBMIT.md)
 
 ## 架構
