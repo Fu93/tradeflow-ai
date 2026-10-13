@@ -1,10 +1,10 @@
-# 🏆 TradeFlow AI — 跨國貿易多 Agent 自動化系統
+# [TROPHY] TradeFlow AI — 跨國貿易多 Agent 自動化系統
 
 > **AMD Developer Hackathon: ACT III** | 2026/10/12-18 | 獲勝策略完整方案
 
 ---
 
-## 📋 目錄
+## [PLAN] 目錄
 
 1. [專案定義](#專案定義)
 2. [技術架構](#技術架構)
@@ -449,7 +449,7 @@ trade-flow-ai/
 
 ---
 
-## 🚀 立即行動（今天 10/11）
+## [LAUNCH] 立即行動（今天 10/11）
 
 ### 優先順序
 

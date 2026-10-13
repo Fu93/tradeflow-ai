@@ -1,4 +1,4 @@
-# 🏆 TradeFlow AI — 全自主網頁談判代理與博弈決策引擎 (v4 Master Specification)
+# [TROPHY] TradeFlow AI — 全自主網頁談判代理與博弈決策引擎 (v4 Master Specification)
 
 > **AMD Developer Hackathon: ACT III** | 線上 2026/10/12–18  
 > **核心定位**：從「被動離線假想敵」進化為**「無人值守網頁自駕談判（In-Browser Autopilot）× 雙向手機遙測控制（WhatsApp / WeChat Telemetry）× 逆向拍賣博弈求解（Reverse Auction on AMD MI300X）× 對抗式 Self-Play 實證」**的全自主企業級採購決策大腦。  
@@ -409,7 +409,7 @@ sequenceDiagram
         DOM->>Supplier: 自動送出回覆 ("經確認量大走現款，我們可做到 ¥13.20，請確認")
     end
 
-    Transport->>Mobile: 同步推播最新進度至主管手機備查 ("✅ 已自動送出 ¥13.20")
+    Transport->>Mobile: 同步推播最新進度至主管手機備查 ("[PASS] 已自動送出 ¥13.20")
 ```
 
 ---

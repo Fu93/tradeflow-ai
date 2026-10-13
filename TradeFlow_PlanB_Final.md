@@ -1,4 +1,4 @@
-# 🏆 TradeFlow AI — 談判決策引擎（Plan B 定稿 v2）
+# [TROPHY] TradeFlow AI — 談判決策引擎（Plan B 定稿 v2）
 
 > **AMD Developer Hackathon: ACT III** | 線上 2026/10/12–18 | 截止只剩 ~5.5 天（今天 10/13）
 > 版本：v2（整合定稿，已用官方文件逐項核對並修正 v1 的全部錯誤）
@@ -22,7 +22,7 @@
 
 ---
 
-## 2. ⚠️ 已對官方文件核對、必須修正的 v1 錯誤
+## 2. [WARN] 已對官方文件核對、必須修正的 v1 錯誤
 
 | v1 寫的（錯） | 官方確認（對） | 來源 |
 |---|---|---|
@@ -65,7 +65,7 @@
 3. 這樣每輪談判我們只呼叫 Evolus ~2 次（extract + 寫信），**60 req/min 限制完全不沾邊**（GPU 的百萬次 rollout 全在我們 container 內，不走 Evolus credits/速率）。
 4. GPU 工作量 = 引擎內部的對手樣本 × 策略批量，與 Evolus 呼叫次數脫鉤 → 誠實且可驗。
 
-→ Evolus 五項要求全滿：`event workspace` ✅、`BYO vLLM` ✅、`≥2 building blocks` ✅、`REST API 驅動` ✅、`容器化 + public repo + README` ✅；且 GPU 是產品真在跑的部分。
+→ Evolus 五項要求全滿：`event workspace` [PASS]、`BYO vLLM` [PASS]、`≥2 building blocks` [PASS]、`REST API 驅動` [PASS]、`容器化 + public repo + README` [PASS]；且 GPU 是產品真在跑的部分。
 
 ---
 
@@ -79,10 +79,10 @@
 | MCP server | `/mcp` | `X-ApiKey` + `X-Application-Id`（或 `X-User-ApiKey`） |
 
 ### 我們用的 4 個 building blocks
-1. **Workflows** — `POST /api/v1/workflows/{id}/execute`（multipart：`input` / `file` / `parameters` / `callbackUrl(+ callbackMethod / callbackApiKey)`）→ `202 Accepted` + `X-Workflow-Execution-Id`；結果用 `GET /api/v1/workflows/{id}/executions/{id}` 輪詢（Pending/Running/Completed/Failed），或推到 webhook。⚠️ workflow 關著回 `409 Conflict`。**可由 incoming email 觸發 → Demo 主線**。
+1. **Workflows** — `POST /api/v1/workflows/{id}/execute`（multipart：`input` / `file` / `parameters` / `callbackUrl(+ callbackMethod / callbackApiKey)`）→ `202 Accepted` + `X-Workflow-Execution-Id`；結果用 `GET /api/v1/workflows/{id}/executions/{id}` 輪詢（Pending/Running/Completed/Failed），或推到 webhook。[WARN] workflow 關著回 `409 Conflict`。**可由 incoming email 觸發 → Demo 主線**。
 2. **Document Extractors** — `POST /api/v1/agents/{agentId}/json/{extractorId}/ask-file`（multipart `file`）；多檔用 `.../ask-files`；同步取結果加 `?useWebhook=false`。抽成你定義的 JSON schema。
 3. **AI Tools** — `POST /api/v1/ai-tools/{tool}/run`，JSON `{text, secondaryText, options}` → `{tool, output, creditsConsumed, truncated}`。我們用：`email`（寫/回郵件）、`summarize`、`translate`。限制：文件 ≤20MB、音視頻 ≤100MB、文字 ≤120,000 字、PDF>60 頁拒收。
-4. **Knowledge Libraries** — `POST /api/v1/memories/{libId}/documents?language=en`（⚠️ 預設 `it`）上傳供應商歷史；`import-url` 只抓該頁不爬站。
+4. **Knowledge Libraries** — `POST /api/v1/memories/{libId}/documents?language=en`（[WARN] 預設 `it`）上傳供應商歷史；`import-url` 只抓該頁不爬站。
 
 ### 我們與 Evolus 的呼叫拓撲（app 驅動 Evolus）
 - 入口：`POST /api/v1/workflows/{id}/execute`（multipart `input` / `file` / `callbackUrl`）→ 收 `X-Workflow-Execution-Id`；結果輪詢 `GET .../executions/{id}`。
@@ -96,7 +96,7 @@
 - **event workspace 免費到 2026/11/15 23:59 義大利時間**（Evolus 官網；lablab 賽制頁另寫 Oct 31，以 Evolus 為準，反正都過 10/18）。
 - **絕不把 secret 當 parameters 傳**（會存進 run 記錄）；引擎 endpoint 走我們 container 內部，不經 Evolus。
 - Webhook 回傳帶 `X-Workflow-Execution-Id` / `X-Workflow-Audit-Id` 可對回 run。
-- ⚠️ **未公開確認項**：Evolus agent 是否能直接掛「自訂外部 tool / MCP connector」接我們引擎。開發者頁只明列 REST/MCP/OpenAI-compatible 三種對外接入；agent 內部接外部 tool 的具體配置未在公開文件。→ 本計畫**不依賴**這點（用上方 app 驅動拓撲），但若後來確認可接，可再升級成「agent 內部 tool 直接叫引擎」。
+- [WARN] **未公開確認項**：Evolus agent 是否能直接掛「自訂外部 tool / MCP connector」接我們引擎。開發者頁只明列 REST/MCP/OpenAI-compatible 三種對外接入；agent 內部接外部 tool 的具體配置未在公開文件。→ 本計畫**不依賴**這點（用上方 app 驅動拓撲），但若後來確認可接，可再升級成「agent 內部 tool 直接叫引擎」。
 
 ---
 
@@ -189,7 +189,7 @@ curl http://localhost:8000/v1/models
 
 > 商業價值收口：「100 萬美元訂單，5% = 5 萬美元；引擎把『等待的價值』量化成可執行的讓步時程表。」
 
-> ⚠️ 上面的 `opens[0]=1.000` 是對稱先驗下的邊界解（開盤越低、邊際越高但破局升）；**Demo 不要用邊界解**，要在 40 檔位裡取「邊際 − λ·破局」帕累托最優的那一檔，並把 `λ`（風險厭惡）做成滑桿。v2 的 `exp_margin` / `exp_break` 已可支援帕累托選擇，實作時補一個 `best = argmax(exp_margin − λ*exp_break)`。
+> [WARN] 上面的 `opens[0]=1.000` 是對稱先驗下的邊界解（開盤越低、邊際越高但破局升）；**Demo 不要用邊界解**，要在 40 檔位裡取「邊際 − λ·破局」帕累托最優的那一檔，並把 `λ`（風險厭惡）做成滑桿。v2 的 `exp_margin` / `exp_break` 已可支援帕累托選擇，實作時補一個 `best = argmax(exp_margin − λ*exp_break)`。
 
 ---
 
@@ -250,7 +250,7 @@ Application of Technology（blocks 深度 + AMD 模型整合）/ Business Value�
 ---
 
 ## 12. 本地環境缺口（已查）
-- git 2.55 ✓ / **無 global identity ✗** / **無 Docker ✗** / 無 pnpm（用 uv 或 pip）/ Python 3.12 ✓ / 無本機 GPU（正常，算力在 AMD cloud）。
+- git 2.55 [CHECK] / **無 global identity [FAIL]** / **無 Docker [FAIL]** / 無 pnpm（用 uv 或 pip）/ Python 3.12 [CHECK] / 無本機 GPU（正常，算力在 AMD cloud）。
 - 容器化 app 必須在 Linux droplet 或裝好 Docker Desktop 的本機 build。
 
 ---

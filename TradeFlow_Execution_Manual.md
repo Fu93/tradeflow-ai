@@ -1,4 +1,4 @@
-# 🛠️ TradeFlow AI — 逐條執行手冊（Part B，配合 Plan B 定稿）
+# [TOOL] TradeFlow AI — 逐條執行手冊（Part B，配合 Plan B 定稿）
 
 > 配套策略文件：[TradeFlow_PlanB_Final.md](TradeFlow_PlanB_Final.md)（v2.1）
 > 今天 2026/10/13，離線上截止 ~5.5 天。本手冊每個動作都有驗收閘門（Gate）。
@@ -10,17 +10,17 @@
 
 | 項目 | 狀態 | 來源 |
 |---|---|---|
-| Evolus API / building blocks | ✅ 已核對官方開發頁 | evolus.ai/en/developers |
-| Evolus 五項硬性要求 + 雙投策略 | ✅ 已核對 | lablab 賽制頁 + Evolus blog |
-| vLLM on ROCm 正確 image / parser | ✅ 已核對 | ROCm vLLM doc + vLLM tool-calling doc |
-| AMD $100 credits 流程 | ✅ 已核對 | developer.amd.com/ai-developer-program |
-| 引擎數學 + 誠實 GPU 數字 | ✅ 已實測 | benchmark_negotiation_v2.py（桌面） |
-| 商業價值錨點 | ⚠️ 部分：行業 5–10% 基準確認，真實 HS6601 價需 Day 2 拉 | trademap.org / comtradeplus |
-| Evolus agent 能否掛自訂外部 tool | ⚠️ 未確認（不依賴，app 驅動拓撲已繞過） | — |
-| 確切提交截止時間 | ⚠️ 賽制頁寫 To be announced，去 lablab 專案頁確認 | — |
-| MI300X 對免費會員是否可用 | ⚠️ 未確認（Fireworks 備案兜底） | — |
+| Evolus API / building blocks | [PASS] 已核對官方開發頁 | evolus.ai/en/developers |
+| Evolus 五項硬性要求 + 雙投策略 | [PASS] 已核對 | lablab 賽制頁 + Evolus blog |
+| vLLM on ROCm 正確 image / parser | [PASS] 已核對 | ROCm vLLM doc + vLLM tool-calling doc |
+| AMD $100 credits 流程 | [PASS] 已核對 | developer.amd.com/ai-developer-program |
+| 引擎數學 + 誠實 GPU 數字 | [PASS] 已實測 | benchmark_negotiation_v2.py（桌面） |
+| 商業價值錨點 | [WARN] 部分：行業 5–10% 基準確認，真實 HS6601 價需 Day 2 拉 | trademap.org / comtradeplus |
+| Evolus agent 能否掛自訂外部 tool | [WARN] 未確認（不依賴，app 驅動拓撲已繞過） | — |
+| 確切提交截止時間 | [WARN] 賽制頁寫 To be announced，去 lablab 專案頁確認 | — |
+| MI300X 對免費會員是否可用 | [WARN] 未確認（Fireworks 備案兜底） | — |
 
-**結論**：核心技術與賽制已足夠開始；剩 3 個「⚠️」都不阻塞開發（有備案）。可以照本手冊動手。
+**結論**：核心技術與賽制已足夠開始；剩 3 個「[WARN]」都不阻塞開發（有備案）。可以照本手冊動手。
 
 ---
 

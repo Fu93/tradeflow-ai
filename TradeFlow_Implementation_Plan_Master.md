@@ -1,4 +1,4 @@
-# 🏆 TradeFlow AI v4: 企業級全自主談判與遙測中樞詳細實作計畫 (Master Implementation Plan)
+# [TROPHY] TradeFlow AI v4: 企業級全自主談判與遙測中樞詳細實作計畫 (Master Implementation Plan)
 
 > **AMD Developer Hackathon: ACT III** | 線上 2026/10/12–18  
 > **核心目標**：將 TradeFlow AI v4 定稿架構（`NegotiationSession` 狀態機、`BaseTransport` 可插拔通信、純標準庫 Email、WhatsApp/微信 雙向遙測中樞、Chrome 網頁端無人自駕 Autopilot、多供應商 96M 張量逆向拍賣、對抗式 Self-Play 競技場）拆解為**可立即依序執行、具備 TDD 測試用例與驗收標準的工程落地藍圖**。  
@@ -298,7 +298,7 @@ flowchart LR
     * 後端控制台發出斷路器警報
 
 [01:50 - 02:25] 手機即時遙測與主管單鍵授權 (Two-Way Mobile Command)
-  - 主管手機跳出推播卡片：「⚠️ 熔斷警報！供應商堅持 ¥13.80，破局率 18.2%。建議讓步報價 ¥13.20」
+  - 主管手機跳出推播卡片：「[WARN] 熔斷警報！供應商堅持 ¥13.80，破局率 18.2%。建議讓步報價 ¥13.20」
   - 指令選單：「回覆 1: 讓步至 ¥13.20 | 2: 堅持底線 | 3: 立即破局」
   - 主管在手機直接鍵入數字「1」送出
 

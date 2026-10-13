@@ -1,6 +1,6 @@
 # TradeFlow v4 Adversarial Self-Play Tournament Results
 
-Generated: 2026-10-13 12:26:35
+Generated: 2026-10-13 12:37:12
 Matches per Archetype: 5
 
 | 對手類型 (Opponent Archetype) | 策略代理 (Agent) | 談判勝率 (Deal %) | 平均節省率 (Savings %) | 破局率 (Breakdown %) | 平均收斂輪數 (Avg Rounds) |

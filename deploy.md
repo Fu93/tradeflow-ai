@@ -37,7 +37,7 @@ docker run -d --rm \
 ```
 - 下載模型需 HF token（Qwen2.5-14B 是公開權重）。
 - 驗證：`curl http://<ip>:8000/v1/models`
-- ⚠️ `hermes` 解析器（不是 `qwen3_xml`，那是 Qwen3-Coder 專用）。
+- [WARN] `hermes` 解析器（不是 `qwen3_xml`，那是 Qwen3-Coder 專用）。
 
 ## 3. 設定 Evolus
 1. Evolus workspace → **Models / Your models** → 新增自訂 endpoint：

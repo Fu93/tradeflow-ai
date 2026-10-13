@@ -275,7 +275,7 @@
 
         // Deal Closed
         if (data.session?.state === "COMPLETED") {
-          updateHUD("DEAL CLOSED 🎉", "#10b981", `Settled at ¥${turn?.buyer_counter_offer || offer}!`);
+          updateHUD("DEAL CLOSED [SUCCESS]", "#10b981", `Settled at ¥${turn?.buyer_counter_offer || offer}!`);
           return;
         }
 

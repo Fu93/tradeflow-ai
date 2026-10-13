@@ -47,7 +47,7 @@ class TelemetryNotifier:
         proposed_price: Optional[float] = None,
     ) -> Dict[str, Any]:
         """派發緊急熔斷警報至主管手機。"""
-        title = f"🚨 [TradeFlow 熔斷警報] {product} 談判需授權"
+        title = f"[TradeFlow 熔斷警報] {product} 談判需授權"
         advice_line = f"• 引擎建議還價: ¥{proposed_price:.2f}" if proposed_price else ""
         content = (
             f"【TradeFlow 採購自駕斷路器觸發】\n"
@@ -56,7 +56,7 @@ class TelemetryNotifier:
             f"• 破局風險: {p_break:.1%} (已超過 15% 安全閾值!)\n"
             f"{advice_line}\n"
             f"• 策略說明: {advice_text}\n\n"
-            f"📱 請直接在手機回覆數字指令：\n"
+            f"請直接在手機回覆數字指令：\n"
             f"[ 1 ] 妥協: 依引擎建議讓步報價\n"
             f"[ 2 ] 堅持: 維持當前底線不退讓\n"
             f"[ 3 ] 撤退: 立即終止並宣告破局\n"
@@ -73,7 +73,7 @@ class TelemetryNotifier:
         rounds: int,
     ) -> Dict[str, Any]:
         """派發談判順利成交賀報。"""
-        title = f"🎯 [TradeFlow 談判成功] {product} 達成交易！"
+        title = f"[TradeFlow 談判成功] {product} 達成交易！"
         content = (
             f"【TradeFlow 採購成果戰報】\n"
             f"• 標的商品: {product}\n"

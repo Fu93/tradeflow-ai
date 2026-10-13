@@ -62,24 +62,24 @@
 
 | 要求 | 我們狀態 | 缺口 |
 |---|---|---|
-| Public GitHub repo | ✅ 已上線（32 檔、CI 綠） | — |
-| README that runs | ✅ `python -m src.cli --figures` | — |
-| Containerized app | ✅ Dockerfile + compose | — |
-| No API keys committed | ✅ .gitignore + .env.example | — |
-| AMD 技術（實體算力） | 🟡 引擎邏輯就緒，MI300X 待 credits | 需實測 benchmark 截圖取代投影 |
-| BYO vLLM on AMD Developer Cloud | 🟡 runbook 就緒 | **需 credits + 開 droplet**（見 §5） |
-| Evolus event workspace | 🔴 需 kickoff event code 建 workspace | 準備 client + dry-run |
-| Evolus ≥2 building blocks | 🟡 client 支援 workflow/AI Tools/extractors | 需真 API 呼叫產生 usage stats |
-| 從 app 用 REST 驅動 Evolus | 🟡 有 EvolusClient | 離線 stub → 接真 key |
-| Cover image 1280×720 | 🔴 未做 | 用 matplotlib 生成 |
-| Demo video 3–5 min | 🔴 未錄 | 接線後錄 |
-| Slide presentation | 🟡 PITCH.md 骨架 | 轉 .pptx（office-pptx） |
-| Application URL（demo 平台） | 🔴 未部署 | 在 AMD droplet 跑 FastAPI 公開 IP |
-| 可量化增益數字 | ✅ robustness 報告 | 搬進 pitch/video |
+| Public GitHub repo | [PASS] 已上線（32 檔、CI 綠） | — |
+| README that runs | [PASS] `python -m src.cli --figures` | — |
+| Containerized app | [PASS] Dockerfile + compose | — |
+| No API keys committed | [PASS] .gitignore + .env.example | — |
+| AMD 技術（實體算力） | [MED] 引擎邏輯就緒，MI300X 待 credits | 需實測 benchmark 截圖取代投影 |
+| BYO vLLM on AMD Developer Cloud | [MED] runbook 就緒 | **需 credits + 開 droplet**（見 §5） |
+| Evolus event workspace | [HIGH] 需 kickoff event code 建 workspace | 準備 client + dry-run |
+| Evolus ≥2 building blocks | [MED] client 支援 workflow/AI Tools/extractors | 需真 API 呼叫產生 usage stats |
+| 從 app 用 REST 驅動 Evolus | [MED] 有 EvolusClient | 離線 stub → 接真 key |
+| Cover image 1280×720 | [HIGH] 未做 | 用 matplotlib 生成 |
+| Demo video 3–5 min | [HIGH] 未錄 | 接線後錄 |
+| Slide presentation | [MED] PITCH.md 骨架 | 轉 .pptx（office-pptx） |
+| Application URL（demo 平台） | [HIGH] 未部署 | 在 AMD droplet 跑 FastAPI 公開 IP |
+| 可量化增益數字 | [PASS] robustness 報告 | 搬進 pitch/video |
 
 ---
 
-## 5. ⚠️ 重要修正：Fireworks 不合規 Evolus 賽道
+## 5. [WARN] 重要修正：Fireworks 不合規 Evolus 賽道
 
 計畫早期把 Fireworks 當 vLLM 備案。但 Evolus 賽道原文要求：
 > *"the main agent must use an open model served on AMD infrastructure through **your own vLLM endpoint on AMD Developer Cloud**."*
