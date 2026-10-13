@@ -1,9 +1,10 @@
-"""TradeFlow CLI — 一個指令跑端到端 demo / 穩健性 / 視覺化 / 對抗式自博弈競技場。
+"""TradeFlow CLI — 一個指令跑端到端 demo / 穩健性 / 視覺化 / 對抗式自博弈競技場 / 多供應商逆向拍賣。
 
 python -m src.cli              # 端到端 demo（含信念更新）
 python -m src.cli --robustness # 穩健性報告 (regret + prior 敏感度)
 python -m src.cli --figures    # 產出 results/posterior.png + belief_update.png
 python -m src.cli --self-play  # 5 大非 LLM 對抗式自博弈錦標賽評測
+python -m src.cli --multi      # 4 家供應商並行逆向拍賣協同模擬 (96M Rollout Tensor)
 """
 from __future__ import annotations
 import sys, time, argparse, os
@@ -11,6 +12,7 @@ from pathlib import Path
 import numpy as np
 from .engine import solve, recommend, bayes_update, model, robustness, viz, benchmark
 from .benchmark import AdversarialArena
+from .engine.multi_solver import simulate_reverse_auction
 from .app.demo_data import DEMO_SPEC, SUPPLIER_REPLIES
 
 
@@ -98,16 +100,79 @@ def run_self_play(matches=20, out_dir="results"):
     print(f"\n[Saved benchmark report] -> {out_path}")
 
 
+def run_multi_supplier_demo(out_dir="results"):
+    print("=== TradeFlow Multi-Supplier Reverse Auction Coordination Demo ===")
+    print("Scenario: Custom Carbon Auto Umbrella (10,000 units)")
+    print("Target Price: ¥12.00 | Walk-away Ceiling: ¥16.20\n")
+
+    t0 = time.perf_counter()
+    res = simulate_reverse_auction(target_price=12.0, walk_away_ceiling=16.2, moq=10000, n_samples=20000)
+    total_elapsed = time.perf_counter() - t0
+
+    suppliers = [
+        "Supplier A (浙江頂尖)",
+        "Supplier B (深圳宏達)",
+        "Supplier C (義烏博創)",
+        "Supplier D (東莞榮耀)",
+    ]
+
+    for round_info in res["trace"]:
+        r = round_info["round"]
+        print(f"--- Round {r} (Evaluated {round_info['rollouts']:,} Rollouts in {round_info['elapsed_seconds']:.2f}s) ---")
+        for i, supp in enumerate(suppliers):
+            q = round_info["quotes"][i]
+            tactic = round_info["tactics"][i]
+            eff_c = round_info["effective_ceilings_cny"][i]
+            p_brk = round_info["p_break_array"][i]
+            counter = round_info["counter_offers_cny"][i]
+            print(f"  {supp:<22} | Quote: ¥{q:.2f} | Tactic: [{tactic:<12}] | BATNA Ceiling: ¥{eff_c:.2f} | Counter: ¥{counter:.2f} (Risk {p_brk:.1%})")
+        print(f"  --> Lead: {round_info['lead_supplier']} at ¥{round_info['best_quote']:.2f}\n")
+
+    print("=== Reverse Auction Settlement Summary ===")
+    print(f"  Winning Vendor     : {res['winning_supplier']}")
+    print(f"  Settled Unit Price : ¥{res['winning_price']:.2f} (Target ¥{res['product_target']:.2f}, Ceiling ¥{res['walk_away_ceiling']:.2f})")
+    print(f"  Procurement Savings: {res['total_savings_pct']:.1%} (¥{res['walk_away_ceiling'] - res['winning_price']:.2f}/unit)")
+    print(f"  Total Cash Saved   : ¥{res['total_savings_cny']:,.2f} for MOQ {res['moq']:,} units")
+    print(f"  Cumulative Rollouts: {res['total_rollouts_accum']:,} paths in {res['total_compute_seconds']:.2f}s tensor time")
+    print(f"  Total Process Time : {total_elapsed:.2f}s\n")
+
+    # 產出 Markdown 報表
+    md_content = f"""# TradeFlow Multi-Supplier Reverse Auction Coordination Benchmark
+
+- Product: Custom Carbon Auto Umbrella (MOQ: 10,000 units)
+- Target Price: ¥{res['product_target']:.2f}
+- Walk-away Ceiling: ¥{res['walk_away_ceiling']:.2f}
+- Winning Supplier: {res['winning_supplier']}
+- Settled Price: ¥{res['winning_price']:.2f}
+- Procurement Savings: {res['total_savings_pct']:.1%} (¥{res['total_savings_cny']:,.2f} total)
+- Total Monte Carlo Rollouts: {res['total_rollouts_accum']:,}
+
+| Round | Supplier | Quote (¥) | Tactic Classification | Dynamic BATNA Ceiling (¥) | Risk (%) | Counter-Offer (¥) |
+|---|---|---|---|---|---|---|
+"""
+    for r_info in res["trace"]:
+        for i, supp in enumerate(suppliers):
+            md_content += f"| Round {r_info['round']} | {supp} | ¥{r_info['quotes'][i]:.2f} | {r_info['tactics'][i]} | ¥{r_info['effective_ceilings_cny'][i]:.2f} | {r_info['p_break_array'][i]:.1%} | ¥{r_info['counter_offers_cny'][i]:.2f} |\n"
+
+    out_path = Path(out_dir) / "multi_supplier_auction.md"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(md_content, encoding="utf-8")
+    print(f"[Saved auction report] -> {out_path}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--robustness", action="store_true")
     ap.add_argument("--figures", action="store_true")
     ap.add_argument("--self-play", action="store_true", help="Run 5-adversary tournament benchmark")
+    ap.add_argument("--multi", action="store_true", help="Run 4-supplier reverse auction coordination simulation")
     ap.add_argument("--matches", type=int, default=20, help="Matches per adversary for self-play")
     ap.add_argument("--n", type=int, default=20000)
     args = ap.parse_args()
 
-    if args.self_play:
+    if args.multi:
+        run_multi_supplier_demo()
+    elif args.self_play:
         run_self_play(matches=args.matches)
     elif args.robustness:
         run_robustness(args.n)

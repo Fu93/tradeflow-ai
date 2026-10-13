@@ -130,7 +130,7 @@ class MultiSupplierSolver:
             off = supplier_offers[i]
             if abs(off - min_offer) < 1e-4:
                 tactics.append("LEAN_IN")
-            elif off > 1.20 * min_offer:
+            elif off > 1.12 * min_offer or off >= self.walk_away_ceiling:
                 tactics.append("SIDELINE")
             else:
                 tactics.append("CROSS_ANCHOR")
@@ -268,3 +268,101 @@ class MultiSupplierSolver:
             "effective_ceilings": [float(x) for x in effective_ceilings],
             "circuit_tripped": any(p >= 0.15 for p in p_break_array),
         }
+
+
+def simulate_reverse_auction(
+    target_price: float = 12.0,
+    walk_away_ceiling: float = 16.2,
+    moq: int = 10000,
+    n_samples: int = 20000,
+    use_gpu: bool = False,
+) -> Dict[str, Any]:
+    """
+    執行端到端 4 供應商逆向拍賣多輪協同模擬。
+    展示動態 BATNA_{-i} 交叉壓制、3 級戰術分流與張量求解全流程。
+    """
+    suppliers = [
+        {"name": "Supplier A (浙江頂尖雨具製造)", "profile": "Agile Conceder"},
+        {"name": "Supplier B (深圳宏達實業)", "profile": "Rational Tit-for-Tat"},
+        {"name": "Supplier C (義烏博創商貿)", "profile": "Moderate Hardliner"},
+        {"name": "Supplier D (東莞榮耀五金)", "profile": "Stubborn Over-priced"},
+    ]
+    k = len(suppliers)
+
+    # 3 輪多廠商報價演變數據 (金額 ¥)
+    rounds_quotes = [
+        [15.20, 15.60, 16.00, 17.20],  # Round 1
+        [14.00, 14.40, 15.20, 16.80],  # Round 2
+        [12.80, 13.60, 14.80, 16.80],  # Round 3
+    ]
+
+    solver = MultiSupplierSolver(
+        n_opp_samples=n_samples,
+        n_open=20,
+        n_sched=6,
+        use_gpu=use_gpu,
+        walk_away_ceiling=walk_away_ceiling / target_price,
+    )
+
+    prior_means = np.full(k, 1.08, dtype=np.float32)
+    prior_stds = np.full(k, 0.10, dtype=np.float32)
+
+    total_rollouts_accum = 0
+    total_compute_seconds = 0.0
+    trace = []
+
+    for r_idx, quotes in enumerate(rounds_quotes, start=1):
+        offers_norm = np.array([q / target_price for q in quotes], dtype=np.float32)
+        best_lead_norm = float(np.min(offers_norm))
+
+        # 1. 交叉錨定貝氏更新
+        if r_idx > 1:
+            prior_means, prior_stds = solver.apply_cross_anchoring_update(
+                prior_means, prior_stds, offers_norm, best_lead_price=best_lead_norm
+            )
+
+        # 2. 96M/張量並行求解
+        res = solver.solve_reverse_auction_tensor(
+            supplier_offers=offers_norm,
+            prior_means=prior_means,
+            prior_stds=prior_stds,
+        )
+
+        total_rollouts_accum += res["total_rollouts"]
+        total_compute_seconds += res["elapsed_seconds"]
+
+        # 3. 記錄輪次軌跡
+        round_info = {
+            "round": r_idx,
+            "quotes": quotes,
+            "best_quote": min(quotes),
+            "lead_supplier": suppliers[int(np.argmin(quotes))]["name"],
+            "tactics": res["tactics"],
+            "effective_ceilings_cny": [c * target_price for c in res["effective_ceilings"]],
+            "p_break_array": res["p_break_array"],
+            "counter_offers_cny": [o * target_price for o in res["best_offers"]],
+            "rollouts": res["total_rollouts"],
+            "elapsed_seconds": res["elapsed_seconds"],
+        }
+        trace.append(round_info)
+
+    # 4. 結算
+    final_quote = min(rounds_quotes[-1])
+    winning_idx = int(np.argmin(rounds_quotes[-1]))
+    winning_supplier = suppliers[winning_idx]["name"]
+    total_savings_pct = (walk_away_ceiling - final_quote) / walk_away_ceiling
+    total_savings_cny = (walk_away_ceiling - final_quote) * moq
+
+    return {
+        "success": True,
+        "product_target": target_price,
+        "walk_away_ceiling": walk_away_ceiling,
+        "moq": moq,
+        "winning_supplier": winning_supplier,
+        "winning_price": final_quote,
+        "total_savings_pct": total_savings_pct,
+        "total_savings_cny": total_savings_cny,
+        "total_rollouts_accum": total_rollouts_accum,
+        "total_compute_seconds": round(total_compute_seconds, 4),
+        "trace": trace,
+    }
