@@ -19,9 +19,29 @@
     active: true,
     sessionId: "live-session-001",
     circuitTripped: false,
+    captchaPaused: false,
     processedMessages: new Set(),
     debounceTimer: null,
   };
+
+  // Anti-Bot Risk & Captcha Selectors (1688 / Alibaba / Generic Cloudflare)
+  const CAPTCHA_SELECTORS = [
+    "#nc_1_n1z", ".nc_iconfont", ".nc-lang-cnt",          // 阿里 No-Captcha 滑塊
+    "#baxia-dialog-content", ".baxia-dialog",             // 阿里霸下安全風控彈窗
+    ".sm-pop", ".sec-modal",                              // 阿里次世代滑塊
+    "#challenge-running", ".cf-turnstile-wrapper",        // Cloudflare / Turnstile
+    "iframe[src*='recaptcha']", "iframe[src*='hcaptcha']" // 通用驗證碼
+  ];
+
+  function detectCaptchaChallenge() {
+    for (const sel of CAPTCHA_SELECTORS) {
+      const el = document.querySelector(sel);
+      if (el && el.offsetParent !== null) { // 元素可見
+        return true;
+      }
+    }
+    return false;
+  }
 
   // 1. In-Page Floating HUD Overlay
   function injectHUD() {
@@ -306,9 +326,35 @@
     );
   }
 
-  // 6. Streaming DOM MutationObserver with Debounce
+  // 6. Streaming DOM MutationObserver with Debounce & Risk Sentinel
   function initObserver() {
     const observer = new MutationObserver((mutations) => {
+      // 6.1 風控滑塊哨兵：一旦阿里彈出風控驗證碼，瞬間自鎖凍結並切換為安全副駕駛模式
+      if (detectCaptchaChallenge()) {
+        if (!state.captchaPaused) {
+          state.captchaPaused = true;
+          state.circuitTripped = true;
+          updateHUD(
+            "CAPTCHA DETECTED [PAUSED]",
+            "#f59e0b",
+            "Platform anti-bot challenge active! Autopilot paused. Please slide manually."
+          );
+          chrome.runtime.sendMessage({
+            type: "TELEMETRY_ALERT",
+            payload: {
+              sessionId: state.sessionId,
+              message: "1688 Captcha slide challenge detected on screen! Autopilot safely halted. Human slide required.",
+            }
+          });
+        }
+        return;
+      } else if (state.captchaPaused) {
+        // 使用者手動滑過後，自動解除凍結恢復自駕
+        state.captchaPaused = false;
+        state.circuitTripped = false;
+        updateHUD("AUTOPILOT CRUISING", "#10b981", "Captcha solved! Autonomous navigation resumed.");
+      }
+
       clearTimeout(state.debounceTimer);
       state.debounceTimer = setTimeout(() => {
         // Search through all potential chat bubble selectors
@@ -331,7 +377,7 @@
     });
 
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-    console.log("[TradeFlow Autopilot] MutationObserver active with 400ms debounce.");
+    console.log("[TradeFlow Autopilot] MutationObserver active with 400ms debounce & Captcha Sentinel.");
   }
 
   // Initialize
