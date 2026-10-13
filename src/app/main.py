@@ -148,14 +148,22 @@ async def receive_mobile_command(request: Request):
 # ---- v4 會話管理 REST APIs ----
 
 class RoundActionRequest(BaseModel):
-    opponent_raw_text: str
+    opponent_raw_text: Optional[str] = None
+    supplier_text: Optional[str] = None
     opponent_offer_price: Optional[float] = None
+    supplier_offer: Optional[float] = None
     round_index: Optional[int] = None
     offered_lead_days: Optional[int] = None
     offered_moq: Optional[int] = None
     deposit_pct: Optional[float] = None
     unbundled_tax_rate: Optional[float] = None
     unbundled_packaging_fee: Optional[float] = None
+
+    def get_effective_raw_text(self) -> str:
+        return self.opponent_raw_text or self.supplier_text or ""
+
+    def get_effective_offer_price(self) -> Optional[float]:
+        return self.opponent_offer_price if self.opponent_offer_price is not None else self.supplier_offer
 
 
 @app.post("/api/v1/sessions", response_model=NegotiationSession)
@@ -199,7 +207,8 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     current_round = action.round_index or (sess.current_round + 1)
     target_price = sess.spec.target_price
     ceiling_price = sess.spec.ceiling_price
-    opp_price = action.opponent_offer_price
+    opp_price = action.get_effective_offer_price()
+    raw_text = action.get_effective_raw_text()
 
     # 1. 供應商套路意圖分類與潛台詞反編譯
     from ..engine.bilingual import (
@@ -208,7 +217,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         NumericGuardrailValidator,
         GuardrailViolationError,
     )
-    inbound_classification = InboundIntentClassifier.classify(action.opponent_raw_text or "")
+    inbound_classification = InboundIntentClassifier.classify(raw_text)
     if opp_price is None and inbound_classification.mentioned_price is not None:
         opp_price = inbound_classification.mentioned_price
 
@@ -366,7 +375,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         "circuit_tripped": False,
         "turn": turn_our,
         "inbound_intent": inbound_classification.primary_intent.value,
-        "tco_breakdown": tco_breakdown.dict() if tco_breakdown else None,
+        "tco_breakdown": tco_breakdown.model_dump() if tco_breakdown else None,
         "effective_opp_price": effective_opp_price,
         "telemetry_summary_en": telemetry_eng,
         "recommendation": rec,

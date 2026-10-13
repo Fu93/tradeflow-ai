@@ -54,8 +54,7 @@ async def _session_event_generator(request: Request):
 
         sessions = []
         try:
-            for sid in mgr.list_sessions():
-                s = mgr.get_session(sid)
+            for s in mgr.list_sessions():
                 if s:
                     sessions.append({
                         "session_id": s.spec.session_id,
@@ -63,9 +62,9 @@ async def _session_event_generator(request: Request):
                         "product": s.spec.product_name,
                         "target": s.spec.target_price,
                         "ceiling": s.spec.ceiling_price,
-                        "rounds": len(s.turns),
-                        "last_p_break": s.turns[-1].p_break if s.turns else None,
-                        "last_posterior": s.turns[-1].posterior_mean if s.turns else None,
+                        "rounds": len(s.history),
+                        "last_p_break": s.history[-1].p_break if s.history else None,
+                        "last_posterior": s.history[-1].posterior_mean if s.history else None,
                     })
         except Exception:
             pass

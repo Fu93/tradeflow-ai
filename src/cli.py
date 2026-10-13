@@ -160,8 +160,66 @@ def run_multi_supplier_demo(out_dir="results"):
     print(f"[Saved auction report] -> {out_path}")
 
 
+def run_sandbox_demo(host: str = "127.0.0.1", port: int = 8000):
+    """一鍵啟動評審互動沙盒 (Zero-friction Sandbox for Hackathon Judges)。
+    1. 初始化種子會話 (Session: DEMO_SANDBOX_01)
+    2. 自動啟動 FastAPI Uvicorn 伺服器
+    3. 自動在瀏覽器開啟 Web 戰情大屏
+    """
+    import webbrowser
+    import uvicorn
+    from .session.manager import SessionManager
+    from .session.schema import SessionSpec, AutopilotState, NegotiationTurn
+
+    print("=== TradeFlow Interactive Evaluation Sandbox ===")
+    print(f"Target URL: http://{host}:{port}/")
+
+    # 1. 建立種子演示會話
+    mgr = SessionManager()
+    seed_spec = SessionSpec(
+        session_id="DEMO_SANDBOX_01",
+        product_name="Custom Carbon Auto Umbrella",
+        target_price=12.0,
+        ceiling_price=16.2,
+        moq=5000,
+        max_rounds=5,
+        supplier_id="Hangzhou_Textile_Co",
+        supplier_channel="web_chat",
+    )
+    sess = mgr.create_session(seed_spec)
+    # 預填初始供應商開局報價
+    sess = mgr.transition_state("DEMO_SANDBOX_01", AutopilotState.AUTOPILOT_CRUISING)
+    t1 = NegotiationTurn(
+        round_index=1,
+        sender="opponent",
+        raw_text="老闆，這款自動傘我們外貿品質含防風骨架，首批報價 ¥15.80，交期 25 天。",
+        parsed_price=15.80,
+        p_break=0.04,
+        posterior_mean=1.12,
+        posterior_std=0.08,
+    )
+    mgr.append_turn("DEMO_SANDBOX_01", t1)
+    print("[Seed Session Created] ID: DEMO_SANDBOX_01 (Cruising state, Initial offer: ¥15.80)")
+
+    # 2. 背景或延遲啟動瀏覽器
+    def open_browser():
+        time.sleep(1.2)
+        url = f"http://{host}:{port}/"
+        print(f"[Browser Launch] Opening {url} ...")
+        webbrowser.open(url)
+
+    import threading
+    t = threading.Thread(target=open_browser, daemon=True)
+    t.start()
+
+    # 3. 運行伺服器
+    print(f"[Server Starting] Uvicorn running on {host}:{port}. Press Ctrl+C to terminate.")
+    uvicorn.run("src.app.main:app", host=host, port=port, log_level="info")
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--demo", action="store_true", help="Launch interactive Web Sandbox & auto-open browser")
     ap.add_argument("--robustness", action="store_true")
     ap.add_argument("--figures", action="store_true")
     ap.add_argument("--self-play", action="store_true", help="Run 5-adversary tournament benchmark")
@@ -170,7 +228,9 @@ def main():
     ap.add_argument("--n", type=int, default=20000)
     args = ap.parse_args()
 
-    if args.multi:
+    if args.demo:
+        run_sandbox_demo()
+    elif args.multi:
         run_multi_supplier_demo()
     elif args.self_play:
         run_self_play(matches=args.matches)

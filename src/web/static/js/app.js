@@ -185,8 +185,9 @@ async function fetchSessionDetails(sid) {
     const res = await fetch(`/api/v1/sessions/${sid}`);
     if (!res.ok) return;
     const data = await res.json();
-    if (data.session && data.session.turns) {
-      updateBeliefChartWithTurns(data.session);
+    const sessObj = data.session || data;
+    if (sessObj && (sessObj.history || sessObj.turns)) {
+      updateBeliefChartWithTurns(sessObj);
     }
   } catch (err) {
     console.error("fetchSessionDetails error:", err);
@@ -200,7 +201,8 @@ function updateBeliefChartWithTurns(session) {
   const postData = [1.08 * target];
   const riskData = [5.0];
 
-  session.turns.forEach((t, idx) => {
+  const turns = session.history || session.turns || [];
+  turns.forEach((t, idx) => {
     labels.push(`R${t.round_index}`);
     postData.push(t.posterior_mean ? t.posterior_mean * target : target);
     riskData.push(t.p_break ? t.p_break * 100 : 0);
@@ -215,7 +217,10 @@ function updateBeliefChartWithTurns(session) {
 function refreshSessions() {
   fetch("/api/v1/sessions")
     .then(r => r.json())
-    .then(data => renderSessions(data.sessions || []))
+    .then(data => {
+      const list = Array.isArray(data) ? data : (data.sessions || []);
+      renderSessions(list);
+    })
     .catch(err => console.error("refreshSessions error:", err));
 }
 
