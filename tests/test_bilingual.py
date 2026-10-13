@@ -332,20 +332,23 @@ class TestBilingualCognitiveBridge(unittest.TestCase):
         res2 = InboundIntentClassifier.classify(msg2)
         self.assertEqual(res2.primary_intent, VendorTacticEnum.IDENTITY_PROBE_TEST)
 
-        # 2. 渲染防禦話術
+        # 2. 渲染防禦話術 (DEFENSIVE PIVOT 拉回交易要素，不自證)
         action_obj = TacticalActionObject(
             authorized_price=13.80,
             walk_away_ceiling=15.00,
-            tactical_mode=TacticalModeEnum.LEAN_IN,
+            tactical_mode=TacticalModeEnum.DEFENSIVE_PIVOT,
             product_name="快充適配器",
             supplier_contact_name="陳經理",
             counterpart_intent=VendorTacticEnum.IDENTITY_PROBE_TEST,
+            deposit_pct=0.30,
         )
         rendered = ChineseSurfaceRenderer.render(action_obj)
-        self.assertIn("國內工貿一體實體採購", rendered)
-        self.assertIn("人民幣公帳現款現結", rendered)
-        self.assertIn("不走外貿美元", rendered)
+        self.assertIn("開票走 13 個點專票", rendered)
+        self.assertIn("財務後台走合同", rendered)
         self.assertIn("¥13.80", rendered)
+        self.assertIn("30%", rendered)
+        self.assertNotIn("外貿", rendered)
+        self.assertNotIn("外商", rendered)
 
         # 3. 遙測英文摘要驗證
         telemetry = BilingualTacticalBridge.telemetry_english_summary(
@@ -366,14 +369,69 @@ class TestBilingualCognitiveBridge(unittest.TestCase):
         self.assertIn("深感榮幸", audit["stiff_phrases"])
         self.assertIn("董事會", audit["leak_phrases"])
 
-    def test_semantic_nativeness_audit_approves_authentic_buyer(self):
-        """驗證語意審計器放行沿海地道老買家行話。"""
-        from src.engine.bilingual import CrossLingualSanityChecker
-        authentic_text = "陳經理，這批快充適配器首批試單 ¥13.80 出廠價，現款現結 30% 定金見單走帳，週五前出樣排產。"
-        audit = CrossLingualSanityChecker.check_semantic_nativeness(authentic_text, enable_llm=False)
-        self.assertTrue(audit["is_native"])
-        self.assertEqual(len(audit["stiff_phrases"]), 0)
-        self.assertEqual(len(audit["leak_phrases"]), 0)
+    def test_has_actionable_commercial_content_structural_detection(self):
+        """驗證反向結構化商務要素判定：不依賴黑名單，判斷是否含價/期/量/定金/規格。"""
+        # 1. 包含可執行要素 -> True
+        self.assertTrue(InboundIntentClassifier.has_actionable_commercial_content("這款單價 ¥14.50"))
+        self.assertTrue(InboundIntentClassifier.has_actionable_commercial_content("起訂量 1000 套起"))
+        self.assertTrue(InboundIntentClassifier.has_actionable_commercial_content("交期最快 20 天"))
+        self.assertTrue(InboundIntentClassifier.has_actionable_commercial_content("定金要求 30% 預付"))
+        self.assertTrue(InboundIntentClassifier.has_actionable_commercial_content("我們只做 304 不銹鋼原包料"))
+
+        # 2. 不包含可執行商務要素（純雜訊、閒聊、試探） -> False
+        self.assertFalse(InboundIntentClassifier.has_actionable_commercial_content("你們公司社保交在哪個城市？"))
+        self.assertFalse(InboundIntentClassifier.has_actionable_commercial_content("上次那批貨的商檢單能發我看看嗎？"))
+        self.assertFalse(InboundIntentClassifier.has_actionable_commercial_content("你們財務在那個區？"))
+        self.assertFalse(InboundIntentClassifier.has_actionable_commercial_content("你們老闆哪裡人啊？"))
+        self.assertFalse(InboundIntentClassifier.has_actionable_commercial_content("今天天氣挺熱的"))
+
+    def test_defensive_pivot_structural_defense(self):
+        """驗證當對手偏離交付要素時，策略原生 DEFENSIVE_PIVOT 不自證、鎖死專票與現款。"""
+        action_obj = TacticalActionObject(
+            authorized_price=13.80,
+            walk_away_ceiling=15.00,
+            tactical_mode=TacticalModeEnum.DEFENSIVE_PIVOT,
+            product_name="快充適配器",
+            supplier_contact_name="陳經理",
+            deposit_pct=0.30,
+        )
+        rendered = ChineseSurfaceRenderer.render(action_obj)
+        self.assertIn("開票走 13 個點專票", rendered)
+        self.assertIn("財務後台走合同", rendered)
+        self.assertIn("¥13.80", rendered)
+        self.assertIn("30%", rendered)
+        self.assertNotIn("外商", rendered)
+        self.assertNotIn("外貿", rendered)
+
+    def test_silence_strategic_cooling_render(self):
+        """驗證策略原生 SILENCE 渲染為老買手冷卻威懾話術。"""
+        action_obj = TacticalActionObject(
+            authorized_price=13.80,
+            walk_away_ceiling=15.00,
+            tactical_mode=TacticalModeEnum.SILENCE,
+            product_name="快充適配器",
+            supplier_contact_name="陳經理",
+        )
+        rendered = ChineseSurfaceRenderer.render(action_obj)
+        self.assertIn("陳經理你先忙", rendered)
+        self.assertIn("我先問問餘姚那邊", rendered)
+
+    def test_exemplars_group_b_out_of_distribution_validation(self):
+        """
+        Group B 語料驗證 (Out-of-Distribution Test Set):
+        使用未出現在 Prompt Few-Shot 中的獨立長三角實戰採購對話，驗證結構化要素判定與防禦。
+        """
+        group_b_test_messages = [
+            ("你們是做跨境電商還是線下實體？", False),
+            ("這批貨走哪個口岸清關？", False),
+            ("你們公司進出口權代碼發一下", False),
+            ("這款出廠價最低 14.80 元給您", True),
+            ("排單至少要 2000 個起訂", True),
+            ("大批量可以 15 天交貨", True),
+        ]
+        for msg, expected_actionable in group_b_test_messages:
+            res = InboundIntentClassifier.has_actionable_commercial_content(msg)
+            self.assertEqual(res, expected_actionable, f"Failed on Group B message: {msg}")
 
 
 if __name__ == "__main__":

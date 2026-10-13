@@ -67,5 +67,6 @@ class NegotiationSession(BaseModel):
     latest_opponent_offer: Optional[float] = None
     latest_our_offer: Optional[float] = None
     trip_reason: Optional[str] = None
+    silence_until_ts: Optional[float] = Field(default=None, description="該供應商獨立戰略沉默截止時間戳 (Epoch Seconds)")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -43,7 +43,9 @@ class TacticalModeEnum(str, Enum):
     LEAN_IN = "LEAN_IN"                  # 常規出廠價進攻 (高誠意、定金誘餌、封樣排產)
     CROSS_ANCHOR = "CROSS_ANCHOR"        # 備選大廠比價錨定 (威懾轉向備選庫)
     SIDELINE = "SIDELINE"                # 靠邊觀望/產能冷卻 (預算卡死、不佔檔期)
+    SILENCE = "SILENCE"                  # 戰略沉默與冷卻威懾 (掛起非同步會話)
     LOGROLL = "LOGROLL"                  # 企業授權多維條款置換 (定金換交期/模具費減免)
+    DEFENSIVE_PIVOT = "DEFENSIVE_PIVOT"  # 交易邊界拉回 (偏離交付要素時不自證、鎖死現款合同)
     FIRM_HOLD = "FIRM_HOLD"              # 鎖死底線價 (寸步不讓)
     WALK_AWAY = "WALK_AWAY"              # 終止談判/啟動離場
 
@@ -121,6 +123,30 @@ class InboundIntentClassifier:
         re.IGNORECASE,
     )
     MOQ_PATTERN = re.compile(r"(\d{3,7})\s*(?:個|把|件|套|pcs)", re.IGNORECASE)
+    LEAD_DAYS_PATTERN = re.compile(r"(\d{1,3})\s*(?:天|工作日|days?)", re.IGNORECASE)
+    DEPOSIT_PATTERN = re.compile(r"(\d{1,2}(?:\.\d+)?)\s*%\s*(?:定金|訂金|預付)", re.IGNORECASE)
+    QUALITY_SPEC_PATTERN = re.compile(r"(原包|全新料|回料|水口料|304|316|201|AQL|TDS|公差|檢驗|質檢|驗貨|開模)", re.IGNORECASE)
+
+    @classmethod
+    def has_actionable_commercial_content(cls, raw_text: str) -> bool:
+        """
+        結構化商務要素反向判定 (Structural Actionable Content Check):
+        檢驗對手訊息是否包含任何可執行的商務交易要素（價、期、量、定金、材質/驗收規範）。
+        若完全不包含可執行商務要素（純閒聊、身分刺探、無依據推託），系統判定為偏離核心要素。
+        """
+        if not raw_text or not raw_text.strip():
+            return False
+        if cls.PRICE_PATTERN.search(raw_text):
+            return True
+        if cls.MOQ_PATTERN.search(raw_text):
+            return True
+        if cls.LEAD_DAYS_PATTERN.search(raw_text):
+            return True
+        if cls.DEPOSIT_PATTERN.search(raw_text):
+            return True
+        if cls.QUALITY_SPEC_PATTERN.search(raw_text):
+            return True
+        return False
 
     @classmethod
     def classify_with_llm(cls, raw_text: str) -> Optional[InboundTacticalClassification]:
@@ -484,9 +510,20 @@ class ChineseSurfaceRenderer:
     中文地道沿海買家表面渲染器 (Chinese Coastal Sourcing Surface Renderer)。
     職責：
     1. 將語言中立之 TacticalActionObject 渲染為符合中國沿海老買家專業商務行話。
-    2. 動態插值品類名稱與聯絡人稱呼，嚴禁硬編碼。
-    3. 嚴格杜絕「歐美專案」、「外商」、「美元」、「董事會」等外商溢價洩漏詞彙。
+    2. 內置真實採購對話 Exemplars (Group A Few-Shot)，徹底消除西方哈佛談判腔與套話。
+    3. 動態插值品類名稱與聯絡人稱呼，嚴禁硬編碼。
+    4. 實作 DEFENSIVE_PIVOT：當對手偏離交付核心時，不自證、不展開，直接拉回專票與現款合同排單。
+    5. 實作 SILENCE：戰略冷卻掛起話術（行，那你先忙，我再看看別家）。
     """
+
+    # Group A: 注入 Prompt / 渲染器的真實長三角採購對白示例 (Prompt Exemplars)
+    FEW_SHOT_EXEMPLARS_GROUP_A = [
+        {"scenario": "報價虛高", "real_buyer": "太貴了，最低多少出廠價。"},
+        {"scenario": "原料暴漲藉口", "real_buyer": "行，那你先忙，我先看看餘姚那邊，回頭再聯絡。"},
+        {"scenario": "量太小試單", "real_buyer": "首批試單看品控，跑順了下半年翻單一萬起，別因小失大。"},
+        {"scenario": "非商務背景打探", "real_buyer": "問那麼多幹嘛？開13個點專票，財務對接。你就說¥{price}能不能做，能做今天現款打定金。"},
+        {"scenario": "催促下單", "real_buyer": "價格敲定今天就蓋章走合同，合適的話現在把PI發過來。"},
+    ]
 
     @classmethod
     def _check_schema_version(cls, obj: TacticalActionObject) -> None:
@@ -501,13 +538,19 @@ class ChineseSurfaceRenderer:
         product = obj.product_name or "產品"
         deposit_pct_str = f"{int(round(obj.deposit_pct * 100))}%"
 
-        # 優先針對對手特殊套路進行反制打擊
-        if obj.counterpart_intent == VendorTacticEnum.IDENTITY_PROBE_TEST:
+        # 1. 策略原生原語：交易邊界拉回 (Defensive Pivot)
+        if obj.tactical_mode == TacticalModeEnum.DEFENSIVE_PIVOT or obj.counterpart_intent == VendorTacticEnum.IDENTITY_PROBE_TEST:
             return (
-                f"{contact}，我們是國內工貿一體實體採購，直接走人民幣公帳現款現結，不走外貿美元。"
-                f"這批{product}首批試單 ¥{p_val:.2f} 出廠價，合格直接從廠裡調貨拉走，合適的話現在把合同簽了排單。"
+                f"{contact}，開票走 13 個點專票，具體條款財務後台走合同。"
+                f"你先確認這批{product} ¥{p_val:.2f} 出廠價能不能接，能做今天預付 {deposit_pct_str} 定金秒排，"
+                f"合適的話現在把合同簽了排單；不能做我們手頭備案產能就放出去了。"
             )
 
+        # 2. 策略原生原語：戰略沉默與冷卻威懾 (Silence / Cooling Off)
+        if obj.tactical_mode == TacticalModeEnum.SILENCE:
+            return f"行，那{contact}你先忙，這批{product}我先問問餘姚那邊，回頭再聯絡。"
+
+        # 優先針對對手特殊套路進行反制打擊
         if obj.counterpart_intent == VendorTacticEnum.OFFLINE_BYPASS_DIVERT:
             return (
                 f"{contact}，公司財務合規審計明確要求走系統留痕，私下微信恕不方便。"
