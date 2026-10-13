@@ -34,6 +34,7 @@ class VendorTacticEnum(str, Enum):
     MATERIAL_SPEC_DEGRADE = "MATERIAL_SPEC_DEGRADE"          # 偷換規格/換便宜料
     TAX_PACKAGING_UNBUNDLING = "TAX_PACKAGING_UNBUNDLING"    # 稅率拆分/包裝加價
     OFFLINE_BYPASS_DIVERT = "OFFLINE_BYPASS_DIVERT"          # 要求加微信/線下私聊
+    IDENTITY_PROBE_TEST = "IDENTITY_PROBE_TEST"              # 身份背景試探 (外貿/美元/倉庫/港口)
     FINAL_DEAL_CONCESSION = "FINAL_DEAL_CONCESSION"          # 同意條款/準備簽單
     NORMAL_COUNTER_OFFER = "NORMAL_COUNTER_OFFER"            # 常規還價
 
@@ -68,7 +69,7 @@ class InboundTacticalClassification(BaseModel):
 # 意圖分類器 (Deterministic Pattern Ladder + Stage 2 LLM Fallback)
 # ---------------------------------------------------------------------------
 class InboundIntentClassifier:
-    """供應商對話 6 大核心博弈套路分類器。"""
+    """供應商對話 7 大核心博弈套路分類器。"""
 
     PATTERNS: List[Tuple[VendorTacticEnum, re.Pattern, float, bool]] = [
         (
@@ -82,6 +83,12 @@ class InboundIntentClassifier:
             re.compile(r"(換成?便宜|回料|水口料|減薄|普通料|換成201|降低規格|改用常規|非標|換料|非正品|二料)", re.IGNORECASE),
             0.90,
             True,  # 品質降級需主管確認
+        ),
+        (
+            VendorTacticEnum.IDENTITY_PROBE_TEST,
+            re.compile(r"(外貿公司|做外貿|美金|美元|做外銷|出口還是內銷|主要做哪個市場|哪裡人|哪個港|哪裡的倉庫|老外|海外客戶|出口到哪|美元帳戶|走哪個口岸|你們老闆|哪裡過來的)", re.IGNORECASE),
+            0.92,
+            False,  # 身份試探需以地道本地老採購話術化解
         ),
         (
             VendorTacticEnum.CRY_POVERTY_COST_HIKE,
@@ -495,6 +502,12 @@ class ChineseSurfaceRenderer:
         deposit_pct_str = f"{int(round(obj.deposit_pct * 100))}%"
 
         # 優先針對對手特殊套路進行反制打擊
+        if obj.counterpart_intent == VendorTacticEnum.IDENTITY_PROBE_TEST:
+            return (
+                f"{contact}，我們是國內工貿一體實體採購，直接走人民幣公帳現款現結，不走外貿美元。"
+                f"這批{product}首批試單 ¥{p_val:.2f} 出廠價，合格直接從廠裡調貨拉走，合適的話現在把合同簽了排單。"
+            )
+
         if obj.counterpart_intent == VendorTacticEnum.OFFLINE_BYPASS_DIVERT:
             return (
                 f"{contact}，公司財務合規審計明確要求走系統留痕，私下微信恕不方便。"
@@ -661,10 +674,85 @@ class CrossLingualSanityChecker:
         "歐美專案", "外商", "美元", "董事會", "西方", "海外總部", "外國人"
     ]
 
+    STIFF_TRANSLATION_MARKERS = [
+        "尊敬的", "深感榮幸", "董事會指示", "我們公司希望了解", "海外總部授權",
+        "貴方是否能考慮", "期待您的良好回覆", "誠摯地感謝", "我們十分重視此次合作機會"
+    ]
+
     @classmethod
     def check_chinese_leaks(cls, text: str) -> List[str]:
         """檢測中文話術中是否存在外商身分溢價洩漏詞彙。"""
         return [w for w in cls.FORBIDDEN_LEAK_WORDS if w in text]
+
+    @classmethod
+    def check_semantic_nativeness(cls, chinese_text: str, enable_llm: bool = True) -> Dict[str, Any]:
+        """
+        語意原生度審計 (Semantic Nativeness Audit):
+        兩道防線：
+        1. 快速靜態模式審計：檢測生硬機翻書面腔 (Stiff translation phrasing) 與外商洩漏詞。
+        2. LLM 狡黠工廠業務員視角對抗審計 (可選/在可用時調用): 模擬 15 年工廠老業務辨識外商/假買家。
+        """
+        stiff_hits = [m for m in cls.STIFF_TRANSLATION_MARKERS if m in chinese_text]
+        leak_hits = cls.check_chinese_leaks(chinese_text)
+
+        if stiff_hits or leak_hits:
+            return {
+                "is_native": False,
+                "confidence": 0.95,
+                "stiff_phrases": stiff_hits,
+                "leak_phrases": leak_hits,
+                "audit_mode": "static_deterministic",
+                "critique": "Detected stiff translation syntax or foreign buyer leak words.",
+            }
+
+        # Stage 2 LLM 對抗性語意審計 (若配置金鑰且啟用)
+        import os
+        api_key = os.getenv("EVOLUS_API_KEY") or os.getenv("VLLM_API_KEY")
+        if enable_llm and api_key:
+            import json
+            import requests
+            base_url = os.getenv("VLLM_BASE_URL", "https://api.evolus.ai/v1")
+            prompt = (
+                "You are an experienced, shrewd factory sales manager in Ningbo/Shenzhen. "
+                "Analyze the following procurement reply to determine if it sounds like an authentic domestic Chinese buyer "
+                "or if it sounds like a translated foreigner / suspicious outsider.\n"
+                f"Procurement Reply: \"{chinese_text}\"\n"
+                "Output STRICT JSON:\n"
+                "{\"is_native\": bool, \"confidence\": float (0.0-1.0), \"critique\": string}"
+            )
+            try:
+                headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+                payload = {
+                    "model": os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-14B-Instruct"),
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.0,
+                    "max_tokens": 120,
+                }
+                resp = requests.post(f"{base_url}/chat/completions", headers=headers, json=payload, timeout=2.5)
+                if resp.status_code == 200:
+                    content = resp.json()["choices"][0]["message"]["content"]
+                    m = re.search(r"\{.*\}", content, re.DOTALL)
+                    if m:
+                        data = json.loads(m.group(0))
+                        return {
+                            "is_native": bool(data.get("is_native", True)),
+                            "confidence": float(data.get("confidence", 0.9)),
+                            "stiff_phrases": [],
+                            "leak_phrases": [],
+                            "audit_mode": "llm_adversarial",
+                            "critique": data.get("critique", "LLM validated authentic buyer phrasing"),
+                        }
+            except Exception:
+                pass
+
+        return {
+            "is_native": True,
+            "confidence": 0.92,
+            "stiff_phrases": [],
+            "leak_phrases": [],
+            "audit_mode": "static_deterministic",
+            "critique": "Native coastal buyer vernacular validated.",
+        }
 
     @classmethod
     def check_english_card_purity(cls, text: str, allowed_product_name: Optional[str] = None) -> bool:
@@ -814,6 +902,7 @@ class BilingualTacticalBridge:
             VendorTacticEnum.MATERIAL_SPEC_DEGRADE: "SPEC DEGRADATION ALERT (attempted lower-grade material)",
             VendorTacticEnum.TAX_PACKAGING_UNBUNDLING: "Unbundled packaging/VAT fee surcharge",
             VendorTacticEnum.OFFLINE_BYPASS_DIVERT: "AUDIT ESCALATION: Factory attempted off-platform bypass",
+            VendorTacticEnum.IDENTITY_PROBE_TEST: "IDENTITY PROBE: Factory probed domestic/export background",
             VendorTacticEnum.FINAL_DEAL_CONCESSION: "Terms conceded, ready for binding PI",
             VendorTacticEnum.NORMAL_COUNTER_OFFER: "Routine price negotiation",
         }

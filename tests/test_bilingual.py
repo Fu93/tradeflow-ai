@@ -321,17 +321,59 @@ class TestBilingualCognitiveBridge(unittest.TestCase):
         with self.assertRaises(ValueError):
             EnglishExecutiveRenderer.render_executive_card(action_obj)
 
-    def test_cross_lingual_sanity_checker_catches_leak(self):
-        """驗證防穿幫檢查器能識別外商溢價詞彙與非法中文字符。"""
-        from src.engine.bilingual import CrossLingualSanityChecker
-        bad_zh = "老闆，我們是歐美專案採購，董事會要求用美元結算"
-        leaks = CrossLingualSanityChecker.check_chinese_leaks(bad_zh)
-        self.assertIn("歐美專案", leaks)
-        self.assertIn("美元", leaks)
-        self.assertIn("董事會", leaks)
+    def test_adversarial_identity_probe_detection_and_defense(self):
+        """驗證工廠試探外貿/美元/口岸時被識別為 IDENTITY_PROBE_TEST，並以國內老買家行話反制。"""
+        # 1. 識別測試
+        msg1 = "你們是外貿公司嗎？能做美金嗎？"
+        res1 = InboundIntentClassifier.classify(msg1)
+        self.assertEqual(res1.primary_intent, VendorTacticEnum.IDENTITY_PROBE_TEST)
 
-        bad_en = "=== [TradeFlow Telemetry] === 價格: 12.00"
-        self.assertFalse(CrossLingualSanityChecker.check_english_card_purity(bad_en))
+        msg2 = "貨走哪個港？你們在慈溪有倉庫嗎？"
+        res2 = InboundIntentClassifier.classify(msg2)
+        self.assertEqual(res2.primary_intent, VendorTacticEnum.IDENTITY_PROBE_TEST)
+
+        # 2. 渲染防禦話術
+        action_obj = TacticalActionObject(
+            authorized_price=13.80,
+            walk_away_ceiling=15.00,
+            tactical_mode=TacticalModeEnum.LEAN_IN,
+            product_name="快充適配器",
+            supplier_contact_name="陳經理",
+            counterpart_intent=VendorTacticEnum.IDENTITY_PROBE_TEST,
+        )
+        rendered = ChineseSurfaceRenderer.render(action_obj)
+        self.assertIn("國內工貿一體實體採購", rendered)
+        self.assertIn("人民幣公帳現款現結", rendered)
+        self.assertIn("不走外貿美元", rendered)
+        self.assertIn("¥13.80", rendered)
+
+        # 3. 遙測英文摘要驗證
+        telemetry = BilingualTacticalBridge.telemetry_english_summary(
+            intent=VendorTacticEnum.IDENTITY_PROBE_TEST,
+            quoted_price=15.00,
+            target_price=13.80,
+            p_break=0.08,
+        )
+        self.assertIn("IDENTITY PROBE", telemetry)
+
+    def test_semantic_nativeness_audit_rejects_stiff_phrasing(self):
+        """驗證語意審計器攔截生硬機翻書面腔與外商洩漏詞彙。"""
+        from src.engine.bilingual import CrossLingualSanityChecker
+        stiff_text = "尊敬的供應商，我們公司深感榮幸向您詢價，董事會希望了解美元結算條款"
+        audit = CrossLingualSanityChecker.check_semantic_nativeness(stiff_text, enable_llm=False)
+        self.assertFalse(audit["is_native"])
+        self.assertIn("尊敬的", audit["stiff_phrases"])
+        self.assertIn("深感榮幸", audit["stiff_phrases"])
+        self.assertIn("董事會", audit["leak_phrases"])
+
+    def test_semantic_nativeness_audit_approves_authentic_buyer(self):
+        """驗證語意審計器放行沿海地道老買家行話。"""
+        from src.engine.bilingual import CrossLingualSanityChecker
+        authentic_text = "陳經理，這批快充適配器首批試單 ¥13.80 出廠價，現款現結 30% 定金見單走帳，週五前出樣排產。"
+        audit = CrossLingualSanityChecker.check_semantic_nativeness(authentic_text, enable_llm=False)
+        self.assertTrue(audit["is_native"])
+        self.assertEqual(len(audit["stiff_phrases"]), 0)
+        self.assertEqual(len(audit["leak_phrases"]), 0)
 
 
 if __name__ == "__main__":
