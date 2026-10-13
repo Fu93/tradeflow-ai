@@ -151,6 +151,11 @@ class RoundActionRequest(BaseModel):
     opponent_raw_text: str
     opponent_offer_price: Optional[float] = None
     round_index: Optional[int] = None
+    offered_lead_days: Optional[int] = None
+    offered_moq: Optional[int] = None
+    deposit_pct: Optional[float] = None
+    unbundled_tax_rate: Optional[float] = None
+    unbundled_packaging_fee: Optional[float] = None
 
 
 @app.post("/api/v1/sessions", response_model=NegotiationSession)
@@ -181,10 +186,11 @@ def get_session(session_id: str):
 def process_negotiation_round(session_id: str, action: RoundActionRequest):
     """
     處理單輪網格回報：
-    1. 記錄對手回價與發言
-    2. 貝氏信念更新並以引擎重解
-    3. 安全熔斷檢查 (P_break >= 15% 觸發斷路器並派發手機推播)
-    4. 回傳下一輪策略建議與自駕狀態
+    1. 意圖識別與潛台詞抽取
+    2. 多目標非價格條款 TCO (Total Cost of Ownership) 歸一化折算
+    3. 貝氏信念更新並以 MCTS 引擎重解
+    4. 安全熔斷檢查 (P_break >= 15% 觸發斷路器並派發手機推播)
+    5. 回傳下一輪策略建議與自駕狀態
     """
     sess = session_mgr.get_session(session_id)
     if not sess:
@@ -195,7 +201,37 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     ceiling_price = sess.spec.ceiling_price
     opp_price = action.opponent_offer_price
 
-    # 1. 計算歸一化報價與更新底價後驗
+    # 1. 供應商套路意圖分類與潛台詞反編譯
+    from ..engine.bilingual import (
+        InboundIntentClassifier,
+        BilingualTacticalBridge,
+        NumericGuardrailValidator,
+        GuardrailViolationError,
+    )
+    inbound_classification = InboundIntentClassifier.classify(action.opponent_raw_text or "")
+    if opp_price is None and inbound_classification.mentioned_price is not None:
+        opp_price = inbound_classification.mentioned_price
+
+    # 1.5 多目標非價格條款 TCO 影子成本折算 (Total Cost of Ownership Normalization)
+    from ..engine.tco import TCOEngine, TradeTermsSpec, SupplierOfferedTerms
+    terms_spec = TradeTermsSpec(baseline_moq=sess.spec.moq)
+    offered_moq = action.offered_moq or inbound_classification.demanded_moq
+    tco_breakdown = None
+    effective_opp_price = opp_price
+
+    if opp_price is not None:
+        offered_terms = SupplierOfferedTerms(
+            raw_unit_price=opp_price,
+            offered_lead_days=action.offered_lead_days,
+            offered_moq=offered_moq,
+            deposit_pct=action.deposit_pct,
+            unbundled_tax_rate=action.unbundled_tax_rate,
+            unbundled_packaging_fee=action.unbundled_packaging_fee,
+        )
+        tco_breakdown = TCOEngine.calculate_effective_price(terms_spec, offered_terms)
+        effective_opp_price = tco_breakdown.effective_unit_price
+
+    # 2. 計算歸一化報價與更新底價後驗 (以 TCO 等效總成本驅動博弈)
     prev_mean = sess.spec.prior_reserve_mean
     prev_std = sess.spec.prior_reserve_std
     if sess.history:
@@ -206,11 +242,11 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                 break
 
     post_mean, post_std = prev_mean, prev_std
-    if opp_price is not None:
-        norm_offer = opp_price / target_price
+    if effective_opp_price is not None:
+        norm_offer = effective_opp_price / target_price
         post_mean, post_std = bayes_update(prev_mean, prev_std, norm_offer)
 
-    # 2. 跑引擎重解
+    # 3. 跑引擎重解
     solve_res = solve(
         n_opp_samples=sess.spec.max_rounds * 4000,
         use_gpu=False,
@@ -220,22 +256,11 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     rec = recommend(solve_res, target_price=target_price)
     prop = proposal.build_proposal(
         {"target_price": target_price, "prior_reserve_mean": post_mean, "prior_reserve_std": post_std},
-        observed_offer=(opp_price / target_price) if opp_price else None,
+        observed_offer=(effective_opp_price / target_price) if effective_opp_price else None,
     )
 
     p_break = rec["breakdown_prob"]
     recommended_offer_price = rec["opening_offer_price"]
-
-    # 2.5 供應商套路意圖分類與潛台詞反編譯
-    from ..engine.bilingual import (
-        InboundIntentClassifier,
-        BilingualTacticalBridge,
-        NumericGuardrailValidator,
-        GuardrailViolationError,
-    )
-    inbound_classification = InboundIntentClassifier.classify(action.opponent_raw_text or "")
-    if opp_price is None and inbound_classification.mentioned_price is not None:
-        opp_price = inbound_classification.mentioned_price
 
     # 3. 記錄對手發言輪次
     turn_opp = NegotiationTurn(
@@ -341,6 +366,8 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         "circuit_tripped": False,
         "turn": turn_our,
         "inbound_intent": inbound_classification.primary_intent.value,
+        "tco_breakdown": tco_breakdown.dict() if tco_breakdown else None,
+        "effective_opp_price": effective_opp_price,
         "telemetry_summary_en": telemetry_eng,
         "recommendation": rec,
         "proposal": prop,
