@@ -122,6 +122,14 @@
           <span class="panel-title">Corporate Mandate (Governance Envelope)</span>
           <span class="cb-badge cb-safe">AST ENFORCED</span>
         </div>
+        <div style="padding: 6px 10px 0; display: flex; align-items: center; justify-content: space-between; font-size: 11px;">
+          <span style="color: #8899ac;">Commodity Category:</span>
+          <select id="presetCategorySelect" class="input-dark" style="padding: 2px 6px; font-size: 11px; width: 60%;" onchange="applyCategoryPreset(this.value)">
+            <option value="umbrella">Carbon Auto Umbrella (HS 6601)</option>
+            <option value="cnc_case">Aerospace CNC Metal Case (HS 3926)</option>
+            <option value="battery">Industrial LiFePO4 Battery Pack (HS 8507)</option>
+          </select>
+        </div>
         <div class="mandate-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; font-size: 11px;">
           <div class="stat"><span class="stat-label">Target / Ceiling</span><span class="stat-val" id="mandatePrice">¥12.0 / ¥16.2</span></div>
           <div class="stat"><span class="stat-label">Lead Time Envelope</span><span class="stat-val" id="mandateLead">12 - 35 Days</span></div>

@@ -214,14 +214,53 @@ function updateBeliefChartWithTurns(session) {
   beliefChart.update();
 }
 
-function refreshSessions() {
-  fetch("/api/v1/sessions")
-    .then(r => r.json())
-    .then(data => {
-      const list = Array.isArray(data) ? data : (data.sessions || []);
-      renderSessions(list);
-    })
-    .catch(err => console.error("refreshSessions error:", err));
+function applyCategoryPreset(cat) {
+  const presets = {
+    umbrella: {
+      name: "Custom Carbon Auto Umbrella",
+      target: 12.0,
+      ceiling: 16.2,
+      lead: "12 - 35 Days",
+      deposit: "30% - 50%",
+      tooling: "Exemption Demanded (¥3,000)",
+      moq: 5000
+    },
+    cnc_case: {
+      name: "Aerospace CNC Metal Case",
+      target: 28.0,
+      ceiling: 36.5,
+      lead: "15 - 40 Days",
+      deposit: "25% - 45%",
+      tooling: "Tooling Waived (¥8,000)",
+      moq: 2000
+    },
+    battery: {
+      name: "Industrial LiFePO4 Battery Pack",
+      target: 185.0,
+      ceiling: 240.0,
+      lead: "20 - 45 Days",
+      deposit: "30% - 60%",
+      tooling: "Certification Waived (¥15,000)",
+      moq: 500
+    }
+  };
+
+  const p = presets[cat] || presets.umbrella;
+  document.getElementById("mandatePrice").textContent = `¥${p.target.toFixed(1)} / ¥${p.ceiling.toFixed(1)}`;
+  document.getElementById("mandateLead").textContent = p.lead;
+  document.getElementById("mandateDeposit").textContent = p.deposit;
+  document.getElementById("mandateTooling").textContent = p.tooling;
+
+  // Create or switch active demo session with preset
+  const newSid = `DEMO_${cat.toUpperCase()}_01`;
+  document.getElementById("cmdSessionId").value = newSid;
+  document.getElementById("sessionLabel").textContent = `${newSid} (${p.name})`;
+  if (beliefChart) {
+    beliefChart.data.labels = ["Prior"];
+    beliefChart.data.datasets[0].data = [p.target * 1.08];
+    beliefChart.data.datasets[1].data = [5.0];
+    beliefChart.update();
+  }
 }
 
 // ---------------------------------------------------------------------------

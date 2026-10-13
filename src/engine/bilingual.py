@@ -62,7 +62,7 @@ class InboundIntentClassifier:
         ),
         (
             VendorTacticEnum.CRY_POVERTY_COST_HIKE,
-            re.compile(r"(原料.*漲|人工.*貴|虧本|賠錢|喝西北風|沒利潤|電費|成本都不夠|純虧|壓不住|貼錢)", re.IGNORECASE),
+            re.compile(r"(原料.*漲|原材料.*漲|暴漲|成本.*漲|人工.*貴|虧本|賠錢|喝西北風|沒利潤|電費|成本都不夠|純虧|壓不住|貼錢|沒法開工|做不了)", re.IGNORECASE),
             0.85,
             False,
         ),

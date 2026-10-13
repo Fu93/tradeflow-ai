@@ -310,19 +310,31 @@
         }
 
         // Deal Closed
-        if (data.session?.state === "COMPLETED") {
+        if (data.session?.state === "COMPLETED" || data.session?.state === "DEAL_CLOSED") {
           updateHUD("DEAL CLOSED [SUCCESS]", "#10b981", `Settled at ¥${turn?.buyer_counter_offer || offer}!`);
           return;
         }
 
-        // Generate response text
-        const counterOffer = turn?.buyer_counter_offer || (offer * 0.95).toFixed(2);
-        const replyMessage = `感謝報價。考量本次訂單批量與交期，我們期望目標價格為 ¥${counterOffer}，若可配合將可立即簽核首批 PO。`;
+        // Check if Logrolling Multi-Dimensional Exchange is Engaged
+        if (data.logrolling_proposal) {
+          const lp = data.logrolling_proposal;
+          updateHUD(
+            "LOGROLLING ENGAGED [TERMS EXCHANGED]",
+            "#06b6d4",
+            `Deposit ${Math.round(lp.proposed_deposit_pct * 100)}% -> Lead Time ${lp.proposed_lead_days}d (Exempt Tooling)`
+          );
+        }
+
+        // Generate response text (prefer backend verified auto-reply script)
+        const counterOffer = data.recommended_offer_price || turn?.buyer_counter_offer || (offer * 0.95).toFixed(2);
+        const replyMessage = data.reply_text || `感謝報價。考量本次訂單批量與交期，我們期望目標價格為 ¥${counterOffer}，若可配合將可立即簽核首批 PO。`;
 
         // Type response into chat
         const inputEl = findChatInput();
         if (inputEl) {
-          updateHUD("AUTOPILOT TYPING...", "#a855f7", `Counter-offering ¥${counterOffer} with human cadence`);
+          if (!data.logrolling_proposal) {
+            updateHUD("AUTOPILOT TYPING...", "#a855f7", `Counter-offering ¥${counterOffer} with human cadence`);
+          }
           await humanType(inputEl, replyMessage);
 
           // Click send after small hesitation
