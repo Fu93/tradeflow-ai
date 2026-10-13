@@ -123,9 +123,10 @@
         <div class="supplier-name">浙江頂尖雨具製造實業有限公司 (1688 認證金牌廠商)</div>
         <div class="supplier-status">● 線上洽談中 (MOQ 10,000 件)</div>
       </div>
-      <div style="display: flex; gap: 8px;">
-        <button class="sim-btn" id="btn-sim-quote">模擬報價 ¥14.80</button>
-        <button class="sim-btn" id="btn-sim-captcha" style="background: #e11d48; border-color: #f43f5e;">模擬阿里風控滑塊</button>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+        <button class="sim-btn" id="btn-sim-quote">模擬常規降價</button>
+        <button class="sim-btn" id="btn-sim-stagnant" style="background: #0284c7; border-color: #38bdf8;">模擬單價寸步不讓 (觸發多維置換)</button>
+        <button class="sim-btn" id="btn-sim-captcha" style="background: #e11d48; border-color: #f43f5e;">模擬阿里風控滑塊 (合規門禁)</button>
       </div>
     </div>
 
@@ -188,8 +189,18 @@
     const captchaBtn = document.getElementById("btn-sim-captcha");
     const sliderBox = document.getElementById("nc_1_n1z");
 
+    const simStagnantBtn = document.getElementById("btn-sim-stagnant");
+
     let quoteSequence = [14.80, 14.10, 13.50, 13.00, 12.60];
     let quoteIdx = 0;
+
+    simStagnantBtn.addEventListener("click", () => {
+      const b = document.createElement("div");
+      b.className = "msg-bubble msg-received";
+      b.innerHTML = `老闆，這款防風全自動傘單價 <strong>¥14.50</strong> 已經是我們產線最低極限了，真的一毛都不能再降，再降我們廠直接賠錢做。`;
+      box.appendChild(b);
+      box.scrollTop = box.scrollHeight;
+    });
 
     captchaBtn.addEventListener("click", () => {
       captchaModal.style.display = "block";

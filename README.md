@@ -4,7 +4,7 @@ AMD Developer Hackathon: ACT III (lablab.ai, 2026/10/12–18) 雙賽道參賽專
 - **Reinvent Commerce**（商業變革主賽道）
 - **Evolus Business Agents on AMD**（AMD 業務代理專項賽道）
 
-**一句話總結**：在不確定性與資訊不對稱下，以貝氏信念演化（Bayesian Belief Update）結合在 AMD MI300X 上的巨型張量並行蒙地卡羅樹搜尋（Tensorized MCTS, 9,600 萬次 Rollouts），計算跨多供應商逆向拍賣的最優讓步路徑與動態 BATNA 邊界。大語言模型（LLM）僅作為外層跨語言認知橋樑與表達器，由數值 AST 硬不變量護欄（Numeric Guardrails）嚴密鎖死，杜絕擅自讓步或幻覺出價。
+**一句話總結**：在資訊不對稱與供應商博弈下，以「量化策略 Agent（純數值、無 LLM）」與「語意談判 Agent（LLM 表達）」解耦架構，在 AMD 異質運算拓撲（NPU 常駐先驗 + GPU 96M 張量 MCTS）上求解帕雷托最優讓步路徑與動態 BATNA。在遭遇單價僵局時，透過企業授權契約（Corporate Mandate）啟動非價格多維條款置換（Logrolling：定金換交期/模具全免），並以合規人機審批門禁（Compliance Air-Gap Gate）與 AST 數值硬護欄死守企業底線。
 
 - 公開倉庫：https://github.com/Fu93/tradeflow-ai
 - 戰情門戶：http://localhost:8000 （Web Portal Dashboard）
@@ -13,44 +13,44 @@ AMD Developer Hackathon: ACT III (lablab.ai, 2026/10/12–18) 雙賽道參賽專
 
 ---
 
-## 核心架構全景
+## 核心架構全景 (AMD 異質運算與雙 Agent 解耦拓撲)
 
 ```mermaid
 flowchart TD
-    subgraph Sourcing ["尋源與對話層 (Multi-Channel Inbound)"]
-        Supplier["1688 / 阿里旺旺 / 供應商回價"]
-        ExtChat["Chrome Extension Autopilot / Web Portal"]
+    subgraph BrowserClient ["端側執行與交互層 (Deterministic Headed Browser - AMD Zen CPU)"]
+        Browser["1688 / 阿里旺旺 / 供應商對話 (Headed Chrome)"]
+        ExtContent["Content Script 風控哨兵 (Captcha Sentinel)"]
+        SessionStore["SQLite WAL 會話持久化 + 狀態機"]
+        Browser <--> ExtContent <--> SessionStore
     end
 
-    subgraph Defense ["語意解析與雙向護欄 (Cognitive Bridge & Guardrails)"]
-        Classifier["InboundIntentClassifier\n6大套路識別 (哭窮/以量壓價/換次料/私聊誘惑)"]
-        Guardrail["NumericGuardrailValidator\n數值硬不變量審計 (嚴禁越界與妥協)"]
+    subgraph NPULayer ["常駐神經策略層 (Resident Edge Policy - AMD XDNA NPU)"]
+        IntentParser["InboundIntentClassifier (6大工廠套路識別)"]
+        BayesCore["貝氏在線學習核心 (底價與風格後驗更新)"]
+        ASTGuard["ASTMandateGuardrail (企業授權硬不變量審計)"]
+        IntentParser --> BayesCore --> ASTGuard
     end
 
-    subgraph DecisionCore ["決策運算核心 (Quantitative Decision Core)"]
-        Bayes["貝氏信念更新器\n後驗底價分布與不確定性收斂"]
-        MCTS["巨型張量逆向拍賣求解器\n96M Rollouts (K供應商 × 50k樣本 × 480策略)"]
-        BATNA["動態 BATNA 交叉壓制\nLEAN_IN / CROSS_ANCHOR / SIDELINE"]
+    subgraph GPULayer ["張量模擬與認知生成層 (Tensor Simulation & LLM - AMD RDNA / CDNA)"]
+        MCTS96M["96M 張量並行 MCTS 逆向拍賣求解器"]
+        Logrolling["多維條款置換引擎 (交期/定金/模具費帕雷托對)"]
+        LLMBridge["Evolus / vLLM 跨語言金牌買家商務話術起草"]
+        MCTS96M --> Logrolling --> LLMBridge
     end
 
-    subgraph Hardware ["算力基礎設施 (AMD Hardware Acceleration)"]
-        MI300X["AMD Instinct MI300X (ROCm / CuPy)\n0.42s 96M 並行運算 (15x 加速)"]
+    subgraph GovernanceGate ["合規檢核與遠端熔斷中樞 (Compliance & HITL Air-Gap Gate)"]
+        Breaker{"安全熔斷矩陣\n(P_break >= 15% 或 阿里驗證碼)"}
+        WebhookHub["Webhook Hub (asyncio.Event 異步掛起)"]
+        MobilePush["手機雙向遙測 (WhatsApp / 微信 / TG 1/2/3)"]
+        Breaker -->|觸發合規檢核| WebhookHub --> MobilePush
     end
 
-    subgraph Safety ["安全熔斷與人機協同 (Human-in-the-Loop Escalation)"]
-        Breaker{"安全熔斷矩陣\nP_break >= 15% 或 違規私聊"}
-        Mobile["手機雙向遙測中樞\nWhatsApp / Telegram / WeChat / SMTP"]
-        Action["遠端授權按鈕 (1 妥協 / 2 堅持 / 3 破局)"]
-    end
-
-    Supplier --> ExtChat --> Classifier
-    Classifier -->|數值與意圖標籤| Bayes
-    Bayes --> MCTS
-    MCTS <--> MI300X
-    MCTS --> BATNA --> Breaker
-    
-    Breaker -->|安全自駕| Guardrail -->|金牌買家戰術話術| Supplier
-    Breaker -->|觸發熔斷| Mobile --> Action -->|解鎖回調| ExtChat
+    ExtContent -->|意圖文本| IntentParser
+    ASTGuard -->|先驗分布| MCTS96M
+    LLMBridge -->|出價草案| ASTGuard
+    ASTGuard -->|合法報價指令| Breaker
+    Breaker -->|安全放行| ExtContent
+    MobilePush -->|手機指令 1/2/3| WebhookHub -->|解鎖回調| SessionStore
 ```
 
 ---
