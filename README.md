@@ -89,6 +89,24 @@ curl -X POST localhost:8000/webhook/evolus -H 'Content-Type: application/json' \
 docker compose up --build   # 一個指令跑起；.env 提供 key，絕不 commit
 ```
 
+## 交付物一覽
+
+| 檔案 | 說明 |
+|---|---|
+| `results/cover_1280x720.png` | 提交用封面圖 |
+| `results/pitch.pptx` | 10 張投影片 |
+| `results/demo_video.mp4` | Demo video（離線產出，~15s，3 Wows） |
+| `results/posterior.png` | 末輪底價後驗分布 |
+| `results/belief_update.png` | 5 輪均值±1σ 演變 |
+| `results/prior_decomp.png` | 後驗分解成 4 類供應商成分 |
+| `results/benchmark.png` | CPU vs MI300X |
+| `results/robustness.png` | 多基準 + prior 敏感度 |
+| `results/bench.json` | benchmark 數據 |
+| `DEMO_SCRIPT.md` | 3-5 分鐘 demo video 旁白腳本 |
+| `deploy.md` | AMD Developer Cloud 部署 runbook |
+| `COMPETITION_STRATEGY.md` | 賽事評分研究 + 獲勝方程式 + gap 分析 |
+| `SUBMIT.md` | 提交 checklist |
+
 ## 評分對照
 
 - **Reinvent Commerce（主賽事）**：改善採購端 margin。
