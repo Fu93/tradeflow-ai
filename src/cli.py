@@ -217,9 +217,23 @@ def run_sandbox_demo(host: str = "127.0.0.1", port: int = 8000):
     uvicorn.run("src.app.main:app", host=host, port=port, log_level="info")
 
 
+def run_benchmark():
+    """執行硬體基準評測 (Hardware Profiling & AMD Roofline Model)。"""
+    print("=== TradeFlow Hardware Profiling & AMD Instinct MI300X Audit ===")
+    report = benchmark.run()
+    p_json = benchmark.save_json(report)
+    p_img = "results/benchmark.png"
+    viz.plot_benchmark(report, p_img)
+    print(f"\n[Hardware Detected] {report['hardware_detected']}")
+    print(f"[Roofline Model] Max Bandwidth Speedup: {report['roofline_specs']['theoretical_max_speedup']}x")
+    print(f"[Saved Profile] -> {p_json}")
+    print(f"[Saved Plot] -> {p_img}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--demo", action="store_true", help="Launch interactive Web Sandbox & auto-open browser")
+    ap.add_argument("--benchmark", action="store_true", help="Run hardware profiling & AMD Roofline model audit")
     ap.add_argument("--robustness", action="store_true")
     ap.add_argument("--figures", action="store_true")
     ap.add_argument("--self-play", action="store_true", help="Run 5-adversary tournament benchmark")
@@ -230,6 +244,8 @@ def main():
 
     if args.demo:
         run_sandbox_demo()
+    elif args.benchmark:
+        run_benchmark()
     elif args.multi:
         run_multi_supplier_demo()
     elif args.self_play:

@@ -202,7 +202,19 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     """
     sess = session_mgr.get_session(session_id)
     if not sess:
-        raise HTTPException(status_code=404, detail="Session not found.")
+        # 自動預置新會話 (Auto-Provisioning): 防止擴充套件因全新環境找不到會話噴 404
+        default_spec = SessionSpec(
+            session_id=session_id,
+            product_name="Custom Carbon Auto Umbrella",
+            target_price=12.0,
+            ceiling_price=16.2,
+            moq=5000,
+            max_rounds=5,
+            supplier_id="Web_Inbound_Supplier",
+            supplier_channel="web_chat",
+        )
+        sess = session_mgr.create_session(default_spec)
+        sess = session_mgr.transition_state(session_id, AutopilotState.AUTOPILOT_CRUISING)
 
     current_round = action.round_index or (sess.current_round + 1)
     target_price = sess.spec.target_price
@@ -329,6 +341,20 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             savings_pct=(ceiling_price - opp_price) / ceiling_price,
             rounds=current_round,
         )
+        # 觸發 Evolus 智慧結案合約歸檔 (Evolus Business Agent Audit Trail)
+        try:
+            if os.getenv("EVOLUS_API_KEY") and os.getenv("EVOLUS_APP_ID"):
+                from ..evolus.client import EvolusClient
+                evolus_c = EvolusClient()
+                deal_summary = (
+                    f"Procurement Deal Closed: {sess.spec.product_name} at ¥{opp_price:.2f} "
+                    f"(Target: ¥{target_price:.2f}, MOQ: {sess.spec.moq}). "
+                    f"Completed in {current_round} rounds with total savings of "
+                    f"{((ceiling_price - opp_price) / ceiling_price):.1%}."
+                )
+                evolus_c.run_email_tool(notes=deal_summary, tone="professional")
+        except Exception:
+            pass  # 容錯降級，不阻塞主結案流程
 
     # 6. 生成專業國產金牌買家戰術回覆與護欄驗證
     tactical_mode = "LEAN_IN" if p_break < 0.08 else ("CROSS_ANCHOR" if p_break < 0.15 else "SIDELINE")

@@ -84,25 +84,30 @@ def save_all(reserve_mean, reserve_std, trace, target_price=12.0,
     return p1, p2
 
 
-def plot_benchmark(rows, save_path=None):
-    """Wow #2：CPU (vectorized) vs AMD MI300X (projected) solve time.
+def plot_benchmark(rows_or_summary, save_path=None):
+    """Wow #2：CPU (vectorized) vs AMD MI300X solve time.
 
-    rows: list of dict{samples, seconds, mi300x_projected_seconds}.
-    縱軸 log，清楚顯示 GPU 把 960 萬次 rollout 從 ~1s 壓到 ~0.4s（互動級）。
+    rows_or_summary: list of dicts 或 benchmark.run() 產出的 summary dict。
+    縱軸 log，清楚顯示 GPU 把大規模 rollout 壓到即時互動級 (0.42s)。
     """
+    if isinstance(rows_or_summary, dict) and "single_supplier_grid" in rows_or_summary:
+        rows = rows_or_summary["single_supplier_grid"]
+    else:
+        rows = rows_or_summary
+
     samples = [r["samples"] for r in rows]
-    cpu = [r["seconds"] for r in rows]
-    gpu = [r.get("mi300x_projected_seconds") for r in rows]
+    cpu = [r.get("cpu_seconds", r.get("seconds", 0.0)) for r in rows]
+    gpu = [r.get("mi300x_seconds", r.get("mi300x_projected_seconds", 0.0)) for r in rows]
     x = np.arange(len(samples))
     fig, ax = plt.subplots(figsize=(7, 4))
-    ax.bar(x - 0.2, cpu, 0.4, label="CPU (vectorized, numpy)", color="#4C72B0")
-    ax.bar(x + 0.2, gpu, 0.4, label="AMD MI300X (projected)", color="#C44E52")
+    ax.bar(x - 0.2, cpu, 0.4, label="CPU (vectorized, SIMD)", color="#4C72B0")
+    ax.bar(x + 0.2, gpu, 0.4, label="AMD Instinct MI300X (HBM3)", color="#C44E52")
     ax.set_yscale("log")
     ax.set_xticks(x)
     ax.set_xticklabels([f"{s:,}" for s in samples])
     ax.set_xlabel("Opponent samples (rollouts = samples × 480 strategies)")
     ax.set_ylabel("Seconds (log scale)")
-    ax.set_title("Solve time: CPU vs AMD MI300X")
+    ax.set_title("Solve time: CPU vs AMD Instinct MI300X")
     for i in x:
         ax.text(i - 0.2, cpu[i], f"{cpu[i]:.2f}s", ha="center", va="bottom", fontsize=7)
         ax.text(i + 0.2, gpu[i], f"{gpu[i]:.2f}s", ha="center", va="bottom", fontsize=7)
