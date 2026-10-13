@@ -10,6 +10,24 @@ AMD Developer Hackathon: ACT III (lablab.ai, 2026/10/12–18) 參賽專案。
 - 執行手冊：[TradeFlow_Execution_Manual.md](../TradeFlow_Execution_Manual.md)
 - 提交清單：[SUBMIT.md](SUBMIT.md)
 
+## 架構
+
+```mermaid
+flowchart TD
+    Buyer[采购人员] -->|Email / PDF 询价| WF[Evolus Workflow\nemail-in 触发]
+    WF --> EXT[Document Extractor\n→ JSON 规格]
+    EXT --> CB{{我们的 App\ncontainer}}
+    CB --> ENG[Negotiation Engine\n贝氏更新 + 向量化 MCTS]
+    ENG -->|MI300X 批量 rollout\n对手术样本 × 480 策略| GPU[(AMD MI300X)]
+    ENG --> PROP[Proposal 生成器\n逐轮报价 + 风险标注]
+    PROP --> AI[Evolus AI Tool: email\nagent 写回覆草稿]
+    AI --> Human[人类审批: 预算/合约/付款]
+    WF -.callback/webhook.-> CB
+```
+
+**关键不变量**：引擎是决策核心（可验证数学），Evolus 是语言层 + 工作流 + 文件解析。
+GPU 跑的是引擎内部的批量 rollout，不是聊天 token。
+
 ## 快速開始（無 GPU、無外部依賴也能跑）
 
 ```bash
