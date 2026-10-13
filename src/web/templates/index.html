@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TradeFlow AI — Procurement War Room</title>
+  <link rel="stylesheet" href="/static/css/theme.css" />
+  <!-- Chart.js via CDN — no npm/node required -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- ===== HEADER ===== -->
+  <header class="header">
+    <div class="header-brand">
+      <span class="brand-logo">TF</span>
+      <span class="brand-name">TradeFlow AI</span>
+      <span class="brand-sub">Procurement Autopilot</span>
+    </div>
+    <div class="header-status">
+      <span class="status-dot" id="sseStatus"></span>
+      <span class="status-label" id="sseLabel">Connecting...</span>
+      <span class="version-badge">v4.0 · AMD MI300X</span>
+    </div>
+  </header>
+
+  <!-- ===== MAIN GRID ===== -->
+  <main class="war-room">
+
+    <!-- LEFT COLUMN: Bayesian Belief + Session List -->
+    <aside class="col-left">
+
+      <!-- Bayesian Belief Chart -->
+      <section class="panel" id="beliefPanel">
+        <div class="panel-header">
+          <span class="panel-title">Bayesian Belief Update</span>
+          <span class="panel-badge" id="sessionLabel">No active session</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="beliefChart"></canvas>
+        </div>
+        <div class="belief-stats" id="beliefStats">
+          <div class="stat"><span class="stat-label">Posterior Mean</span><span class="stat-val" id="postMean">--</span></div>
+          <div class="stat"><span class="stat-label">Break Probability</span><span class="stat-val" id="pBreak">--</span></div>
+          <div class="stat"><span class="stat-label">Rounds</span><span class="stat-val" id="roundCount">0</span></div>
+        </div>
+      </section>
+
+      <!-- Active Sessions -->
+      <section class="panel" id="sessionsPanel">
+        <div class="panel-header">
+          <span class="panel-title">Active Sessions</span>
+          <button class="btn-ghost" onclick="refreshSessions()">Refresh</button>
+        </div>
+        <div id="sessionList" class="session-list">
+          <div class="empty-state">No sessions. Start via API or CLI.</div>
+        </div>
+      </section>
+
+    </aside>
+
+    <!-- CENTER: Circuit Breaker + Mobile Command Pad -->
+    <section class="col-center">
+
+      <!-- Circuit Breaker Status -->
+      <div class="panel cb-panel" id="cbPanel">
+        <div class="panel-header">
+          <span class="panel-title">Circuit Breaker</span>
+          <span class="cb-badge cb-safe" id="cbBadge">AUTOPILOT CRUISING</span>
+        </div>
+        <div class="cb-ring" id="cbRing">
+          <div class="cb-ring-inner">
+            <div class="cb-pct" id="cbPct">0.0%</div>
+            <div class="cb-label">Break Risk</div>
+          </div>
+        </div>
+        <div class="cb-thresholds">
+          <div class="threshold-row">
+            <span class="thr-color thr-safe"></span><span>Safe &lt; 8%</span>
+          </div>
+          <div class="threshold-row">
+            <span class="thr-color thr-warn"></span><span>Caution 8-15%</span>
+          </div>
+          <div class="threshold-row">
+            <span class="thr-color thr-danger"></span><span>TRIPPED &gt;= 15%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mobile Command Pad -->
+      <div class="panel cmd-panel">
+        <div class="panel-header">
+          <span class="panel-title">Remote Command</span>
+          <span class="panel-sub">Mirrors phone reply (1/2/3)</span>
+        </div>
+        <div class="session-select-row">
+          <label>Session ID</label>
+          <input id="cmdSessionId" type="text" placeholder="session-001" class="input-dark" />
+        </div>
+        <div class="cmd-buttons">
+          <button class="cmd-btn cmd-concede" onclick="sendCommand('1')">
+            <span class="cmd-num">1</span>
+            <span class="cmd-name">Concede Step</span>
+            <span class="cmd-desc">Accept current offer and proceed</span>
+          </button>
+          <button class="cmd-btn cmd-hold" onclick="sendCommand('2')">
+            <span class="cmd-num">2</span>
+            <span class="cmd-name">Hold Firm</span>
+            <span class="cmd-desc">Maintain position, apply pressure</span>
+          </button>
+          <button class="cmd-btn cmd-walkaway" onclick="sendCommand('3')">
+            <span class="cmd-num">3</span>
+            <span class="cmd-name">Walk Away</span>
+            <span class="cmd-desc">Terminate negotiation immediately</span>
+          </button>
+        </div>
+        <div id="cmdResult" class="cmd-result hidden"></div>
+      </div>
+
+    </section>
+
+    <!-- RIGHT COLUMN: Multi-Supplier Tactic Board + Config -->
+    <aside class="col-right">
+
+      <!-- Multi-Supplier Tactic Board -->
+      <section class="panel" id="tacticPanel">
+        <div class="panel-header">
+          <span class="panel-title">Multi-Supplier Tactic Board</span>
+          <button class="btn-ghost" onclick="runMultiAuction()">Run Auction</button>
+        </div>
+        <div id="auctionLoader" class="loader hidden">Computing 96M rollouts...</div>
+        <div id="supplierCards" class="supplier-cards">
+          <div class="empty-state">Click "Run Auction" to execute 4-supplier reverse auction.</div>
+        </div>
+        <div id="auctionSummary" class="auction-summary hidden"></div>
+      </section>
+
+      <!-- Telemetry Config -->
+      <section class="panel" id="configPanel">
+        <div class="panel-header">
+          <span class="panel-title">Telemetry Config</span>
+          <button class="btn-ghost" onclick="toggleConfig()">Toggle</button>
+        </div>
+        <div id="configBody" class="config-body hidden">
+          <div class="config-group">
+            <div class="config-section-label">WhatsApp (CallMeBot)</div>
+            <input id="cfg_CALLMEBOT_PHONE" type="text" placeholder="Phone +1234..." class="input-dark" />
+            <input id="cfg_CALLMEBOT_API_KEY" type="text" placeholder="API Key" class="input-dark" />
+          </div>
+          <div class="config-group">
+            <div class="config-section-label">Telegram Bot</div>
+            <input id="cfg_TELEGRAM_BOT_TOKEN" type="text" placeholder="Bot Token" class="input-dark" />
+            <input id="cfg_TELEGRAM_CHAT_ID" type="text" placeholder="Chat ID" class="input-dark" />
+          </div>
+          <div class="config-group">
+            <div class="config-section-label">WeChat (PushPlus)</div>
+            <input id="cfg_PUSHPLUS_TOKEN" type="text" placeholder="PushPlus Token" class="input-dark" />
+          </div>
+          <div class="config-actions">
+            <button class="btn-primary" onclick="saveConfig()">Save + Hot Reload</button>
+            <button class="btn-ghost" onclick="testPush('all')">Test Push</button>
+          </div>
+          <div id="configResult" class="cmd-result hidden"></div>
+        </div>
+      </section>
+
+    </aside>
+  </main>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

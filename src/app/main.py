@@ -226,6 +226,17 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     p_break = rec["breakdown_prob"]
     recommended_offer_price = rec["opening_offer_price"]
 
+    # 2.5 供應商套路意圖分類與潛台詞反編譯
+    from ..engine.bilingual import (
+        InboundIntentClassifier,
+        BilingualTacticalBridge,
+        NumericGuardrailValidator,
+        GuardrailViolationError,
+    )
+    inbound_classification = InboundIntentClassifier.classify(action.opponent_raw_text or "")
+    if opp_price is None and inbound_classification.mentioned_price is not None:
+        opp_price = inbound_classification.mentioned_price
+
     # 3. 記錄對手發言輪次
     turn_opp = NegotiationTurn(
         round_index=current_round,
@@ -240,7 +251,9 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
 
     # 4. 安全熔斷矩陣評估
     trip_reason = None
-    if p_break >= 0.15:
+    if inbound_classification.requires_escalation:
+        trip_reason = f"Security escalation: {inbound_classification.primary_intent.value} ({inbound_classification.tactical_rationale})"
+    elif p_break >= 0.15:
         trip_reason = f"Breakdown risk {p_break:.1%} exceeds 15% safety limit."
     elif opp_price and opp_price > ceiling_price:
         trip_reason = f"Opponent offer ¥{opp_price:.2f} breaches ceiling ¥{ceiling_price:.2f}."
@@ -283,8 +296,26 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             rounds=current_round,
         )
 
-    # 記錄我方回覆輪次
-    auto_reply_text = f"經我方核算，首批訂單意向價為 ¥{recommended_offer_price:.2f}，現款現結，請確認排單。"
+    # 6. 生成專業國產金牌買家戰術回覆與護欄驗證
+    tactical_mode = "LEAN_IN" if p_break < 0.08 else ("CROSS_ANCHOR" if p_break < 0.15 else "SIDELINE")
+    auto_reply_text = BilingualTacticalBridge.generate_chinese_counter_offer(
+        tactic=tactical_mode,
+        authorized_price=recommended_offer_price,
+        product_name=sess.spec.product_name,
+        moq=sess.spec.moq,
+        supplier_intent=inbound_classification.primary_intent,
+    )
+    # 硬不變量護欄驗證
+    try:
+        NumericGuardrailValidator.validate_reply(
+            auto_reply_text,
+            authorized_price=recommended_offer_price,
+            walk_away_ceiling=ceiling_price,
+        )
+    except GuardrailViolationError:
+        # 降級至確定性安全模板
+        auto_reply_text = f"經核算，我方首批訂單確定意向價為 ¥{recommended_offer_price:.2f}，現款現結走官方系統，請確認排單。"
+
     turn_our = NegotiationTurn(
         round_index=current_round,
         sender="buyer_agent",
@@ -296,11 +327,21 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     )
     sess = session_mgr.append_turn(session_id, turn_our)
 
+    # 英文遙測摘要
+    telemetry_eng = BilingualTacticalBridge.telemetry_english_summary(
+        intent=inbound_classification.primary_intent,
+        quoted_price=opp_price,
+        target_price=target_price,
+        p_break=p_break,
+    )
+
     return {
         "session": sess,
         "autopilot_state": sess.state.value,
         "circuit_tripped": False,
         "turn": turn_our,
+        "inbound_intent": inbound_classification.primary_intent.value,
+        "telemetry_summary_en": telemetry_eng,
         "recommendation": rec,
         "proposal": prop,
         "recommended_offer_price": recommended_offer_price,
@@ -308,6 +349,30 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     }
 
 
+# ---- Web Portal & 多供應商逆向拍賣模擬端點 ----
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+from ..web.routes_web import router as web_router
+from ..engine.multi_solver import simulate_reverse_auction
+
+static_path = Path(__file__).parent.parent / "web" / "static"
+if static_path.exists():
+    app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
+
+app.include_router(web_router)
+
+
+@app.post("/api/v1/multi-auction/run")
+def api_run_multi_auction():
+    """觸發 4 供應商逆向拍賣 (96M Rollouts) 模擬，供 Web 前端大屏展示。"""
+    try:
+        res = simulate_reverse_auction()
+        return res
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

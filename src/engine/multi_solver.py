@@ -355,6 +355,8 @@ def simulate_reverse_auction(
 
     return {
         "success": True,
+        "k_suppliers": k,
+        "backend": "GPU (CuPy/ROCm)" if use_gpu else "CPU (NumPy Vectorized)",
         "product_target": target_price,
         "walk_away_ceiling": walk_away_ceiling,
         "moq": moq,
@@ -362,6 +364,7 @@ def simulate_reverse_auction(
         "winning_price": final_quote,
         "total_savings_pct": total_savings_pct,
         "total_savings_cny": total_savings_cny,
+        "total_rollouts": total_rollouts_accum,
         "total_rollouts_accum": total_rollouts_accum,
         "total_compute_seconds": round(total_compute_seconds, 4),
         "trace": trace,
