@@ -59,6 +59,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (type === "TELEMETRY_ALERT") {
+    const { sessionId, message } = payload;
+    fetch(`${API_BASE_URL}/api/v1/telemetry/test-push`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channel: "all",
+        message: `[SECURITY SENTINEL ALERT] Session: ${sessionId} - ${message}`,
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => sendResponse({ success: true, data }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
   if (type === "BROADCAST_STATUS_UPDATE") {
     // Relay update from background to sidepanel or content
     chrome.runtime.sendMessage(message).catch(() => {});

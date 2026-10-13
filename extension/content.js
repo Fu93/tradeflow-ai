@@ -138,26 +138,42 @@
   }
 
   // 2. Chat Selectors Multi-Platform Strategy
+  // 2. Chat Selectors Multi-Platform Strategy (Universal Support)
   const PLATFORMS = {
+    c1688: {
+      messageBubbles: ".im-message-item, .chat-msg-received, .msg-bubble, .message-receive",
+      inputField: ".chat-box textarea, .im-input-area textarea, #chatInput",
+      sendButton: ".im-send-btn, .btn-primary, #sendBtn",
+    },
     alibaba: {
-      messageBubbles: ".im-msg-item, .chat-message-item, .message-bubble",
+      messageBubbles: ".im-msg-item, .chat-message-item, .message-bubble, .chat-item-receive",
       inputField: ".chat-input textarea, textarea[placeholder*='message'], #chatInput",
       sendButton: ".chat-send-btn, button[type='submit'], .btn-send",
     },
-    c1688: {
-      messageBubbles: ".im-message-item, .chat-msg-received, .msg-bubble",
-      inputField: ".chat-box textarea, .im-input-area textarea",
-      sendButton: ".im-send-btn, .btn-primary",
+    globalsources: {
+      messageBubbles: ".msg-item-left, .chat-history-item-left, .receiver-msg",
+      inputField: ".chat-input-textarea, textarea.msg-textarea",
+      sendButton: ".btn-msg-send, button.send-btn",
+    },
+    made_in_china: {
+      messageBubbles: ".chat-list-left, .receive-bubble, .msg-content-left",
+      inputField: ".input-content textarea, textarea#msgInput",
+      sendButton: ".btn-send-msg, button#sendBtn",
     },
     whatsapp: {
       messageBubbles: ".message-in, div[data-pre-plain-text]",
       inputField: "footer div[contenteditable='true']",
       sendButton: "button[data-testid='compose-btn-send'], span[data-icon='send']",
     },
+    wechat_web: {
+      messageBubbles: ".bubble_left, .chat_item_left, .you",
+      inputField: "#editArea, div[contenteditable='true']",
+      sendButton: ".btn_send, button.send-btn",
+    },
     generic: {
-      messageBubbles: ".msg-received, .inbound-message, [data-role='seller'], .incoming",
+      messageBubbles: ".msg-received, .inbound-message, [data-role='seller'], .incoming, .chat-left, .message-left",
       inputField: "textarea, input[type='text'], div[contenteditable='true']",
-      sendButton: "button[type='submit'], .send-button, #sendBtn",
+      sendButton: "button[type='submit'], .send-button, #sendBtn, .btn-send",
     },
   };
 

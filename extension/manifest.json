@@ -10,10 +10,7 @@
     "alarms"
   ],
   "host_permissions": [
-    "http://localhost:8000/*",
-    "*://*.1688.com/*",
-    "*://*.alibaba.com/*",
-    "*://web.whatsapp.com/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js",
@@ -25,10 +22,7 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*.1688.com/*",
-        "*://*.alibaba.com/*",
-        "*://web.whatsapp.com/*",
-        "http://localhost:8000/*"
+        "<all_urls>"
       ],
       "js": ["content.js"],
       "run_at": "document_end"
