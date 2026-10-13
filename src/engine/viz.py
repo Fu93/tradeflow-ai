@@ -116,28 +116,27 @@ def plot_benchmark(rows, save_path=None):
 
 
 def plot_robustness(report_data, save_path=None):
-    """Wow #3：穩健性視覺化（優於固定基準 + prior 敏感度）。"""
+    """Wow #3：穩健性視覺化（多基準對比 + prior 敏感度）。"""
     em = report_data["engine_margin"]; eb = report_data["engine_break"]
-    bm = report_data["baseline_margin"]; bb = report_data["baseline_break"]
+    multi = report_data.get("multi_baseline", [])
     sens = report_data["sensitivity"]
     factors = [s["factor"] for s in sens]
     margins = [s["margin"] for s in sens]
     breaks = [s["break"] for s in sens]
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))
-    # 左：引擎 vs 固定基準 邊際 / 破局率
-    labels = ["Engine", "Fixed 5%/rd"]
-    ax1.bar([0], [em], color="#4C72B0", label="margin (norm)")
-    ax1.bar([1], [bm], color="#4C72B0")
-    ax1.set_xticks([0, 1]); ax1.set_xticklabels(labels)
+    # 左：多基準對比（margin + breakdown）
+    names = [b["name"].replace("TradeFlow ", "") for b in multi]
+    ms = [b["margin"] for b in multi]
+    bs = [b["break"] for b in multi]
+    x = np.arange(len(names))
+    ax1.bar(x - 0.2, ms, 0.4, color="#4C72B0", label="margin (norm)")
+    ax1.set_xticks(x); ax1.set_xticklabels(names, rotation=15, fontsize=8)
     ax1.set_ylabel("Expected margin (norm)", color="#4C72B0")
-    ax1.set_title(f"Engine margin {em:.3f} vs baseline {bm:.3f}")
+    ax1.set_title("Engine vs human fixed-concession baselines")
     ax1b = ax1.twinx()
-    ax1b.bar([0], [eb], color="#C44E52", alpha=0.5, label="breakdown")
-    ax1b.bar([1], [bb], color="#C44E52", alpha=0.5)
-    ax1b.set_ylabel("Breakdown prob", color="#C44E52")
-    ax1.text(0, em, f"{eb:.0%}", ha="center", va="bottom", fontsize=8, color="#C44E52")
-    ax1.text(1, bm, f"{bb:.0%}", ha="center", va="bottom", fontsize=8, color="#C44E52")
+    ax1b.bar(x + 0.2, bs, 0.4, color="#C44E52", alpha=0.5, label="breakdown")
+    ax1b.set_ylim(0, 1.0); ax1b.set_ylabel("Breakdown prob", color="#C44E52")
 
     # 右：prior ±50% 敏感度（邊際 + 破局率）
     ax2.plot(factors, margins, "o-", color="#4C72B0", label="margin")
@@ -145,11 +144,40 @@ def plot_robustness(report_data, save_path=None):
     ax2.set_xlabel("Prior reserve scale (1.0 = calibrated)")
     ax2.set_title("Prior sensitivity (±50% miss on supplier reserve)")
     ax2b = ax2.twinx()
-    # 強制右軸 0 在下，1 在上（常見 breakdown 軸向）
     ax2b.set_ylim(0.0, 1.0)
     ax2b.plot(factors, breaks, "s--", color="#C44E52", label="breakdown")
     ax2b.set_ylabel("Breakdown prob", color="#C44E52")
     ax2.legend(loc="upper left"); ax2b.legend(loc="lower right")
+    fig.tight_layout()
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=120)
+        plt.close(fig)
+    return fig
+
+
+def plot_prior_decomp(reserve_mean, reserve_std, target_price=12.0, save_path=None, seed=0):
+    """Wow #1 加強：把底價後驗分解成 4 類供應商成分（按 type-center 距離加權）。"""
+    from . import model
+    rng = np.random.default_rng(seed)
+    n = 4000
+    samples = reserve_mean * (1 + rng.normal(0, reserve_std, n))
+    fig, ax = plt.subplots(figsize=(7, 4))
+    colors = ["#4C72B0", "#DD8452", "#55A868", "#C44E52"]
+    for t in range(4):
+        center = model.OPP_TYPES[t, 0]
+        w = np.exp(-((samples - center) ** 2) / (2 * reserve_std**2))
+        if w.sum() < 1e-6:
+            continue
+        ax.hist(samples, bins=40, weights=w / w.sum() * len(samples),
+                density=False, alpha=0.55, color=colors[t],
+                label=f"{model.OPP_NAMES[t]} (center {center:.2f})")
+    ax.axvline(target_price / target_price, color="green", lw=2, label="target (1.0)")
+    ax.axvline(model.YOUR_CEILING, color="red", lw=2, label="walk-away")
+    ax.set_title(f"Posterior decomposed into 4 supplier types (mean={reserve_mean:.3f})")
+    ax.set_xlabel("Normalized reserve price")
+    ax.set_ylabel("Weighted count")
+    ax.legend(fontsize=7)
     fig.tight_layout()
     if save_path:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)

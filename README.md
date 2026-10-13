@@ -23,8 +23,9 @@ python -m src.app.orchestrator      # 離線 orchestrator 自檢（模擬供應�
 `--figures` 會產出：
 - `results/posterior.png`     — 末輪底價後驗分布 + 目標/上限/推薦開盤
 - `results/belief_update.png` — 5 輪後驗均值±1σ 與推薦開盤同步演變
+- `results/prior_decomp.png`  — 後驗分解成 4 類供應商成分（Wow#1 加強）
 - `results/benchmark.png`     — CPU vs MI300X solve time（對數軸）
-- `results/robustness.png`    — 引擎 vs 固定基準 + prior 敏感度
+- `results/robustness.png`    — 引擎 vs 多種人為固定基準 + prior 敏感度
 - `results/bench.json`        — 各 sample 數的耗時 / 投影
 
 ## 元件
@@ -33,16 +34,17 @@ python -m src.app.orchestrator      # 離線 orchestrator 自檢（模擬供應�
 |---|---|
 | `src/engine/model.py` | 4 對手類型 + 480 策略網格 |
 | `src/engine/solver.py` | 向量化 MCTS + 貝氏更新 + 帕累托選擇 |
-| `src/engine/robustness.py` | regret vs 固定基準 + prior 敏感度 |
+| `src/engine/proposal.py` | 讓步提案生成器（逐輪報價 + 風險標註） |
+| `src/engine/robustness.py` | 多基準對比（3/5/10/15%） + prior 敏感度 |
 | `src/engine/benchmark.py` | CPU 實測 + MI300X 投影 + JSON |
-| `src/engine/viz.py` | 4 張視覺化（headless Agg） |
+| `src/engine/viz.py` | 5 張視覺化（headless Agg） |
 | `src/evolus/client.py` | Evolus REST client（workflow / AI Tools / agent chat） |
 | `src/app/main.py` | FastAPI：`/negotiate`、`/webhook/evolus` |
 | `src/app/orchestrator.py` | 膠水層：收 webhook → 跑引擎 → 叫 agent 寫信（離線 stub 兜底） |
 | `src/app/demo_data.py` | 預錄供應商回價（穩定 demo） |
 | `src/cli.py` | 一個指令三種模式 |
 | `scripts/fetch_price_anchor.py` | best-effort 拉 HS6601 真實 FOB 區間 |
-| `tests/` | engine / evolus / benchmark 三套 smoke test |
+| `tests/` | engine / evolus / benchmark / api 四套 smoke test |
 
 ## 啟動 API
 
@@ -54,13 +56,14 @@ curl -X POST localhost:8000/webhook/evolus -H 'Content-Type: application/json' \
   -d '{"extracted":{"target_price":12.0},"offer":1.25,"email_body":"We can do ¥15, MOQ 500."}'
 ```
 
-## 評估（雙 benchmark）
+## 評估（四套 smoke test）
 
 | 模式 | 命令 | 說明 |
 |---|---|---|
-| 邏輯 | `python tests/test_engine.py` | 模型/求解/貝氏 |
+| 邏輯 | `python tests/test_engine.py` | 模型/求解/貝氏/proposal/edge cases |
 | API mock | `python tests/test_evolus.py` | Evolus client (mocked requests) |
-| 性能 | `python tests/test_benchmark.py` | benchmark + 4 張圖能跑 |
+| 性能 | `python tests/test_benchmark.py` | benchmark + 5 張圖能跑 |
+| API | `python tests/test_api.py` | FastAPI `/negotiate` + `/webhook/evolus` (TestClient, offline) |
 
 ## 容器化（提交用）
 

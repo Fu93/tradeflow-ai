@@ -11,12 +11,12 @@ offline 模式（印出草稿而不真呼叫），保證 demo 在任何環境能
 """
 from __future__ import annotations
 import os
-from ..engine import solve, recommend, bayes_update, model, robustness, viz
+from ..engine import solve, recommend, bayes_update, model, robustness, viz, proposal
 from .demo_data import DEMO_SPEC
 
 
 def analyze(spec: dict, observed_offer: float | None = None):
-    """跑引擎，回傳建議 + 穩健性摘要。"""
+    """跑引擎，回傳建議 + 穩健性摘要 + 讓步提案。"""
     post_mean = spec.get("prior_reserve_mean", DEMO_SPEC["prior_reserve_mean"])
     post_std = spec.get("prior_reserve_std", DEMO_SPEC["prior_reserve_std"])
     if observed_offer is not None:
@@ -27,8 +27,9 @@ def analyze(spec: dict, observed_offer: float | None = None):
     rec = recommend(res, target_price=spec.get("target_price", DEMO_SPEC["target_price"]))
     _, rob = robustness.report(target_price=spec.get("target_price", DEMO_SPEC["target_price"]),
                               n_samples=spec.get("n_samples", DEMO_SPEC["n_samples"]))
+    prop = proposal.build_proposal(spec, observed_offer=observed_offer)
     return {"recommendation": rec, "posterior_reserve_mean": post_mean,
-            "posterior_reserve_std": post_std, "robustness": rob}
+            "posterior_reserve_std": post_std, "robustness": rob, "proposal": prop}
 
 
 def draft_email(notes: str, reply_to: str | None = None) -> str:

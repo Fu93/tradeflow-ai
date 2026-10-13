@@ -6,8 +6,7 @@ Evolus 由我們 app 驅動（見 orchestrator.py）；引擎運算在 MI300X �
 from __future__ import annotations
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from ..engine import solve, recommend, bayes_update, robustness
-from .. import model
+from ..engine import solve, recommend, bayes_update, robustness, model
 from . import orchestrator
 
 app = FastAPI(title="TradeFlow Negotiation Engine", version="0.1.0")

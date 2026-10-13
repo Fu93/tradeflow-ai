@@ -53,25 +53,30 @@ def run_robustness(n=20000):
 
 
 def run_figures():
-    """產出全部四張圖 + bench.json（給 demo / 提交用）。"""
+    """產出全部圖 + bench.json（給 demo / 提交用）。"""
     print("=== Generate ALL figures + bench.json ===")
     # 信念更新 + 後驗分布
     trace = run_demo()
     p1, p2 = viz.save_all(trace[-1]["mean"], trace[-1]["std"], trace,
                           target_price=DEMO_SPEC["target_price"], out_dir="results")
     print(f"  saved: {p1}\n  saved: {p2}")
+    # 後驗分解（4 類供應商）— Wow#1 加強
+    p6 = "results/prior_decomp.png"
+    viz.plot_prior_decomp(trace[-1]["mean"], trace[-1]["std"],
+                          target_price=DEMO_SPEC["target_price"], save_path=p6)
+    print(f"  saved: {p6}")
     # Benchmark（CPU 實測 + MI300X 投影）
     rows = benchmark.run()
     p3 = benchmark.save_json(rows)
     p4 = "results/benchmark.png"
     viz.plot_benchmark(rows, p4)
     print(f"  saved: {p3}\n  saved: {p4}")
-    # 穩健性
+    # 穩健性（多基準 + prior 敏感度）
     _, rob = robustness.report(target_price=DEMO_SPEC["target_price"], n_samples=20000)
     p5 = "results/robustness.png"
     viz.plot_robustness(rob, p5)
     print(f"  saved: {p5}")
-    print("\n所有 artifacts 在 results/：posterior.png, belief_update.png, benchmark.png, robustness.png, bench.json")
+    print("\nresults/: posterior.png, belief_update.png, prior_decomp.png, benchmark.png, robustness.png, bench.json")
 
 
 def main():
