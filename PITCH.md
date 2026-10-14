@@ -34,23 +34,21 @@
 2. **AST Guardrail Interception**：現場展示當工廠試探或要求 85% 定金/越界單價時，AST 護欄在代碼編譯層 100% 報錯並拋出 `ASTMandateViolationError` 降級至安全話術。
 3. **Multi-Supplier Dynamic BATNA**：同時並行 4 家供應商談判，動態計算外部最優替代，自動執行 `CROSS_ANCHOR` 交叉施壓。
 
-## Slide 6 — Business value: 目標用戶畫像與真實買方痛點 (Target Persona Audit)
-- **目標用戶 (Target Persona)**：年 GMV 100 萬～1,000 萬美元之歐美中型跨境電商進口商（Amazon / Shopify 賣家，採購五金、傘具、戶外家居）。
-- **痛點 1（外商溢價）**：直接在 1688 / 義烏採購時，外商因英語溝通被工廠索取 15%～25%「外國人溢價」。
-- **痛點 2（代理尋租與回扣）**：僱用駐華採購代理除 5%～8% 佣金外，普遍存在代理與工廠串通吃回扣風險。
-- **痛點 3（跨語言潛台詞盲區）**：英文高管無法辨識中文工廠「哭窮、改模具費、偷換次料」等套路，手動審批疲於奔命。
-- **TradeFlow 解決方案**：
-  - 本土金牌行話自動回覆消除身分溢價；
-  - 核心求解器與 AST 護欄杜絕私相授受與回扣空間；
-  - 高管僅需在 WhatsApp 接收結構化英文決策卡（含 TCO 等效折算、定金比例與底線校驗），一鍵批准關鍵邊界，真正實現「管住錢袋子，放開自駕車」。
+## Slide 6 — Business value: 真實用戶故事 (Alex's Story: Before vs After)
+- **具體用戶 (User Persona)**：Alex Rivera，洛杉磯 Amazon 戶外五金品牌創始人，年銷售額 $3M，年採購雨傘 5 萬把。
+- **現狀困境 (The Painful Alternatives)**：
+  - *方案 A (自己熬夜聊 1688)*：用 Google Translate 溝通，工廠一眼看出是老外直接抬價 20%（¥14.80 出廠價），看不懂「模具費另算」、「偷換二料」等潛台詞，被坑還說 Thank you。
+  - *方案 B (僱用駐華採購代理)*：除付 7% 佣金外，代理私下向工廠吃回扣；定金索要 80% 後產能延誤，代理兩頭推諉。
+- **TradeFlow 改善 (The TradeFlow Transformation)**：
+  - Alex 洛杉磯下午 4 點在 WhatsApp 收到英文 CPO 決策卡（TCO 影子成本折算完畢、定金死守 50%、模具費由工廠全免），點擊「1」授權。
+  - Agent 在 1688 上以沿海金牌老買家行話自駕談妥，首單 10,000 把省下 ¥18,000 人民幣（約 $2,500 美元），零回扣、零幻覺。
 
-## Slide 7 — AMD 異質運算技術佈局 (Heterogeneous Topology)
-- **CPU (AMD Zen 核心)**：運行 SQLite WAL 事務原子持久化、會話狀態機、零 LLM 的確定性本土行話渲染 (<2ms 延遲)。
-- **GPU (AMD Instinct MI300X on ROCm)**：
-  - 4 供應商並行逆向拍賣的 96M 張量巨型求解器（4 廠 × 50,000 樣本 × 480 策略族）。
-  - **記憶體頻寬受限特質 (Bandwidth-Bound, 非顯存容量受限)**：96M FP32 矩陣僅佔約 384MB，但其密集的 3D 廣播乘加極度依賴訪存吞吐；MI300X 高達 **5.3 TB/s 的 HBM3 頻寬** 恰好解決了 DDR5 (約 80 GB/s) 的頻寬瓶頸（Roofline 模型分析加速 ~15x）。
-  - **統一 ROCm 工具鏈**：在單一 AMD 軟體棧中同時承載 Qwen-14B/72B 併發推理與量化求解器，消除跨設備 PCIe 拷貝。
-- **NPU (AMD XDNA / Ryzen AI)**：規劃邊緣部署輕量級意圖分類器（Intent Classifier）與敏感個資（PII）本地脫敏。
+## Slide 7 — AMD 戰略價值：統一 ROCm 工具鏈 (Unified ROCm Portability)
+- **CPU 優先設計 (CPU-First by Design)**：
+  - 核心談判求解單輪 <2ms，日常單一對弈在 CPU 上已經足夠快，無需盲目堆疊 GPU 算力。
+- **AMD 的真實核心價值：統一 ROCm 軟體生態與跨設備零重構**：
+  - **`_xp()` 抽象層無縫切換**：同一套張量博弈代碼庫，在開發階段於 AMD CPU (NumPy SIMD) 運行，部署階段一鍵直通 AMD GPU (ROCm / CuPy)，邊緣端適配 Ryzen AI NPU。
+  - **大模型與算力共生 (Zero PCIe Penalty)**：在並行逆向拍賣（4 供應商同時博弈）與本地 Qwen-14B/72B 推理共存的企業級場景下，AMD MI300X 的統一內存池使大語言模型與張量求解器同處一處，徹底消除跨設備數據拷貝延遲。
 
 ## Slide 8 — Evolus Business Agents 整合深度
 - 4 大 Building Blocks 全鏈路貫通：
