@@ -33,6 +33,7 @@ class InvalidStateTransitionError(Exception):
 VALID_TRANSITIONS: Dict[AutopilotState, List[AutopilotState]] = {
     AutopilotState.IDLE: [
         AutopilotState.AUTOPILOT_CRUISING,
+        AutopilotState.CIRCUIT_TRIPPED_ESCALATED,
         AutopilotState.WALK_AWAY,
     ],
     AutopilotState.AUTOPILOT_CRUISING: [
@@ -43,6 +44,7 @@ VALID_TRANSITIONS: Dict[AutopilotState, List[AutopilotState]] = {
     AutopilotState.CIRCUIT_TRIPPED_ESCALATED: [
         AutopilotState.AWAITING_REMOTE_AUTH,
         AutopilotState.AUTOPILOT_CRUISING,
+        AutopilotState.DEAL_CLOSED,
         AutopilotState.WALK_AWAY,
     ],
     AutopilotState.AWAITING_REMOTE_AUTH: [

@@ -63,6 +63,7 @@ class InboundTacticalClassification(BaseModel):
     confidence: float = Field(default=0.8, ge=0.0, le=1.0)
     mentioned_price: Optional[float] = None
     demanded_moq: Optional[int] = None
+    demanded_mold_fee: Optional[float] = None
     is_mixed_signal: bool = Field(default=False, description="是否同時包含商務報價與非商務試探/雜訊")
     mixed_signal_note: Optional[str] = None
     tactical_rationale: str = ""
@@ -127,6 +128,7 @@ class InboundIntentClassifier:
     MOQ_PATTERN = re.compile(r"(\d{3,7})\s*(?:個|把|件|套|pcs)", re.IGNORECASE)
     LEAD_DAYS_PATTERN = re.compile(r"(\d{1,3})\s*(?:天|工作日|days?)", re.IGNORECASE)
     DEPOSIT_PATTERN = re.compile(r"(\d{1,2}(?:\.\d+)?)\s*%\s*(?:定金|訂金|預付)", re.IGNORECASE)
+    MOLD_FEE_PATTERN = re.compile(r"(?:模具費|開模費|模具|開模)\s*[:：=加另算]*\s*(?:[¥￥$]|RMB)?\s*(\d+(?:\.\d{1,2})?)", re.IGNORECASE)
     QUALITY_SPEC_PATTERN = re.compile(r"(原包|全新料|回料|水口料|304|316|201|AQL|TDS|公差|檢驗|質檢|驗貨|開模)", re.IGNORECASE)
 
     @classmethod
@@ -240,18 +242,46 @@ class InboundIntentClassifier:
             except ValueError:
                 pass
 
+        # 2.5 抽取模具費需求 (Composite Signals)
+        mold_fee_val = None
+        mf_match = cls.MOLD_FEE_PATTERN.search(raw_text)
+        if mf_match and mf_match.group(1):
+            try:
+                candidate_mf = float(mf_match.group(1))
+                if candidate_mf > 0:
+                    mold_fee_val = candidate_mf
+            except ValueError:
+                pass
+
         # 3. Stage 1: 匹配確定性套路特徵
         for intent, pattern, conf, escalate in cls.PATTERNS:
+            # 否定詞前置過濾：若命中加微信/私聊，但上下文有明確否定前綴（如「不加微信也行」、「不用私聊」），則跳過熔斷
+            if intent == VendorTacticEnum.OFFLINE_BYPASS_DIVERT:
+                has_positive_divert = False
+                for m in pattern.finditer(raw_text):
+                    prefix = raw_text[max(0, m.start() - 6):m.start()]
+                    if re.search(r"(?:不|別|不用|免|無須|不加|非)\s*$", prefix):
+                        continue  # 命中否定詞前綴，非主動引誘私聊
+                    has_positive_divert = True
+                    break
+                if not has_positive_divert:
+                    continue  # 跳過私聊熔斷，允許後續套路匹配 (如 MATERIAL_SPEC_DEGRADE)
+
             if pattern.search(raw_text):
                 rationale = "Matched deterministic pattern in inbound text"
-                # 檢驗是否為混合信號 (同時有實質報價/交期要素且有套路/試探)
-                is_mixed = price_val is not None and intent in (
+                # 檢驗是否為混合信號 (同時有實質報價/模具/交期要素且有套路/試探)
+                is_mixed = (price_val is not None or mold_fee_val is not None) and intent in (
                     VendorTacticEnum.IDENTITY_PROBE_TEST,
                     VendorTacticEnum.CRY_POVERTY_COST_HIKE,
                     VendorTacticEnum.TIER_VOLUME_BLACKMAIL,
                 )
+                mixed_parts = []
+                if price_val:
+                    mixed_parts.append(f"Price ¥{price_val:.2f}")
+                if mold_fee_val:
+                    mixed_parts.append(f"Mold Fee ¥{mold_fee_val:.0f}")
                 mixed_note = (
-                    f"Extracted Price ¥{price_val:.2f} while deflecting {intent.value}"
+                    f"Extracted {', '.join(mixed_parts)} while deflecting {intent.value}"
                     if is_mixed else None
                 )
                 return InboundTacticalClassification(
@@ -259,6 +289,7 @@ class InboundIntentClassifier:
                     confidence=conf,
                     mentioned_price=price_val,
                     demanded_moq=moq_val,
+                    demanded_mold_fee=mold_fee_val,
                     is_mixed_signal=is_mixed,
                     mixed_signal_note=mixed_note,
                     tactical_rationale=rationale,
@@ -547,18 +578,32 @@ class ChineseSurfaceRenderer:
             raise ValueError(f"Incompatible schema version '{obj.schema_version}'. Expected 4.x")
 
     @classmethod
+    def _extract_round_number(cls, source_round_id: Optional[str]) -> int:
+        if not source_round_id:
+            return 1
+        m = re.search(r"_R(\d+)(?:_|$)", source_round_id)
+        if m:
+            try:
+                return int(m.group(1))
+            except ValueError:
+                pass
+        return 1
+
+    @classmethod
     def render(cls, obj: TacticalActionObject) -> str:
         cls._check_schema_version(obj)
         p_val = obj.authorized_price
         contact = obj.supplier_contact_name or "老闆"
         product = obj.product_name or "產品"
         deposit_pct_str = f"{int(round(obj.deposit_pct * 100))}%"
+        r_idx = cls._extract_round_number(obj.source_round_id)
 
         # 0. 混合信號處理：若對手同時給出報價與非商務試探/抱怨，邊界鎖定直接壓制試探，鎖定商務價格
         if obj.is_mixed_signal:
+            mold_mention = f"，模具費 ¥{obj.waive_mold_fee_amount:.0f} 由貴廠自攤免除" if obj.waive_mold_fee_amount > 0 else ""
             return (
                 f"{contact}，問那麼多幹嘛，開13個點專票走合同。"
-                f"這批{product}按 ¥{p_val:.2f} 出廠價落定，首批預付 {deposit_pct_str} 定金現款秒排，"
+                f"這批{product}按 ¥{p_val:.2f} 出廠價落定{mold_mention}，首批預付 {deposit_pct_str} 定金現款秒排，"
                 f"合適的話現在把合同簽了排單。"
             )
 
@@ -578,9 +623,10 @@ class ChineseSurfaceRenderer:
                 )
             # 變體 C: 面對背景刺探/閒聊雜訊 (標準邊界鎖定)
             else:
+                mold_clause = f"，模具費由貴廠攤銷免除" if (obj.mold_fee_exempted or obj.waive_mold_fee_amount > 0) else ""
                 return (
                     f"{contact}，開票走 13 個點專票，具體條款財務後台走合同。"
-                    f"你先確認這批{product} ¥{p_val:.2f} 出廠價能不能接，能做今天預付 {deposit_pct_str} 定金秒排，"
+                    f"你先確認這批{product} ¥{p_val:.2f} 出廠價能不能接{mold_clause}，能做今天預付 {deposit_pct_str} 定金秒排，"
                     f"合適的話現在把合同簽了排單；不能做我們手頭備案產能就放出去了。"
                 )
 
@@ -602,10 +648,12 @@ class ChineseSurfaceRenderer:
             )
 
         if obj.counterpart_intent == VendorTacticEnum.CRY_POVERTY_COST_HIKE:
-            return (
-                f"大宗原料現貨波動我們有跟蹤，攤到單件成本影響可控。"
-                f"這批{product}總量大，意向價 ¥{p_val:.2f} 出廠價大家都有合理利潤，合適的話儘快出樣排產。"
-            )
+            poverty_templates = [
+                f"大宗原料現貨波動我們有跟蹤，攤到單件成本影響可控。這批{product}總量大，意向價 ¥{p_val:.2f} 出廠價大家都有合理利潤，合適的話儘快出樣排產。",
+                f"{contact}，行情波動大家心裡有數，核算過BOM表材料佔比，¥{p_val:.2f} 出廠價給貴廠留足了利潤。能接我們今天鎖定排單，別為幾毛錢耽誤檔期。",
+                f"成本壓力大家都有，但我們走的是核心長期走量盤。首批試單 ¥{p_val:.2f} 現款現結見單排產，後續翻單把量補上，痛快點今天定下來。",
+            ]
+            return poverty_templates[r_idx % len(poverty_templates)]
 
         if obj.counterpart_intent == VendorTacticEnum.TAX_PACKAGING_UNBUNDLING:
             return (
