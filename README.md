@@ -1,15 +1,21 @@
 # [TROPHY] TradeFlow AI — 量化博弈談判決策引擎與自主採購代理
 
+> [!IMPORTANT]
+> **原型定位與局限性前置宣告 (Upfront Prototype Disclosure)**：  
+> 本專案為黑客松開發之**受約束採購決策原型（Constrained Decision Prototype）**，尚未經過真實工廠與真實供應商的閉環成交驗證。所有基準測試與對抗指標均來自**自建沙盒環境與學術文獻校準之參數化模擬**。系統決策核心採用**向量化期望最大化求解器 (Vectorized Expectimax)**，其有效性嚴格依賴先驗設定；AST 護欄僅物理約束結構化策略物件數值，自然語言渲染層依賴模板與正則過濾。詳見完整邊界審計：[LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](LIMITATIONS_AND_REAL_WORLD_FINDINGS.md)。
+
 AMD Developer Hackathon: ACT III (lablab.ai, 2026/10/12–18) 雙賽道參賽專案：
 - **Reinvent Commerce**（商業變革主賽道）
 - **Evolus Business Agents on AMD**（AMD 業務代理專項賽道）
 
-**一句話總結**：在資訊不對稱與供應商博弈下，以「量化策略 Agent（純數值、無 LLM）」與「語意談判 Agent（LLM 表達）」解耦架構，在 AMD 異質運算拓撲（NPU 常駐先驗 + GPU 96M 張量 MCTS）上求解帕雷托最優讓步路徑與動態 BATNA。在遭遇單價僵局時，透過企業授權契約（Corporate Mandate）啟動非價格多維條款置換（Logrolling：定金換交期/模具全免），並以合規人機審批門禁（Compliance Air-Gap Gate）與 AST 數值硬護欄死守企業底線。
+**一句話總結**：在資訊不對稱與供應商博弈下，以「向量化期望最大化決策引擎（Vectorized Expectimax，純數值、無 LLM）」與「語意談判 Agent（LLM 表達）」解耦架構，在 AMD 異質運算拓撲上求解帕雷托最優讓步路徑與動態 BATNA。在遭遇單價僵局時，透過企業授權契約（Corporate Mandate）啟動非價格多維條款置換（Logrolling：定金換交期/模具全免），並以合規人機審批門禁（Compliance Air-Gap Gate）與 AST 數值硬護欄死守企業底線。
 
 - 公開倉庫：https://github.com/Fu93/tradeflow-ai
 - 戰情門戶：http://localhost:8000 （Web Portal Dashboard）
-- 提交清單：[SUBMIT.md](SUBMIT.md)
-- 實作藍圖：[TradeFlow_Web_Portal_Plan.md](TradeFlow_Web_Portal_Plan.md) | [TradeFlow_Cross_Lingual_Sourcing_Blueprint.md](TradeFlow_Cross_Lingual_Sourcing_Blueprint.md)
+- 實證對抗與局限性報告：[LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](LIMITATIONS_AND_REAL_WORLD_FINDINGS.md)
+- 真實紅隊壓力測試實錄：[REAL_WORLD_STRESS_TEST_TRANSCRIPT.md](REAL_WORLD_STRESS_TEST_TRANSCRIPT.md)
+- 750場錦標賽基線數據：[results/self_play_benchmark.md](results/self_play_benchmark.md)
+- 提交清單：[SUBMIT.md](SUBMIT.md) | 演示提案：[PITCH.md](PITCH.md)
 
 ---
 
