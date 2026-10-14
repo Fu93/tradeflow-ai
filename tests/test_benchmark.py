@@ -6,10 +6,11 @@ from src.engine import benchmark, robustness, viz
 
 
 def test_benchmark_runs():
-    rows = benchmark.run(n_list=(2000,))
-    assert rows[0]["rollouts"] > 0
-    assert rows[0]["seconds"] > 0
-    assert rows[0]["mi300x_projected_seconds"] > 0
+    res = benchmark.run(n_list=(2000,))
+    grid = res["single_supplier_grid"]
+    assert grid[0]["rollouts"] > 0
+    assert grid[0]["cpu_seconds"] > 0
+    assert grid[0]["mi300x_seconds"] > 0
 
 
 def test_figures_no_error():
