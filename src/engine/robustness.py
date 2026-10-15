@@ -58,8 +58,14 @@ def prior_sensitivity(rng, n_samples: int = 20_000, base_mean=1.08, base_std=0.1
                       factors=(0.5, 1.0, 1.5)):
     """prior reserve mean/std 在 ±50% 下，引擎「實際推薦策略」的期望邊際與破局率。
 
-    回傳 list of (factor, mean, rec_margin, rec_break) —— 量化「即使我們對供應商判斷偏 50%，
-    推薦策略仍穩定的邊際/破局」。
+    回傳 list of (factor, mean, rec_margin, rec_break) —— 量化先驗偏離的後果。
+
+    [誠實] 實測（2026-10-14，n=20,000）結果為**不穩定**：
+      ×0.5 (mean=0.54): margin -0.016, breakdown 81.1%
+      ×1.0 (mean=1.08): margin +0.254, breakdown  6.7%
+      ×1.5 (mean=1.62): margin -0.110, breakdown 45.9%
+    即先驗是該圖的承載參數（load-bearing parameter）。本函式的作用是**暴露**這一
+    依賴性，而非證明穩定；結論須由 report() 依實測值計算，禁止寫死。
     """
     out = []
     for f in factors:
@@ -68,6 +74,42 @@ def prior_sensitivity(rng, n_samples: int = 20_000, base_mean=1.08, base_std=0.1
         res = solve(n_opp_samples=n_samples, rng=rng, reserve_mean=m, reserve_std=s)
         i, j = res["best"]
         out.append((f, m, float(res["exp_margin"][i, j]), float(res["exp_break"][i, j])))
+    return out
+
+
+def misbelief_sensitivity(n_samples: int = 20_000, base_mean=1.08, base_std=0.10,
+                          beliefs=(0.5, 1.0, 1.5)):
+    """真正的「信念錯誤」測試 (misbelief test)：現實不變，僅引擎先驗偏移。
+
+    與 prior_sensitivity() 的關鍵差別：
+      * prior_sensitivity：對手樣本也從偏移後的先驗抽樣 → **世界與信念同時偏移**，
+        度量的是「場景敏感度」(scenario sensitivity)，不是信念錯誤的後果。
+      * 本函式：規劃用偏移先驗挑出策略 (i,j)，評估卻用基準分布（現實）的
+        全策略矩陣讀取該策略的結局 → 度量「引擎以為 X、實際世界是 base」時的表現。
+
+    方法：
+      1. reality = solve(prior=base)：在真實分布下算出全網格期望矩陣。
+      2. plan    = solve(prior=shifted)：引擎在錯誤信念下選 best(i, j)。
+      3. 讀 reality.exp_margin[i, j] / exp_break[i, j]：錯誤策略在現實的結局。
+
+    配對設計：所有 solve 呼叫使用同一預設種子 (20261013)，對手類型抽樣與
+    標準化噪聲在各組間完全一致，差異僅來自先驗位移，排除抽樣噪聲。
+
+    回傳 list of (factor, belief_mean, margin_in_reality, breakdown_in_reality)。
+    """
+    from .solver import solve
+    # 現實（基準先驗）下的全策略評估矩陣
+    reality = solve(n_opp_samples=n_samples, reserve_mean=base_mean, reserve_std=base_std)
+    out = []
+    for f in beliefs:
+        bm, bs = base_mean * f, base_std * f
+        # 引擎在「以為先驗是 bm/bs」的信念下挑策略
+        plan = solve(n_opp_samples=n_samples, reserve_mean=bm, reserve_std=bs)
+        i, j = plan["best"]
+        # 該策略放回現實（基準分布）評估
+        out.append((f, bm,
+                    float(reality["exp_margin"][i, j]),
+                    float(reality["exp_break"][i, j])))
     return out
 
 
@@ -86,14 +128,39 @@ def report(target_price=12.0, n_samples=20000, seed=20261013):
     for b in multi:
         lines.append(f"  {b['name']:>18}: margin {b['margin']:.3f}  breakdown {b['break']:.1%}  "
                      f"gain {b['gain']:+.3f}")
-    lines.append("Prior sensitivity: even with ±50% miss on supplier reserve, recommended strategy is stable.")
+    # [審計修正] 結論必須由下方實測數字計算，不可寫死。
+    # 舊版無條件印出「recommended strategy is stable」，但同一次執行的實測值為
+    # breakdown 6.7% → 81.1% → 45.9%（先驗 ×0.5/×1.0/×1.5），結論與數字直接矛盾。
+    base_m, base_b = sens[1][2], sens[1][3]
+    worst_b = max(rb for _, _, _, rb in sens)
+    worst_gap = max(abs(rm - base_m) for _, _, rm, _ in sens)
+    stable = (worst_b <= max(0.15, 2.0 * base_b)) and (worst_gap <= 0.05)
+    if stable:
+        lines.append("Prior sensitivity: recommended strategy remains stable across the tested prior range.")
+    else:
+        worst_f = next(f for f, _, _, rb in sens if rb == worst_b)
+        lines.append(
+            "Prior sensitivity: DEGRADES under prior miss — prior-dependence is material, not stable. "
+            f"Worst case prior×{worst_f}: breakdown {worst_b:.1%} (vs {base_b:.1%} at base), "
+            f"expected margin swing {worst_gap:+.3f}. The engine's edge is conditional on an "
+            "accurate reserve prior (see LIMITATIONS §十三)."
+        )
     for f, m, rm, rb in sens:
         lines.append(f"  prior×{f} (mean={m:.3f}): margin {rm:.3f}   breakdown {rb:.1%}")
+    # 信念錯誤測試（現實固定在 base，僅引擎信念偏移）—— 場景敏感度之外的獨立維度。
+    # 注意：迴圈變數不可用 bm（會遮蔽上方 baseline_margin 的 bm）。
+    mis = misbelief_sensitivity(n_samples)
+    lines.append("Misbelief test (reality fixed at base prior; only the engine's belief shifts):")
+    for f_bel, belief_mean, m_mis, b_mis in mis:
+        lines.append(f"  belief×{f_bel} (planning mean={belief_mean:.3f}): "
+                     f"margin {m_mis:.3f}   breakdown {b_mis:.1%}")
     return "\n".join(lines), {
         "engine_margin": em, "engine_break": eb,
         "baseline_margin": bm, "baseline_break": bb, "gain": gain,
         "multi_baseline": multi,
         "sensitivity": [{"factor": f, "mean": m, "margin": rm, "break": rb} for f, m, rm, rb in sens],
+        "misbelief": [{"factor": f, "belief_mean": bm, "margin": rm, "break": rb}
+                      for f, bm, rm, rb in mis],
     }
 
 

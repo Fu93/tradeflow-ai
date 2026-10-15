@@ -11,9 +11,22 @@ import os
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
-from ..engine import solve, recommend, bayes_update, robustness, model, proposal
+from ..engine import (
+    solve,
+    recommend,
+    bayes_update,
+    compute_belief_confidence,
+    robustness,
+    model,
+    proposal,
+    robust_bayes_update,
+    compute_calibrated_deal_prob,
+    BayesianBeliefState,
+    TCOEngine,
+)
 from ..session.schema import (
     SessionSpec,
     NegotiationSession,
@@ -21,7 +34,7 @@ from ..session.schema import (
     AutopilotState,
     RemoteAuthCommand,
 )
-from ..session.manager import SessionManager, InvalidStateTransitionError
+from ..session.manager import SessionManager, InvalidStateTransitionError, OptimisticLockConflictError
 from ..transport.webhook_hub import hub
 from ..transport.telemetry import notifier
 from . import orchestrator
@@ -39,6 +52,47 @@ app.add_middleware(
 
 # 全域會話管理器實例
 session_mgr = SessionManager()
+
+# ---- 安全與認證門禁 (Fail-Closed Default-Deny Security Gate) ----
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+SANDBOX_DEMO_TOKEN = "SANDBOX-DEMO-TOKEN"
+ENV_MODE = os.getenv("TRADEFLOW_ENV", "sandbox").lower()
+
+
+def require_api_key(api_key: Optional[str] = Depends(api_key_header)):
+    """API 安全金鑰驗證門禁 (Fail-Closed 默認拒絕規範).
+    
+    1. 演練沙盒模式 (TRADEFLOW_ENV=sandbox, 預設):
+       支援黑客松評委演示、前端無痛演練與 pytest 單元測試。
+       若配置了密鑰則強制驗證密鑰或 SANDBOX_DEMO_TOKEN，未配置時標記沙盒訪問放行。
+    2. 生產模式 (TRADEFLOW_ENV=production):
+       Fail-Closed: 若未設置 TRADEFLOW_API_KEY (或長度 < 16) 則直接阻斷存取 (500)；
+       未攜帶或攜帶非法密鑰則直接阻斷 (401)，杜絕未受控裸奔。
+    """
+    if ENV_MODE == "sandbox":
+        configured_key = os.getenv("TRADEFLOW_API_KEY")
+        if configured_key:
+            if not api_key or (api_key.strip() != configured_key.strip() and api_key.strip() != SANDBOX_DEMO_TOKEN):
+                raise HTTPException(
+                    status_code=401,
+                    detail="Unauthorized: Invalid X-API-Key header in sandbox mode. Access denied.",
+                )
+        return api_key or SANDBOX_DEMO_TOKEN
+
+    # 生產模式：Fail-Closed
+    configured_key = os.getenv("TRADEFLOW_API_KEY")
+    if not configured_key or len(configured_key.strip()) < 16:
+        raise HTTPException(
+            status_code=500,
+            detail="Security Violation: System is in production mode but TRADEFLOW_API_KEY is not configured (Fail-Closed).",
+        )
+    if not api_key or api_key.strip() != configured_key.strip():
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: Invalid or missing X-API-Key header in production mode. Access denied.",
+        )
+    return api_key
 
 
 # ---- 既有端點 (向後相容) ----
@@ -224,7 +278,7 @@ class SessionCommandBody(BaseModel):
     source: str = "mobile"
 
 
-@app.post("/api/v1/sessions/{session_id}/command")
+@app.post("/api/v1/sessions/{session_id}/command", dependencies=[Depends(require_api_key)])
 def execute_session_command(session_id: str, body: SessionCommandBody):
     """執行特定會話的高管授權或決策指令。"""
     user_command = (body.command or body.command_text or "").strip()
@@ -251,6 +305,11 @@ class RoundActionRequest(BaseModel):
     deposit_pct: Optional[float] = None
     unbundled_tax_rate: Optional[float] = None
     unbundled_packaging_fee: Optional[float] = None
+    expected_version: Optional[int] = None
+    mode: Optional[str] = "autopilot"  # "autopilot" | "copilot"
+    # Stage-2 LLM 語意推理為同步網路呼叫（實測 2–13 秒）。預設關閉以維持回應速度；
+    # 需要更深語意理解時才開啟（例如離線批次分析、或使用者明確願意等待）。
+    deep_semantic: bool = False
 
     def get_effective_raw_text(self) -> str:
         return self.opponent_raw_text or self.supplier_text or ""
@@ -259,7 +318,81 @@ class RoundActionRequest(BaseModel):
         return self.opponent_offer_price if self.opponent_offer_price is not None else self.supplier_offer
 
 
-@app.post("/api/v1/sessions", response_model=NegotiationSession)
+class ApproveActionRequest(BaseModel):
+    action: str = "approve"  # "approve", "modify", "override", "reject"
+    custom_price: Optional[float] = None
+    custom_reply_text: Optional[str] = None
+    expected_version: Optional[int] = None
+    tactical_rationale: Optional[str] = None
+
+
+# ---- v5 條款 TCO 與貝氏推斷 Request Models ----
+
+class TCOEvalRequest(BaseModel):
+    raw_price: float
+    baseline_lead_days: int = 15
+    offered_lead_days: Optional[int] = None
+    baseline_moq: int = 500
+    offered_moq: Optional[int] = None
+    wacc: float = 0.08
+
+class BayesianUpdateRequest(BaseModel):
+    prior_mean: float = 1.08
+    prior_std: float = 0.10
+    observed_offer: float
+    estimated_markup: float = 0.08
+    our_next_offer: Optional[float] = None
+
+
+class SemanticClassifyRequest(BaseModel):
+    """Stage-2 語意分類預覽請求。"""
+    text: str
+    enable_stage2: bool = True  # 是否實際呼叫 AMD 託管模型（2–13 秒）
+
+
+class MultiAuctionSupplierInput(BaseModel):
+    name: str
+    profile: Optional[str] = "Standard"
+
+
+class MultiAuctionRunRequest(BaseModel):
+    target_price: float = 12.0
+    walk_away_ceiling: float = 16.2
+    moq: int = 10000
+    n_samples: int = 20000
+    n_rounds: int = 3
+    suppliers: Optional[List[MultiAuctionSupplierInput]] = None
+    rounds_quotes: Optional[List[List[float]]] = None
+
+
+@app.post("/api/v1/tco/evaluate")
+def evaluate_nonlinear_tco(req: TCOEvalRequest):
+    """計算非價格條款（交期延誤、超額起訂量）之非線性影子成本。"""
+    res = TCOEngine.calculate_nonlinear_effective_tco(
+        raw_price=req.raw_price,
+        baseline_lead_days=req.baseline_lead_days,
+        offered_lead_days=req.offered_lead_days,
+        baseline_moq=req.baseline_moq,
+        offered_moq=req.offered_moq,
+        wacc=req.wacc,
+    )
+    return {"status": "ok", "tco_analysis": res}
+
+
+@app.post("/api/v1/bayesian/update")
+def calculate_bayesian_update(req: BayesianUpdateRequest):
+    """執行高斯-均勻雙模態混合似然推斷與離群點拒絕。"""
+    res = robust_bayes_update(
+        prior_mean=req.prior_mean,
+        prior_std=req.prior_std,
+        observed_offer=req.observed_offer,
+        estimated_markup=req.estimated_markup,
+        our_next_offer=req.our_next_offer,
+    )
+    return {"status": "ok", "belief_state": res.model_dump()}
+
+
+@app.post("/api/v1/sessions", response_model=NegotiationSession, dependencies=[Depends(require_api_key)])
 def create_session(spec: SessionSpec):
     """建立新的談判會話。"""
     try:
@@ -283,7 +416,156 @@ def get_session(session_id: str):
     return sess
 
 
-@app.post("/api/v1/sessions/{session_id}/round")
+@app.post("/api/v1/classify/semantic", dependencies=[Depends(require_api_key)])
+async def classify_semantic_preview(body: SemanticClassifyRequest):
+    """Stage-2 語意分類的獨立端點（非同步、不阻塞事件迴圈）。
+
+    設計動機：Stage-2 為 2–13 秒的網路呼叫。將其從主談判輪次中拆出後：
+    1. 主輪次端點維持毫秒級回應（僅 Stage-1）。
+    2. 需要深度語意理解時，前端可併行呼叫本端點，完成後再更新 UI。
+
+    回傳同時包含 Stage-1（即時）與 Stage-2（深度）兩者結果，方便對照差異。
+    """
+    from ..engine.bilingual import InboundIntentClassifier as _Clf
+
+    text = body.text or ""
+    stage1 = _Clf.classify_stage1_only(text)
+
+    stage2 = None
+    if body.enable_stage2:
+        deep = await _Clf.classify_with_llm_async(text)
+        if deep is not None:
+            stage2 = {
+                "primary_intent": deep.primary_intent.value,
+                "confidence": deep.confidence,
+                "tactical_rationale": deep.tactical_rationale,
+                "requires_escalation": deep.requires_escalation,
+            }
+
+    return {
+        "text": text,
+        "stage1": {
+            "primary_intent": stage1.primary_intent.value,
+            "confidence": stage1.confidence,
+            "mentioned_price": stage1.mentioned_price,
+            "demanded_moq": stage1.demanded_moq,
+            "requires_escalation": stage1.requires_escalation,
+        },
+        "stage2": stage2,
+        "stage2_available": stage2 is not None,
+    }
+
+
+@app.post("/api/v1/sessions/{session_id}/approve", dependencies=[Depends(require_api_key)])
+def approve_session_decision(session_id: str, body: ApproveActionRequest):
+    """採購決策副駕駛 (Copilot) 人工審核與定奪授權端點。
+
+    支援功能：
+    1. approve: 人工核准系統推薦報價與話術。
+    2. modify / override: 人工覆寫報價或自訂回覆話術 (需通過 ceiling_price 硬護欄)。
+    3. reject: 人工否決並破局撤退 (WALK_AWAY)。
+    """
+    sess = session_mgr.get_session(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    # 狀態守衛：必須處於等待人類決策、監聽中或熔斷狀態
+    if sess.state not in (
+        AutopilotState.AWAITING_HUMAN_DECISION,
+        AutopilotState.CIRCUIT_TRIPPED_ESCALATED,
+        AutopilotState.COPILOT_MONITORING,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session is in state '{sess.state.value}', not awaiting human decision.",
+        )
+
+    # CAS 樂觀鎖版本檢查
+    if body.expected_version is not None and sess.version != body.expected_version:
+        raise HTTPException(
+            status_code=409,
+            detail=f"CAS optimistic lock conflict on session '{session_id}': expected_version={body.expected_version}, current_version={sess.version}",
+        )
+
+    # 1. 否決撤退
+    if body.action == "reject":
+        sess = session_mgr.transition_state(
+            session_id,
+            AutopilotState.WALK_AWAY,
+            reason=body.tactical_rationale or "Human buyer rejected offer and terminated negotiation.",
+            expected_version=sess.version,
+        )
+        return {
+            "status": "rejected",
+            "session": sess,
+            "action": "reject",
+            "autopilot_state": sess.state.value,
+        }
+
+    # 2. 核准或覆寫
+    final_price = body.custom_price
+    if final_price is None:
+        # 若未指定 custom_price，從上一輪推薦或目標價推算
+        final_price = sess.latest_our_offer or sess.spec.target_price
+
+    # 護欄校驗：不得突破天花板價
+    if final_price > sess.spec.ceiling_price:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Approved price ¥{final_price:.2f} breaches walk-away ceiling ¥{sess.spec.ceiling_price:.2f}.",
+        )
+
+    final_reply_text = body.custom_reply_text
+    if not final_reply_text:
+        final_reply_text = f"經我方核算，確定意向合作單價為 ¥{final_price:.2f}，現款現結走官方系統，請確認排單。"
+
+    turn_our = NegotiationTurn(
+        round_index=sess.current_round,
+        sender="buyer_human_approved",
+        raw_text=final_reply_text,
+        parsed_price=final_price,
+        p_break=0.0,
+        metadata={
+            "approved_by": "human_buyer",
+            "action": body.action,
+            "rationale": body.tactical_rationale or "Human buyer authorized decision",
+        },
+    )
+
+    try:
+        sess = session_mgr.append_turn(session_id, turn_our, expected_version=sess.version)
+        sess = session_mgr.transition_state(
+            session_id,
+            AutopilotState.HUMAN_APPROVED_APPLIED,
+            reason=f"Human buyer approved action '{body.action}' at price ¥{final_price:.2f}",
+            expected_version=sess.version,
+        )
+    except OptimisticLockConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    # 檢查是否達成協議
+    is_deal_closed = False
+    if sess.latest_opponent_offer is not None and sess.latest_opponent_offer <= final_price:
+        is_deal_closed = True
+
+    if is_deal_closed:
+        sess = session_mgr.transition_state(session_id, AutopilotState.DEAL_CLOSED, expected_version=sess.version)
+    else:
+        # 轉入常規 Copilot 監聽狀態
+        sess = session_mgr.transition_state(session_id, AutopilotState.COPILOT_MONITORING, expected_version=sess.version)
+
+    return {
+        "status": "approved",
+        "action": body.action,
+        "session": sess,
+        "autopilot_state": sess.state.value,
+        "applied_price": final_price,
+        "reply_text": final_reply_text,
+        "turn": turn_our,
+    }
+
+
+@app.post("/api/v1/sessions/{session_id}/round", dependencies=[Depends(require_api_key)])
 def process_negotiation_round(session_id: str, action: RoundActionRequest):
     """
     處理單輪網格回報：
@@ -307,13 +589,20 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             supplier_channel="web_chat",
         )
         sess = session_mgr.create_session(default_spec)
-        sess = session_mgr.transition_state(session_id, AutopilotState.AUTOPILOT_CRUISING)
+        initial_state = AutopilotState.COPILOT_MONITORING if action.mode == "copilot" else AutopilotState.AUTOPILOT_CRUISING
+        sess = session_mgr.transition_state(session_id, initial_state)
+    elif action.expected_version is not None and sess.version != action.expected_version:
+        raise HTTPException(
+            status_code=409,
+            detail=f"CAS optimistic lock conflict on session '{session_id}': expected_version={action.expected_version}, current_version={sess.version}",
+        )
 
     if sess.state in (AutopilotState.DEAL_CLOSED, AutopilotState.WALK_AWAY):
         return {
             "session": sess,
             "autopilot_state": sess.state.value,
             "circuit_tripped": False,
+            "pending_human_approval": False,
             "trip_reason": f"Session already concluded with state {sess.state.value}",
             "reply_text": f"會話已於先前輪次結案或終止 ({sess.state.value})。",
         }
@@ -337,28 +626,36 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         EnglishExecutiveRenderer,
         CURRENT_SCHEMA_VERSION,
     )
-    inbound_classification = InboundIntentClassifier.classify(raw_text)
+    # 1. 供應商套路意圖分類與潛台詞反編譯
+    #    效能說明：Stage-1（正則 + 端側 ONNX）實測 ~1ms。
+    #    Stage-2（AMD tokenfactory LLM）實測 2–13 秒，故預設不啟用，避免阻塞同步 HTTP 請求。
+    #    呼叫端若需要更深語意理解，可設 deep_semantic=true。
+    inbound_classification = (
+        InboundIntentClassifier.classify(raw_text)
+        if action.deep_semantic
+        else InboundIntentClassifier.classify_stage1_only(raw_text)
+    )
     if opp_price is None and inbound_classification.mentioned_price is not None:
         opp_price = inbound_classification.mentioned_price
 
     # 1.5 多目標非價格條款 TCO 影子成本折算 (Total Cost of Ownership Normalization)
-    from ..engine.tco import TCOEngine, TradeTermsSpec, SupplierOfferedTerms
+    from ..engine.tco import TradeTermsSpec
     terms_spec = TradeTermsSpec(baseline_moq=sess.spec.moq)
     offered_moq = action.offered_moq or inbound_classification.demanded_moq
     tco_breakdown = None
     effective_opp_price = opp_price
 
     if opp_price is not None:
-        offered_terms = SupplierOfferedTerms(
-            raw_unit_price=opp_price,
+        tco_res = TCOEngine.calculate_nonlinear_effective_tco(
+            raw_price=opp_price,
+            baseline_lead_days=terms_spec.baseline_lead_days,
             offered_lead_days=action.offered_lead_days,
+            baseline_moq=sess.spec.moq,
             offered_moq=offered_moq,
-            deposit_pct=action.deposit_pct,
-            unbundled_tax_rate=action.unbundled_tax_rate,
-            unbundled_packaging_fee=action.unbundled_packaging_fee,
+            wacc=terms_spec.annual_cost_of_capital,
         )
-        tco_breakdown = TCOEngine.calculate_effective_price(terms_spec, offered_terms)
-        effective_opp_price = tco_breakdown.effective_unit_price
+        effective_opp_price = tco_res["effective_unit_tco"]
+        tco_breakdown = tco_res
 
     # 2. 計算歸一化報價與更新底價後驗 (以 TCO 等效總成本驅動博弈)
     prev_mean = sess.spec.prior_reserve_mean
@@ -392,19 +689,22 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     raw_recommended_price = rec["opening_offer_price"]
     recommended_offer_price = min(raw_recommended_price, ceiling_price)
     floor_price_est = round(post_mean * target_price, 2)
-    bayesian_confidence = round(max(0.50, min(0.98, 1.0 - post_std)), 3)
+    bayesian_confidence = compute_belief_confidence(prev_std, post_std, post_mean)
 
     # 3. 記錄對手發言輪次
     turn_opp = NegotiationTurn(
         round_index=current_round,
         sender="opponent",
-        raw_text=action.opponent_raw_text,
+        raw_text=action.get_effective_raw_text(),
         parsed_price=opp_price,
         p_break=p_break,
         posterior_mean=post_mean,
         posterior_std=post_std,
     )
-    sess = session_mgr.append_turn(session_id, turn_opp)
+    try:
+        sess = session_mgr.append_turn(session_id, turn_opp, expected_version=action.expected_version)
+    except OptimisticLockConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
     # 4. 安全熔斷矩陣評估
     trip_reason = None
@@ -454,55 +754,29 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             proposed_price=recommended_offer_price,
             action_object=trip_action_obj,
         )
+        v2_belief = robust_bayes_update(
+            prior_mean=sess.spec.prior_reserve_mean,
+            prior_std=sess.spec.prior_reserve_std,
+            observed_offer=opp_price / target_price if opp_price else post_mean,
+            our_next_offer=recommended_offer_price / target_price if recommended_offer_price else None,
+        )
         return {
             "session": sess,
             "autopilot_state": sess.state.value,
             "circuit_tripped": True,
+            "pending_human_approval": True,
             "trip_reason": trip_reason,
             "recommendation": rec,
             "proposal": prop,
             "action_object": trip_action_obj.model_dump(),
             "executive_card_en": EnglishExecutiveRenderer.render_executive_card(trip_action_obj),
             "reply_text": None,  # 阻斷回覆，等待主管手機授權
+            "tco_breakdown": tco_breakdown,
+            "effective_opp_price": effective_opp_price,
+            "bayesian_belief_state": v2_belief.model_dump(),
         }
 
-    # 5. 安全自駕中 (AUTOPILOT_CRUISING)
-    if sess.state == AutopilotState.IDLE:
-        sess = session_mgr.transition_state(session_id, AutopilotState.AUTOPILOT_CRUISING)
-
-    # 判斷是否已達成協議 (報價進入目標價 2% 區間，或終局收斂)
-    is_deal_closed = False
-    if opp_price is not None:
-        if opp_price <= target_price * 1.02:
-            is_deal_closed = True
-        elif current_round >= sess.spec.max_rounds and opp_price <= ceiling_price and abs(opp_price - recommended_offer_price) <= (0.02 * target_price):
-            is_deal_closed = True
-
-    if is_deal_closed and sess.state != AutopilotState.DEAL_CLOSED:
-        sess = session_mgr.transition_state(session_id, AutopilotState.DEAL_CLOSED)
-        notifier.notify_deal_closed(
-            session_id=session_id,
-            product=sess.spec.product_name,
-            final_price=opp_price,
-            savings_pct=(ceiling_price - opp_price) / ceiling_price,
-            rounds=current_round,
-        )
-        # 觸發 Evolus 智慧結案合約歸檔 (Evolus Business Agent Audit Trail)
-        try:
-            if os.getenv("EVOLUS_API_KEY") and os.getenv("EVOLUS_APP_ID"):
-                from ..evolus.client import EvolusClient
-                evolus_c = EvolusClient()
-                deal_summary = (
-                    f"Procurement Deal Closed: {sess.spec.product_name} at ¥{opp_price:.2f} "
-                    f"(Target: ¥{target_price:.2f}, MOQ: {sess.spec.moq}). "
-                    f"Completed in {current_round} rounds with total savings of "
-                    f"{((ceiling_price - opp_price) / ceiling_price):.1%}."
-                )
-                evolus_c.run_email_tool(notes=deal_summary, tone="professional")
-        except Exception:
-            pass  # 容錯降級，不阻塞主結案流程
-
-    # 6. 多維契約條款置換 (Logrolling Pareto Optimization)
+    # 5. 多維契約條款置換 (Logrolling Pareto Optimization)
     logrolling_data = None
     from ..engine.logrolling import (
         LogrollingEngine,
@@ -553,7 +827,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     else:
         auto_reply_text = None
 
-    # 6.5 構建語言中立策略決策對象 (TacticalActionObject) 作為單一真相源
+    # 5.5 構建語言中立策略決策對象 (TacticalActionObject) 作為單一真相源
     if logrolling_data:
         t_mode = TacticalModeEnum.LOGROLL
         auth_price = min(logrolling_data["proposed_price"], ceiling_price)
@@ -601,10 +875,10 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         circuit_tripped=False,
     )
 
-    # 6.6 AST 不變量硬護欄驗證單一真相源
+    # 5.6 AST 不變量硬護欄驗證單一真相源
     ActionObjectASTGuardrail.verify(action_obj)
 
-    # 6.7 雙向表面渲染
+    # 5.7 雙向表面渲染
     # 中文表面渲染 (面向供應商對話)：沿海地道行話，徹底消除外商溢價
     auto_reply_text = ChineseSurfaceRenderer.render(action_obj)
 
@@ -622,6 +896,75 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     executive_card_en = EnglishExecutiveRenderer.render_executive_card(action_obj)
     telemetry_eng = EnglishExecutiveRenderer.render_telemetry_summary(action_obj)
 
+    # 5.8 v5 Should-Cost 與校準貝氏混合推斷增強
+    v2_belief = robust_bayes_update(
+        prior_mean=sess.spec.prior_reserve_mean,
+        prior_std=sess.spec.prior_reserve_std,
+        observed_offer=opp_price / target_price if opp_price else post_mean,
+        our_next_offer=auth_price / target_price if auth_price else None,
+    )
+    # 6. 分流：採購決策副駕駛 (Copilot) vs 全自主巡航 (Autopilot)
+    if action.mode == "copilot":
+        if sess.state != AutopilotState.AWAITING_HUMAN_DECISION:
+            sess = session_mgr.transition_state(
+                session_id,
+                AutopilotState.AWAITING_HUMAN_DECISION,
+                reason="Copilot decision radar prepared; awaiting human buyer review and authorization.",
+            )
+        return {
+            "session": sess,
+            "autopilot_state": sess.state.value,
+            "circuit_tripped": False,
+            "pending_human_approval": True,
+            "turn": None,
+            "inbound_intent": inbound_classification.primary_intent.value,
+            "tco_breakdown": tco_breakdown,
+            "logrolling_proposal": logrolling_data,
+            "effective_opp_price": effective_opp_price,
+            "telemetry_summary_en": telemetry_eng,
+            "executive_card_en": executive_card_en,
+            "action_object": action_obj.model_dump(),
+            "recommendation": rec,
+            "proposal": prop,
+            "recommended_offer_price": auth_price,
+            "reply_text": auto_reply_text,
+            "bayesian_belief_state": v2_belief.model_dump(),
+        }
+
+    # ---- Autopilot 巡航模式分支 (向後相容全自動自駕) ----
+    if sess.state == AutopilotState.IDLE:
+        sess = session_mgr.transition_state(session_id, AutopilotState.AUTOPILOT_CRUISING)
+
+    is_deal_closed = False
+    if opp_price is not None:
+        if opp_price <= target_price * 1.02:
+            is_deal_closed = True
+        elif current_round >= sess.spec.max_rounds and opp_price <= ceiling_price and abs(opp_price - recommended_offer_price) <= (0.02 * target_price):
+            is_deal_closed = True
+
+    if is_deal_closed and sess.state != AutopilotState.DEAL_CLOSED:
+        sess = session_mgr.transition_state(session_id, AutopilotState.DEAL_CLOSED)
+        notifier.notify_deal_closed(
+            session_id=session_id,
+            product=sess.spec.product_name,
+            final_price=opp_price,
+            savings_pct=(ceiling_price - opp_price) / ceiling_price,
+            rounds=current_round,
+        )
+        try:
+            if os.getenv("EVOLUS_API_KEY") and os.getenv("EVOLUS_APP_ID"):
+                from ..evolus.client import EvolusClient
+                evolus_c = EvolusClient()
+                deal_summary = (
+                    f"Procurement Deal Closed: {sess.spec.product_name} at ¥{opp_price:.2f} "
+                    f"(Target: ¥{target_price:.2f}, MOQ: {sess.spec.moq}). "
+                    f"Completed in {current_round} rounds with total savings of "
+                    f"{((ceiling_price - opp_price) / ceiling_price):.1%}."
+                )
+                evolus_c.run_email_tool(notes=deal_summary, tone="professional")
+        except Exception:
+            pass
+
     turn_our = NegotiationTurn(
         round_index=current_round,
         sender="buyer_agent",
@@ -638,9 +981,10 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         "session": sess,
         "autopilot_state": sess.state.value,
         "circuit_tripped": False,
+        "pending_human_approval": False,
         "turn": turn_our,
         "inbound_intent": inbound_classification.primary_intent.value,
-        "tco_breakdown": tco_breakdown.model_dump() if tco_breakdown else None,
+        "tco_breakdown": tco_breakdown,
         "logrolling_proposal": logrolling_data,
         "effective_opp_price": effective_opp_price,
         "telemetry_summary_en": telemetry_eng,
@@ -650,6 +994,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         "proposal": prop,
         "recommended_offer_price": auth_price,
         "reply_text": auto_reply_text,
+        "bayesian_belief_state": v2_belief.model_dump(),
     }
 
 
@@ -667,10 +1012,24 @@ app.include_router(web_router)
 
 
 @app.post("/api/v1/multi-auction/run")
-def api_run_multi_auction():
-    """觸發 4 供應商逆向拍賣 (96M Rollouts) 模擬，供 Web 前端大屏展示。"""
+def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
+    """觸發多供應商逆向拍賣。
+
+    不傳報價時，改為執行動態多 Agent 自博弈競價（各家對抗 Agent 依據數學模型
+    逐輪即時算出報價）；亦可傳入自定義供應商名單與逐輪報價矩陣。
+    """
     try:
-        res = simulate_reverse_auction()
+        req = body or MultiAuctionRunRequest()
+        supp_list = [s.model_dump() for s in req.suppliers] if req.suppliers else None
+        res = simulate_reverse_auction(
+            target_price=req.target_price,
+            walk_away_ceiling=req.walk_away_ceiling,
+            moq=req.moq,
+            n_samples=req.n_samples,
+            suppliers=supp_list,
+            rounds_quotes=req.rounds_quotes,
+            n_rounds=req.n_rounds,
+        )
         return res
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

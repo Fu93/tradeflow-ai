@@ -1,0 +1,50 @@
+[
+  {
+    "round": 1,
+    "title": "車間語音噪訊 + 口語化高報價",
+    "input": "在嗎？剛在車間看流水線。這款傘骨架成本壓死人，現在鋁錠漲得厲害，最少得 16.50 出廠，12 塊你找二手翻新吧！",
+    "price": 16.5,
+    "detected_intent": "CRY_POVERTY_COST_HIKE",
+    "circuit_tripped": true,
+    "trip_reason": "Opponent offer ¥16.50 breaches ceiling ¥15.00.",
+    "reply": null,
+    "state": "CIRCUIT_TRIPPED_ESCALATED",
+    "latency_ms": 2175.82
+  },
+  {
+    "round": 2,
+    "title": "極端定金索要 (80%) + 甩鍋交期",
+    "input": "行吧看在量大的份上，14.50 也能做。但今天必須付 80% 定金現款，而且交期得等下個月底，急單我們接不了。",
+    "price": 14.5,
+    "detected_intent": "FINAL_DEAL_CONCESSION",
+    "circuit_tripped": false,
+    "trip_reason": null,
+    "reply": "很好，認可貴廠務實態度。意向價 ¥13.25，現款現結 50% 定金見單走帳，請發合同與正式 PI，我們今天立項排產。",
+    "state": "AUTOPILOT_CRUISING",
+    "latency_ms": 2139.77
+  },
+  {
+    "round": 3,
+    "title": "情緒化甩賣威脅 (Walk-away Bluff)",
+    "input": "這點利潤還不夠交廠房電費！隔壁做跨境亞馬遜的大賣家都是 14 塊通跑，你出這價格真做不了，你找別家吧。",
+    "price": 14.0,
+    "detected_intent": "CRY_POVERTY_COST_HIKE",
+    "circuit_tripped": false,
+    "trip_reason": null,
+    "reply": "大宗原料現貨波動我們有跟蹤，攤到單件成本影響可控。這批加固自動傘總量大，意向價 ¥13.00 出廠價大家都有合理利潤，合適的話儘快出樣排產。",
+    "state": "AUTOPILOT_CRUISING",
+    "latency_ms": 2395.85
+  },
+  {
+    "round": 4,
+    "title": "剝離包裝與運費 (Unbundling Trap)",
+    "input": "最後一口價 12.60。但彩盒外包裝你們自己出，物流自提不包郵，次品率千分之五以內我們不管，能做就簽！",
+    "price": 12.6,
+    "detected_intent": "NORMAL_COUNTER_OFFER",
+    "circuit_tripped": true,
+    "trip_reason": "Engine recommended price ¥15.15 breaches ceiling ¥15.00.",
+    "reply": null,
+    "state": "CIRCUIT_TRIPPED_ESCALATED",
+    "latency_ms": 2362.45
+  }
+]

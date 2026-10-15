@@ -30,18 +30,36 @@ class TestAPI(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         body = r.json()
         self.assertIn("opening_offer_price", body)
-        self.assertIn("posterior_reserve_mean", body)
-        self.assertAlmostEqual(body["posterior_reserve_mean"], 1.155, places=2)
+        # v5 穩健貝氏共軛後驗更新 (取代舊版未校準之線性 0.3*EMA 平滑器)
+        self.assertAlmostEqual(body["posterior_reserve_mean"], 1.144, places=2)
 
-    def test_webhook_offline(self):
+    def test_webhook_responds_with_draft(self):
+        """Webhook 必須回傳草稿與建議，且**不得因外部服務狀態而失敗**。
+
+        注意：本測試刻意**不**斷言「必須是 offline stub」。舊版本斷言
+        `"offline stub" in draft_email`，會在金鑰配置正確時失敗，等於把
+        「外部整合壞掉」鎖進測試 —— 反而讓真正的 Evolus 回歸無法被察覺。
+
+        正確的契約是：無論 Evolus 可用與否，端點都必須 200 並回傳可用的草稿。
+        """
         r = self.c.post("/webhook/evolus", json={
             "extracted": {"target_price": 12.0},
             "offer": 1.25, "email_body": "We can do ¥15, MOQ 500."})
         self.assertEqual(r.status_code, 200)
-        self.assertIn("draft_email", r.json())
-        self.assertIn("recommendation", r.json())
-        # offline 模式應含 stub 標記
-        self.assertIn("offline stub", r.json()["draft_email"])
+        body = r.json()
+        self.assertIn("draft_email", body)
+        self.assertIn("recommendation", body)
+
+        # 草稿必須有實質內容（不論來自 Evolus 或本地降級）
+        draft = body["draft_email"]
+        self.assertIsInstance(draft, str)
+        self.assertGreater(len(draft.strip()), 20,
+                           "draft_email is empty or trivially short")
+
+        # 若回傳的是降級草稿，必須明確標記，不可偽裝成真呼叫結果
+        if "offline stub" in draft:
+            self.assertIn("[DRAFT", draft,
+                          "degraded draft must be clearly labelled to the operator")
 
 
 if __name__ == "__main__":

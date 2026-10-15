@@ -1,3 +1,12 @@
+﻿> [!WARNING]
+> **[SUPERSEDED] 本文件已封存 (Archived Document)**
+> SUPERSEDED by TARGET_ARCHITECTURE_AND_ROADMAP.md (2026-10-14). Describes the pre-Copilot Autopilot architecture, which was explicitly abandoned.
+>
+> 現行唯一權威規格：[TARGET_ARCHITECTURE_AND_ROADMAP.md](../../TARGET_ARCHITECTURE_AND_ROADMAP.md)（架構）
+> 與 [README.md](../../README.md)（入口）。本文件僅供歷史追溯，**請勿據此開發**。
+
+---
+
 # [TROPHY] TradeFlow AI — 全自主網頁談判代理與博弈決策引擎 (v4 Master Specification)
 
 > **AMD Developer Hackathon: ACT III** | 線上 2026/10/12–18  

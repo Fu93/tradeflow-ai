@@ -4,7 +4,7 @@ python -m src.cli              # 端到端 demo（含信念更新）
 python -m src.cli --robustness # 穩健性報告 (regret + prior 敏感度)
 python -m src.cli --figures    # 產出 results/posterior.png + belief_update.png
 python -m src.cli --self-play  # 5 大非 LLM 對抗式自博弈錦標賽評測
-python -m src.cli --multi      # 4 家供應商並行逆向拍賣協同模擬 (96M Rollout Tensor)
+python -m src.cli --multi      # 4 家供應商並行逆向拍賣協同模擬 (28.8M Rollout Tensor)
 """
 from __future__ import annotations
 import sys, time, argparse, os
@@ -32,7 +32,7 @@ def run_demo():
         dt = time.perf_counter() - t0
         rec = recommend(res, target_price=DEMO_SPEC["target_price"])
         trace.append({"round": round_i + 1, "mean": post_mean, "std": post_std,
-                      "recommended_open_norm": rec["opening_offer_norm"]})
+                      "recommended_open_norm": rec["opening_offer_norm"], "dt": dt})
 
         print(f"\n--- Round {round_i+1} ({dt*1000:.0f} ms, {res['n_samples']:,} opponent samples) ---")
         print(f"  Belief (reserve posterior) mean={post_mean:.3f}, std={post_std:.3f}")
@@ -46,8 +46,17 @@ def run_demo():
         else:
             print("  No supplier reply  →  continue / hand to human approval")
 
+    # [審計修正] 舊版在此印出寫死的 "MI300X ~0.4s / CPU ~1s / naive loop ~46s"。
+    # 那些數字既非本機實測，也與現行的 Analytical Roofline 下界不符（0.4s 曾被
+    # 人為折扣係數推出，已於 HARDCODED_DATA_AUDIT.md 移除）。
+    # 改為只報告本次實際測得的 CPU 耗時，並明確標注 GPU 數字為理論下界而非實測。
+    rollouts = DEMO_SPEC["n_samples"] * 480
     print("\n[Conclusion] Engine turns 'value of waiting' into an executable concession schedule.")
-    print("  MI300X: ~9.6M rollouts in ~0.4s  (CPU vectorized ~1s, naive loop ~46s)")
+    print(f"  Measured this run : {rollouts:,} rollouts in {sum(r['dt'] for r in trace):.2f}s "
+          f"on CPU (NumPy vectorized) — measured, not projected.")
+    print("  GPU note          : no AMD GPU on this host; consult results/bench.json "
+          "for the analytical roofline lower bound (working set ÷ 5300 GB/s), which is a "
+          "physical bound, not a measured runtime.")
     return trace
 
 

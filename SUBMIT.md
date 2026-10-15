@@ -1,44 +1,52 @@
-# Submission Checklist — AMD Developer Hackathon: ACT III
+﻿# Submission Checklist — AMD Developer Hackathon: ACT III
 
 > Double-submission allowed: **Reinvent Commerce (main)** + **Evolus Business Agents on AMD**.
 > Verify each box before pushing the final tag.
+> **Online build ends 2026-10-17** (official live page; earlier drafts incorrectly said 10-18).
 
 ## Code / repo
 - [x] Public GitHub repo: https://github.com/Fu93/tradeflow-ai
 - [x] MIT LICENSE
-- [x] README runs with one command (`python -m src.cli --figures`)
+- [x] README runs with one command (`python -m src.app.main`, then http://localhost:8000)
 - [x] Dockerfile + docker-compose.yml (containerized)
-- [x] No secrets committed (`.env` in `.gitignore`; only `.env.example`)
-- [x] `tests/` green (engine / evolus-mock / benchmark)
+- [x] No secrets committed (`.env` in `.gitignore`; only `.env.example`) — verified via `git grep`
+- [x] `tests/` green — **101 tests passing**
 
 ## Engine (decision core)
-- [x] Bayesian belief update + vectorized MCTS/expectimax (`src/engine/`)
-- [x] Robustness: gain vs fixed baseline + prior ±50% sensitivity (`robustness.py`, `results/robustness.png`)
-- [x] Benchmark: CPU measured + MI300X projected (`benchmark.py`, `results/benchmark.png`, `bench.json`)
-- [ ] **MI300X real measurement** — replaces projection once AMD credits droplet is up
+- [x] Bayesian belief update + vectorized Expectimax (`src/engine/`)
+- [x] Robustness: gain vs fixed baseline, scenario sensitivity **and misbelief test** (`robustness.py`, `results/robustness.png`; see LIMITATIONS §十三)
+- [x] Benchmark: CPU measured + MI300X **analytical roofline projection** (`benchmark.py`, `results/benchmark.png`)
+- [ ] **MI300X real measurement** — replaces projection if an AMD Developer Cloud instance is obtained
+      (note: the $100 credit is NOT required to participate; tokenfactory access is sufficient for the model layer)
 
-## Evolus integration (≥2 building blocks + BYO vLLM)
-- [x] EvolusClient: workflow execute / AI Tools (email) / agent chat (`src/evolus/client.py`)
-- [x] Orchestrator: webhook → engine → draft email (`src/app/orchestrator.py`)
-- [ ] Create **event workspace** from the official event link (kickoff link; self-made workspace does NOT count)
-- [ ] Build workflow: email-in → Document Extractor → callback to `/webhook/evolus`
-- [ ] Mount a vLLM endpoint (AMD MI300X or Fireworks fallback) as an Evolus model
-- [ ] Confirm workspace actually exercises the blocks (Evolus judges by usage stats)
+## Evolus integration — live-verified 2026-10-14
+- [x] EvolusClient: REST (AI Tools) / agent chat (`src/evolus/client.py`)
+- [x] Orchestrator: callback → engine → real Evolus AI Tool draft (`src/app/orchestrator.py`) — **no longer an offline stub**
+- [x] **Event workspace** created from the official event code (ID stored in `.env`, not committed)
+- [x] **AI Tools actually exercised, generating usage stats**: `email` (2.46 credits), `doc-structure` (2.12), `sentiment` (3.75)
+- [ ] Build a **workflow / automation** (Evolus `Your AI team → Automations`): email-in → doc-structure → callback to `/webhook/evolus`
+      — *client + callback receiver are ready; only the Evolus-side automation creation remains*
+- [x] Create an **agent** (`Supplier Negotiation Analyst`, live-verified via `POST /v1/chat/completions`, HTTP 200)
+- [x] AMD model bound to the agent (`modelKey: own/qwen3.8-flash-next`, `modelState: ok`)
 
 ## AMD technology
-- [x] Engine rollouts run batched (GPU story: 9.6M rollouts, ~0.4s projected on MI300X)
-- [ ] Deploy `rocm/vllm:rocm10.1.0...` + Qwen2.5-14B + `--tool-call-parser hermes` on MI300X
+- [x] AMD tokenfactory endpoint live-verified: `https://developer.amd.com.cn/radeon/api` (12 models, HTTP 200)
+- [x] Stage-2 semantic layer calling an AMD-hosted open model (`Qwen3.8-Flash-Next`)
+- [x] **Compliance CONFIRMED**: organisers confirmed the tokenfactory endpoint **satisfies** the
+      *"your own vLLM endpoint on AMD Developer Cloud"* requirement. No self-hosted vLLM needed.
 - [ ] Capture `rocm-smi` / vLLM startup log / bench screenshot for the demo
 
 ## Demo / pitch
 - [x] 4 figures (posterior, belief_update, benchmark, robustness)
-- [ ] 3–5 min demo video (script: §7 in TradeFlow_PlanB_Final.md)
-- [ ] Pitch deck (10 slides: problem / one-liner / why-not-chatbot / arch / 3 wows / business value / AMD / Evolus / robustness / next steps)
+- [ ] 3–5 min demo video (script: [DEMO_VIDEO_DIRECTOR_SCRIPT.md](DEMO_VIDEO_DIRECTOR_SCRIPT.md))
+- [ ] Pitch deck (see [PITCH.md](PITCH.md))
 - [ ] Human-in-the-loop approval gate shown
 
 ## Before submit
-- [ ] Confirm exact deadline time on the lablab project page (schedule "To be announced")
-- [ ] Submit **morning of 2026-10-17** (not last minute)
+- [ ] Refresh hardcoded counts in docs if tests changed: run `pytest tests -q`, update README / SUBMIT / PITCH figures
+- [ ] Re-run `python scripts/refresh_market_data.py` so `knowledge/market_anchor.md` carries a fresh date
+- [ ] Submit **before 2026-10-17** (not last minute)
 - [ ] Selected challenge = Reinvent Commerce + Evolus track
-- [ ] Tags: AMD / ROCm / vLLM / MI300X / Evolus / Bayesian / MCTS
+- [ ] Tags: AMD / ROCm / vLLM / Evolus / Bayesian / Expectimax / AST-Guardrails / B2B-Commerce
 - [ ] Cover image 1280×720 + demo video + pitch
+- [ ] **Rotate both API keys** (they were shared in plaintext during development)

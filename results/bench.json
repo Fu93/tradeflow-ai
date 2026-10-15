@@ -1,0 +1,60 @@
+{
+  "hardware_detected": "CPU Vectorized (NumPy SIMD Fallback)",
+  "is_gpu_active": false,
+  "roofline_specs": {
+    "cpu_bandwidth_gb_s": 60.0,
+    "mi300x_hbm3_bandwidth_gb_s": 5300.0,
+    "theoretical_max_speedup": 88.3
+  },
+  "single_supplier_grid": [
+    {
+      "samples": 2000,
+      "rollouts": 960000,
+      "working_set_mb": 7.32,
+      "cpu_seconds": 0.1664,
+      "mi300x_seconds": 1e-06,
+      "speedup_factor": 123320.2,
+      "us_per_rollout": 0.1734,
+      "execution_mode": "ROOFLINE_ANALYTICAL_LOWER_BOUND"
+    },
+    {
+      "samples": 10000,
+      "rollouts": 4800000,
+      "working_set_mb": 36.62,
+      "cpu_seconds": 0.855,
+      "mi300x_seconds": 7e-06,
+      "speedup_factor": 126712.9,
+      "us_per_rollout": 0.1781,
+      "execution_mode": "ROOFLINE_ANALYTICAL_LOWER_BOUND"
+    },
+    {
+      "samples": 20000,
+      "rollouts": 9600000,
+      "working_set_mb": 73.24,
+      "cpu_seconds": 1.6522,
+      "mi300x_seconds": 1.3e-05,
+      "speedup_factor": 122425.6,
+      "us_per_rollout": 0.1721,
+      "execution_mode": "ROOFLINE_ANALYTICAL_LOWER_BOUND"
+    },
+    {
+      "samples": 50000,
+      "rollouts": 24000000,
+      "working_set_mb": 183.11,
+      "cpu_seconds": 3.5035,
+      "mi300x_seconds": 3.4e-05,
+      "speedup_factor": 103841.7,
+      "us_per_rollout": 0.146,
+      "execution_mode": "ROOFLINE_ANALYTICAL_LOWER_BOUND"
+    }
+  ],
+  "multi_supplier_auction": {
+    "total_rollouts": 72000000,
+    "theoretical_max_rollouts": 96000000,
+    "cpu_seconds": 5.949,
+    "mi300x_projected_seconds": 0.000101,
+    "speedup_factor": 58775.1,
+    "winning_price": 12.6,
+    "savings_pct": 0.2222222222222222
+  }
+}

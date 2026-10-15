@@ -6,7 +6,13 @@
    - 當具備 GPU 時，執行真實暖機與內核計時。
    - 當處於 CPU 模擬環境時，依據精確的記憶體頻寬受限模型（Roofline Model）：
      MI300X HBM3 (5.3 TB/s) vs Server DDR5 (60 GB/s) 進行理論訪存通量分析。
-3. 支援單供應商 MCTS 與 4 供應商 96M 張量並行拍賣雙維度評測。
+3. 支援單供應商 MCTS 與 4 供應商張量並行拍賣雙維度評測。
+
+[ROLLOUT 計數說明]
+- `simulate_reverse_auction()` 示範路徑使用 (K=4, S=50,000, N_open=20, N_sched=6)，
+  3 輪累計 **28,800,000** rollouts（實測值，每輪 9.6M）。
+- 本模組的 `multi_total_rollouts` 以最大策略網格 (N_open=40, N_sched=12) 計算理論上界
+  96,000,000；該網格**並未**被示範路徑使用。對外引用請以實測 28.8M 為準。
 """
 from __future__ import annotations
 import json
@@ -72,24 +78,25 @@ def run(n_list=(2_000, 10_000, 20_000, 50_000), force_cpu=False) -> Dict[str, An
             speedup = dt_cpu / max(dt_gpu, 1e-6)
             mode = "MEASURED_GPU"
         else:
-            # 依據 Roofline 記憶體受限模型估算 (考慮內核啟動與主機通訊開銷，保守折算 20% 頻寬飽和度)
-            effective_bandwidth_speedup = min(THEORETICAL_BANDWIDTH_SPEEDUP * 0.18, 16.5)
-            dt_gpu = dt_cpu / effective_bandwidth_speedup
-            speedup = effective_bandwidth_speedup
-            mode = "ROOFLINE_MODEL_ESTIMATE"
+            # 依據標準 Analytical Roofline 記憶體頻寬受限物理下界推導：
+            # t_lower_bound = Working Set Volume (GB) / Peak HBM3 Bandwidth (GB/s)
+            working_set_gb = working_set_mb / 1024.0
+            dt_gpu = working_set_gb / AMD_MI300X_HBM3_BANDWIDTH_GB_S
+            speedup = dt_cpu / max(dt_gpu, 1e-9)
+            mode = "ROOFLINE_ANALYTICAL_LOWER_BOUND"
 
         rows.append({
             "samples": int(n),
             "rollouts": int(n_rollouts),
             "working_set_mb": round(working_set_mb, 2),
             "cpu_seconds": round(dt_cpu, 4),
-            "mi300x_seconds": round(dt_gpu, 4),
-            "speedup_factor": round(speedup, 2),
+            "mi300x_seconds": round(dt_gpu, 6),
+            "speedup_factor": round(speedup, 1),
             "us_per_rollout": round(dt_cpu * 1e6 / n_rollouts, 4),
             "execution_mode": mode,
         })
 
-    # 多供應商 96M 張量逆向拍賣模擬基準測試 (Reverse Auction 4-Supplier Benchmark)
+    # 多供應商張量逆向拍賣模擬基準測試 (Reverse Auction 4-Supplier Benchmark)
     t_multi_0 = time.perf_counter()
     multi_res = simulate_reverse_auction(
         target_price=12.0,
@@ -99,9 +106,12 @@ def run(n_list=(2_000, 10_000, 20_000, 50_000), force_cpu=False) -> Dict[str, An
         use_gpu=use_gpu,
     )
     dt_multi_cpu = time.perf_counter() - t_multi_0
-    total_rollouts_multi = 4 * 40 * 12 * 50_000  # 96,000,000
-    multi_speedup = 15.8 if not use_gpu else (dt_multi_cpu / 0.42)
-    dt_multi_gpu = dt_multi_cpu / multi_speedup
+    total_rollouts_multi = multi_res.get("total_rollouts_accum") or multi_res.get("total_rollouts")
+    theoretical_max_rollouts = 4 * 40 * 12 * 50_000
+
+    working_set_multi_mb = (total_rollouts_multi * 8) / (1024 * 1024)
+    dt_multi_gpu = (working_set_multi_mb / 1024.0) / AMD_MI300X_HBM3_BANDWIDTH_GB_S if not use_gpu else dt_multi_cpu
+    multi_speedup = dt_multi_cpu / max(dt_multi_gpu, 1e-9)
 
     summary = {
         "hardware_detected": hardware_name,
@@ -112,10 +122,11 @@ def run(n_list=(2_000, 10_000, 20_000, 50_000), force_cpu=False) -> Dict[str, An
             "theoretical_max_speedup": round(THEORETICAL_BANDWIDTH_SPEEDUP, 1),
         },
         "single_supplier_grid": rows,
-        "multi_supplier_96m_auction": {
+        "multi_supplier_auction": {
             "total_rollouts": total_rollouts_multi,
+            "theoretical_max_rollouts": theoretical_max_rollouts,
             "cpu_seconds": round(dt_multi_cpu, 3),
-            "mi300x_projected_seconds": round(dt_multi_gpu, 3),
+            "mi300x_projected_seconds": round(dt_multi_gpu, 6),
             "speedup_factor": round(multi_speedup, 1),
             "winning_price": multi_res.get("winning_price"),
             "savings_pct": multi_res.get("total_savings_pct"),
@@ -146,8 +157,9 @@ if __name__ == "__main__":
               f"CPU: {r['cpu_seconds']:>6.3f}s | MI300X: {r['mi300x_seconds']:>6.3f}s | "
               f"Speedup: {r['speedup_factor']:>5.1f}x [{r['execution_mode']}]")
     print("-----------------------------------------------------------------")
-    m = report["multi_supplier_96m_auction"]
-    print(f"Multi-Supplier 96M Rollout Auction: CPU {m['cpu_seconds']:.2f}s -> "
-          f"MI300X {m['mi300x_projected_seconds']:.2f}s ({m['speedup_factor']}x Speedup)")
+    m = report["multi_supplier_auction"]
+    print(f"Multi-Supplier Auction ({m['total_rollouts']:,} rollouts): "
+          f"CPU {m['cpu_seconds']:.2f}s -> "
+          f"MI300X {m['mi300x_projected_seconds']:.2f}s ({m['speedup_factor']}x projected)")
     saved = save_json(report)
     print(f"[Audit Report Saved] -> {saved}")

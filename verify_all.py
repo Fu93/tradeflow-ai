@@ -3,7 +3,7 @@
 職責：
 在評審下載代碼後，10 秒內依序檢驗以下 5 大核心支柱並打印具備審計效力的系統健康證書：
 1. SQLite WAL 資料庫讀寫與會話原子持久化
-2. NumPy / CuPy 96M 張量並行內核計算延遲
+2. NumPy / CuPy 張量並行內核計算延遲
 3. Corporate Mandate 凸約束集與 Logrolling 帕雷托求解
 4. AST 數值硬不變量護欄（越界攻擊攔截率 100% 驗證）
 5. Telemetry & Webhook 異步調度狀態機
@@ -41,7 +41,7 @@ def audit_system():
         print(f"[FAIL] 1. SQLite WAL Session Persistence: {e}")
         all_passed = False
 
-    # Pillar 2: 96M Rollouts Tensor Solver & AMD Roofline Profile
+    # Pillar 2: Tensor Rollout Solver & AMD Roofline Profile
     try:
         from src.engine.multi_solver import simulate_reverse_auction
         t0 = time.perf_counter()
@@ -80,7 +80,8 @@ def audit_system():
         except ASTMandateViolationError:
             blocked = True
         assert blocked is True
-        print("[PASS] 4. AST Invariant Numeric Guardrail: Verified (100% interception on hallucinated terms)")
+        print("[PASS] 4. AST Invariant Numeric Guardrail: Verified "
+              "(single hand-crafted illegal-deposit case intercepted)")
     except Exception as e:
         print(f"[FAIL] 4. AST Invariant Numeric Guardrail: {e}")
         all_passed = False
@@ -139,7 +140,8 @@ def audit_system():
 
         # 4. 雙向一致性、純度與防穿幫審計
         assert CrossLingualSanityChecker.verify_bidirectional_consistency(action_obj, zh_script, en_card) is True
-        print("[PASS] 6. Bidirectional Cross-Lingual Invariant & Anti-Leak Audit: Verified (Zero leaks, 100% numeric fidelity)")
+        print("[PASS] 6. Bidirectional Cross-Lingual Invariant & Anti-Leak Audit: "
+              "Verified on this sample (no leaks; numeric fields match)")
     except Exception as e:
         print(f"[FAIL] 6. Bidirectional Cross-Lingual Invariant & Anti-Leak Audit: {e}")
         all_passed = False
@@ -147,8 +149,11 @@ def audit_system():
     total_time = time.perf_counter() - start_time
     print("--------------------------------------------------------------------------------")
     if all_passed:
-        print(f"VERDICT: ALL 6 PILLARS HEALTHY - PRODUCTION READY (Completed in {total_time:.2f}s)")
-        print("Ready for AMD Hackathon ACT III Evaluation.")
+        # [誠實界定] 本腳本驗證的是「六項核心機制可運作」，每項各以少量代表性輸入檢查。
+        # 它不是生產級認證，也不代表統計意義上的成功率；完整回歸由 tests/ 的 98 項測試負責。
+        print(f"VERDICT: ALL 6 PILLARS EXERCISED SUCCESSFULLY (Completed in {total_time:.2f}s)")
+        print("This is a smoke check of each pillar, not a production certification.")
+        print("Full regression coverage: pytest tests/ -q")
     else:
         print("VERDICT: CRITICAL FAILURES DETECTED. Check logs above.")
     print("================================================================================")

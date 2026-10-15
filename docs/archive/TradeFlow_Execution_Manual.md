@@ -1,3 +1,12 @@
+﻿> [!WARNING]
+> **[SUPERSEDED] 本文件已封存 (Archived Document)**
+> SUPERSEDED by TARGET_ARCHITECTURE_AND_ROADMAP.md (2026-10-14). Historical execution manual for Plan B.
+>
+> 現行唯一權威規格：[TARGET_ARCHITECTURE_AND_ROADMAP.md](../../TARGET_ARCHITECTURE_AND_ROADMAP.md)（架構）
+> 與 [README.md](../../README.md)（入口）。本文件僅供歷史追溯，**請勿據此開發**。
+
+---
+
 # [TOOL] TradeFlow AI — 逐條執行手冊（Part B，配合 Plan B 定稿）
 
 > 配套策略文件：[TradeFlow_PlanB_Final.md](TradeFlow_PlanB_Final.md)（v2.1）

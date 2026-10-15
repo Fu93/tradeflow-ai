@@ -1,4 +1,8 @@
-"""單元測試：Phase 3 多供應商逆向拍賣動態 BATNA 與 96M 張量求解器。"""
+"""單元測試：Phase 3 多供應商逆向拍賣動態 BATNA 與張量求解器。
+
+註：rollout 數 = K x n_opp_samples x n_open x n_sched，由建構參數決定；
+本測試刻意使用小樣本 (n_opp_samples=5,000) 以求快速回歸。
+"""
 import unittest
 import numpy as np
 from src.engine.multi_solver import MultiSupplierSolver

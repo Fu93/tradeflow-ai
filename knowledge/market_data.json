@@ -1,0 +1,508 @@
+{
+  "fetched_at_utc": "2026-10-14T20:54:33+00:00",
+  "sources": {
+    "trade": "UN Comtrade public preview API (China customs declarations)",
+    "fx": "open.er-api.com (daily reference rate)"
+  },
+  "methodology_notes": [
+    "Only USD/kg is reported. USD/piece is deliberately excluded: the implied average weight per piece swings 348g-794g across years, which indicates inconsistent reporting scope rather than genuine price movement.",
+    "net_weight is frequently flagged isNetWgtEstimated=true, i.e. estimated rather than individually declared. Treat as an order-of-magnitude anchor.",
+    "These are macro trade anchors for sanity-checking supplier claims, NOT quotations. Factory-level BOM costs must be maintained by domain experts."
+  ],
+  "fx": {
+    "usd_cny": 6.705025,
+    "source": "open.er-api.com",
+    "updated_utc": "Wed, 14 Oct 2026 00:02:32 +0000"
+  },
+  "series": {
+    "6601": {
+      "label": "Umbrellas and sun umbrellas",
+      "role": "成品：主要標的商品",
+      "years": [
+        {
+          "hs": "6601",
+          "year": 2021,
+          "flow": "X",
+          "value_usd": 2518573964.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 493653923.461,
+          "usd_per_kg": 5.1019,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 4
+        },
+        {
+          "hs": "6601",
+          "year": 2022,
+          "flow": "X",
+          "value_usd": 3062033657.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 518202008.962,
+          "usd_per_kg": 5.909,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 4
+        },
+        {
+          "hs": "6601",
+          "year": 2023,
+          "flow": "X",
+          "value_usd": 2802866129.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 473767601.361,
+          "usd_per_kg": 5.9161,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 4
+        },
+        {
+          "hs": "6601",
+          "year": 2024,
+          "flow": "X",
+          "value_usd": 2890313937.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 542942135.726,
+          "usd_per_kg": 5.3234,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 4
+        },
+        {
+          "hs": "6601",
+          "year": 2025,
+          "flow": "X",
+          "value_usd": 2672624377.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 533049572.955,
+          "usd_per_kg": 5.0138,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 4
+        }
+      ]
+    },
+    "660191": {
+      "label": "Umbrellas, telescopic shaft",
+      "role": "成品細類",
+      "years": [
+        {
+          "hs": "660191",
+          "year": 2021,
+          "flow": "X",
+          "value_usd": 558097929.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 70712050.0,
+          "usd_per_kg": 7.8925,
+          "weight_is_estimated": false,
+          "legacy_estimation_flag": 0
+        },
+        {
+          "hs": "660191",
+          "year": 2022,
+          "flow": "X",
+          "value_usd": 876932419.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 107282470.585,
+          "usd_per_kg": 8.1741,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "660191",
+          "year": 2023,
+          "flow": "X",
+          "value_usd": 1021254055.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 133452910.006,
+          "usd_per_kg": 7.6525,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "660191",
+          "year": 2024,
+          "flow": "X",
+          "value_usd": 1040706316.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 145290293.841,
+          "usd_per_kg": 7.1629,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 4
+        },
+        {
+          "hs": "660191",
+          "year": 2025,
+          "flow": "X",
+          "value_usd": 1003270845.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 146621730.292,
+          "usd_per_kg": 6.8426,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 4
+        }
+      ]
+    },
+    "660199": {
+      "label": "Umbrellas, other",
+      "role": "成品細類",
+      "years": [
+        {
+          "hs": "660199",
+          "year": 2021,
+          "flow": "X",
+          "value_usd": 698730635.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 112269426.643,
+          "usd_per_kg": 6.2237,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 4
+        },
+        {
+          "hs": "660199",
+          "year": 2022,
+          "flow": "X",
+          "value_usd": 973126163.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 145374960.652,
+          "usd_per_kg": 6.6939,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "660199",
+          "year": 2023,
+          "flow": "X",
+          "value_usd": 963898693.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 156106851.021,
+          "usd_per_kg": 6.1746,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "660199",
+          "year": 2024,
+          "flow": "X",
+          "value_usd": 885220536.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 161492000.723,
+          "usd_per_kg": 5.4815,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 4
+        },
+        {
+          "hs": "660199",
+          "year": 2025,
+          "flow": "X",
+          "value_usd": 768100169.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 149232018.663,
+          "usd_per_kg": 5.147,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 4
+        }
+      ]
+    },
+    "7208": {
+      "label": "Flat-rolled steel",
+      "role": "BOM：中棒鋼管",
+      "years": [
+        {
+          "hs": "7208",
+          "year": 2021,
+          "flow": "X",
+          "value_usd": 3246764470.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 3315807659.645,
+          "usd_per_kg": 0.9792,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "7208",
+          "year": 2022,
+          "flow": "X",
+          "value_usd": 11601603492.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 13792994209.758,
+          "usd_per_kg": 0.8411,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "7208",
+          "year": 2023,
+          "flow": "X",
+          "value_usd": 16042442000.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 25498256675.265,
+          "usd_per_kg": 0.6292,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "7208",
+          "year": 2024,
+          "flow": "X",
+          "value_usd": 18853166636.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 33789907516.898,
+          "usd_per_kg": 0.558,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "7208",
+          "year": 2025,
+          "flow": "X",
+          "value_usd": 14273056024.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 28170337585.692,
+          "usd_per_kg": 0.5067,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        }
+      ]
+    },
+    "5407": {
+      "label": "Woven synthetic fabric",
+      "role": "BOM：傘布面料",
+      "years": [
+        {
+          "hs": "5407",
+          "year": 2021,
+          "flow": "X",
+          "value_usd": 17073721386.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 3308726483.936,
+          "usd_per_kg": 5.1602,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "5407",
+          "year": 2022,
+          "flow": "X",
+          "value_usd": 20098049435.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 3730849531.787,
+          "usd_per_kg": 5.387,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "5407",
+          "year": 2023,
+          "flow": "X",
+          "value_usd": 19436143736.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 4016698510.042,
+          "usd_per_kg": 4.8388,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "5407",
+          "year": 2024,
+          "flow": "X",
+          "value_usd": 20299004852.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 4498054279.498,
+          "usd_per_kg": 4.5128,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "5407",
+          "year": 2025,
+          "flow": "X",
+          "value_usd": 20155943950.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 4896097763.998,
+          "usd_per_kg": 4.1167,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        }
+      ]
+    },
+    "3903": {
+      "label": "Styrene polymers (ABS/PS)",
+      "role": "BOM：手柄頂帽塑料",
+      "years": [
+        {
+          "hs": "3903",
+          "year": 2021,
+          "flow": "X",
+          "value_usd": 778513487.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 363163159.048,
+          "usd_per_kg": 2.1437,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "3903",
+          "year": 2022,
+          "flow": "X",
+          "value_usd": 1113667643.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 547422903.729,
+          "usd_per_kg": 2.0344,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "3903",
+          "year": 2023,
+          "flow": "X",
+          "value_usd": 1157595894.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 755971892.482,
+          "usd_per_kg": 1.5313,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "3903",
+          "year": 2024,
+          "flow": "X",
+          "value_usd": 1403067555.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 912374718.773,
+          "usd_per_kg": 1.5378,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "3903",
+          "year": 2025,
+          "flow": "X",
+          "value_usd": 1835043547.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 1361961413.305,
+          "usd_per_kg": 1.3474,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        }
+      ]
+    },
+    "7601": {
+      "label": "Unwrought aluminium",
+      "role": "BOM：五金件原料(進口價)",
+      "years": [
+        {
+          "hs": "7601",
+          "year": 2021,
+          "flow": "X",
+          "value_usd": 416916985.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 157765355.642,
+          "usd_per_kg": 2.6426,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "7601",
+          "year": 2022,
+          "flow": "X",
+          "value_usd": 1312762255.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 421141548.08,
+          "usd_per_kg": 3.1172,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "7601",
+          "year": 2023,
+          "flow": "M",
+          "value_usd": 6002153562.0,
+          "value_basis": "CIF",
+          "net_weight_kg": 2675299744.559,
+          "usd_per_kg": 2.2435,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6,
+          "note": "export weight unavailable; using China IMPORT CIF as material-cost proxy"
+        },
+        {
+          "hs": "7601",
+          "year": 2024,
+          "flow": "X",
+          "value_usd": 942003775.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 363440277.224,
+          "usd_per_kg": 2.5919,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "7601",
+          "year": 2025,
+          "flow": "X",
+          "value_usd": 1559814275.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 582311206.497,
+          "usd_per_kg": 2.6787,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        }
+      ]
+    },
+    "7318": {
+      "label": "Screws, bolts, fasteners",
+      "role": "BOM：五金標準件",
+      "years": [
+        {
+          "hs": "7318",
+          "year": 2021,
+          "flow": "X",
+          "value_usd": 9090078097.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 3732688240.584,
+          "usd_per_kg": 2.4353,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "7318",
+          "year": 2022,
+          "flow": "X",
+          "value_usd": 11178859446.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 3918046597.546,
+          "usd_per_kg": 2.8532,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "7318",
+          "year": 2023,
+          "flow": "X",
+          "value_usd": 9139925948.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 3871802795.717,
+          "usd_per_kg": 2.3606,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "7318",
+          "year": 2024,
+          "flow": "X",
+          "value_usd": 9563989933.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 4659283932.79,
+          "usd_per_kg": 2.0527,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        },
+        {
+          "hs": "7318",
+          "year": 2025,
+          "flow": "X",
+          "value_usd": 10049982829.0,
+          "value_basis": "FOB",
+          "net_weight_kg": 5000080529.11,
+          "usd_per_kg": 2.01,
+          "weight_is_estimated": true,
+          "legacy_estimation_flag": 6
+        }
+      ]
+    }
+  }
+}

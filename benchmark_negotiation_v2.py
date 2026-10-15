@@ -114,10 +114,20 @@ if __name__ == "__main__":
     print(f"  破局機率         = {br[best]:.3f}")
 
     print()
-    print("誠實 GPU 敘事：")
+    print("GPU 敘事（依現行 Analytical Roofline 模型，非主觀投影）：")
     # loop 慢多少：v1 實測向量化/loop = 43x（benchmark_negotiation.py, S=2000）
+    # 注意：這是**外推**，非本次實測 —— 本次只量了向量化路徑。
     loop_s = dt * 43
+    # [審計修正] 舊版在此印出「MI300X 預期 ~0.3-0.6s（約 10-20x）」與「MI300X 0.4s」。
+    # 那兩個數字是人為選定的折扣倍率，已於 HARDCODED_DATA_AUDIT.md 移除。
+    # 現改為從物理量推導的 roofline 下界：工作集位元組 ÷ HBM3 峰值頻寬。
+    working_set_mb = (n * 8) / (1024 * 1024)
+    mi300x_lower_bound_s = (working_set_mb / 1024.0) / 5300.0
     print(f"  * 每輪談判要在買方收信當下重解 1 次 = {S:,} 對手樣本 x {N_OPEN*N_SCHED} 策略 = {n:,} rollouts")
-    print(f"  * CPU 向量化 = {dt*1000:.0f} ms；純 loop（v1 實測 43x 外推） ~ {loop_s:.0f}s -> 不互動")
-    print(f"  * MI300X(torch/cupy 批量) 預期 ~0.3-0.6s（記憶體頻寬瓶頸, 約 10-20x）")
-    print(f"  * 敘事：'收信後即時重解讓步計畫' -> CPU ~{loop_s:.0f}s 在聊天裡像卡死, MI300X 0.4s 像即時")
+    print(f"  * CPU 向量化（本次實測）= {dt*1000:.0f} ms")
+    print(f"  * 純 loop 時間為**外推值**（沿用 v1 實測的 43x 比值）~ {loop_s:.0f}s -> 不適合互動")
+    print(f"  * MI300X：本機無 GPU，無實測值。Analytical Roofline **下界** = "
+          f"工作集 {working_set_mb:.1f} MB ÷ 5300 GB/s = {mi300x_lower_bound_s*1000:.3f} ms")
+    print(f"    （這是物理不可逾越的下界，**不是**預期實測時間；實際值會高於此）")
+    print(f"  * 敘事：'收信後即時重解讓步計畫' —— 瓶頸是訪存頻寬，故 HBM3 與 DDR5 的頻寬比"
+          f"（{5300.0/60.0:.1f}x）即為理論上限")

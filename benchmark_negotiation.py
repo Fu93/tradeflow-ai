@@ -145,3 +145,8 @@ if __name__ == "__main__":
     print("  * loop->vectorized speedup is the shape of the win a GPU gives on top.")
     print("  * Honest framing: 'batch throughput for interactive latency',")
     print("    NOT 'CPU cannot do this'. CPU will not take 60s for 1k samples.")
+    print()
+    print("  [審計註記] 上述 speedup 是「純 Python loop → NumPy 向量化」的比值，")
+    print("    兩者都跑在 CPU 上。它**不是** GPU 加速比，也不應被引用為硬體比較。")
+    print("    GPU 效能數字一律取自 src/engine/benchmark.py 的 Analytical Roofline")
+    print("    下界（工作集 ÷ 5300 GB/s），不使用任何主觀折扣倍率。")

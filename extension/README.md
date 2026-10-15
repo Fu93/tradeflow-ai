@@ -1,21 +1,29 @@
-# TradeFlow AI — Chrome Manifest V3 Autopilot Extension
+# TradeFlow AI — Chrome Manifest V3 Copilot Decision Deck Extension
 
-**TradeFlow Autopilot** 是專為企業採購談判設計的無人值守瀏覽器巡航插件，支援在 1688、阿里巴巴國際站 (Alibaba TradeMessenger) 與 WhatsApp Web 等電商通訊平台進行自主談判。
+**TradeFlow Copilot** 是專為企業專業採購設計的智能決策副駕駛插件，支援在 1688、阿里巴巴國際站 (Alibaba TradeMessenger) 與 WhatsApp Web 等電商通訊平台進行輔助談判。
 
 ---
 
 ## 核心亮點 (Key Features)
 
 1. **實時 DOM 串流監聽 (`MutationObserver`)**：
-   - 400ms 防抖 (Debounce) 與 SHA 訊息去重演算法，精準擷取供應商對話氣泡與階梯報價。
-2. **擬人化防風控工程 (Anti-Bot Emulation)**：
-   - **閱讀延遲**：根據報價文字長度自適應延遲 $T_{delay} = 1200 + L \times 25 + \text{Uniform}(-300, 450)$ ms。
-   - **鍵盤微打字抖動**：模擬真實人類按鍵節奏（40 ~ 130ms / 字元）。
-   - **Vue / React 虛擬 DOM 原生事件穿透**：直接觸發底層 prototype setter 與 synthetic `input` / `change` 事件。
-3. **安全熔斷機制 (Safety Circuit Breaker)**：
-   - 當蒙地卡羅重解偵測破局風險 $\ge 15\%$ 時，自動鎖死輸入框、HUD 轉為警示紅框、暫停談判並透過 WhatsApp / WeChat 發送遠端遙測警報。
-4. **極致 FinTech 量化風格側邊欄 (Chrome SidePanel API)**：
-   - 即時顯示貝氏後驗底價期望 $\mu$、不確定性 $\sigma$、破局機率進度條、以及多通道手機推播狀態。
+   - 350ms 防抖 (Debounce) 與訊息去重演算法，精準擷取供應商對話氣泡與階梯報價。
+2. **採購決策雷達與商務談判牌卡 (Decision Deck HUD)**：
+   - 依 `src/engine/tco.py` 計算交期延誤、超額起訂量 (MOQ) 與付款條款之非價格 (TCO) 影子成本。
+     *邊界*：該模組的折算參數（年化資金成本 8%、交期延遲 0.3%/天等）為**可覆寫的預設值**，
+     未以真實交易數據校準 —— 詳見 `LIMITATIONS_AND_REAL_WORLD_FINDINGS.md` §十三。
+   - 生成 3 條差異化實戰反擊卡（預算核定施壓、條款置換、備選廠威懾），支援**一鍵複製到剪貼簿**。
+3. **人類審批門禁 (Human-in-the-Loop Approval Gate)**：
+   - 預設 Copilot 模式。擴充套件**刻意不具備**自動填入聊天框或自動點擊送出的能力——
+     草稿一律由採購員自行貼上並手動發送，從源頭杜絕偽造合成事件導致的平台風控，以及非預期的法定締約。
+     （`content.js` 的 `findChatInput()` / `findSendButton()` 已移除，並留有註解說明原因。）
+4. **安全熔斷機制 (Safety Circuit Breaker)**：
+   - 當求解器回傳破局機率 $\ge 15\%$（`src/app/main.py:713` 的實際門檻）時，自動警示並提供手機端授權通道。
+5. **量化風格側邊欄 (Chrome SidePanel API)**：
+   - 即時顯示貝氏後驗底價期望 $\mu$、不確定性 $\sigma$、破局機率進度條。
+     *邊界*：$\mu/\sigma$ 為先驗驅動的後驗更新結果，準確性受先驗設定影響；
+     面板上的「置信度」是**信念收斂度指標**（belief convergence metric），
+     **不是**統計校準機率（見 `LIMITATIONS` §一）。
    - 支援 1（妥協讓步）、2（堅持）、3（緊急撤退）的手動戰術干預。
 
 ---
@@ -32,6 +40,7 @@
    - 點擊左上角 **「載入未封裝項目 (Load unpacked)」**
    - 選擇本專案中的 `tradeflow-ai/extension` 資料夾
 3. **開啟測試沙盒或目標網站**：
-   - 在瀏覽器中打開測試沙盒：`file:///c:/Users/nn201/Desktop/tradeflow-ai/extension/mock_chat.html`
-   - 右下角即會浮現 TradeFlow HUD 自駕浮標。
-   - 點擊瀏覽器工具列上的 TradeFlow 圖標，即可展開側邊儀表板 (SidePanel)！
+   - 在瀏覽器中開啟本專案內的測試沙盒：`extension/mock_chat.html`
+     （在檔案總管中對該檔案按右鍵 → 以 Chrome 開啟，或於網址列輸入其完整 `file:///` 路徑）
+   - 右下角即會浮現 TradeFlow HUD 浮標。
+   - 點擊瀏覽器工具列上的 TradeFlow 圖標，即可展開側邊儀表板 (SidePanel)。

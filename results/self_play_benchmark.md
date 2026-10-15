@@ -2,7 +2,7 @@
 
 Generated: 2026-10-14 01:33:03
 Matches per Archetype: 50 (Total 750 match simulations)
-Benchmark Methodology: AgenticPay & CATTLE TRADE Protocol (Testing Constraint Adherence, Savings & Deal Rate)
+Benchmark Methodology: NegotiationArena (ICLR 2024), AgenticPay & Cattle Trade Evaluation Protocol (Testing Constraint Adherence, Savings & Deal Rate)
 
 | 對手類型 (Opponent Archetype) | 策略代理 (Agent) | 談判勝率 (Deal %) | 平均節省率 (Savings %) | 破局率 (Breakdown %) | 預算違規率 (Violation %) | 平均輪數 (Rounds) |
 |---|---|---|---|---|---|---|

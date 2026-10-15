@@ -21,6 +21,34 @@ def test_figures_no_error():
     _, rob = robustness.report(n_samples=2000)
     fig2 = viz.plot_robustness(rob)
     assert fig2 is not None
+    # report() 必須同時回傳兩類敏感度（場景敏感度與信念錯誤）
+    assert "sensitivity" in rob and "misbelief" in rob
+
+
+def test_misbelief_sensitivity_structure():
+    """misbelief 測試（現實固定、僅信念偏移）的結構契約。
+
+    鎖定結構與量綱不變量，不鎖定具體數值 —— 若未來模型改進使不對稱性消失，
+    本測試不應假性失敗；數值結論記錄於 LIMITATIONS §十三。
+    """
+    from src.engine.robustness import misbelief_sensitivity
+
+    res = misbelief_sensitivity(n_samples=3000)
+    assert len(res) == 3
+    factors = [f for f, _, _, _ in res]
+    assert factors == [0.5, 1.0, 1.5]
+
+    for f, belief_mean, margin, breakdown in res:
+        assert belief_mean == 1.08 * f, "belief mean must track the factor"
+        assert margin == margin and abs(margin) < 10.0, "margin must be finite/sane"
+        assert 0.0 <= breakdown <= 1.0, "breakdown must be a probability"
+
+    # 信念準確（×1.0）時，規劃與現實一致：策略在現實中應有正期望邊際。
+    base = next(r for r in res if r[0] == 1.0)
+    assert base[2] > 0.0, "accurate belief should retain positive expected margin"
+
+    # 無論偏移方向多大，破局率必須仍在合法範圍且不為 NaN（防回歸到壞數值）。
+    assert all(b == b for _, _, _, b in res)
 
 
 if __name__ == "__main__":

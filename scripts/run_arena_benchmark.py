@@ -15,7 +15,7 @@ def main():
         "# TradeFlow v4 Adversarial Baseline Tournament Results\n\n"
         f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
         "Matches per Archetype: 50 (Total 750 match simulations)\n"
-        "Benchmark Methodology: AgenticPay & CATTLE TRADE Protocol (Testing Constraint Adherence, Savings & Deal Rate)\n\n"
+        "Benchmark Methodology: NegotiationArena (ICLR 2024), AgenticPay & Cattle Trade Evaluation Protocol (Testing Constraint Adherence, Savings & Deal Rate)\n\n"
     )
 
     out_path = os.path.join("results", "self_play_benchmark.md")

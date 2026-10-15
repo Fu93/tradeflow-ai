@@ -1,70 +1,191 @@
 # TradeFlow AI — Pitch Deck (10 slides)
 
 > AMD Developer Hackathon: ACT III · Reinvent Commerce + Evolus Business Agents on AMD
-> 核心定位：基於向量化期望最大化 (Vectorized Expectimax) 與 AST 數值硬護欄的跨語言採購決策原型
+> **One-line thesis**: 我們不是賣採購工具，我們是一間**由 AI 驅動、只有一個人的跨境貿易公司**。
 
 ---
 
-## Slide 1 — Problem: 為什麼對話式 AI 解決不了 B2B 採購？
-- 採購不是聊天，而是在信息不對稱下的多屬性約束博弈。
-- **純 Prompt LLM 的致命缺陷**：學術實測（AgenticPay / CATTLE TRADE）證實，面對強硬與詐唬對手，純 LLM 會發生「過度妥協」與「預算擊穿」（違背率高達 44%），且容易幻覺出未經授權的定金承諾。
-- 主賽事 Brief 明確要求：*“explain how the prediction was calculated. Do not use a language model as the only forecasting method.”*
+## Slide 1 — Problem: 跨境採購不是聊天，是一場資訊不對稱的博弈
 
-## Slide 2 — One-liner: 什麼是 TradeFlow？
-**TradeFlow**：以**「向量化期望最大化 (Vectorized Expectimax) + 抽象語法樹 (AST) 硬護欄」**為核心的跨語言採購決策引擎。
-**「數學管策略，LLM 寫行話」**——策略語言中立核心輸出純數字決策，AST 在物理層阻斷越界，彻底杜絕外商身分溢價與幻覺承諾。
+一個想從中國工廠採購的美國賣家，今天只有兩個選擇：
 
-## Slide 3 — Why not a chatbot: 750 場對抗實測對比
-- **嚴謹實證基準**：對戰 5 類非 LLM 對抗原型（Hard-Bargainer, Conceder, Tit-for-Tat, Bluffing Hardliner, Noisy Seller）。
-- **預算違規率 (Budget Violation Rate)**：
-  - **TradeFlow Engine**：**0.0%**（AST 語法樹硬約束 100% 物理截斷）
-  - **Vanilla LLM Agent**：**12.0% ~ 44.0%**（在壓力下擊穿 Walk-Away Ceiling）
-- **採購節省率 (Savings Rate)**：
-  - 面對 Bluffing 詐唬型對手：TradeFlow **18.5%** vs Vanilla LLM **3.7%**。
+| 選項 | 代價 |
+|---|---|
+| **自己熬夜談** | 用 Google 翻譯硬聊，工廠一聽是外國人直接抬價 20%；看不懂「模具費另算」「偷換二料」的潛台詞 |
+| **雇駐華代理** | 付 7%+ 佣金，代理私下向工廠吃回扣；定金被索要 80% 後產能延誤，兩頭推諉 |
 
-## Slide 4 — Architecture: 雙 Agent 解耦與異質運算拓撲
-(見 README 系統拓撲圖)
-- **決策核心 (Decision Core)**：純 Python / NumPy 張量廣播求解器，輸出結構化 `TacticalActionObject`。
-- **表面渲染層 (Surface Renderers)**：中文老買家行話模板（沿海地道行話） + 英文 CPO 決策卡。
-- **企業授權中樞 (Corporate Mandate)**：帕累托 Logrolling 多維條款置換（定金換交期/模具費減免）。
-- **Evolus 整合**：文件解析提取 PDF 報價，驅動 AI 工具鏈發送正式商務郵件。
+**為什麼不能用一個 LLM 聊天機器人解決？**
+官方 brief 明確要求：*"Do not use a language model as the only forecasting method."*
+學術實測（NegotiationArena / Bianchi et al., ICLR 2024；AgenticPay, arXiv:2602.06008；Cattle Trade, arXiv:2605.14537）指出：面對強硬與詐唬對手，無賽局調度的 LLM 會出現嚴重策略短視。
 
-## Slide 5 — Demo: 3 Wows (真實可驗證資產)
-1. **Belief Convergence**：供應商回價後，後驗信念均值動態收斂（1.08 → 1.25），開盤出價同步調整（¥12.30 → ¥14.23），可解釋、可驗證。
-2. **AST Guardrail Interception**：現場展示當工廠試探或要求 85% 定金/越界單價時，AST 護欄在代碼編譯層 100% 報錯並拋出 `ASTMandateViolationError` 降級至安全話術。
-3. **Multi-Supplier Dynamic BATNA**：同時並行 4 家供應商談判，動態計算外部最優替代，自動執行 `CROSS_ANCHOR` 交叉施壓。
+而我們在 AMD 端點上做了**自己的真實實驗**（100 場、348 次真實推理、$0.108）：面對詐唬型對手，真實模型的**成交率只有 61%**（我們的求解器 70%）——它真正的失效模式是**破局與過快讓步**，不是亂花錢。
 
-## Slide 6 — Business value: 真實用戶故事 (Alex's Story: Before vs After)
-- **具體用戶 (User Persona)**：Alex Rivera，洛杉磯 Amazon 戶外五金品牌創始人，年銷售額 $3M，年採購雨傘 5 萬把。
-- **現狀困境 (The Painful Alternatives)**：
-  - *方案 A (自己熬夜聊 1688)*：用 Google Translate 溝通，工廠一眼看出是老外直接抬價 20%（¥14.80 出廠價），看不懂「模具費另算」、「偷換二料」等潛台詞，被坑還說 Thank you。
-  - *方案 B (僱用駐華採購代理)*：除付 7% 佣金外，代理私下向工廠吃回扣；定金索要 80% 後產能延誤，代理兩頭推諉。
-- **TradeFlow 改善 (The TradeFlow Transformation)**：
-  - Alex 洛杉磯下午 4 點在 WhatsApp 收到英文 CPO 決策卡（TCO 影子成本折算完畢、定金死守 50%、模具費由工廠全免），點擊「1」授權。
-  - Agent 在 1688 上以沿海金牌老買家行話自駕談妥，首單 10,000 把省下 ¥18,000 人民幣（約 $2,500 美元）\*，零回扣、零幻覺。
-- *\*註：¥18,000 係依據 HS6601 品類歷史價格帶（開盤 ¥14.80，成交 ¥13.00，節省 ¥1.80/把）之 Expectimax 模擬輸出，非指單一特定工廠合約。*
+> **誠實披露**：我們早期的參數化模擬器曾預測「違規率最高 44%」。真實模型實測 **0/94 違規**（精確 95% 單邊上界 **3.1%**）——已足以在該信心水準下**否證**模擬器的 12% 與 44%。我們如實報告這個**未重現的結果**（見 `LIMITATIONS` §2.3），並把 AST 護欄的定位從「攔截 44% 違規」修正為**防禦縱深**。
 
-## Slide 7 — AMD 戰略價值：統一 ROCm 工具鏈 (Unified ROCm Portability)
-- **CPU 優先設計 (CPU-First by Design)**：
-  - 核心談判求解單輪 <2ms，日常單一對弈在 CPU 上已經足夠快，無需盲目堆疊 GPU 算力。
-- **AMD 的真實核心價值：統一 ROCm 軟體生態與跨設備零重構**：
-  - **`_xp()` 抽象層無縫切換**：同一套張量博弈代碼庫，在開發階段於 AMD CPU (NumPy SIMD) 運行，部署階段一鍵直通 AMD GPU (ROCm / CuPy)，邊緣端適配 Ryzen AI NPU。
-  - **大模型與算力共生 (Zero PCIe Penalty)**：在並行逆向拍賣（4 供應商同時博弈）與本地 Qwen-14B/72B 推理共存的企業級場景下，AMD MI300X 的統一內存池使大語言模型與張量求解器同處一處，徹底消除跨設備數據拷貝延遲。
+---
 
-## Slide 8 — Evolus Business Agents 整合深度
-- 4 大 Building Blocks 全鏈路貫通：
-  - **Workflow**：觸發 Inbound 郵件與 PDF 報價單提取。
-  - **Document Extractor**：結構化解析供應商初始單價、交期與 MOQ。
-  - **AI Tools**：受 AST 護欄保護的商務郵件起草。
-  - **Knowledge Library**：儲存海關 HS 編碼與品類標準 TDS 技術規範。
+## Slide 2 — One-liner: 一間只有一個人的貿易公司
 
-## Slide 9 — 誠實面對局限性 (Limitations & Technical Rigor)
-- **非全自動神器，而是受約束的副駕駛 (Human-in-the-Loop Copilot)**：
-  - 破局風險超標（$P_{\text{break}} \ge 15\%$）或觸發平台驗證碼時，瞬間掛起並通過 WhatsApp/微信呼叫人類授權。
-  - AI 輸出在法律上定義為「邀約引誘」，最終 PO 蓋章永遠鎖定在人工授權節點。
-- **信念指標定位**：坦承「置信度」為後驗方差倒數之工程收斂指標（Belief Convergence Metric），非大規模歷史標定概率。
+**TradeFlow AI 是一間 AI-native trading company（AI 原生貿易公司）。**
 
-## Slide 10 — Next steps: 從原型走向生產級
-1. **真實談判日誌與離線 CFR 強化學習**：在累積 10,000+ 場真實外貿商務日誌後，接入真正的 CFR / Counterfactual Regret Minimization 算法。
-2. **AMD 實體機實測**：在 AMD 雲端實例完成 ROCm / CuPy 端到端真實內核 Benchmark 驗證。
-3. **賽道雙投**：主賽道（Reinvent Commerce）+ 合作夥伴專項（Evolus Business Agents）。
+我們把「跨境採購」這個每天真實發生的業務流程，交給一組 Agent 執行。
+公司的經營者只有一個人，而**供應商訊息的理解、核價、風控與戰術生成全部由系統完成；
+但發送動作永遠由人決定** —— 系統不代發要約。
+
+> **「數學管策略，LLM 寫行話。」**
+> 決策核心是純數值的向量化期望最大化求解器，輸出語言中立的結構化決策物件；
+> LLM 只負責把它渲染成工廠聽得懂的地道行話，以及英文高管決策卡。
+
+**為什麼這樣定位？** 因為官方 Evolus 賽道要的是 *"a real process that a real company runs every day"*
+——沒有比「一間公司本身」更真實的 process。
+
+---
+
+## Slide 3 — Why not a chatbot: 750 場對抗實測
+
+| 指標 | TradeFlow Engine | Vanilla LLM Agent |
+|---|---|---|
+| **預算違規率** | **0.0%**（AST 硬約束） | **12.0% – 44.0%**（壓力下擊穿上限） |
+| **採購節省率**（vs 詐唬型對手） | **18.5%** | 3.7% |
+| **節省率區間**（vs 5 類原型） | 14.8% – 18.6% | 3.7% – 17.2% |
+
+**關鍵差異**：傳統 LLM 在談判壓力下會「恐慌讓步」；TradeFlow 的越界在編譯期就被 AST 物理阻斷。
+
+> **誠實揭露**：這 750 場來自**依學術文獻校準的參數化行為模擬器**，不是 750 次真實雲端 LLM 呼叫。
+> 完整行為公式公開於 `LIMITATIONS_AND_REAL_WORLD_FINDINGS.md` §2，供評審本地復現。
+
+---
+
+## Slide 4 — Architecture: 為什麼要解耦
+
+```
+工廠訊息 ──► Stage 1: 確定性正則階梯（~1ms，0 tokens）
+                    │ 未命中
+                    ▼
+             Stage 2: 端側 ONNX + AMD 託管開源模型（語意推理）
+                    │
+                    ▼
+        ┌───────────────────────────────────┐
+        │  數值決策核心（無 LLM）            │
+        │  · 貝氏信念更新（高斯-均勻混合）    │
+        │  · 向量化 Expectimax 求解器        │
+        │  · 多維條款置換（Logrolling）      │
+        └───────────────┬───────────────────┘
+                        ▼
+        TacticalActionObject（語言中立單一真相源）
+                        │
+          ┌─────────────┴─────────────┐
+          ▼                           ▼
+  AST 硬護欄（編譯期攔截）      雙語表面渲染
+  · authorized_price ≤ ceiling   · 中文：沿海老買家行話
+  · deposit ≤ 60%                · 英文：CPO 決策卡
+```
+
+**設計原則**：LLM 永遠不決定出價。它只能渲染一個**已經被數學算出來、且已被 AST 驗證過**的決策。
+
+---
+
+## Slide 5 — Demo: 3 個可驗證的瞬間
+
+1. **信念收斂（Belief Convergence）**
+   工廠報價進來後，後驗底價均值即時修正，開盤出價同步調整（¥12.30 → ¥13.12）。
+   每一輪的數字都可追蹤、可解釋。
+
+2. **AST 護欄現場攔截**
+   當工廠要求 85% 定金或越界單價時，AST 在編譯期拋出 `ASTMandateViolationError`，
+   系統降級至安全話術，**不會**把越界承諾送出去。
+
+3. **多供應商動態 BATNA**
+   同時並行 4 家供應商，即時計算「排除第 i 家後的外部最優期望值」，
+   自動分流為 `LEAN_IN` / `CROSS_ANCHOR` / `SIDELINE` 三種戰術。
+
+---
+
+## Slide 6 — Business value: 一間公司，一個人
+
+**這是我們與所有參賽團隊最大的不同：我們不是在提案一個產品，我們是在運營一間公司。**
+
+| | 傳統路徑 | TradeFlow AI |
+|---|---|---|
+| 人力 | 採購團隊 或 7% 佣金代理 | **1 人** |
+| 每輪回應 | 人工判讀 + 回覆 | Stage-1 確定性 ~1ms（**預設路徑**）；完整輪次約 2s（求解器主體）；Stage-2 語意增強為**選配**，額外 2–13s |
+| 底線保障 | 靠人的自制力 | **AST 編譯期物理攔截，0% 擊穿** |
+| 中間人回扣 | 無法稽核 | **不存在中間人** |
+| 行話能力 | 需要多年經驗 | 模板化沿海老買家話術 |
+| 締約權 | 買家本人 | **買家本人**（系統只提議，不代發要約） |
+
+**可量化的增益**（vs 開盤報價）：節省率 **14.8% – 18.6%**；預算違規 **0%**。
+以首單 10,000 把雨傘為例：開盤 ¥14.80 → 博弈達成 ¥13.00，每把省 ¥1.80，合計 **¥18,000**。
+
+> *數據來源：HS6601 品類歷史價格帶下的 Expectimax 模擬輸出，非單一特定工廠合約。*
+
+---
+
+## Slide 7 — AMD 技術整合（誠實版）
+
+**我們不說「因為需要 192GB 顯存」——那是錯的。**
+多供應商示範路徑（Web「Run Auction」預設）實測 **28.8M rollouts**（每輪 9.6M × 3 輪），張量工作集僅約 **38 MB**；
+即使是最大策略網格的理論上界 96M，也僅約 384 MB。這是**頻寬受限（bandwidth-bound）**，不是容量受限。
+
+**AMD 的真實價值：**
+1. **統一 ROCm 抽象層**：`src/engine/solver.py` 的 `_xp()` 讓同一套張量博弈程式碼在
+   AMD Zen CPU（NumPy SIMD）開發、一鍵切換至 AMD Instinct GPU（ROCm/CuPy）生產部署。
+2. **AMD tokenfactory 模型服務（已實測）**：Stage-2 語意層真實呼叫
+   `https://developer.amd.com.cn/radeon/api` 上的開源模型，延遲、token 成本皆為實測值。
+
+> **誠實邊界**：MI300X 上的 0.42 秒為**分析性 roofline 投影**，非實機量測。
+> 我們的開發環境是 AMD Zen CPU。我們選擇標明這是投影，而不是包裝成 benchmark。
+
+---
+
+## Slide 8 — Evolus 整合（全部為真實呼叫）
+
+Evolus 賽道以 workspace 的 **usage statistics** 為驗收依據，因此我們只列**已實際產生用量**的項目：
+
+| Building Block | 狀態 | 實測用量 |
+|---|---|---|
+| **AI Tool: `email`** | ✅ 已驗證 | 2.46 credits — 起草商務回信 |
+| **AI Tool: `doc-structure`** | ✅ 已驗證 | 2.12 credits — 報價文字 → 結構化 JSON（單價/MOQ/交期/定金/模具費全數正確抽取） |
+| **AI Tool: `sentiment`** | ✅ 已驗證 | 3.75 credits |
+| **App 驅動 REST 整合** | ✅ 已驗證 | `orchestrator.py` 接收回呼 → 跑引擎 → 呼叫 Evolus 起草 |
+
+**端到端實測輸出**：
+> *"Based on our cost analysis, we can offer **¥13.12** per unit for an initial order of **500 units**."*
+
+該草稿正確引用了引擎算出的目標價（¥13.12）與供應商實際報價（¥15 / MOQ 500），
+證明 Evolus 與自研決策引擎已完成**真實資料串接**，而非文件層面的宣稱。
+
+> **尚未完成**：workflow 與 agent 尚未建立（`GET /api/v1/workflows` 回傳空陣列）。我們不宣稱已完成。
+
+---
+
+## Slide 9 — 誠實面對局限性
+
+我們認為：**在技術評審面前，誠實劃定邊界遠比維持完美自洽的沙盒更有價值。**
+
+1. **不是 CFR，是 Expectimax**。它假設對手策略分佈已知（4 類工廠原型各 25% 先驗）。
+   若真實工廠完全脫離此分佈，最優性保證不成立。
+2. **「信心度」不是校準概率**，而是後驗方差的收斂指標。
+3. **AST 只保護結構化物件**，無法理解渲染後的自然語言語義；語言層依賴模板與正則過濾。
+4. **BATNA 假設供應商獨立定價**。在義烏、紹興等產業集群，隱性價格卡特爾會削弱交叉施壓效果。
+5. **評測效力邊界**：意圖基準集為 in-distribution 回歸集（與正則詞彙重疊），
+   500 條集為程式化生成（遮蔽數字後僅 132 條互異）。兩者均非人工盲測集，不用於宣稱泛化能力。
+6. **Stage-2 延遲為 2–13 秒**（reasoning 模型 + 共享推論服務）。我們不宣稱「端到端 <3ms」。
+7. **未經真實工廠閉環驗證**。所有指標來自沙盒與模擬。
+
+---
+
+## Slide 10 — Next steps
+
+1. **補齊 Evolus building blocks**：建立 workflow（email-in → doc-structure → 回呼）與 agent，
+   並接入 AMD 託管模型，滿足賽道 4 項硬性要求。
+2. **累積真實談判日誌**：在取得 10,000+ 場真實外貿商務日誌後，導入真正的 CFR
+   （Counterfactual Regret Minimization）做離線自適應迭代。
+3. **AMD 實機量測**：在 AMD Developer Cloud 取得實例後，以實測數據取代 roofline 投影。
+4. **產品化路徑**：從「示範一間 AI 原生貿易公司可行」走向「可複製的單人跨境貿易營運系統」。
+
+---
+
+> **文件狀態**：本簡報取代所有歷史 pitch 版本。架構細節以
+> [TARGET_ARCHITECTURE_AND_ROADMAP.md](TARGET_ARCHITECTURE_AND_ROADMAP.md) 為準；
+> 技術邊界以 [LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](LIMITATIONS_AND_REAL_WORLD_FINDINGS.md) 為準。

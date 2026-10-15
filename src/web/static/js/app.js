@@ -126,8 +126,8 @@ function renderSessions(sessions) {
     item.onclick = () => selectSession(s);
 
     let stateClass = "badge-idle";
-    if (s.state === "AUTOPILOT_CRUISING") stateClass = "badge-cruising";
-    else if (s.state === "CIRCUIT_TRIPPED_ESCALATED") stateClass = "badge-tripped";
+    if (s.state === "AUTOPILOT_CRUISING" || s.state === "COPILOT_MONITORING") stateClass = "badge-cruising";
+    else if (s.state === "CIRCUIT_TRIPPED_ESCALATED" || s.state === "AWAITING_HUMAN_DECISION") stateClass = "badge-tripped";
     else if (s.state === "DEAL_CLOSED") stateClass = "badge-closed";
 
     item.innerHTML = `
@@ -157,7 +157,11 @@ function selectSession(s) {
   const badge = document.getElementById("cbBadge");
   const ring = document.getElementById("cbRing");
 
-  if (s.last_p_break >= 0.15) {
+  if (s.state === "AWAITING_HUMAN_DECISION") {
+    badge.className = "cb-badge cb-warn";
+    badge.textContent = "AWAITING HUMAN DECISION";
+    ring.className = "cb-ring";
+  } else if (s.last_p_break >= 0.15) {
     badge.className = "cb-badge cb-tripped";
     badge.textContent = "CIRCUIT TRIPPED (ESCALATED)";
     ring.className = "cb-ring tripped";
@@ -165,9 +169,13 @@ function selectSession(s) {
     badge.className = "cb-badge cb-warn";
     badge.textContent = "CAUTION HIGH RISK";
     ring.className = "cb-ring";
+  } else if (s.state === "COPILOT_MONITORING") {
+    badge.className = "cb-badge cb-safe";
+    badge.textContent = "COPILOT MONITORING";
+    ring.className = "cb-ring";
   } else {
     badge.className = "cb-badge cb-safe";
-    badge.textContent = "AUTOPILOT CRUISING";
+    badge.textContent = "COPILOT CRUISING";
     ring.className = "cb-ring";
   }
 
@@ -302,7 +310,7 @@ async function sendCommand(cmdCode) {
 }
 
 // ---------------------------------------------------------------------------
-// Multi-Supplier Reverse Auction (96M Rollouts Demo)
+// Multi-Supplier Reverse Auction (28.8M Rollouts Demo)
 // ---------------------------------------------------------------------------
 async function runMultiAuction() {
   const loader = document.getElementById("auctionLoader");
@@ -325,12 +333,14 @@ async function runMultiAuction() {
 
     // Render Trace of Round 3 (Final outcome)
     const lastRound = data.trace[data.trace.length - 1];
-    const suppliers = [
-      "Supplier A (浙江頂尖雨具製造)",
-      "Supplier B (深圳宏達實業)",
-      "Supplier C (義烏博創商貿)",
-      "Supplier D (東莞榮耀五金)"
-    ];
+    const suppliers = (data.suppliers && data.suppliers.length > 0)
+      ? data.suppliers.map(s => typeof s === "object" ? s.name : s)
+      : [
+          "Supplier A (浙江頂尖雨具製造)",
+          "Supplier B (深圳宏達實業)",
+          "Supplier C (義烏博創商貿)",
+          "Supplier D (東莞榮耀五金)"
+        ];
 
     cardsWrap.innerHTML = "";
     suppliers.forEach((sName, i) => {

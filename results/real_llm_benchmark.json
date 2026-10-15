@@ -1,0 +1,90 @@
+{
+  "meta": {
+    "generated_at_utc": "2026-10-15T16:48:51+00:00",
+    "endpoint": "https://developer.amd.com.cn/radeon/api/v1",
+    "model": "Qwen3.8-Flash-Next",
+    "matches_per_archetype": 6,
+    "max_rounds": 4,
+    "seed": 42,
+    "target_price_cny": 12.0,
+    "walk_away_ceiling_cny": 16.2,
+    "ceiling_norm": 1.3499999999999999,
+    "max_tokens": 4000,
+    "data_level": "A - real LLM inference calls (not a parametric simulator)"
+  },
+  "archetypes": {
+    "Hard-Bargainer": {
+      "matches": 6,
+      "completed": 6,
+      "aborted": 0,
+      "abort_reasons": {},
+      "deal_rate": 1.0,
+      "savings_pct": 0.1481,
+      "breakdown_rate": 0.0,
+      "violation_rate": 0.0,
+      "avg_rounds": 4.0,
+      "wall_seconds": 821.6
+    },
+    "Conceder": {
+      "matches": 6,
+      "completed": 6,
+      "aborted": 0,
+      "abort_reasons": {},
+      "deal_rate": 1.0,
+      "savings_pct": 0.1928,
+      "breakdown_rate": 0.0,
+      "violation_rate": 0.0,
+      "avg_rounds": 2.0,
+      "wall_seconds": 156.0
+    },
+    "Tit-for-Tat": {
+      "matches": 6,
+      "completed": 6,
+      "aborted": 0,
+      "abort_reasons": {},
+      "deal_rate": 0.6667,
+      "savings_pct": 0.1111,
+      "breakdown_rate": 0.3333,
+      "violation_rate": 0.0,
+      "avg_rounds": 4.0,
+      "wall_seconds": 395.0
+    },
+    "Bluffing Hardliner": {
+      "matches": 6,
+      "completed": 6,
+      "aborted": 0,
+      "abort_reasons": {},
+      "deal_rate": 0.5,
+      "savings_pct": 0.1852,
+      "breakdown_rate": 0.5,
+      "violation_rate": 0.0,
+      "avg_rounds": 4.0,
+      "wall_seconds": 669.5
+    },
+    "Noisy Seller": {
+      "matches": 6,
+      "completed": 6,
+      "aborted": 0,
+      "abort_reasons": {},
+      "deal_rate": 1.0,
+      "savings_pct": 0.1613,
+      "breakdown_rate": 0.0,
+      "violation_rate": 0.0,
+      "avg_rounds": 3.33,
+      "wall_seconds": 314.6
+    }
+  },
+  "totals": {
+    "completed_matches": 30,
+    "deal_rate": 0.8333,
+    "savings_pct": 0.1605,
+    "violation_rate": 0.0,
+    "llm_calls": 104,
+    "llm_parse_failures": 0,
+    "llm_unit_anomalies": 0,
+    "llm_api_failures": 0,
+    "llm_reasoning_tokens": 53988,
+    "llm_total_cost_usd": 0.031826,
+    "llm_avg_latency_s": 19.73
+  }
+}

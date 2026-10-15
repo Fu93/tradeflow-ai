@@ -15,18 +15,22 @@ from ..engine import solve, recommend, bayes_update, model, robustness, viz, pro
 from .demo_data import DEMO_SPEC
 
 
-def analyze(spec: dict, observed_offer: float | None = None):
+def analyze(spec: dict, observed_offer: float | None = None, quick: bool = False):
     """跑引擎，回傳建議 + 穩健性摘要 + 讓步提案。"""
     post_mean = spec.get("prior_reserve_mean", DEMO_SPEC["prior_reserve_mean"])
     post_std = spec.get("prior_reserve_std", DEMO_SPEC["prior_reserve_std"])
     if observed_offer is not None:
         post_mean, post_std = bayes_update(post_mean, post_std, observed_offer)
-    res = solve(n_opp_samples=spec.get("n_samples", DEMO_SPEC["n_samples"]),
+    n_samples = spec.get("n_samples", DEMO_SPEC["n_samples"])
+    res = solve(n_opp_samples=n_samples,
                 lambda_break=spec.get("lambda_break", DEMO_SPEC["lambda_break"]),
                 reserve_mean=post_mean, reserve_std=post_std)
     rec = recommend(res, target_price=spec.get("target_price", DEMO_SPEC["target_price"]))
+    
+    # 穩健性網格在互動/webhook 路徑下可降採樣至 2,000 (耗時 2.4s vs 17.5s)，大幅減緩卡頓
+    rob_samples = 2000 if quick else n_samples
     _, rob = robustness.report(target_price=spec.get("target_price", DEMO_SPEC["target_price"]),
-                              n_samples=spec.get("n_samples", DEMO_SPEC["n_samples"]))
+                              n_samples=rob_samples)
     prop = proposal.build_proposal(spec, observed_offer=observed_offer)
     return {"recommendation": rec, "posterior_reserve_mean": post_mean,
             "posterior_reserve_std": post_std, "robustness": rob, "proposal": prop}
@@ -55,7 +59,7 @@ def on_webhook(payload: dict) -> dict:
                  if k in ("target_price", "n_samples", "lambda_break",
                           "prior_reserve_mean", "prior_reserve_std")})
     offer = payload.get("offer")
-    result = analyze(spec, observed_offer=offer)
+    result = analyze(spec, observed_offer=offer, quick=True)
     rec = result["recommendation"]
     notes = (f"Supplier offer analysis (product={spec.get('product')}): "
              f"recommended opening ¥{rec['opening_offer_price']:.2f}, "

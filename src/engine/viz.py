@@ -109,8 +109,10 @@ def plot_benchmark(rows_or_summary, save_path=None):
     ax.set_ylabel("Seconds (log scale)")
     ax.set_title("Solve time: CPU vs AMD Instinct MI300X")
     for i in x:
-        ax.text(i - 0.2, cpu[i], f"{cpu[i]:.2f}s", ha="center", va="bottom", fontsize=7)
-        ax.text(i + 0.2, gpu[i], f"{gpu[i]:.2f}s", ha="center", va="bottom", fontsize=7)
+        cpu_lbl = f"{cpu[i]:.2f}s" if cpu[i] >= 0.01 else f"{cpu[i]*1000:.1f}ms"
+        gpu_lbl = f"{gpu[i]:.2f}s" if gpu[i] >= 0.01 else f"{gpu[i]*1000:.2f}ms"
+        ax.text(i - 0.2, cpu[i], cpu_lbl, ha="center", va="bottom", fontsize=7)
+        ax.text(i + 0.2, gpu[i], gpu_lbl, ha="center", va="bottom", fontsize=7)
     ax.legend()
     fig.tight_layout()
     if save_path:
@@ -143,16 +145,22 @@ def plot_robustness(report_data, save_path=None):
     ax1b.bar(x + 0.2, bs, 0.4, color="#C44E52", alpha=0.5, label="breakdown")
     ax1b.set_ylim(0, 1.0); ax1b.set_ylabel("Breakdown prob", color="#C44E52")
 
-    # 右：prior ±50% 敏感度（邊際 + 破局率）
-    ax2.plot(factors, margins, "o-", color="#4C72B0", label="margin")
+    # 右：先驗敏感度（邊際 + 破局率）。同時疊加 misbelief（現實固定、僅信念偏移），
+    # 因為場景敏感度與信念錯誤是兩個不同的問題（見 LIMITATIONS §十三）。
+    ax2.plot(factors, margins, "o-", color="#4C72B0", label="margin (scenario)")
     ax2.set_ylabel("Expected margin (norm)", color="#4C72B0")
-    ax2.set_xlabel("Prior reserve scale (1.0 = calibrated)")
-    ax2.set_title("Prior sensitivity (±50% miss on supplier reserve)")
+    ax2.set_xlabel("Prior scale (1.0 = calibrated)")
+    ax2.set_title("Prior sensitivity & misbelief (±50%)")
     ax2b = ax2.twinx()
     ax2b.set_ylim(0.0, 1.0)
-    ax2b.plot(factors, breaks, "s--", color="#C44E52", label="breakdown")
+    ax2b.plot(factors, breaks, "s--", color="#C44E52", label="breakdown (scenario)")
     ax2b.set_ylabel("Breakdown prob", color="#C44E52")
-    ax2.legend(loc="upper left"); ax2b.legend(loc="lower right")
+    mis = report_data.get("misbelief")
+    if mis:
+        mf = [m["factor"] for m in mis]
+        ax2.plot(mf, [m["margin"] for m in mis], "^:", color="#2A9D8F", label="margin (misbelief)")
+        ax2b.plot(mf, [m["break"] for m in mis], "d:", color="#E76F51", label="breakdown (misbelief)")
+    ax2.legend(loc="upper left", fontsize=8); ax2b.legend(loc="lower right", fontsize=8)
     fig.tight_layout()
     if save_path:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)

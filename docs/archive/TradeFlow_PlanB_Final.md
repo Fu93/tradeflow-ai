@@ -1,3 +1,12 @@
+﻿> [!WARNING]
+> **[SUPERSEDED] 本文件已封存 (Archived Document)**
+> SUPERSEDED by TARGET_ARCHITECTURE_AND_ROADMAP.md (2026-10-14). Historical contingency plan.
+>
+> 現行唯一權威規格：[TARGET_ARCHITECTURE_AND_ROADMAP.md](../../TARGET_ARCHITECTURE_AND_ROADMAP.md)（架構）
+> 與 [README.md](../../README.md)（入口）。本文件僅供歷史追溯，**請勿據此開發**。
+
+---
+
 # [TROPHY] TradeFlow AI — 談判決策引擎（Plan B 定稿 v2）
 
 > **AMD Developer Hackathon: ACT III** | 線上 2026/10/12–18 | 截止只剩 ~5.5 天（今天 10/13）

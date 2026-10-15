@@ -1,6 +1,6 @@
-"""TradeFlow v4 — 談判會話與狀態機資料結構契約。
+"""TradeFlow v5 — 談判會話與狀態機資料結構契約。
 
-職責：定義談判會話 (Session)、出價輪次、熔斷狀態、以及人工授權指令之 Pydantic 資料契約。
+職責：定義談判會話 (Session)、出價輪次、熔斷狀態、副駕駛狀態、以及人工授權指令之 Pydantic 資料契約。
 """
 from __future__ import annotations
 from enum import Enum
@@ -10,12 +10,19 @@ from pydantic import BaseModel, Field
 
 
 class AutopilotState(str, Enum):
+    # 基礎與自駕狀態
     IDLE = "IDLE"
     AUTOPILOT_CRUISING = "AUTOPILOT_CRUISING"
     CIRCUIT_TRIPPED_ESCALATED = "CIRCUIT_TRIPPED_ESCALATED"
     AWAITING_REMOTE_AUTH = "AWAITING_REMOTE_AUTH"
     DEAL_CLOSED = "DEAL_CLOSED"
     WALK_AWAY = "WALK_AWAY"
+
+    # v5 採購副駕駛 (Copilot) 狀態
+    COPILOT_MONITORING = "COPILOT_MONITORING"
+    DISCREPANCY_ALERT = "DISCREPANCY_ALERT"
+    AWAITING_HUMAN_DECISION = "AWAITING_HUMAN_DECISION"
+    HUMAN_APPROVED_APPLIED = "HUMAN_APPROVED_APPLIED"
 
 
 class RemoteAuthCommand(str, Enum):
@@ -68,6 +75,7 @@ class NegotiationSession(BaseModel):
     latest_our_offer: Optional[float] = None
     trip_reason: Optional[str] = None
     silence_until_ts: Optional[float] = Field(default=None, description="該供應商獨立戰略沉默截止時間戳 (Epoch Seconds)")
+    version: int = Field(default=1, description="CAS 樂觀鎖版本號，防止高並發競態與髒寫覆蓋")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

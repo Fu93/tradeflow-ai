@@ -1,16 +1,26 @@
 {
   "manifest_version": 3,
-  "name": "TradeFlow Autopilot — Autonomous Negotiation Agent",
-  "version": "4.0.0",
-  "description": "Autonomous in-browser procurement negotiation autopilot with Bayesian game-theoretic pricing and mobile escalation safety guardrails.",
+  "name": "TradeFlow Copilot — Procurement Decision Deck",
+  "version": "5.1.0",
+  "description": "Enterprise procurement decision copilot with calibrated Bayesian inference, terms TCO shadow cost analysis, and human-in-the-loop approval gates.",
   "permissions": [
     "sidePanel",
-    "activeTab",
     "storage",
+    "tabs",
     "alarms"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "*://*.1688.com/*",
+    "*://*.alibaba.com/*",
+    "*://*.globalsources.com/*",
+    "*://*.made-in-china.com/*",
+    "*://web.whatsapp.com/*",
+    "*://wx.qq.com/*",
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*"
+  ],
+  "optional_host_permissions": [
+    "*://*/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -22,13 +32,24 @@
   "content_scripts": [
     {
       "matches": [
-        "<all_urls>"
+        "*://*.1688.com/*",
+        "*://*.alibaba.com/*",
+        "*://*.globalsources.com/*",
+        "*://*.made-in-china.com/*",
+        "*://web.whatsapp.com/*",
+        "*://wx.qq.com/*",
+        "file:///*mock_chat.html*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
       ],
       "js": ["content.js"],
-      "run_at": "document_end"
+      "run_at": "document_idle"
     }
   ],
   "action": {
-    "default_title": "Open TradeFlow Autopilot Panel"
+    "default_title": "Open TradeFlow Copilot Deck"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:8000 http://127.0.0.1:8000;"
   }
 }

@@ -1,3 +1,12 @@
+﻿> [!WARNING]
+> **[SUPERSEDED] 本文件已封存 (Archived Document)**
+> SUPERSEDED by TARGET_ARCHITECTURE_AND_ROADMAP.md (2026-10-14). Its scope-freeze decisions were largely adopted; see the roadmap for current status.
+>
+> 現行唯一權威規格：[TARGET_ARCHITECTURE_AND_ROADMAP.md](../../TARGET_ARCHITECTURE_AND_ROADMAP.md)（架構）
+> 與 [README.md](../../README.md)（入口）。本文件僅供歷史追溯，**請勿據此開發**。
+
+---
+
 # TradeFlow AI 最終收斂衝刺與交付作戰計畫 (Final Convergence Master Plan)
 
 > 基準時間：2026-10-13 22:30 | 截止時間：2026-10-17 12:00 UTC | 剩餘時間：約 84 小時 (3.5 天)  

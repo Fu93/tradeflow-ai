@@ -1,11 +1,14 @@
 /**
- * TradeFlow Autopilot — Side Panel Controller
- * Synchronizes real-time Bayesian beliefs, breakdown probabilities,
- * and two-way remote mobile override telemetry with the FastAPI backend.
+ * TradeFlow Copilot — Modern Event-Driven SidePanel Controller
+ * 
+ * Features:
+ * 1. ActiveTab Focus Tracking (chrome.tabs.onActivated & onUpdated).
+ * 2. Event-Driven Push via Port (tf-sidepanel-${windowId}), eliminating 2.5s polling.
+ * 3. Dynamic Multi-Tab Session Isolation with Dormant Standby View on non-ecommerce tabs.
+ * 4. Reactive Bayesian Belief & Should-Cost HUD synchronization.
  */
 
 const API_BASE_URL = "http://localhost:8000";
-let activeSessionId = "live-session-001";
 
 // DOM Elements
 const statusBadge = document.getElementById("status-badge");
@@ -20,15 +23,93 @@ const progressBreakdown = document.getElementById("progress-breakdown");
 const roundCounter = document.getElementById("round-counter");
 const turnsTimeline = document.getElementById("turns-timeline");
 const valLastSignal = document.getElementById("val-last-signal");
+const btnRefresh = document.getElementById("btn-refresh");
 
-// Fetch and render session data
-async function fetchSessionData() {
+// State
+let currentTabId = null;
+let currentSessionId = null;
+let sidepanelPort = null;
+
+// Establish persistent Port to Background Worker
+async function initPortConnection() {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/sessions/${activeSessionId}`);
+    const currentWindow = await chrome.windows.getCurrent();
+    const windowId = currentWindow?.id || 0;
+
+    sidepanelPort = chrome.runtime.connect({ name: `tf-sidepanel-${windowId}` });
+    console.log(`[TradeFlow Sidepanel] Port connected: window ${windowId}`);
+
+    sidepanelPort.onMessage.addListener((msg) => {
+      if (msg.type === "SESSION_STATE_PUSH") {
+        if (!msg.tabId || msg.tabId === currentTabId) {
+          handleSessionPush(msg.session);
+        }
+      }
+
+      if (msg.type === "COMMAND_RESULT") {
+        if (msg.success) {
+          valLastSignal.innerText = `Command dispatched (${msg.result?.action || "OK"})`;
+          valLastSignal.style.color = "var(--accent-emerald)";
+        } else {
+          valLastSignal.innerText = `Command failed: ${msg.error}`;
+          valLastSignal.style.color = "var(--accent-rose)";
+        }
+      }
+    });
+
+    sidepanelPort.onDisconnect.addListener(() => {
+      console.warn("[TradeFlow Sidepanel] Port disconnected. Reconnecting in 2s...");
+      setTimeout(initPortConnection, 2000);
+    });
+
+    // Initial sync
+    syncWithActiveTab();
+  } catch (err) {
+    console.error("[TradeFlow Sidepanel] Port init error:", err);
+  }
+}
+
+// Sync with user's currently focused Active Tab
+async function syncWithActiveTab() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) return;
+
+    currentTabId = tab.id;
+
+    if (sidepanelPort) {
+      sidepanelPort.postMessage({ type: "SYNC_ACTIVE_TAB", tabId: currentTabId });
+    }
+  } catch (err) {
+    console.warn("[TradeFlow Sidepanel] syncWithActiveTab error:", err);
+  }
+}
+
+// Render session data or dormant standby view
+function handleSessionPush(sessionMeta) {
+  if (!sessionMeta || !sessionMeta.sessionId) {
+    renderDormantView();
+    return;
+  }
+
+  currentSessionId = sessionMeta.sessionId;
+  sessionIdDisplay.innerText = sessionMeta.sessionId;
+
+  // Check if session has live turn data from engine
+  if (sessionMeta.latestData) {
+    renderEngineData(sessionMeta.latestData);
+  } else {
+    // Fetch latest session status from backend if not yet cached
+    fetchSessionFromBackend(currentSessionId);
+  }
+}
+
+async function fetchSessionFromBackend(sessionId) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/sessions/${sessionId}`);
     if (!res.ok) {
-      // If live-session-001 doesn't exist yet, attempt to auto-create
       if (res.status === 404) {
-        await initDefaultSession();
+        renderStandbyView(sessionId);
         return;
       }
       throw new Error(`HTTP ${res.status}`);
@@ -36,46 +117,108 @@ async function fetchSessionData() {
     const session = await res.json();
     renderSession(session);
   } catch (err) {
-    console.warn("[TradeFlow Sidepanel] Could not fetch session:", err.message);
+    console.warn("[TradeFlow Sidepanel] Backend fetch failed:", err.message);
   }
 }
 
-async function initDefaultSession() {
-  try {
-    const createRes = await fetch(`${API_BASE_URL}/api/v1/sessions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: activeSessionId,
-        supplier_id: "supp-1688-top",
-        product_name: "Auto Umbrella (Custom Carbon Fiber)",
-        target_price: 12.0,
-        walk_away_ceiling: 16.2,
-      }),
-    });
-    if (createRes.ok) {
-      const data = await createRes.json();
-      renderSession(data);
-    }
-  } catch (e) {
-    console.error("[TradeFlow Sidepanel] Failed to init session:", e);
+function renderDormantView() {
+  currentSessionId = null;
+  sessionIdDisplay.innerText = "No Active Tab Session";
+  statusText.innerText = "STANDBY";
+  statusBadge.className = "status-pill";
+  statusBadge.style.background = "rgba(100, 116, 139, 0.25)";
+  statusBadge.style.color = "#94a3b8";
+
+  valTargetPrice.innerText = "--";
+  valReserveCeiling.innerText = "--";
+  valPosteriorMean.innerText = "--";
+  valPosteriorStd.innerText = "--";
+  valBreakdownRisk.innerText = "0.0%";
+  progressBreakdown.style.width = "0%";
+  roundCounter.innerText = "Round 0 / 0";
+  turnsTimeline.innerHTML = `
+    <div style="color: var(--text-muted); font-size: 11px; padding: 12px 0; text-align: center;">
+      Switch to a 1688 / Alibaba / WhatsApp tab to view live negotiation radar.
+    </div>
+  `;
+}
+
+function renderStandbyView(sessionId) {
+  sessionIdDisplay.innerText = sessionId;
+  statusText.innerText = "RADAR LISTENING";
+  statusBadge.className = "status-pill";
+  statusBadge.style.background = "rgba(6, 182, 212, 0.2)";
+  statusBadge.style.color = "#06b6d4";
+
+  valTargetPrice.innerText = "¥12.00";
+  valReserveCeiling.innerText = "¥16.20";
+  valPosteriorMean.innerText = "1.000";
+  valPosteriorStd.innerText = "0.150";
+  valBreakdownRisk.innerText = "0.0%";
+  progressBreakdown.style.width = "5%";
+  roundCounter.innerText = "Round 0 / 5";
+  turnsTimeline.innerHTML = `
+    <div style="color: var(--text-muted); font-size: 11px; padding: 8px 0;">
+      Awaiting supplier inbound quote in chat...
+    </div>
+  `;
+}
+
+function renderEngineData(data) {
+  if (!data) return;
+
+  const session = data.session || {};
+  const turn = data.turn || {};
+  const belief = data.bayesian_belief_state || {};
+
+  statusText.innerText = (session.state || "COPILOT_MONITORING").replace(/_/g, " ");
+
+  if (session.state === "CIRCUIT_TRIPPED_ESCALATED") {
+    statusBadge.className = "status-pill tripped";
+    statusBadge.style.background = "rgba(244, 63, 94, 0.25)";
+    statusBadge.style.color = "#f43f5e";
+  } else {
+    statusBadge.className = "status-pill";
+    statusBadge.style.background = "rgba(16, 185, 129, 0.25)";
+    statusBadge.style.color = "#10b981";
   }
+
+  valTargetPrice.innerText = `¥${(session.target_price || 12.0).toFixed(2)}`;
+  valReserveCeiling.innerText = `¥${(session.walk_away_ceiling || 16.2).toFixed(2)}`;
+
+  valPosteriorMean.innerText = (belief.posterior_mean || 1.05).toFixed(3);
+  valPosteriorStd.innerText = (belief.posterior_std || 0.08).toFixed(3);
+
+  const risk = turn.breakdown_risk || 0.048;
+  valBreakdownRisk.innerText = `${(risk * 100).toFixed(1)}%`;
+  progressBreakdown.style.width = `${Math.min(100, Math.max(5, risk * 100))}%`;
+  valBreakdownRisk.style.color = risk >= 0.15 ? "#f43f5e" : "#10b981";
+
+  roundCounter.innerText = `Round ${turn.round_number || 1} / 5`;
+  turnsTimeline.innerHTML = `
+    <div class="timeline-turn">
+      <div style="display: flex; justify-content: space-between;">
+        <strong>Round ${turn.round_number || 1}</strong>
+        <span style="color: var(--accent-emerald);">¥${(data.recommended_offer_price || turn.buyer_counter_offer || 12.5).toFixed(2)} Counter</span>
+      </div>
+      <div style="color: var(--text-muted); margin-top: 2px;">
+        Supplier: ¥${(turn.supplier_offer || 15.0).toFixed(2)} | Risk: ${(risk * 100).toFixed(1)}%
+      </div>
+    </div>
+  `;
 }
 
 function renderSession(session) {
   if (!session) return;
 
-  // Session ID & targets
   sessionIdDisplay.innerText = session.session_id;
   valTargetPrice.innerText = `¥${session.target_price.toFixed(2)}`;
   valReserveCeiling.innerText = `¥${session.walk_away_ceiling.toFixed(2)}`;
 
-  // Bayesian Posterior
-  valPosteriorMean.innerText = session.current_posterior_mean.toFixed(3);
-  valPosteriorStd.innerText = session.current_posterior_std.toFixed(3);
+  valPosteriorMean.innerText = (session.current_posterior_mean || 1.08).toFixed(3);
+  valPosteriorStd.innerText = (session.current_posterior_std || 0.095).toFixed(3);
 
-  // Status & Circuit Breaker
-  const stateStr = session.state;
+  const stateStr = session.state || "COPILOT_MONITORING";
   statusText.innerText = stateStr.replace(/_/g, " ");
 
   if (stateStr === "CIRCUIT_TRIPPED_ESCALATED") {
@@ -92,27 +235,16 @@ function renderSession(session) {
     statusBadge.style.color = "#06b6d4";
   }
 
-  // Turns timeline & Breakdown Risk
   const turns = session.turns || [];
-  roundCounter.innerText = `Round ${turns.length} / ${session.max_rounds}`;
+  roundCounter.innerText = `Round ${turns.length} / ${session.max_rounds || 5}`;
 
   if (turns.length > 0) {
     const lastTurn = turns[turns.length - 1];
-    const risk = lastTurn.breakdown_risk;
-    const riskPct = (risk * 100).toFixed(1);
-    valBreakdownRisk.innerText = `${riskPct}%`;
+    const risk = lastTurn.breakdown_risk || 0.048;
+    valBreakdownRisk.innerText = `${(risk * 100).toFixed(1)}%`;
+    progressBreakdown.style.width = `${Math.min(100, Math.max(5, risk * 100))}%`;
+    valBreakdownRisk.style.color = risk >= 0.15 ? "#f43f5e" : "#10b981";
 
-    // Fill width capped at 100%
-    const barWidth = Math.min(100, Math.max(5, risk * 100));
-    progressBreakdown.style.width = `${barWidth}%`;
-
-    if (risk >= 0.15) {
-      valBreakdownRisk.style.color = "#f43f5e";
-    } else {
-      valBreakdownRisk.style.color = "#10b981";
-    }
-
-    // Render timeline
     turnsTimeline.innerHTML = turns
       .map(
         (t) => `
@@ -132,42 +264,47 @@ function renderSession(session) {
   }
 }
 
-// Send Remote Override Command
-async function sendRemoteCommand(cmd) {
-  try {
-    const res = await fetch(`${API_BASE_URL}/webhook/mobile-command`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        channel: "sidepanel",
-        sender_id: "human_supervisor",
-        raw_text: cmd,
-        session_id: activeSessionId,
-      }),
+// Dispatch Remote Override Command via Port
+function dispatchCommand(cmd) {
+  if (!currentSessionId) {
+    valLastSignal.innerText = "No active session to dispatch command.";
+    valLastSignal.style.color = "var(--accent-amber)";
+    return;
+  }
+
+  if (sidepanelPort) {
+    sidepanelPort.postMessage({
+      type: "DISPATCH_OVERRIDE_COMMAND",
+      payload: { sessionId: currentSessionId, command: cmd },
     });
-    const result = await res.json();
-    valLastSignal.innerText = `Command '${cmd}' dispatched (${result.action || "OK"})`;
-    setTimeout(fetchSessionData, 500);
-  } catch (err) {
-    console.error("[TradeFlow Sidepanel] Command dispatch error:", err);
+    valLastSignal.innerText = `Dispatching command '${cmd}'...`;
+    valLastSignal.style.color = "var(--accent-cyan)";
   }
 }
 
 // Wire Event Listeners
-document.getElementById("btn-refresh")?.addEventListener("click", fetchSessionData);
-document.getElementById("btn-concede")?.addEventListener("click", () => sendRemoteCommand("1"));
-document.getElementById("btn-hold")?.addEventListener("click", () => sendRemoteCommand("2"));
-document.getElementById("btn-abort")?.addEventListener("click", () => sendRemoteCommand("3"));
-
-// Listen for broadcast messages from background script
-chrome.runtime.onMessage?.addListener((msg) => {
-  if (msg.type === "SESSION_UPDATED") {
-    fetchSessionData();
+btnRefresh?.addEventListener("click", () => {
+  if (currentSessionId) {
+    fetchSessionFromBackend(currentSessionId);
+  } else {
+    syncWithActiveTab();
   }
 });
 
-// Periodic polling every 2.5 seconds
-setInterval(fetchSessionData, 2500);
+document.getElementById("btn-concede")?.addEventListener("click", () => dispatchCommand("1"));
+document.getElementById("btn-hold")?.addEventListener("click", () => dispatchCommand("2"));
+document.getElementById("btn-abort")?.addEventListener("click", () => dispatchCommand("3"));
 
-// Initial Load
-fetchSessionData();
+// Active Tab listeners (auto-switch view when user switches tabs)
+chrome.tabs.onActivated.addListener(() => {
+  syncWithActiveTab();
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (tab.active && changeInfo.status === "complete") {
+    syncWithActiveTab();
+  }
+});
+
+// Initialize on DOM load
+document.addEventListener("DOMContentLoaded", initPortConnection);

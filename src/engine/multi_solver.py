@@ -1,4 +1,4 @@
-"""TradeFlow v4 — 多供應商逆向拍賣動態 BATNA 與 96M 張量求解器。
+"""TradeFlow v4 — 多供應商逆向拍賣動態 BATNA 與張量求解器。
 
 數學模型：
 1. 動態 BATNA (Best Alternative to a Negotiated Agreement)：
@@ -9,8 +9,12 @@
    mu_{r, i} = mu_{r, i} + eta * (p_i - p_lead) - gamma * I_{cross_anchor}
    sigma_{r, i} = sigma_{r, i} * (1 - 0.25 * eta)
 
-3. 巨型張量運算 (96,000,000 Rollouts)：
-   張量維度 (K, S, N_open, N_sched) = (4 x 50,000 x 40 x 12)。
+3. 巨型張量運算 (rollout 計數)：
+   rollout 數 = K x S x N_open x N_sched，由 MultiSupplierSolver 的參數決定。
+   預設建構參數為 (K=4, S=20,000, N_open=20, N_sched=6) -> 每輪 9.6M rollouts。
+   `simulate_reverse_auction()` 預設執行 3 輪 -> 累計約 28.8M rollouts（實測值）。
+   若將 S 提升至 50,000，每輪為 24M；最大策略網格 (n_open=40, n_sched=12) 搭配
+   S=50,000 時為 96M rollouts，但**示範路徑並未使用該網格**，故對外引用實測值。
    支援 AMD ROCm/CuPy 顯存加速，並提供 NumPy CPU 高速向量化無縫降級。
 """
 from __future__ import annotations
@@ -144,7 +148,11 @@ class MultiSupplierSolver:
         rng: Optional[np.random.Generator] = None,
     ) -> Dict[str, Any]:
         """
-        多供應商 96,000,000 次 Rollout 巨型張量運算求解。
+        多供應商張量並行 Rollout 求解。
+
+        rollout 數 = K x n_opp_samples x N_open x N_sched（由建構參數決定）。
+        預設 (K=4, S=50,000, N_open=20, N_sched=6) 每輪為 9.6M。
+
         輸入形狀:
           supplier_offers: (K,) 各家當前歸一化報價
           prior_means: (K,) 各家後驗底價均值
@@ -270,102 +278,203 @@ class MultiSupplierSolver:
         }
 
 
+class MultiAuctionSession:
+    """即時多供應商逆向拍賣互動式會話 (Interactive Multi-Supplier Reverse Auction Session).
+
+    支援逐輪動態接收真實外部供應商報價，不預設任何未來輪次報價。
+    每一輪提供：
+    1. 交叉錨定信號反饋（第 2 輪起，若存在領先價）
+    2. 張量並行求解與 3 級戰術分流標籤（LEAN_IN, CROSS_ANCHOR, SIDELINE）
+    3. 動態 BATNA 外部替代方案影子上限計算
+    4. 買方最優對策還價向量 (counter_offers)
+    """
+
+    def __init__(
+        self,
+        suppliers: Optional[List[Dict[str, Any]]] = None,
+        target_price: float = 12.0,
+        walk_away_ceiling: float = 16.2,
+        moq: int = 10000,
+        n_samples: int = 20000,
+        n_open: int = 20,
+        n_sched: int = 6,
+        use_gpu: bool = False,
+    ):
+        if suppliers is None:
+            suppliers = [
+                {"name": "Supplier A (敏捷讓步型)", "profile": "Agile Conceder"},
+                {"name": "Supplier B (對等互惠型)", "profile": "Rational Tit-for-Tat"},
+                {"name": "Supplier C (強硬死守型)", "profile": "Moderate Hardliner"},
+                {"name": "Supplier D (高價溢價型)", "profile": "Stubborn Over-priced"},
+            ]
+        self.suppliers = suppliers
+        self.k = len(suppliers)
+        self.target_price = float(target_price)
+        self.walk_away_ceiling = float(walk_away_ceiling)
+        self.moq = int(moq)
+        self.n_samples = int(n_samples)
+        self.use_gpu = use_gpu
+
+        self.solver = MultiSupplierSolver(
+            n_opp_samples=n_samples,
+            n_open=n_open,
+            n_sched=n_sched,
+            use_gpu=use_gpu,
+            walk_away_ceiling=self.walk_away_ceiling / self.target_price,
+        )
+
+        self.prior_means = np.full(self.k, 1.08, dtype=np.float32)
+        self.prior_stds = np.full(self.k, 0.10, dtype=np.float32)
+
+        self.current_round = 0
+        self.trace: List[Dict[str, Any]] = []
+        self.total_rollouts_accum = 0
+        self.total_compute_seconds = 0.0
+
+    def step_round(self, quotes: List[float]) -> Dict[str, Any]:
+        """傳入當前輪次各供應商的即時報價 (¥)，計算戰術標籤、BATNA 上限與買方對策。"""
+        if len(quotes) != self.k:
+            raise ValueError(f"Expected {self.k} quotes for {self.k} suppliers, got {len(quotes)}")
+
+        self.current_round += 1
+        r_idx = self.current_round
+
+        offers_norm = np.array([q / self.target_price for q in quotes], dtype=np.float32)
+        best_lead_norm = float(np.min(offers_norm))
+
+        # 1. 交叉錨定貝氏更新 (第 2 輪起)
+        if r_idx > 1:
+            self.prior_means, self.prior_stds = self.solver.apply_cross_anchoring_update(
+                self.prior_means, self.prior_stds, offers_norm, best_lead_price=best_lead_norm
+            )
+
+        # 2. 張量並行求解
+        res = self.solver.solve_reverse_auction_tensor(
+            supplier_offers=offers_norm,
+            prior_means=self.prior_means,
+            prior_stds=self.prior_stds,
+        )
+
+        self.total_rollouts_accum += res["total_rollouts"]
+        self.total_compute_seconds += res["elapsed_seconds"]
+
+        # 3. 記錄輪次資訊
+        round_info = {
+            "round": r_idx,
+            "quotes": [float(q) for q in quotes],
+            "best_quote": float(min(quotes)),
+            "lead_supplier": self.suppliers[int(np.argmin(quotes))]["name"],
+            "tactics": res["tactics"],
+            "effective_ceilings_cny": [float(c * self.target_price) for c in res["effective_ceilings"]],
+            "p_break_array": [float(p) for p in res["p_break_array"]],
+            "counter_offers_cny": [float(o * self.target_price) for o in res["best_offers"]],
+            "rollouts": res["total_rollouts"],
+            "elapsed_seconds": res["elapsed_seconds"],
+        }
+        self.trace.append(round_info)
+        return round_info
+
+    def get_summary(self) -> Dict[str, Any]:
+        """結算拍賣結果。"""
+        if not self.trace:
+            raise ValueError("No rounds have been executed yet.")
+
+        last_round = self.trace[-1]
+        final_quote = last_round["best_quote"]
+        winning_idx = int(np.argmin(last_round["quotes"]))
+        winning_supplier = self.suppliers[winning_idx]["name"]
+        total_savings_pct = (self.walk_away_ceiling - final_quote) / self.walk_away_ceiling
+        total_savings_cny = (self.walk_away_ceiling - final_quote) * self.moq
+
+        return {
+            "success": True,
+            "k_suppliers": self.k,
+            "suppliers": self.suppliers,
+            "backend": "GPU (CuPy/ROCm)" if self.use_gpu else "CPU (NumPy Vectorized)",
+            "product_target": self.target_price,
+            "walk_away_ceiling": self.walk_away_ceiling,
+            "moq": self.moq,
+            "winning_supplier": winning_supplier,
+            "winning_price": final_quote,
+            "total_savings_pct": total_savings_pct,
+            "total_savings_cny": total_savings_cny,
+            "total_rollouts": self.total_rollouts_accum,
+            "total_rollouts_accum": self.total_rollouts_accum,
+            "total_compute_seconds": round(self.total_compute_seconds, 4),
+            "trace": self.trace,
+        }
+
+
 def simulate_reverse_auction(
     target_price: float = 12.0,
     walk_away_ceiling: float = 16.2,
     moq: int = 10000,
     n_samples: int = 20000,
     use_gpu: bool = False,
+    suppliers: Optional[List[Dict[str, str]]] = None,
+    rounds_quotes: Optional[List[List[float]]] = None,
+    n_rounds: int = 3,
+    seed: int = 42,
 ) -> Dict[str, Any]:
     """
-    執行端到端 4 供應商逆向拍賣多輪協同模擬。
-    展示動態 BATNA_{-i} 交叉壓制、3 級戰術分流與張量求解全流程。
+    多供應商逆向拍賣動態引擎。
+
+    徹底杜絕硬編碼報價數組：
+    1. 自定義動態注入：外部傳入真實輪次報價 (`rounds_quotes`) 時，由 MultiAuctionSession 逐輪求解。
+    2. 動態多 Agent 自博弈 (預設)：未傳入報價時，自動調用非 LLM 策略對抗 Agent
+       (Conceder, TitForTat, HardBargainer, Bluffing) 在每一輪根據買方出價「即時動態計算反饋出價」，
+       所有數字皆為運行時由數學模型生成，無任何預設數字數組。
     """
-    suppliers = [
-        {"name": "Supplier A (浙江頂尖雨具製造)", "profile": "Agile Conceder"},
-        {"name": "Supplier B (深圳宏達實業)", "profile": "Rational Tit-for-Tat"},
-        {"name": "Supplier C (義烏博創商貿)", "profile": "Moderate Hardliner"},
-        {"name": "Supplier D (東莞榮耀五金)", "profile": "Stubborn Over-priced"},
-    ]
+    if suppliers is None:
+        suppliers = [
+            {"name": "Supplier A (敏捷讓步型)", "profile": "Agile Conceder"},
+            {"name": "Supplier B (對等互惠型)", "profile": "Rational Tit-for-Tat"},
+            {"name": "Supplier C (強硬死守型)", "profile": "Moderate Hardliner"},
+            {"name": "Supplier D (高價溢價型)", "profile": "Stubborn Over-priced"},
+        ]
     k = len(suppliers)
 
-    # 3 輪多廠商報價演變數據 (金額 ¥)
-    rounds_quotes = [
-        [15.20, 15.60, 16.00, 17.20],  # Round 1
-        [14.00, 14.40, 15.20, 16.80],  # Round 2
-        [12.80, 13.60, 14.80, 16.80],  # Round 3
-    ]
-
-    solver = MultiSupplierSolver(
-        n_opp_samples=n_samples,
-        n_open=20,
-        n_sched=6,
+    session = MultiAuctionSession(
+        suppliers=suppliers,
+        target_price=target_price,
+        walk_away_ceiling=walk_away_ceiling,
+        moq=moq,
+        n_samples=n_samples,
         use_gpu=use_gpu,
-        walk_away_ceiling=walk_away_ceiling / target_price,
     )
 
-    prior_means = np.full(k, 1.08, dtype=np.float32)
-    prior_stds = np.full(k, 0.10, dtype=np.float32)
-
-    total_rollouts_accum = 0
-    total_compute_seconds = 0.0
-    trace = []
-
-    for r_idx, quotes in enumerate(rounds_quotes, start=1):
-        offers_norm = np.array([q / target_price for q in quotes], dtype=np.float32)
-        best_lead_norm = float(np.min(offers_norm))
-
-        # 1. 交叉錨定貝氏更新
-        if r_idx > 1:
-            prior_means, prior_stds = solver.apply_cross_anchoring_update(
-                prior_means, prior_stds, offers_norm, best_lead_price=best_lead_norm
-            )
-
-        # 2. 96M/張量並行求解
-        res = solver.solve_reverse_auction_tensor(
-            supplier_offers=offers_norm,
-            prior_means=prior_means,
-            prior_stds=prior_stds,
+    if rounds_quotes is not None:
+        # 逐輪執行外部動態輸入報價
+        for quotes in rounds_quotes:
+            session.step_round(quotes)
+    else:
+        # 動態多 Agent 自博弈：每一輪均由對抗原型根據買方歷史即時推演生成
+        from ..benchmark.adversaries import (
+            ConcederAdversary,
+            TitForTatAdversary,
+            HardBargainerAdversary,
+            BluffingAdversary,
         )
+        adv_pool = [
+            ConcederAdversary(max_rounds=n_rounds, init_price=1.28, reserve_price=1.05),
+            TitForTatAdversary(max_rounds=n_rounds, init_price=1.30, reserve_price=1.12),
+            HardBargainerAdversary(max_rounds=n_rounds, init_price=1.33, reserve_price=1.18),
+            BluffingAdversary(max_rounds=n_rounds, init_price=1.40, reserve_price=1.15),
+        ]
+        rng = np.random.default_rng(seed)
+        buyer_histories: List[List[float]] = [[] for _ in range(k)]
+        supp_histories: List[List[float]] = [[] for _ in range(k)]
 
-        total_rollouts_accum += res["total_rollouts"]
-        total_compute_seconds += res["elapsed_seconds"]
+        for r in range(1, n_rounds + 1):
+            cur_round_quotes = []
+            for i in range(k):
+                adv = adv_pool[i % len(adv_pool)]
+                b_offer = buyer_histories[i][-1] if buyer_histories[i] else 1.05
+                offer_norm = adv.respond(r, b_offer, buyer_histories[i], supp_histories[i], rng)
+                supp_histories[i].append(offer_norm)
+                cur_round_quotes.append(round(float(offer_norm * target_price), 2))
+                buyer_histories[i].append(b_offer + 0.05)
 
-        # 3. 記錄輪次軌跡
-        round_info = {
-            "round": r_idx,
-            "quotes": quotes,
-            "best_quote": min(quotes),
-            "lead_supplier": suppliers[int(np.argmin(quotes))]["name"],
-            "tactics": res["tactics"],
-            "effective_ceilings_cny": [c * target_price for c in res["effective_ceilings"]],
-            "p_break_array": res["p_break_array"],
-            "counter_offers_cny": [o * target_price for o in res["best_offers"]],
-            "rollouts": res["total_rollouts"],
-            "elapsed_seconds": res["elapsed_seconds"],
-        }
-        trace.append(round_info)
+            session.step_round(cur_round_quotes)
 
-    # 4. 結算
-    final_quote = min(rounds_quotes[-1])
-    winning_idx = int(np.argmin(rounds_quotes[-1]))
-    winning_supplier = suppliers[winning_idx]["name"]
-    total_savings_pct = (walk_away_ceiling - final_quote) / walk_away_ceiling
-    total_savings_cny = (walk_away_ceiling - final_quote) * moq
-
-    return {
-        "success": True,
-        "k_suppliers": k,
-        "backend": "GPU (CuPy/ROCm)" if use_gpu else "CPU (NumPy Vectorized)",
-        "product_target": target_price,
-        "walk_away_ceiling": walk_away_ceiling,
-        "moq": moq,
-        "winning_supplier": winning_supplier,
-        "winning_price": final_quote,
-        "total_savings_pct": total_savings_pct,
-        "total_savings_cny": total_savings_cny,
-        "total_rollouts": total_rollouts_accum,
-        "total_rollouts_accum": total_rollouts_accum,
-        "total_compute_seconds": round(total_compute_seconds, 4),
-        "trace": trace,
-    }
+    return session.get_summary()

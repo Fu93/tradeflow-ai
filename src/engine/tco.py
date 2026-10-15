@@ -9,6 +9,7 @@
 這使後續的 MCTS 張量求解器能無縫優化「全維度商業總成本」，徹底解決「單純壓價被其他條款背刺」的產業難題。
 """
 from __future__ import annotations
+import math
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
 
@@ -105,3 +106,59 @@ class TCOEngine:
             is_favorable_vs_raw=(p_effective <= p_raw),
             explanation=explanation,
         )
+
+    @classmethod
+    def calculate_nonlinear_effective_tco(
+        cls,
+        raw_price: float,
+        baseline_lead_days: int = 15,
+        offered_lead_days: Optional[int] = None,
+        baseline_moq: int = 500,
+        offered_moq: Optional[int] = None,
+        wacc: float = 0.08,
+    ) -> Dict[str, Any]:
+        """計算非價格條款之非線性影子成本 (Shadow Cost)。"""
+        lead_penalty = 0.0
+        lead_breakdown = {"capital_cost": 0.0, "stockout_risk_cost": 0.0}
+        if offered_lead_days is not None and offered_lead_days > baseline_lead_days:
+            delay = offered_lead_days - baseline_lead_days
+            # 資金佔用折算
+            cap_cost = raw_price * (wacc * (delay / 365.0))
+            crisis_cost = 0.0
+            # 5 天安全緩衝區之外，超線性懲罰 (階梯指數 1.75)
+            if delay > 5:
+                crisis_cost = raw_price * 0.015 * math.pow((delay - 5) / 10.0, 1.75)
+            lead_penalty = cap_cost + crisis_cost
+            lead_breakdown = {
+                "capital_cost": round(cap_cost, 3),
+                "stockout_risk_cost": round(crisis_cost, 3),
+            }
+
+        moq_penalty = 0.0
+        moq_breakdown = {"holding_cost": 0.0, "markdown_risk_cost": 0.0}
+        if offered_moq is not None and offered_moq > baseline_moq:
+            excess_ratio = (offered_moq - baseline_moq) / float(baseline_moq)
+            # 庫存持有資金佔用 (以平均 90 天滯銷週轉計)
+            holding_cost = raw_price * excess_ratio * (wacc * (90.0 / 365.0))
+            # 滯銷降價非線性飽和風險: 1 - exp(-1.2 * excess_ratio)
+            markdown_risk = raw_price * excess_ratio * 0.08 * (1.0 - math.exp(-1.2 * excess_ratio))
+            moq_penalty = holding_cost + markdown_risk
+            moq_breakdown = {
+                "holding_cost": round(holding_cost, 3),
+                "markdown_risk_cost": round(markdown_risk, 3),
+            }
+
+        effective_price = raw_price + lead_penalty + moq_penalty
+
+        return {
+            "raw_price": round(raw_price, 3),
+            "lead_time_shadow_cost": round(lead_penalty, 3),
+            "lead_time_breakdown": lead_breakdown,
+            "moq_inventory_shadow_cost": round(moq_penalty, 3),
+            "moq_breakdown": moq_breakdown,
+            "effective_tco_price": round(effective_price, 3),
+            "effective_unit_tco": round(effective_price, 3),
+            "effective_unit_price": round(effective_price, 3),
+            "is_unfavorable": effective_price > raw_price * 1.05,
+        }
+

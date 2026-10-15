@@ -1,9 +1,10 @@
-"""TradeFlow v4 — 談判會話持久化與狀態機管理器。
+"""TradeFlow v5 — 談判會話持久化、CAS 樂觀鎖與狀態機管理器。
 
 職責：
 1. 雙層持久化：SQLite (WAL 模式) 記錄歷史輪次 + 跨平台原子 JSON 寫入最新快照。
 2. 狀態機轉移守衛：嚴格校驗狀態合法性，防止非法狀態覆蓋。
-3. Windows 檔案鎖相容：使用同磁區臨時檔 + 指數退避重試置換。
+3. CAS (Compare-And-Swap) 樂觀鎖：引入 version 欄位，徹底杜絕多並發協程/線程競態髒寫。
+4. Windows 檔案鎖相容：使用同磁區臨時檔 + 指數退避重試置換。
 """
 from __future__ import annotations
 import os
@@ -29,26 +30,62 @@ class InvalidStateTransitionError(Exception):
     pass
 
 
+class OptimisticLockConflictError(Exception):
+    """當 CAS 樂觀鎖版本或狀態不匹配時拋出此異常，表明存在並發寫衝突。"""
+    pass
+
+
 # 合法狀態轉移圖 (State Transition Graph)
 VALID_TRANSITIONS: Dict[AutopilotState, List[AutopilotState]] = {
     AutopilotState.IDLE: [
         AutopilotState.AUTOPILOT_CRUISING,
         AutopilotState.CIRCUIT_TRIPPED_ESCALATED,
         AutopilotState.WALK_AWAY,
+        AutopilotState.COPILOT_MONITORING,
+        AutopilotState.AWAITING_HUMAN_DECISION,
     ],
     AutopilotState.AUTOPILOT_CRUISING: [
         AutopilotState.CIRCUIT_TRIPPED_ESCALATED,
         AutopilotState.DEAL_CLOSED,
         AutopilotState.WALK_AWAY,
+        AutopilotState.COPILOT_MONITORING,
+        AutopilotState.AWAITING_HUMAN_DECISION,
     ],
     AutopilotState.CIRCUIT_TRIPPED_ESCALATED: [
         AutopilotState.AWAITING_REMOTE_AUTH,
         AutopilotState.AUTOPILOT_CRUISING,
         AutopilotState.DEAL_CLOSED,
         AutopilotState.WALK_AWAY,
+        AutopilotState.AWAITING_HUMAN_DECISION,
     ],
     AutopilotState.AWAITING_REMOTE_AUTH: [
         AutopilotState.AUTOPILOT_CRUISING,
+        AutopilotState.DEAL_CLOSED,
+        AutopilotState.WALK_AWAY,
+        AutopilotState.AWAITING_HUMAN_DECISION,
+    ],
+    # v5 採購副駕駛 (Copilot) 狀態流轉
+    AutopilotState.COPILOT_MONITORING: [
+        AutopilotState.DISCREPANCY_ALERT,
+        AutopilotState.AWAITING_HUMAN_DECISION,
+        AutopilotState.AUTOPILOT_CRUISING,
+        AutopilotState.DEAL_CLOSED,
+        AutopilotState.WALK_AWAY,
+    ],
+    AutopilotState.DISCREPANCY_ALERT: [
+        AutopilotState.AWAITING_HUMAN_DECISION,
+        AutopilotState.COPILOT_MONITORING,
+        AutopilotState.WALK_AWAY,
+    ],
+    AutopilotState.AWAITING_HUMAN_DECISION: [
+        AutopilotState.HUMAN_APPROVED_APPLIED,
+        AutopilotState.COPILOT_MONITORING,
+        AutopilotState.DEAL_CLOSED,
+        AutopilotState.WALK_AWAY,
+    ],
+    AutopilotState.HUMAN_APPROVED_APPLIED: [
+        AutopilotState.COPILOT_MONITORING,
+        AutopilotState.AWAITING_HUMAN_DECISION,
         AutopilotState.DEAL_CLOSED,
         AutopilotState.WALK_AWAY,
     ],
@@ -59,7 +96,7 @@ VALID_TRANSITIONS: Dict[AutopilotState, List[AutopilotState]] = {
 
 
 class SessionManager:
-    """談判會話管理器（SQLite WAL + 原子 JSON 雙寫）。"""
+    """談判會話管理器（SQLite WAL + CAS 樂觀鎖 + 原子 JSON 雙寫）。"""
 
     def __init__(
         self,
@@ -91,12 +128,19 @@ class SessionManager:
                     state TEXT NOT NULL,
                     current_round INTEGER NOT NULL DEFAULT 0,
                     trip_reason TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     spec_json TEXT NOT NULL
                 );
                 """
             )
+            # 自動遷移：若既有資料庫缺少 version 欄位則動態擴展
+            cursor = conn.execute("PRAGMA table_info(sessions);")
+            cols = [row["name"] for row in cursor.fetchall()]
+            if "version" not in cols:
+                conn.execute("ALTER TABLE sessions ADD COLUMN version INTEGER NOT NULL DEFAULT 1;")
+
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS turns (
@@ -126,6 +170,7 @@ class SessionManager:
             latest_opponent_offer=None,
             latest_our_offer=None,
             trip_reason=None,
+            version=1,
             created_at=now,
             updated_at=now,
         )
@@ -136,8 +181,8 @@ class SessionManager:
                 """
                 INSERT OR REPLACE INTO sessions (
                     session_id, product_name, target_price, ceiling_price,
-                    state, current_round, trip_reason, created_at, updated_at, spec_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    state, current_round, trip_reason, version, created_at, updated_at, spec_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     session.spec.session_id,
@@ -147,6 +192,7 @@ class SessionManager:
                     session.state.value,
                     session.current_round,
                     session.trip_reason,
+                    session.version,
                     session.created_at.isoformat(),
                     session.updated_at.isoformat(),
                     session.spec.model_dump_json(),
@@ -196,6 +242,8 @@ class SessionManager:
                 if latest_our is None and t.sender == "buyer_agent" and t.parsed_price is not None:
                     latest_our = t.parsed_price
 
+            ver = row["version"] if "version" in row.keys() else 1
+
             return NegotiationSession(
                 spec=spec,
                 state=AutopilotState(row["state"]),
@@ -204,11 +252,17 @@ class SessionManager:
                 latest_opponent_offer=latest_opp,
                 latest_our_offer=latest_our,
                 trip_reason=row["trip_reason"],
+                version=ver,
                 created_at=datetime.fromisoformat(row["created_at"]),
                 updated_at=datetime.fromisoformat(row["updated_at"]),
             )
 
-    def append_turn(self, session_id: str, turn: NegotiationTurn) -> NegotiationSession:
+    def append_turn(
+        self,
+        session_id: str,
+        turn: NegotiationTurn,
+        expected_version: Optional[int] = None,
+    ) -> NegotiationSession:
         session = self.get_session(session_id)
         if not session:
             raise KeyError(f"Session '{session_id}' not found.")
@@ -217,6 +271,32 @@ class SessionManager:
         new_round = max(session.current_round, turn.round_index)
 
         with self._get_connection() as conn:
+            # 1. 若指定 expected_version，先以 CAS 檢查版本號
+            if expected_version is not None:
+                cursor = conn.execute(
+                    """
+                    UPDATE sessions 
+                    SET current_round = ?, version = version + 1, updated_at = ? 
+                    WHERE session_id = ? AND version = ?;
+                    """,
+                    (new_round, now.isoformat(), session_id, expected_version),
+                )
+                if cursor.rowcount == 0:
+                    raise OptimisticLockConflictError(
+                        f"CAS optimistic lock conflict on session '{session_id}': "
+                        f"expected version {expected_version}, but record was modified concurrently."
+                    )
+            else:
+                conn.execute(
+                    """
+                    UPDATE sessions 
+                    SET current_round = ?, version = version + 1, updated_at = ? 
+                    WHERE session_id = ?;
+                    """,
+                    (new_round, now.isoformat(), session_id),
+                )
+
+            # 2. 插入輪次紀錄
             conn.execute(
                 """
                 INSERT INTO turns (
@@ -237,12 +317,6 @@ class SessionManager:
                     json.dumps(turn.metadata),
                 ),
             )
-            conn.execute(
-                """
-                UPDATE sessions SET current_round = ?, updated_at = ? WHERE session_id = ?;
-                """,
-                (new_round, now.isoformat(), session_id),
-            )
 
         # 刷新快照
         updated_session = self.get_session(session_id)
@@ -251,8 +325,20 @@ class SessionManager:
         return updated_session
 
     def transition_state(
-        self, session_id: str, new_state: AutopilotState, reason: Optional[str] = None
+        self,
+        session_id: str,
+        new_state: AutopilotState,
+        reason: Optional[str] = None,
+        expected_version: Optional[int] = None,
     ) -> NegotiationSession:
+        """執行 CAS (Compare-And-Swap) 原子狀態流轉。
+
+        Args:
+            session_id: 會話識別碼
+            new_state: 目標轉移狀態
+            reason: 熔斷或狀態轉移事由
+            expected_version: 樂觀鎖預期版本號。若未提供則使用當前讀取之版本。
+        """
         session = self.get_session(session_id)
         if not session:
             raise KeyError(f"Session '{session_id}' not found.")
@@ -265,14 +351,25 @@ class SessionManager:
                 f"Allowed transitions: {[s.value for s in allowed_next]}"
             )
 
+        target_version = expected_version if expected_version is not None else session.version
         now = datetime.now(timezone.utc)
+
         with self._get_connection() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """
-                UPDATE sessions SET state = ?, trip_reason = ?, updated_at = ? WHERE session_id = ?;
+                UPDATE sessions 
+                SET state = ?, trip_reason = ?, version = version + 1, updated_at = ? 
+                WHERE session_id = ? AND state = ? AND version = ?;
                 """,
-                (new_state.value, reason, now.isoformat(), session_id),
+                (new_state.value, reason, now.isoformat(), session_id, current_state.value, target_version),
             )
+            if cursor.rowcount == 0:
+                # 樂觀鎖衝突：版本號或當前狀態已被其他並發協程搶先修改
+                raise OptimisticLockConflictError(
+                    f"CAS optimistic lock conflict on session '{session_id}': "
+                    f"expected state '{current_state.value}' with version {target_version}, "
+                    f"but record was modified concurrently."
+                )
 
         updated_session = self.get_session(session_id)
         assert updated_session is not None
@@ -288,6 +385,16 @@ class SessionManager:
                 if s:
                     result.append(s)
             return result
+
+    def rebuild_json_snapshot(self, session_id: str) -> Optional[str]:
+        """從唯一真相源 (SQLite WAL) 重建受損或遺失的 JSON 快照快取。
+        
+        解決跨系統雙寫非原子性：SQLite 為單一真相源 (SSOT)，JSON 為可重建的導出快照。
+        """
+        sess = self.get_session(session_id)
+        if sess:
+            return self._atomic_write_json(sess)
+        return None
 
     def _atomic_write_json(self, session: NegotiationSession, max_retries: int = 5) -> str:
         """跨平台安全的原子寫入快照，防範 Windows 鎖檔。"""

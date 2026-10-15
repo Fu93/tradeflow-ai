@@ -1,12 +1,31 @@
+# ---- Secrets (never commit) ----
 .env
+
+# ---- Python ----
 __pycache__/
 *.pyc
 .venv/
-results/*.png
-results/*.json
-results/_frames/
-results/pitch_preview/
-data/
+.pytest_cache/
+
+# ---- Runtime state (regenerated locally, never shared) ----
 *.db
 *.wal
 *.shm
+data/sessions_json/
+
+# ---- Demo build intermediates ----
+results/_frames/
+results/pitch_preview/
+
+# ---- Scratch / local debug ----
+_s4.py
+
+# NOTE: `data/benchmark_ood_500.json` is intentionally TRACKED — it is imported
+# at module load by `src/benchmark/ood_500_dataset.py`, which
+# `tests/test_ood_500_benchmark.py` depends on. Ignoring it made the test suite
+# fail to collect on a fresh clone. Regenerate with `scripts/generate_ood_500.py`.
+#
+# NOTE: `results/*.png` and `results/*.json` are intentionally TRACKED — they are
+# the measured evidence cited by README / PITCH / LIMITATIONS (bench.json,
+# real_llm_benchmark_100.json, real_stress_test_log.json, the figures). Regenerate
+# with `python -m src.cli --figures` and the scripts in `scripts/`.

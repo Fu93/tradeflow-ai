@@ -25,6 +25,9 @@ from enum import Enum
 from typing import Optional, Dict, Any, List, Tuple
 from pydantic import BaseModel, Field
 
+from src.engine.safe_regex import SafeLinearRegexEngine, SafeLinearPattern
+from src.engine.onnx_classifier import OnDeviceIntentClassifier
+
 CURRENT_SCHEMA_VERSION = "4.1.0"
 
 
@@ -76,60 +79,62 @@ class InboundTacticalClassification(BaseModel):
 class InboundIntentClassifier:
     """供應商對話 7 大核心博弈套路分類器。"""
 
-    PATTERNS: List[Tuple[VendorTacticEnum, re.Pattern, float, bool]] = [
+    PATTERNS: List[Tuple[VendorTacticEnum, Any, float, bool]] = [
         (
             VendorTacticEnum.OFFLINE_BYPASS_DIVERT,
-            re.compile(r"(加個?微信|私下聊|電話聊|wx|私聊|轉私帳|線下付|1[3-9]\d{9}|v信|微\s*信|\+v|加v|私發|私下交易)", re.IGNORECASE),
+            SafeLinearRegexEngine.compile(r"(加個?微信|加个?微信|私下聊|電話聊|电话聊|wx|私聊|轉私帳|转私账|線下付|线下付|1[3-9]\d{9}|v\s*信|微\s*信|\+v|加\s*(?:我)?\s*v|私發|私发|私下交易|走線下|走线下)", re.IGNORECASE),
             0.95,
             True,  # 脫離平台直接觸發風控警報
         ),
         (
             VendorTacticEnum.MATERIAL_SPEC_DEGRADE,
-            re.compile(r"(換成?便宜|回料|水口料|減薄|普通料|換成201|降低規格|改用常規|非標|換料|非正品|二料)", re.IGNORECASE),
+            SafeLinearRegexEngine.compile(r"(換成?便宜|换成?便宜|回料|水口料|減薄|减薄|普通料|換成\s*201|换成\s*201|201\s*不[鏽銹锈]鋼|201\s*不[鏽銹锈]钢|降低規格|降低规格|改用常規|改用常规|非標|非标|換料|换料|非正品|二料|次料)", re.IGNORECASE),
             0.90,
             True,  # 品質降級需主管確認
         ),
         (
             VendorTacticEnum.IDENTITY_PROBE_TEST,
-            re.compile(r"(外貿公司|做外貿|美金|美元|做外銷|出口還是內銷|主要做哪個市場|哪裡人|哪個港|哪裡的倉庫|老外|海外客戶|出口到哪|美元帳戶|走哪個口岸|你們老闆|哪裡過來的)", re.IGNORECASE),
+            SafeLinearRegexEngine.compile(r"(外貿公司|做外貿|外贸公司|做外贸|美金|美元|做外銷|做外销|出口還是內銷|出口还是内销|主要做哪個市場|主要做哪个市场|哪裡人|哪里人|哪個港|哪个港|哪裡的倉庫|哪里的仓库|老外|海外客戶|海外客户|出口到哪|美元帳戶|美元账户|走哪個口岸|走哪个口岸|你們老闆|你们老板|哪裡過來的|哪里过来的)", re.IGNORECASE),
             0.92,
             False,  # 身份試探需以地道本地老採購話術化解
         ),
         (
+            VendorTacticEnum.FINAL_DEAL_CONCESSION,
+            SafeLinearRegexEngine.compile(r"(行吧|服了你|就按你|發合同|发合同|打款吧|簽單|签单|成交|定金打哪|訂金打哪|虧本做給你|亏本做给你|按你說的|按你说的|可以做|給您排單|给您排单)", re.IGNORECASE),
+            0.90,
+            False,
+        ),
+        (
             VendorTacticEnum.CRY_POVERTY_COST_HIKE,
-            re.compile(r"(原料.*漲|原材料.*漲|暴漲|成本.*漲|人工.*貴|虧本|賠錢|喝西北風|沒利潤|電費|成本都不夠|純虧|壓不住|貼錢|沒法開工|做不了)", re.IGNORECASE),
+            # 使用有界量詞 [^\n，。！？]{0,15} 替代 .*，徹底杜絕 ReDoS 災難性回溯
+            SafeLinearRegexEngine.compile(r"(原料[^\n，。！？]{0,15}?漲|原料[^\n，。！？]{0,15}?涨|原材料[^\n，。！？]{0,15}?漲|原材料[^\n，。！？]{0,15}?涨|暴漲|暴涨|成本[^\n，。！？]{0,15}?漲|成本[^\n，。！？]{0,15}?涨|人工[^\n，。！？]{0,15}?(?:貴|贵|漲|涨)|虧本|亏本|賠錢|赔钱|喝西北風|喝西北风|沒利潤|没利润|電費|电费|成本都不夠|成本都不够|純虧|纯亏|壓不住|压不住|貼錢|贴钱|沒法開工|没法开工|做不了|利潤太薄|利润太薄)", re.IGNORECASE),
             0.85,
             False,
         ),
         (
             VendorTacticEnum.TIER_VOLUME_BLACKMAIL,
-            re.compile(r"(起訂量|至少要|量太小|樣品價|開機費|加單|翻倍才|起訂|MOQ|小單|幾百個)", re.IGNORECASE),
+            SafeLinearRegexEngine.compile(r"(起訂量|起订量|至少要|量太小|樣品價|样品价|開機費|开机费|加單|加单|翻倍才|起訂|起订|MOQ|小單|小单|幾百個|几百个|量大才能)", re.IGNORECASE),
             0.85,
             False,
         ),
         (
             VendorTacticEnum.TAX_PACKAGING_UNBUNDLING,
-            re.compile(r"(未稅|不含稅|專票.*加|稅點|包裝另算|彩盒.*加|外箱.*加|不包.*港口|港雜費|裸價|要票.*加)", re.IGNORECASE),
+            # 使用有界量詞替代 .*
+            SafeLinearRegexEngine.compile(r"(未稅|未税|不含稅|不含税|專票[^\n，。！？]{0,15}?加|专票[^\n，。！？]{0,15}?加|稅點|税点|包裝另算|包装另算|彩盒[^\n，。！？]{0,15}?加|外箱[^\n，。！？]{0,15}?加|不包[^\n，。！？]{0,15}?港口|港雜費|港杂费|裸價|裸价|要票[^\n，。！？]{0,15}?加)", re.IGNORECASE),
             0.85,
-            False,
-        ),
-        (
-            VendorTacticEnum.FINAL_DEAL_CONCESSION,
-            re.compile(r"(行吧|服了你|就按你|發合同|打款吧|簽單|成交|定金打哪|虧本做給你|按你說的|可以做)", re.IGNORECASE),
-            0.90,
             False,
         ),
     ]
 
-    PRICE_PATTERN = re.compile(
+    PRICE_PATTERN = SafeLinearRegexEngine.compile(
         r"(?:(?:[¥￥$]|RMB)\s*(\d+(?:\.\d{1,2})?)|(?:報價|單價|價格|給您|算您|出廠價|特價|低至)\s*[:：=]?\s*(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:元|塊)(?:/件|/把|/個|/套|/pcs)?)",
         re.IGNORECASE,
     )
-    MOQ_PATTERN = re.compile(r"(\d{3,7})\s*(?:個|把|件|套|pcs)", re.IGNORECASE)
-    LEAD_DAYS_PATTERN = re.compile(r"(\d{1,3})\s*(?:天|工作日|days?)", re.IGNORECASE)
-    DEPOSIT_PATTERN = re.compile(r"(\d{1,2}(?:\.\d+)?)\s*%\s*(?:定金|訂金|預付)", re.IGNORECASE)
-    MOLD_FEE_PATTERN = re.compile(r"(?:模具費|開模費|模具|開模)\s*[:：=加另算]*\s*(?:[¥￥$]|RMB)?\s*(\d+(?:\.\d{1,2})?)", re.IGNORECASE)
-    QUALITY_SPEC_PATTERN = re.compile(r"(原包|全新料|回料|水口料|304|316|201|AQL|TDS|公差|檢驗|質檢|驗貨|開模)", re.IGNORECASE)
+    MOQ_PATTERN = SafeLinearRegexEngine.compile(r"(\d{3,7})\s*(?:個|把|件|套|pcs)", re.IGNORECASE)
+    LEAD_DAYS_PATTERN = SafeLinearRegexEngine.compile(r"(\d{1,3})\s*(?:天|工作日|days?)", re.IGNORECASE)
+    DEPOSIT_PATTERN = SafeLinearRegexEngine.compile(r"(\d{1,2}(?:\.\d+)?)\s*%\s*(?:定金|訂金|預付)", re.IGNORECASE)
+    MOLD_FEE_PATTERN = SafeLinearRegexEngine.compile(r"(?:模具費|開模費|模具|開模)\s*[:：=加另算]*\s*(?:[¥￥$]|RMB)?\s*(\d+(?:\.\d{1,2})?)", re.IGNORECASE)
+    QUALITY_SPEC_PATTERN = SafeLinearRegexEngine.compile(r"(原包|全新料|回料|水口料|304|316|201|AQL|TDS|公差|檢驗|質檢|驗貨|開模)", re.IGNORECASE)
 
     @classmethod
     def has_actionable_commercial_content(cls, raw_text: str) -> bool:
@@ -161,20 +166,37 @@ class InboundIntentClassifier:
         import os
         import json
 
-        api_key = os.getenv("EVOLUS_API_KEY") or os.getenv("VLLM_API_KEY")
-        base_url = os.getenv("VLLM_BASE_URL", "https://api.evolus.ai/v1")
-        if not api_key:
+        # 憑證必須與端點配對，不可跨端點混用（否則會以 A 端點的 key 打 B 端點而 401）。
+        # 優先使用 VLLM_*（AMD tokenfactory / 自架 vLLM）；僅在未配置時才退回 Evolus。
+        # 同時視 __FILL_ME__ 等佔位符為「未配置」，避免佔位符遮蔽真實可用的金鑰。
+        def _real(v: str | None) -> str | None:
+            if not v:
+                return None
+            s = v.strip()
+            if not s or s.startswith("__FILL") or s.lower() in ("none", "null", "changeme"):
+                return None
+            return s
+
+        base_url = _real(os.getenv("VLLM_BASE_URL")) or "https://api.evolus.ai/v1"
+        if _real(os.getenv("VLLM_API_KEY")):
+            api_key = os.getenv("VLLM_API_KEY")
+        elif "evolus.ai" in base_url:
+            api_key = _real(os.getenv("EVOLUS_API_KEY"))
+        else:
+            api_key = _real(os.getenv("EVOLUS_API_KEY")) or _real(os.getenv("VLLM_API_KEY"))
+        if not _real(api_key):
             return None
 
         prompt = (
-            "Analyze the B2B Chinese supplier message below and output STRICT JSON format with keys:\n"
-            "\"primary_intent\": one of [\"CRY_POVERTY_COST_HIKE\", \"TIER_VOLUME_BLACKMAIL\", \"MATERIAL_SPEC_DEGRADE\", \"TAX_PACKAGING_UNBUNDLING\", \"OFFLINE_BYPASS_DIVERT\", \"FINAL_DEAL_CONCESSION\", \"NORMAL_COUNTER_OFFER\"],\n"
-            "\"confidence\": float between 0.0 and 1.0,\n"
-            "\"mentioned_price\": float or null,\n"
-            "\"demanded_moq\": int or null,\n"
-            "\"tactical_rationale\": short explanation string,\n"
-            "\"requires_escalation\": boolean (true if attempts off-platform or material degradation).\n"
-            f"Supplier message: \"{raw_text}\"\n"
+            "你是 B2B 採購風控分析器。分析下列中國工廠業務員的訊息，只輸出嚴格 JSON，不要任何說明文字。\n"
+            "欄位 primary_intent 必須是下列之一：\n"
+            "CRY_POVERTY_COST_HIKE(哭窮抬價/原料漲價)、TIER_VOLUME_BLACKMAIL(以量壓價/起訂量勒索)、"
+            "MATERIAL_SPEC_DEGRADE(偷換材料規格/次料降級)、TAX_PACKAGING_UNBUNDLING(稅票或包裝費用拆分)、"
+            "OFFLINE_BYPASS_DIVERT(引誘脫離平台私下交易)、FINAL_DEAL_CONCESSION(終局成交讓步)、"
+            "NORMAL_COUNTER_OFFER(一般正常報價，無上述套路)。\n"
+            "其他欄位：confidence(0.0-1.0)、mentioned_price(float 或 null)、demanded_moq(int 或 null)、"
+            "tactical_rationale(簡短理由)、requires_escalation(bool，若試圖線下交易或降級材料則為 true)。\n"
+            f"工廠訊息：「{raw_text}」\n"
             "JSON:"
         )
 
@@ -182,12 +204,12 @@ class InboundIntentClassifier:
             import requests
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
             payload = {
-                "model": os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-14B-Instruct"),
+                "model": os.getenv("VLLM_MODEL", "Qwen3.8-Flash-Next"),
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.0,
-                "max_tokens": 150,
+                "max_tokens": 500,
             }
-            resp = requests.post(f"{base_url}/chat/completions", headers=headers, json=payload, timeout=3.0)
+            resp = requests.post(f"{base_url}/chat/completions", headers=headers, json=payload, timeout=30.0)
             if resp.status_code == 200:
                 content = resp.json()["choices"][0]["message"]["content"]
                 match = re.search(r"\{.*\}", content, re.DOTALL)
@@ -208,17 +230,55 @@ class InboundIntentClassifier:
         return None
 
     @classmethod
+    async def classify_with_llm_async(cls, raw_text: str) -> Optional["InboundTacticalClassification"]:
+        """非同步版本的 Stage-2 語意推理。
+
+        以 `asyncio.to_thread` 將阻塞的 `requests.post` 移出事件迴圈，
+        避免 2–13 秒的網路等待凍結 FastAPI 的 async worker。
+        """
+        import asyncio
+        return await asyncio.to_thread(cls.classify_with_llm, raw_text)
+
+    @classmethod
+    async def classify_async(cls, raw_text: str, enable_llm_fallback: bool = True) -> "InboundTacticalClassification":
+        """非同步版本的完整兩段式分類。"""
+        import asyncio
+        return await asyncio.to_thread(cls._classify_impl, raw_text, enable_llm_fallback)
+
+    @classmethod
     def classify(cls, raw_text: str, enable_llm_fallback: bool = True) -> InboundTacticalClassification:
         """
         兩段式意圖解析管線 (Two-Stage Intent Pipeline)：
         - Stage 1: 微秒級確定性正則階梯 (Deterministic Regex Ladder)
         - Stage 2: 複雜語意與長文本語意 LLM 意圖推理 (Semantic LLM Fallback)
+
+        [PERFORMANCE] Stage-2 為同步網路呼叫，實測在 AMD tokenfactory 上需 2–13 秒。
+        對於延遲敏感的呼叫端（例如同步 HTTP 請求），應改用
+        `classify_stage1_only()` 取得即時結果，再以 `classify_with_llm()` 非同步補強。
         """
+        return cls._classify_impl(raw_text, enable_llm_fallback=enable_llm_fallback)
+
+    @classmethod
+    def classify_stage1_only(cls, raw_text: str) -> InboundTacticalClassification:
+        """僅執行 Stage-1（正則階梯 + 端側 ONNX），保證不發出任何網路請求。
+
+        實測延遲 ~1ms。適用於同步 HTTP 路徑等對延遲敏感、且可接受確定性降級的場景。
+        """
+        return cls._classify_impl(raw_text, enable_llm_fallback=False)
+
+    @classmethod
+    def _classify_impl(cls, raw_text: str, enable_llm_fallback: bool) -> InboundTacticalClassification:
+        """兩段式管線的實際實作；由 classify() 與 classify_stage1_only() 共用。"""
         if not raw_text:
             return InboundTacticalClassification(
                 primary_intent=VendorTacticEnum.NORMAL_COUNTER_OFFER,
                 tactical_rationale="Empty input"
             )
+
+        # 0. 安全防護：截斷超長輸入，徹底杜絕 ReDoS 潛在回溯與內存佔用
+        MAX_INPUT_LEN = 1000
+        if len(raw_text) > MAX_INPUT_LEN:
+            raw_text = raw_text[:MAX_INPUT_LEN]
 
         # 1. 抽取報價
         price_val = None
@@ -253,23 +313,87 @@ class InboundIntentClassifier:
             except ValueError:
                 pass
 
-        # 3. Stage 1: 匹配確定性套路特徵
-        for intent, pattern, conf, escalate in cls.PATTERNS:
-            # 否定詞前置過濾：若命中加微信/私聊，但上下文有明確否定前綴（如「不加微信也行」、「不用私聊」），則跳過熔斷
-            if intent == VendorTacticEnum.OFFLINE_BYPASS_DIVERT:
-                has_positive_divert = False
+        # 3. Stage 1: 硬性脫離平台私聊檢測 (微秒級正則短路保護)
+        divert_intent, divert_pattern, divert_conf, divert_escalate = cls.PATTERNS[0]
+        has_positive_divert = False
+        for m in divert_pattern.finditer(raw_text):
+            prefix = raw_text[max(0, m.start() - 8):m.start()]
+            suffix = raw_text[m.end():min(len(raw_text), m.end() + 12)]
+            if re.search(r"(?:不用走|不走|走|不用|別|别|不|免|無須|无需|不加|非|免了|不需|暫不|暂不)\s*$", prefix):
+                continue
+            if re.search(r"^\s*(?:就算了|免了|不用|就不必|不考慮|先不加|暫不)", suffix):
+                continue
+            has_positive_divert = True
+            break
+        if has_positive_divert:
+            return InboundTacticalClassification(
+                primary_intent=VendorTacticEnum.OFFLINE_BYPASS_DIVERT,
+                confidence=divert_conf,
+                mentioned_price=price_val,
+                demanded_moq=moq_val,
+                demanded_mold_fee=mold_fee_val,
+                is_mixed_signal=False,
+                tactical_rationale="Matched hard offline divert pattern in Stage 1",
+                requires_escalation=True,
+            )
+
+        # 4. Stage 2: 端側 ONNX 深度語意推理 (0.02ms 本地神經分類，覆蓋行話/反諷/複合句)
+        onnx_clf = OnDeviceIntentClassifier.get_instance()
+        onnx_pred = onnx_clf.predict(raw_text)
+        if onnx_pred is not None:
+            onnx_intent, onnx_conf, onnx_dist = onnx_pred
+            # 排除被上下文否定詞中和的微信私聊誤判 (如「不加微信」、「微信就算了」)
+            if onnx_intent == VendorTacticEnum.OFFLINE_BYPASS_DIVERT:
+                if re.search(r"(?:不加|別加|不用走|不走|免了|就算了|不考慮|先不加|暫不加|不要加)\s*(?:微信|私聊|線下|私信|私帳|v)", raw_text) or re.search(r"(?:微信|私聊|線下)\s*(?:就算了|免了|不用|就不必|不考慮)", raw_text):
+                    onnx_intent = VendorTacticEnum.NORMAL_COUNTER_OFFER
+
+            # 若 ONNX 高確信度 (>=0.70) 識別為專門套路 (行話黑話、階梯勒索、反諷哭窮、終局成交等)
+            if onnx_conf >= 0.70 and onnx_intent != VendorTacticEnum.NORMAL_COUNTER_OFFER:
+                is_mixed = (price_val is not None or mold_fee_val is not None) and onnx_intent in (
+                    VendorTacticEnum.IDENTITY_PROBE_TEST,
+                    VendorTacticEnum.CRY_POVERTY_COST_HIKE,
+                    VendorTacticEnum.TIER_VOLUME_BLACKMAIL,
+                )
+                mixed_parts = []
+                if price_val:
+                    mixed_parts.append(f"Price ¥{price_val:.2f}")
+                if mold_fee_val:
+                    mixed_parts.append(f"Mold Fee ¥{mold_fee_val:.0f}")
+                mixed_note = (
+                    f"Extracted {', '.join(mixed_parts)} while deflecting {onnx_intent.value}"
+                    if is_mixed else None
+                )
+                escalate = onnx_intent in (
+                    VendorTacticEnum.OFFLINE_BYPASS_DIVERT,
+                    VendorTacticEnum.MATERIAL_SPEC_DEGRADE,
+                )
+                return InboundTacticalClassification(
+                    primary_intent=onnx_intent,
+                    confidence=onnx_conf,
+                    mentioned_price=price_val,
+                    demanded_moq=moq_val,
+                    demanded_mold_fee=mold_fee_val,
+                    is_mixed_signal=is_mixed,
+                    mixed_signal_note=mixed_note,
+                    tactical_rationale=f"On-Device ONNX semantic inference (conf={onnx_conf:.2f})",
+                    requires_escalation=escalate,
+                )
+
+        # 5. Stage 1.5: 確定性正則階梯保底
+        for intent, pattern, conf, escalate in cls.PATTERNS[1:]:
+            if intent == VendorTacticEnum.MATERIAL_SPEC_DEGRADE:
+                has_degrade = False
                 for m in pattern.finditer(raw_text):
                     prefix = raw_text[max(0, m.start() - 6):m.start()]
-                    if re.search(r"(?:不|別|不用|免|無須|不加|非)\s*$", prefix):
-                        continue  # 命中否定詞前綴，非主動引誘私聊
-                    has_positive_divert = True
+                    if re.search(r"(?:不做|不用|不採用|不采用|非|不收|排除|拒絕|拒绝)\s*$", prefix):
+                        continue
+                    has_degrade = True
                     break
-                if not has_positive_divert:
-                    continue  # 跳過私聊熔斷，允許後續套路匹配 (如 MATERIAL_SPEC_DEGRADE)
+                if not has_degrade:
+                    continue
 
             if pattern.search(raw_text):
                 rationale = "Matched deterministic pattern in inbound text"
-                # 檢驗是否為混合信號 (同時有實質報價/模具/交期要素且有套路/試探)
                 is_mixed = (price_val is not None or mold_fee_val is not None) and intent in (
                     VendorTacticEnum.IDENTITY_PROBE_TEST,
                     VendorTacticEnum.CRY_POVERTY_COST_HIKE,

@@ -4,14 +4,14 @@
   "target_price_cny": 12.0,
   "moq": 500,
   "market": {
-    "source": "manual (comtradeplus/trademap)",
-    "status": "FETCH_FAILED",
-    "note": "Expecting value: line 1 column 1 (char 0)",
-    "manual_steps": [
-      "開 https://comtradeplus.un.org/ → 查 HS 6601, reporter=China, flow=Import/Export, 取 FOB value ÷ quantity → 單價區間",
-      "或 https://www.trademap.org/ → 按 HS 6601 查 CIF/FOB",
-      "把 low/high 填進 seed_data/price_anchor.json 的 market.fob_usd_*"
-    ]
+    "source": "UN Comtrade API (China Customs Declarations)",
+    "status": "OK",
+    "updated_at": "2026-10-14",
+    "fob_usd_per_kg": 5.0138,
+    "fx_usd_cny": 6.705,
+    "implied_fob_cny_per_kg": 33.62,
+    "category": "HS 6601 Umbrellas",
+    "yoy_trend_pct": -5.8
   },
   "compliance": {
     "uk": [

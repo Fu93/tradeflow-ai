@@ -102,17 +102,42 @@ def solve(
     }
 
 
-def bayes_update(prior_reserve_mean, prior_reserve_std, observed_offer, lr=0.3):
-    """供應商回價後更新底價後驗（簡單貝氏 / EMA 式信心更新）。
+def bayes_update(
+    prior_reserve_mean: float,
+    prior_reserve_std: float,
+    observed_offer: float,
+    lr: float = 0.3,
+    huber_delta: float = 0.30,
+) -> tuple[float, float]:
+    """雙模態高斯-均勻混合似然貝氏推斷 (Delegated to Bayesian v2 Engine).
 
-    這裡用解析上近似：觀察到對手回價 higher 表示底價偏高 → 後驗均值上移。
-    回傳 (post_mean, post_std)。
+    徹底淘汰無條件方差衰減 (0.94) 與線性 EMA 步進：
+    1. 生成模型：將正常報價歸入加成常態分佈，將極端試探性開價歸入區間均勻分佈；
+    2. 責任度權重 (w_t)：惡意漫天要價使 w_t -> 0，均值不被拉飛；
+    3. 矩匹配 (Moment Matching)：在無效噪聲下方差嚴格守恆，不產生虛假高置信度。
     """
-    # 觀察偏移：observed_offer 相對目標價 1.0 的偏差
-    signal = observed_offer - 1.0
-    post_mean = prior_reserve_mean + lr * signal
-    post_std = prior_reserve_std * (1 - 0.2 * lr)  # 觀察後不確定性略降
-    return post_mean, max(post_std, 1e-3)
+    from .bayesian_v2 import robust_bayes_update
+    state = robust_bayes_update(
+        prior_mean=prior_reserve_mean,
+        prior_std=prior_reserve_std,
+        observed_offer=observed_offer,
+    )
+    return float(state.posterior_mean), float(state.posterior_std)
+
+
+def compute_belief_confidence(prior_std: float, post_std: float, post_mean: float) -> float:
+    """計算後驗信念收斂度指標 (Belief Convergence Metric).
+
+    基於後驗變異係數 (CV = post_std / post_mean) 與相對先驗方差縮減率 (Variance Reduction Ratio)：
+    CV 越小，說明後驗分佈越集中；方差縮減越明顯，說明觀測提供的信息增益越高。
+    映射至 [0.50, 0.98] 區間，徹底替換無量綱的 1.0 - post_std 錯誤公式。
+    """
+    if post_mean <= 0 or post_std <= 0:
+        return 0.50
+    cv = post_std / post_mean
+    variance_reduction = max(0.0, (prior_std - post_std) / (prior_std + 1e-6))
+    raw_conf = 0.75 + 0.35 * variance_reduction - 0.80 * cv
+    return round(float(np.clip(raw_conf, 0.50, 0.98)), 3)
 
 
 def recommend(solve_result, target_price=12.0):

@@ -1,7 +1,7 @@
-# TradeFlow AI — 3分30秒 Demo 影片全流程分鏡導演腳本
+﻿# TradeFlow AI — 3分30秒 Demo 影片全流程分鏡導演腳本
 (Shot-by-Shot Director's Guide for Hackathon Video Recording)
 
-> **核心目標**：在 3 分 30 秒內，讓 AMD 與 Evolus 評審徹底看懂：**這不是一個聊天機器人，而是一個能幫跨境買家 Alex 真金白銀省下幾千美元、有 AST 語法樹硬護欄防禦資金風險的量化決策副駕駛。**
+> **核心目標**：在 3 分 30 秒內，讓 AMD 與 Evolus 評審徹底看懂：**這不是一個聊天機器人，而是一間由 AI 驅動、只有一個人的跨境貿易公司** —— 供應商端的對話、核價與風控由系統完成，決策權保留在人類手上，並以 AST 語法樹硬護欄防禦資金風險。
 
 ---
 
@@ -20,18 +20,19 @@
 
 ### 【第一幕：痛點與靈魂故事】(0:00 - 0:35) — 讓評審 30 秒入戲
 * **畫面**：
-  * [0:00 - 0:15] 簡報 Slide 1 (TradeFlow AI 標題) 轉 Slide 6 (Alex Rivera 的真實故事卡片)。
+  * [0:00 - 0:15] 簡報 Slide 1 (TradeFlow AI 標題) 轉 Slide 2 (「一間只有一個人的貿易公司」)。
   * [0:15 - 0:35] 畫面上展示兩組強烈對比字樣：
     * ❌ *Traditional Way*: Google Translate on 1688 (20% Foreigner Markup) + Shady Agent (7% Fee + Kickbacks).
-    * ✅ *TradeFlow Way*: Autonomous Coastal Jargon + AST Safety Guardrail + WhatsApp CPO Card.
+    * ✅ *TradeFlow Way*: 1 operator + supplier-facing agents + AST Safety Guardrail + WhatsApp CPO Card.
 * **旁白 (Voiceover)**：
-  > *"Meet Alex Rivera. He runs a 3-million-dollar outdoor brand on Amazon in Los Angeles, sourcing 50,000 umbrellas from China every year.*  
-  > *Until now, Alex had two painful choices: Either stay up all night using Google Translate on 1688, where Chinese factories instantly mark up prices by 20% because he sounds like an outsider; Or pay a 7% commission to a local sourcing agent, who secretly takes kickbacks from the factory and demands an 80% deposit with zero accountability.*  
-  > *This is why we built **TradeFlow AI** — a constrained procurement decision engine that combines verifiable game theory with authentic local supplier jargon."*
+  > *"Cross-border sourcing has always had two bad options.*  
+  > *You either stay up all night using Google Translate on 1688 — where factories instantly mark up prices by 20% because you sound like an outsider. Or you pay a 7% commission to a sourcing agent who secretly takes kickbacks and demands an 80% deposit with zero accountability.*  
+  > *We chose a third option: **we became the trading company ourselves — a company of one, staffed by agents.***  
+  > *This is TradeFlow AI. The supplier-facing work — reading the jargon, checking the cost, holding the line — is done by the system. The operator is a single person."*
 
 ---
 
-### 【第二幕：數學自駕與地道行話】(0:35 - 1:25) — 展示核心算力與去外商溢價
+### 【第二幕：量化決策與地道行話】(0:35 - 1:25) — 展示核心算力與去外商溢價
 * **畫面**：
   * [0:35 - 0:50] 切換至瀏覽器畫面 (http://localhost:8000 或 API 測試介面)。展示自動傘規格：目標價 ¥12.00，上限 ¥15.00，MOQ 1000 把。
   * [0:50 - 1:10] 點擊發送工廠 Round 1 報價：工廠開出 ¥14.80，聲稱「碰擊布和塗層原料暴漲30%」。
@@ -47,12 +48,12 @@
 * **畫面**：
   * [1:25 - 1:45] 工廠出盤 Round 3 陷阱：*「加我私人微信 13857691234 私下轉帳，我給你便宜到 13.80！」*
   * [1:45 - 2:00] **高潮畫面**：系統控制台瞬間跳出紅色警報 **`CIRCUIT TRIPPED: OFFLINE_BYPASS_DIVERT`**！所有未經授權的對話被物理阻斷！
-  * [2:00 - 2:15] 畫面切換至 Alex 的手機螢幕：WhatsApp 收到結構化英文 CPO 決策卡（含風險指數 7.2%、TCO 等效分析、授權指令 1/2/3）。
-  * [2:15 - 2:20] 點擊手機回覆 `1` (CONCEDE_STEP)，系統瞬間解鎖，狀態機平穩恢復自駕。
+  * [2:00 - 2:15] 畫面切換至手機螢幕：WhatsApp 收到結構化英文 CPO 決策卡（含風險指數、TCO 等效分析、授權指令 1/2/3）。
+  * [2:15 - 2:20] 點擊手機回覆 `1` (CONCEDE_STEP)，系統瞬間解鎖，狀態機平穩恢復正常運作。
 * **旁白 (Voiceover)**：
   > *"Now, the adversarial test. The factory attempts an off-platform diversion: 'Add my personal WeChat for an offline discount.'*  
   > *A standard LLM might comply and leak private data. But TradeFlow's deterministic intent classifier trips immediately. The engine freezes all outbound messages, preventing unauthorized commitments.*  
-  > *Simultaneously, an executive telemetry card is pushed to Alex's WhatsApp in Los Angeles. Alex doesn't have to negotiate; he just reviews the structured risk telemetry and taps '1' to authorize the next concession step. Full human-in-the-loop control, zero cognitive overload."*
+  > *Simultaneously, an executive telemetry card is pushed to the operator's phone. He doesn't have to negotiate; he just reviews the structured risk telemetry and taps '1' to authorize the next concession step. Human-in-the-loop by construction — the system never signs a deal on its own."*
 
 ---
 
@@ -70,11 +71,12 @@
 ### 【第五幕：AMD 戰略定位與有力收官】(3:00 - 3:30) — 結尾昇華
 * **畫面**：
   * [3:00 - 3:15] 切換至 PPT Slide 7 (AMD 統一 ROCm 工具鏈架構圖)。
-  * [3:15 - 3:30] 切換至 GitHub 倉庫與終端 72/72 測試全綠畫面，最後定格在 Cover Image (1280×720)。
+  * [3:15 - 3:30] 切換至 GitHub 倉庫與終端 101 項測試全綠畫面，最後定格在 Cover Image (1280×720)。
 * **旁白 (Voiceover)**：
-  > *"Why AMD? Our decision core is CPU-first by design — delivering sub-2-millisecond responses on AMD Zen CPUs without wasteful GPU overhead.*  
-  > *The real value of AMD Instinct MI300X lies in the unified ROCm stack. Through our `_xp()` tensor abstraction, the exact same code scales from edge CPUs to enterprise-scale 4-supplier reverse auctions, co-locating Qwen models and tensor solvers in 5.3 TB/s HBM3 memory with zero PCIe penalties.*  
-  > *TradeFlow AI: Procurement negotiation, quantified — not a chatbot. Thank you."*
+  > *"Why AMD? Our deterministic decision core is CPU-first by design — delivering sub-millisecond Stage-1 responses on AMD Zen CPUs without wasteful GPU overhead.*  
+  > *For semantic understanding, we call an open model served on AMD infrastructure through the hackathon's tokenfactory endpoint — verified live, at 2 to 13 seconds per reasoning call.*  
+  > *And through our `_xp()` tensor abstraction, the exact same solver code scales from AMD Zen CPUs to AMD Instinct GPUs via ROCm, with no refactoring.*  
+  > *TradeFlow AI: one person, running a cross-border trading company. Not a chatbot. Thank you."*
 
 ---
 

@@ -66,12 +66,12 @@ cmd_data = res_cmd.json()
 assert cmd_data['status'] == 'success'
 print(f'[PASS] 6. Mobile Webhook Command Executed -> Action: {cmd_data["action"]}')
 
-# 7. 測試 96M 張量拍賣模擬端點
+# 7. 測試多供應商張量拍賣模擬端點
 res_auc = client.post('/api/v1/multi-auction/run')
 assert res_auc.status_code == 200
 auc_data = res_auc.json()
 assert auc_data['k_suppliers'] == 4
 assert auc_data['backend'] is not None
-print(f'[PASS] 7. 96M Multi-Auction Run -> Winner: {auc_data["winning_supplier"]} (Rollouts: {auc_data["total_rollouts"]})')
+print(f'[PASS] 7. Multi-Auction Run -> Winner: {auc_data["winning_supplier"]} (Rollouts: {auc_data["total_rollouts"]:,})')
 
 print('\nALL INTEGRATION ENDPOINTS TESTED AND VERIFIED!')
