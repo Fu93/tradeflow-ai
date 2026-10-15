@@ -8,7 +8,13 @@ __pycache__/
 .pytest_cache/
 
 # ---- Runtime state (regenerated locally, never shared) ----
+# SQLite in WAL mode names its sidecars `<db>-wal` / `<db>-shm`, i.e. the suffix
+# is `-wal`, NOT `.wal`. The earlier `*.wal` / `*.shm` patterns never matched,
+# so `data/sessions.db-wal` and `-shm` were committed by accident.
 *.db
+*.db-wal
+*.db-shm
+*.db-journal
 *.wal
 *.shm
 data/sessions_json/
