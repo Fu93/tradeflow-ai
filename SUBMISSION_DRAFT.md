@@ -41,7 +41,7 @@ Academic benchmarks (NegotiationArena, ICLR 2024; AgenticPay, arXiv:2602.06008; 
 
 ### 2. Our Solution: "Math Governs Strategy, LLM Expresses Jargon"
 TradeFlow AI decouples numerical strategic optimization from linguistic surface generation:
-* **Strategy Layer (Numerical Decision Core, no LLM in the decision path)**: Evaluates 20,000 Bayesian opponent belief samples across 480 candidate price-concession curves using a Vectorized Expectimax solver (<2ms per round). The LLM is never allowed to decide a price; it only renders an already-computed and AST-validated decision.
+* **Strategy Layer (Numerical Decision Core, no LLM in the decision path)**: Evaluates 20,000 Bayesian opponent belief samples across 480 candidate price-concession curves using a Vectorized Expectimax solver. Measured on this CPU (`results/bench.json`): the full 20K-sample × 480-curve grid (9.6M rollouts) solves in **~1.1s**; a 2K-sample grid in ~0.14s. Sole reliance on math — the LLM is never allowed to decide a price; it only renders an already-computed and AST-validated decision.
 * **AST Invariant Guardrail (Tier 1 Defense)**: Syntactically audits every `TacticalActionObject` via Python AST compiler before execution, physically guaranteeing that `authorized_price <= budget_ceiling` and `deposit <= 60%`.
 * **Deterministic Coastal Jargon Renderer (Tier 2 Defense)**: Automatically crafts authentic Zhejiang/Guangdong industrial cluster merchant jargon to eliminate identity premiums, while presenting executive English CPO decision cards for western buyers.
 * **Pareto Logrolling (Multi-Attribute Swaps)**: When unit price hits an impasse, automatically unlocks non-price concessions (e.g., swapping higher initial deposit for zero mold fees or shortened delivery lead times).

@@ -117,7 +117,7 @@ frame `disc.png` already discloses this correctly — keep that discipline.
 | 0:50–1:50 | **Moment A** — guardrail refuses an 85% deposit demand, live | Technology |
 | 1:50–2:25 | **Moment B** — belief update across 2 real rounds | Technology |
 | 2:25–2:45 | **Moment C** — Run Auction, 4 tactics, 28.8M rollouts | Technology |
-| 2:45–3:00 | Honest boundaries + repo URL + 104 tests green | Presentation |
+| 2:45–3:00 | Honest boundaries + repo URL + 110 tests green | Presentation |
 
 Record with **audio narration**. A silent screen recording reads as unfinished.
 
@@ -146,7 +146,7 @@ Fix the script or film to reality — do not read the 2ms line over a 2.5s wait.
 - [ ] `python -m src.app.main` running; `http://localhost:8000` returns 200
 - [ ] Use **`opponent_raw_text` / `opponent_offer_price`** for API calls —
       misspelled fields now return HTTP 422 (was silently ignored before today's fix)
-- [ ] `python -m pytest tests -q` → expect **104 passed** (say this number)
+- [ ] `python -m pytest tests -q` → expect **110 passed** (say this number)
 - [ ] Narration audio recorded and verified on the exported file
 - [ ] Re-check: `ffprobe results/demo_video.mp4` must show **both** a video and an
       audio stream, duration ≥ 180s
