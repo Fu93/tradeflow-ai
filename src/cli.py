@@ -100,7 +100,11 @@ def run_self_play(matches=20, out_dir="results"):
     results = arena.run_tournament(n_matches_per_adversary=matches)
     elapsed = time.perf_counter() - t0
     md_table = arena.export_markdown_table(results)
-    print(f"\nCompleted {matches * 5 * 2} matches across 5 adversary archetypes in {elapsed:.2f}s\n")
+    # [修正] 舊版寫 `matches * 5 * 2`（誤假設 2 個候選 agent），實際是 3 個
+    # （Engine、Vanilla LLM、Fixed 5%/rd）。改成讀取實際 candidate_agents 數量，
+    # 避免輸出與實際執行場次不符。
+    n_agents = len(arena.candidate_agents)
+    print(f"\nCompleted {matches * 5 * n_agents} matches across 5 adversary archetypes in {elapsed:.2f}s\n")
     print(md_table)
     
     out_path = Path(out_dir) / "self_play_benchmark.md"
@@ -118,12 +122,12 @@ def run_multi_supplier_demo(out_dir="results"):
     res = simulate_reverse_auction(target_price=12.0, walk_away_ceiling=16.2, moq=10000, n_samples=20000)
     total_elapsed = time.perf_counter() - t0
 
-    suppliers = [
-        "Supplier A (浙江頂尖)",
-        "Supplier B (深圳宏達)",
-        "Supplier C (義烏博創)",
-        "Supplier D (東莞榮耀)",
-    ]
+    # [修正] 舊版在 CLI 端硬編了 4 個虛構的公司名（浙江頂尖/深圳宏達/義烏博創/東莞榮耀），
+    # 卻跟引擎計算出的真實供應商（敏捷讓步型/對等互惠型/強硬死守型/高價溢價型）「錯位混排」：
+    # 引擎的 quotes[i] 對上 CLI 自訂之名，導致除了 winner 那一行之外，
+    # 其他三家的名字都不是引擎回傳的名字 —— 真實公司名貼在虛構身份上。
+    # 現在一律讀取引擎回傳的 suppliers，不再自行硬編。
+    suppliers = [s["name"] for s in res["suppliers"]]
 
     for round_info in res["trace"]:
         r = round_info["round"]

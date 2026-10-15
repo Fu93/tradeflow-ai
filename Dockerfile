@@ -4,8 +4,28 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# `src/engine/bilingual.py` imports `src.engine.onnx_classifier` at module level,
+# and that class loads `models/intent_classifier_v5.onnx` + `models/vocab.json`.
+# Those files were NOT copied before, so the container started fine but silently
+# dropped the on-device ONNX stage (only a log line warned). `data/` is required
+# by `src/benchmark/ood_500_dataset.py`, which the test suite imports.
 COPY src ./src
+COPY models ./models
+COPY data ./data
 COPY seed_data ./seed_data
+COPY knowledge ./knowledge
+
+# Fail the build if the runtime assets the app loads are missing, instead of
+# discovering it from a warning at request time.
+RUN python -c "\
+import os, sys; \
+missing = [p for p in ('models/intent_classifier_v5.onnx', 'models/vocab.json', 'data/benchmark_ood_500.json', 'seed_data/price_anchor.json') if not os.path.exists(p)]; \
+print('missing runtime assets:', missing) if missing else print('runtime assets OK'); \
+sys.exit(1 if missing else 0)"
+
+# Unbuffered stdout so container logs appear immediately.
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONIOENCODING=utf-8
 
 EXPOSE 8000
 CMD ["python", "-m", "src.app.main"]

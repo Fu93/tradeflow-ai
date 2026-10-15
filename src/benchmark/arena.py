@@ -44,6 +44,17 @@ class AdversarialArena:
             BluffingAdversary(max_rounds=max_rounds),
             NoisyAdversary(max_rounds=max_rounds),
         ]
+        # [修正] 舊版把這個 proxy 標成「Vanilla LLM Agent (Parametric)」，並在
+        # self-play 報表裡與引擎並列，讓讀者以為那是真實 LLM 對手的量測。
+        # 誠實說明：它沒有 LLM、沒有 prompt、沒有 API call —— 只是「有預算意識、
+        # 會過度讓步」買方的**參數化代理**（panic 加權 + 高斯噪聲的讓步曲線）。
+        # 因此改名，避免被誤讀成真 LLM 基準。真實 LLM 對比見 LIMITATIONS §2.3 /
+        # PITCH Slide 1（0/94 違規，3.1% 上界）。
+        self.candidate_agents = (
+            ("TradeFlow Engine", "engine"),
+            ("Panic-Heuristic Buyer Proxy (parametric, not an LLM)", "vanilla_llm"),
+            ("Fixed 5%/rd Baseline", "fixed_baseline"),
+        )
 
     def run_match(
         self,
@@ -154,11 +165,7 @@ class AdversarialArena:
         rng = np.random.default_rng(seed)
         tournament_results: Dict[str, Dict[str, Dict[str, float]]] = {}
 
-        candidate_agents = (
-            ("TradeFlow Engine", "engine"),
-            ("Vanilla LLM Agent (Parametric)", "vanilla_llm"),
-            ("Fixed 5%/rd Baseline", "fixed_baseline"),
-        )
+        candidate_agents = self.candidate_agents
 
         for adv in self.adversaries:
             adv_name = adv.name

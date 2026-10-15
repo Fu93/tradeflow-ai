@@ -346,7 +346,8 @@ TradeFlow 的核心架構借鑒了企業級多代理授權與治理體系（Tria
 ## 九、AMD 異質硬件實測基線對照 (AMD Hardware Real-World Baseline)
 
 * **客觀實測現狀聲明**：
-  * 本黑客松開發環境主要於本機 AMD Zen CPU 架構下執行，所有 rollout 速度推演係基於 **Analytical Roofline 訪存頻寬分析模型**。實測 rollout 數為 **28.8M**（多供應商示範路徑）；理論上界為 96M。
+  * 本黑客松開發環境為 **x86-64 CPU（Intel Core Ultra 7 355）—— 不是 AMD 硬體，亦無任何 GPU**。所有 rollout 速度推演係基於 **Analytical Roofline 訪存頻寬分析模型**。實測 rollout 數為 **28.8M**（多供應商示範路徑）；理論上界為 96M。
+  > **更正記錄**：本文件先前版本誤稱開發環境為「AMD Zen CPU」。經 `Get-CimInstance Win32_Processor` 查核為 Intel Core Ultra 7 355 (GenuineIntel)。此為事實錯誤，已更正。AMD 在本專案中的**真實**角色僅限於：模型層呼叫 AMD tokenfactory 端點，以及 `_xp()` 抽象層在具備 ROCm/CuPy 時可切換至 AMD GPU。
 * **AMD Developer Cloud (MI300X) 實測參照基線**：
   * 依據 AMD 官方 AI 開發者計畫及相關 ROCm 開源基準（如 ROCmPort-AI 項目在 MI300X 上的同類內核性能實測）：
     - **Memory-Bound 訪存受限算子實測頻寬**：可達成 **531.8 GB/s**（高達 DDR5 頻寬的 6.6 倍以上）；
@@ -365,7 +366,7 @@ TradeFlow 的核心架構借鑒了企業級多代理授權與治理體系（Tria
 * 官方事件頁僅說明端點託管於 `notebooks.amd.com/tokenfactory`，**未公開 API base URL**。
 * 實測確認可用端點為：`https://developer.amd.com.cn/radeon/api`（**注意是 `.com.cn` 網域，不是 `amd.com`**）。
 * 支援路徑：`POST /v1/chat/completions`（OpenAI 相容）、`POST /v1/messages`（Anthropic 相容）、`GET /v1/models`、`POST /v1/ocr`（MinerU2.5-Pro）。
-* 實測 `GET /v1/models` 回傳 HTTP 200 與 12 個模型；`POST /v1/chat/completions` 回傳 HTTP 200 並附完整 usage/cost 明細。
+* 實測 `GET /v1/models` 回傳 HTTP 200 與 **11 個模型**（2026-10-15 重新查核；先前版本記載 12 個，端點已變動，故更正）；`POST /v1/chat/completions` 回傳 HTTP 200 並附完整 usage/cost 明細。
 * **Credits 前提修正**：官方 FAQ 明載 *"Developers don't need the $100 credit to participate — just the API from the tokenfactory."*，且無需信用卡。先前計畫將「等待 AMD credits 審核」列為 P0 卡資格項，**該前提不成立**。
 
 ### 2. 已修復的憑證解析缺陷 (Credential Resolution Bug)

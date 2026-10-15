@@ -164,7 +164,7 @@ a single case are not percentages. "Production ready" is not supported by a smok
 
 **Status**: **FIXED.** Wording now states what was actually exercised
 ("single hand-crafted illegal-deposit case intercepted", "verified on this sample"),
-and the verdict clarifies this is a smoke check with 98-test regression coverage elsewhere.
+and the verdict clarifies this is a smoke check with the `tests/` regression suite (110 tests) covering the rest.
 
 ---
 

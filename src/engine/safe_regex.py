@@ -1,13 +1,24 @@
 """Safe Linear Regex Engine (SafeLinearRegexEngine).
 
-支援 Google RE2 (Thompson NFA/DFA, 嚴格 O(n) 線性時間複雜度) 與 Python regex 
-(Atomic Grouping (?>...) + 10ms 看門狗超時中斷)，徹底杜絕 ReDoS 災難性指數回溯攻擊。
+三層後端，依可用性自動選擇：
+  1. Google RE2（Thompson NFA/DFA，嚴格 O(n)）—— 若已安裝 `re2`。
+  2. Python `regex` 模組 + 10ms 硬超時守衛 —— 若已安裝 `regex`。
+  3. 內建 `re` 兜底。
+
+[重要邊界] Tier 3（內建 re）**沒有**超時守衛，且若未安裝 re2/regex 則完全
+沒有 O(n) 保證。真正的第一道防線是 `search()/finditer()/findall()` 進入點的
+輸入截斷（MAX_INPUT_LEN = 1000 字元），它把潛在回溯的搜尋空間限制在上限內。
+對外聲稱時應說「輸入截斷 + RE2/超時守衛」，不可宣稱任何輸入長度下皆為線性。
 """
 from __future__ import annotations
 import logging
 from typing import Optional, Iterator, Tuple, Any, List
 
 logger = logging.getLogger("tradeflow.safe_regex")
+
+# 單一進入點統一使用的輸入上限。截斷是 Tier 3 唯一的保護機制，
+# 因此這個常數是安全性的關鍵參數，不應在別處重複定義不同的值。
+MAX_INPUT_LEN = 1000
 
 # 1. 動態偵測後端能力
 try:
@@ -104,10 +115,10 @@ class SafeLinearPattern:
     def search(self, text: str) -> Optional[SafeMatch]:
         if not text:
             return None
-        
-        # 安全長度截斷，防止巨型字串攻擊
-        if len(text) > 1000:
-            text = text[:1000]
+
+        # 安全長度截斷：Tier 3（內建 re）沒有超時守衛，這是它唯一的保護。
+        if len(text) > MAX_INPUT_LEN:
+            text = text[:MAX_INPUT_LEN]
 
         if self.backend == "re2":
             m = self._compiled.search(text)
@@ -126,8 +137,8 @@ class SafeLinearPattern:
     def finditer(self, text: str) -> Iterator[SafeMatch]:
         if not text:
             return
-        if len(text) > 1000:
-            text = text[:1000]
+        if len(text) > MAX_INPUT_LEN:
+            text = text[:MAX_INPUT_LEN]
 
         if self.backend == "re2":
             for m in self._compiled.finditer(text):
@@ -146,8 +157,8 @@ class SafeLinearPattern:
     def findall(self, text: str) -> List[Any]:
         if not text:
             return []
-        if len(text) > 1000:
-            text = text[:1000]
+        if len(text) > MAX_INPUT_LEN:
+            text = text[:MAX_INPUT_LEN]
         if self.backend == "re2":
             return self._compiled.findall(text)
         elif self.backend == "regex":

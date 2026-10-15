@@ -27,5 +27,8 @@ python tests/test_benchmark.py
 
 ## GPU (AMD MI300X)
 `src/engine/solver.solve(use_gpu=True)` tries `cupy` then falls back to numpy.
-Benchmark numbers in `results/bench.json` use a 15× MI300X projection; replace
-`mi300x_projected_seconds` with measured values once a droplet is available.
+Benchmark numbers in `results/bench.json` report the MI300X figure as an
+analytical **data-movement lower bound** (`mi300x_transfer_lower_bound_seconds` =
+measured working set ÷ 5.3 TB/s HBM3). It is not a run-time prediction and must
+not be divided by `cpu_seconds` to claim a speedup. Replace it with measured
+values (under `mi300x_measured_seconds`) once a real ROCm device is available.

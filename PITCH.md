@@ -129,12 +129,14 @@
 
 **AMD 的真實價值：**
 1. **統一 ROCm 抽象層**：`src/engine/solver.py` 的 `_xp()` 讓同一套張量博弈程式碼在
-   AMD Zen CPU（NumPy SIMD）開發、一鍵切換至 AMD Instinct GPU（ROCm/CuPy）生產部署。
+   x86-64 CPU（NumPy SIMD）開發、一鍵切換至 AMD Instinct GPU（ROCm/CuPy）生產部署。
 2. **AMD tokenfactory 模型服務（已實測）**：Stage-2 語意層真實呼叫
    `https://developer.amd.com.cn/radeon/api` 上的開源模型，延遲、token 成本皆為實測值。
 
-> **誠實邊界**：MI300X 上的 0.42 秒為**分析性 roofline 投影**，非實機量測。
-> 我們的開發環境是 AMD Zen CPU。我們選擇標明這是投影，而不是包裝成 benchmark。
+> **誠實邊界**：MI300X 的時延數字是**分析性 roofline 資料搬運下界**，非實機量測，
+> 也不是執行時間預測。我們的開發機是 **Intel Core Ultra 7 355（x86-64）**——
+> **本專案從未在 AMD CPU 或 AMD GPU 上執行過任何運算**。
+> 我們選擇把這件事寫清楚，而不是用「AMD 環境」含混帶過。
 
 ---
 

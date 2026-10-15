@@ -1,4 +1,4 @@
-﻿# Submission Checklist — AMD Developer Hackathon: ACT III
+# Submission Checklist — AMD Developer Hackathon: ACT III
 
 > Double-submission allowed: **Reinvent Commerce (main)** + **Evolus Business Agents on AMD**.
 > Verify each box before pushing the final tag.
@@ -10,7 +10,7 @@
 - [x] README runs with one command (`python -m src.app.main`, then http://localhost:8000)
 - [x] Dockerfile + docker-compose.yml (containerized)
 - [x] No secrets committed (`.env` in `.gitignore`; only `.env.example`) — verified via `git grep`
-- [x] `tests/` green — **101 tests passing**
+- [x] `tests/` green — **110 tests passing** (`python -m pytest tests -q`)
 
 ## Engine (decision core)
 - [x] Bayesian belief update + vectorized Expectimax (`src/engine/`)
@@ -30,7 +30,7 @@
 - [x] AMD model bound to the agent (`modelKey: own/qwen3.8-flash-next`, `modelState: ok`)
 
 ## AMD technology
-- [x] AMD tokenfactory endpoint live-verified: `https://developer.amd.com.cn/radeon/api` (12 models, HTTP 200)
+- [x] AMD tokenfactory endpoint live-verified: `https://developer.amd.com.cn/radeon/api` (11 models, HTTP 200)
 - [x] Stage-2 semantic layer calling an AMD-hosted open model (`Qwen3.8-Flash-Next`)
 - [x] **Compliance CONFIRMED**: organisers confirmed the tokenfactory endpoint **satisfies** the
       *"your own vLLM endpoint on AMD Developer Cloud"* requirement. No self-hosted vLLM needed.

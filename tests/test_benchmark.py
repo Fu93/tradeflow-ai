@@ -8,9 +8,23 @@ from src.engine import benchmark, robustness, viz
 def test_benchmark_runs():
     res = benchmark.run(n_list=(2000,))
     grid = res["single_supplier_grid"]
-    assert grid[0]["rollouts"] > 0
-    assert grid[0]["cpu_seconds"] > 0
-    assert grid[0]["mi300x_seconds"] > 0
+    row = grid[0]
+    assert row["rollouts"] > 0
+    assert row["cpu_seconds"] > 0
+    # [修正] 舊 schema 誤把 GPU 時間寫成一個 `mi300x_seconds`「實測值」，
+    # 實際上是 CPU 計算時間 ÷ 122,425（假加速比）得來。現已改為誠實暴露為
+    # 資料搬運下界：working_set ÷ 記憶體頻寬。測試改鎖定新欄位與語意。
+    assert row["working_set_mb"] > 0
+    assert row["working_set_measured"] is True
+    # 下界僅為高速資料搬運物理下限（遠小於 CPU 計算時間），且必須是有限正數。
+    lb = row["mi300x_transfer_lower_bound_seconds"]
+    assert lb > 0 and lb < row["cpu_seconds"], (
+        "transfer lower bound must be a physical floor below the CPU runtime"
+    )
+    assert row["execution_mode"] in ("ROOFLINE_ANALYTICAL_LOWER_BOUND", "MEASURED_GPU", "CPU_MEASURED_WITH_TRANSFER_BOUND")
+    # 不再允許任何舊 schema 的假加速比 / 假實測秒數欄位。
+    assert "speedup_factor" not in row
+    assert "mi300x_seconds" not in row
 
 
 def test_figures_no_error():

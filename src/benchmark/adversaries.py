@@ -42,7 +42,14 @@ class BaseAdversary(ABC):
 
 
 class HardBargainerAdversary(BaseAdversary):
-    """強硬派 (Boulwarism): 讓步指數 kappa=3.5，死守價格。"""
+    """強硬派 (Boulwarism): 讓步指數 kappa=3.5，死守價格。
+
+    誠實說明：Boulwarism 的本質就是「我的價格就是我的價格」——
+    賣方給出一個初始立場後**不因買方出價而調整**，只在輪次推進時做象徵性讓步。
+    因此本代理刻意不讀取 buyer_offer / buyer_history：這不是 bug，而是該策略
+    身份的定義（take-it-or-leave-it，不回應買方）。若需「會回應買方的賣方」，
+    請用 TitForTatAdversary。
+    """
 
     def __init__(
         self,
@@ -69,7 +76,13 @@ class HardBargainerAdversary(BaseAdversary):
 
 
 class ConcederAdversary(BaseAdversary):
-    """急躁甩賣型: 讓步指數 kappa=0.25，迅速降價。"""
+    """急躁甩賣型: 讓步指數 kappa=0.25，迅速降價。
+
+    誠實說明：本代理的降價節奏由**輪次推進**驅動（前瞻式時間讓步），
+    不隨買方出價即時調整 —— 對應「想在期限內盡快成交」的賣方。它不是
+    buyer-responsive 的買方鏡像；若測試需要「反映買方讓步的對手」，
+    使用 TitForTatAdversary。
+    """
 
     def __init__(
         self,
@@ -169,7 +182,7 @@ class BluffingAdversary(BaseAdversary):
 
 
 class NoisyAdversary(BaseAdversary):
-    """市場噪聲型: 線性讓步疊加高斯噪聲。"""
+    """市場噪聲型: 線性讓步疊加高斯噪聲（節奏由輪次驅動，非買方鏡像）。"""
 
     def __init__(
         self,

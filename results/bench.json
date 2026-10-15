@@ -4,57 +4,61 @@
   "roofline_specs": {
     "cpu_bandwidth_gb_s": 60.0,
     "mi300x_hbm3_bandwidth_gb_s": 5300.0,
-    "theoretical_max_speedup": 88.3
+    "bandwidth_ratio_cpu_to_mi300x": 88.3,
+    "note": "bandwidth_ratio \u50c5\u662f\u5169\u500b\u898f\u683c\u7684\u6bd4\u503c (5300/60)\uff0c**\u4e0d\u662f**\u4efb\u4f55\u5de5\u4f5c\u8ca0\u8f09\u7684\u52a0\u901f\u500d\u7387\u9810\u6e2c\u3002"
   },
   "single_supplier_grid": [
     {
       "samples": 2000,
       "rollouts": 960000,
-      "working_set_mb": 7.32,
-      "cpu_seconds": 0.1664,
-      "mi300x_seconds": 1e-06,
-      "speedup_factor": 123320.2,
-      "us_per_rollout": 0.1734,
-      "execution_mode": "ROOFLINE_ANALYTICAL_LOWER_BOUND"
+      "working_set_mb": 66.59,
+      "working_set_measured": true,
+      "cpu_seconds": 0.1373,
+      "us_per_rollout": 0.143,
+      "mi300x_transfer_lower_bound_seconds": 1.227e-05,
+      "mi300x_measured_seconds": null,
+      "execution_mode": "CPU_MEASURED_WITH_TRANSFER_BOUND"
     },
     {
       "samples": 10000,
       "rollouts": 4800000,
-      "working_set_mb": 36.62,
-      "cpu_seconds": 0.855,
-      "mi300x_seconds": 7e-06,
-      "speedup_factor": 126712.9,
-      "us_per_rollout": 0.1781,
-      "execution_mode": "ROOFLINE_ANALYTICAL_LOWER_BOUND"
+      "working_set_mb": 332.95,
+      "working_set_measured": true,
+      "cpu_seconds": 0.5841,
+      "us_per_rollout": 0.1217,
+      "mi300x_transfer_lower_bound_seconds": 6.1348e-05,
+      "mi300x_measured_seconds": null,
+      "execution_mode": "CPU_MEASURED_WITH_TRANSFER_BOUND"
     },
     {
       "samples": 20000,
       "rollouts": 9600000,
-      "working_set_mb": 73.24,
-      "cpu_seconds": 1.6522,
-      "mi300x_seconds": 1.3e-05,
-      "speedup_factor": 122425.6,
-      "us_per_rollout": 0.1721,
-      "execution_mode": "ROOFLINE_ANALYTICAL_LOWER_BOUND"
+      "working_set_mb": 665.9,
+      "working_set_measured": true,
+      "cpu_seconds": 1.1083,
+      "us_per_rollout": 0.1154,
+      "mi300x_transfer_lower_bound_seconds": 0.000122696,
+      "mi300x_measured_seconds": null,
+      "execution_mode": "CPU_MEASURED_WITH_TRANSFER_BOUND"
     },
     {
       "samples": 50000,
       "rollouts": 24000000,
-      "working_set_mb": 183.11,
-      "cpu_seconds": 3.5035,
-      "mi300x_seconds": 3.4e-05,
-      "speedup_factor": 103841.7,
-      "us_per_rollout": 0.146,
-      "execution_mode": "ROOFLINE_ANALYTICAL_LOWER_BOUND"
+      "working_set_mb": 1664.74,
+      "working_set_measured": true,
+      "cpu_seconds": 3.0052,
+      "us_per_rollout": 0.1252,
+      "mi300x_transfer_lower_bound_seconds": 0.00030674,
+      "mi300x_measured_seconds": null,
+      "execution_mode": "CPU_MEASURED_WITH_TRANSFER_BOUND"
     }
   ],
   "multi_supplier_auction": {
     "total_rollouts": 72000000,
     "theoretical_max_rollouts": 96000000,
-    "cpu_seconds": 5.949,
-    "mi300x_projected_seconds": 0.000101,
-    "speedup_factor": 58775.1,
+    "cpu_seconds": 5.192,
     "winning_price": 12.6,
     "savings_pct": 0.2222222222222222
-  }
+  },
+  "disclosure": "No AMD GPU was present on the measuring host unless is_gpu_active is true. mi300x_transfer_lower_bound_seconds is a data-movement bound (measured working set / 5300 GB/s), NOT a runtime prediction, and must not be divided by cpu_seconds to claim a speedup."
 }

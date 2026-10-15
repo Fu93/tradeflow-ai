@@ -1,4 +1,4 @@
-﻿# TradeFlow AI — 一間只有一個人的 AI 原生跨境貿易公司
+# TradeFlow AI — 一間只有一個人的 AI 原生跨境貿易公司
 
 > [!IMPORTANT]
 > **原型定位與局限性前置宣告 (Upfront Prototype Disclosure)**：  
@@ -41,7 +41,7 @@ AMD Developer Hackathon: ACT III (lablab.ai, Online Build **2026/10/12–17**) �
 
 ```mermaid
 flowchart TD
-    subgraph BrowserClient ["端側執行與交互層 (Deterministic Headed Browser - AMD Zen CPU)"]
+    subgraph BrowserClient ["端側執行與交互層 (Deterministic Headed Browser - x86-64 CPU)"]
         Browser["1688 / 阿里旺旺 / 供應商對話 (Headed Chrome)"]
         ExtContent["Content Script 風控哨兵 (Captcha Sentinel)"]
         SessionStore["SQLite WAL 會話持久化 + 狀態機"]
@@ -85,7 +85,7 @@ flowchart TD
    - 示範路徑 `simulate_reverse_auction()`（Web「Run Auction」預設參數 $n_{samples}=20{,}000$）每輪執行 9.6M rollouts，共 3 輪，**累計 28.8M（實測值）**。
    - rollout 數 = $K \times S \times N_{open} \times N_{sched}$；基準測試使用 50,000 樣本時為 72M；最大策略網格 (40×12) 的理論上界為 96M，但**未被任何實際路徑使用**。
    - 同時評估 $K=4$ 家供應商、隨機對手微觀參數與多組出價/讓步曲線組合。
-   - MI300X 上的加速為**分析性 roofline 訪存頻寬投影**，非實機量測（實測環境為 AMD Zen CPU）。
+   - MI300X 上的加速為**分析性 roofline 訪存頻寬投影**，非實機量測（開發機為 **x86-64 CPU，Intel Core Ultra 7 355**，非 AMD 硬體）。
 2. **動態 BATNA 交叉壓制與 3 階戰術劃分**：
    - 即時計算排除特定對手後的外部最佳替代期望值：$\text{BATNA}_{-i}$。
    - 自動將多供應商分流為：`LEAN_IN`（傾斜鎖定最優價）、`CROSS_ANCHOR`（交叉施壓中間商）、`SIDELINE`（冷凍邊緣化報價過高者）。
@@ -160,10 +160,10 @@ python -m src.cli
 
 ## 測試與驗證
 
-專案具備完整測試覆蓋（包含核心邏輯、張量運算、意圖分類、API 路由、併發 CAS、非同步語意與 E2E 閉環）。**目前 101 項測試全部通過**：
+專案具備完整測試覆蓋（包含核心邏輯、張量運算、意圖分類、API 路由、併發 CAS、非同步語意與 E2E 閉環）。**目前 110 項測試全部通過**：
 
 ```bash
-# 運行全量測試套件 (101 項測試通過)
+# 運行全量測試套件 (110 項測試通過)
 python -m pytest tests -q
 
 # 運行真實端到端整合業務鏈測試
@@ -214,9 +214,9 @@ python verify_live.py
 |---|---|
 | **Originality** | 打破「以 LLM 為決策核心」的慣例，開創「數學核心做決策，LLM 只做表面語言表達」架構。並以「**一間只有一個人的 AI 原生貿易公司**」作為產品形態，而非又一個採購 SaaS。 |
 | **Business Value** | 對照傳統兩條路徑（自己熬夜談 / 7% 佣金代理），本方案為 **1 人營運**、**0% 預算擊穿**、**無中間人故無回扣風險**。可量化增益：節省率 14.8%–18.6%。 |
-| **Application of Technology (AMD)** | ① 引擎為張量廣播密集型任務，`_xp()` 抽象層可自 AMD Zen CPU 無痛擴展至 AMD Instinct GPU（ROCm/CuPy）。② Stage-2 語意層**已實連** AMD 託管開源模型端點（實測 HTTP 200）。<br>*MI300X 上的 0.42 秒為分析性 roofline 投影，非實機量測。* |
+| **Application of Technology (AMD)** | ① 引擎為張量廣播密集型任務，`_xp()` 抽象層可自 CPU 無痛擴展至 AMD Instinct GPU（ROCm/CuPy）。② Stage-2 語意層**已實連** AMD 託管開源模型端點（實測 HTTP 200）。<br>*MI300X 時延為分析性 roofline 資料搬運下界，非實機量測，亦非執行時間預測。*<br>*開發機為 Intel Core Ultra 7 355（x86-64），本專案**未**在 AMD CPU 上執行過。* |
 | **Evolus Integration** | 真實 API 呼叫已產生 usage stats：AI Tools `email` / `doc-structure` / `sentiment`（共 8.33 credits），並由 `src/app/orchestrator.py` 完成「Evolus 回呼 → 引擎 → Evolus 起草」端到端鏈路。<br>*workflow 與 agent 尚未建立，我們不宣稱已完成。* |
-| **Presentation & Rigor** | 純 Python 一鍵啟動、**101 項測試覆蓋**、含「評測效力邊界揭露」與完整局限性報告、生產級 SQLite WAL 與安全熔斷防護。 |
+| **Presentation & Rigor** | 純 Python 一鍵啟動、**110 項測試覆蓋**、含「評測效力邊界揭露」與完整局限性報告、生產級 SQLite WAL 與安全熔斷防護。 |
 
 ---
 

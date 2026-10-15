@@ -51,11 +51,11 @@ TradeFlow AI decouples numerical strategic optimization from linguistic surface 
 
 ### 3. AMD Hardware & Technology Integration
 
-1. **Analytical Roofline Memory-Bandwidth Optimization**:
-   * Simulating batched rollout paths across 4 concurrent suppliers generates a small 3D tensor working set. The demo path executes **28.8M rollouts measured** (9.6M per round × 3 rounds); the maximum strategy grid's theoretical upper bound is 96M. On standard DDR5 CPU memory (~80 GB/s), continuous sweeps take a few seconds; on AMD MI300X with 5.3 TB/s HBM3 memory bandwidth, the same sweep is projected several times faster.
-   * **Honest scope note**: This is an *analytical roofline projection*, not a measured MI300X run. Our development environment is an AMD Zen CPU, where the vectorized path is measured. We state the projection explicitly rather than presenting it as a benchmark.
+1. **Analytical Roofline Memory-Bandwidth Analysis**:
+   * Simulating batched rollout paths across 4 concurrent suppliers generates a small 3D tensor working set. The demo path executes **28.8M rollouts** (9.6M per round × 3 rounds); the maximum strategy grid's theoretical upper bound is 96M. On CPU memory the sweep takes a few seconds; the MI300X figure we report is a *data-movement bound* (measured working set ÷ 5.3 TB/s HBM3), which is a physical floor, not a runtime prediction.
+   * **Honest scope note**: This is an *analytical roofline data-movement bound*, not a measured MI300X run and not a runtime prediction. **Our development machine is an Intel Core Ultra 7 355 (x86-64)** — this project has never executed on AMD CPU or AMD GPU hardware. The only genuinely AMD component is the model layer, which calls the AMD tokenfactory endpoint. We state this explicitly rather than presenting a bound as a benchmark.
 2. **Unified ROCm Software Ecosystem (`_xp()` Portability)**:
-   * TradeFlow uses a clean hardware-agnostic tensor abstraction layer (`src/engine/solver.py`). The exact same solver code runs via SIMD NumPy on AMD Zen CPUs during development and scales to AMD Instinct MI300X GPUs via CuPy/ROCm in production without code refactoring.
+   * TradeFlow uses a hardware-agnostic tensor abstraction layer (`src/engine/solver.py`). The same solver code runs via SIMD NumPy on any x86-64 CPU and *would* scale to AMD Instinct MI300X GPUs via CuPy/ROCm without code refactoring — but that scaling is **untested**, because no ROCm device was available to us.
 3. **AMD tokenfactory Model Serving (Live-Verified)**:
    * TradeFlow's semantic layer is live-verified against the hackathon's AMD-hosted inference endpoint (`https://developer.amd.com.cn/radeon/api`), serving an open model for Stage-2 supplier-intent reasoning. Calls, latency, and token costs are all measured — see `LIMITATIONS_AND_REAL_WORLD_FINDINGS.md` §10.
 
@@ -109,8 +109,8 @@ pip install -r requirements.txt
 # Run complete 6-pillar verification test suite
 python verify_all.py
 
-# Run unit and integration tests (101 tests, all green)
-pytest tests/ -q
+# Run unit and integration tests (110 tests, all green)
+python -m pytest tests -q
 
 # Launch the Web Portal Command Center
 python -m src.app.main

@@ -34,7 +34,7 @@ function initBeliefChart() {
         },
         {
           label: "Breakdown Risk (%)",
-          data: [5.0],
+          data: [null],
           borderColor: "#ef4444",
           borderWidth: 1.5,
           borderDash: [4, 4],
@@ -207,7 +207,9 @@ function updateBeliefChartWithTurns(session) {
   const labels = ["Prior"];
   const target = session.spec ? session.spec.target_price : 12.0;
   const postData = [1.08 * target];
-  const riskData = [5.0];
+  // [修正] 舊版把 Prior 的 Breakdown Risk 硬編成 5.0%，但後端從未提供任何
+  // prior 破裂風險 —— 這是捏造數字。改為 null（未知），由後端/第一輪資料帶入。
+  const riskData = [null];
 
   const turns = session.history || session.turns || [];
   turns.forEach((t, idx) => {
@@ -222,51 +224,95 @@ function updateBeliefChartWithTurns(session) {
   beliefChart.update();
 }
 
-function applyCategoryPreset(cat) {
-  const presets = {
-    umbrella: {
-      name: "Custom Carbon Auto Umbrella",
-      target: 12.0,
-      ceiling: 16.2,
-      lead: "12 - 35 Days",
-      deposit: "30% - 50%",
-      tooling: "Exemption Demanded (¥3,000)",
-      moq: 5000
-    },
-    cnc_case: {
-      name: "Aerospace CNC Metal Case",
-      target: 28.0,
-      ceiling: 36.5,
-      lead: "15 - 40 Days",
-      deposit: "25% - 45%",
-      tooling: "Tooling Waived (¥8,000)",
-      moq: 2000
-    },
-    battery: {
-      name: "Industrial LiFePO4 Battery Pack",
-      target: 185.0,
-      ceiling: 240.0,
-      lead: "20 - 45 Days",
-      deposit: "30% - 60%",
-      tooling: "Certification Waived (¥15,000)",
-      moq: 500
-    }
-  };
+// Category presets. Each entry carries the FULL mandate, not just display
+// strings: previously this only rewrote the labels and the chart, so switching
+// category changed what the dashboard *claimed* while the engine kept using the
+// original umbrella spec. The values below are now POSTed to
+// /api/v1/sessions so the displayed mandate and the enforced mandate agree.
+const CATEGORY_PRESETS = {
+  umbrella: {
+    name: "Custom Carbon Auto Umbrella",
+    target: 12.0,
+    ceiling: 16.2,
+    lead: "12 - 35 Days",
+    deposit: "30% - 50%",
+    tooling: "Exemption Demanded (¥3,000)",
+    moq: 5000
+  },
+  cnc_case: {
+    name: "Aerospace CNC Metal Case",
+    target: 28.0,
+    ceiling: 36.5,
+    lead: "15 - 40 Days",
+    deposit: "25% - 45%",
+    tooling: "Tooling Waived (¥8,000)",
+    moq: 2000
+  },
+  battery: {
+    name: "Industrial LiFePO4 Battery Pack",
+    target: 185.0,
+    ceiling: 240.0,
+    lead: "20 - 45 Days",
+    deposit: "30% - 60%",
+    tooling: "Certification Waived (¥15,000)",
+    moq: 500
+  }
+};
 
-  const p = presets[cat] || presets.umbrella;
+async function applyCategoryPreset(cat) {
+  const p = CATEGORY_PRESETS[cat] || CATEGORY_PRESETS.umbrella;
+
   document.getElementById("mandatePrice").textContent = `¥${p.target.toFixed(1)} / ¥${p.ceiling.toFixed(1)}`;
   document.getElementById("mandateLead").textContent = p.lead;
   document.getElementById("mandateDeposit").textContent = p.deposit;
   document.getElementById("mandateTooling").textContent = p.tooling;
 
-  // Create or switch active demo session with preset
+  // Create (or reuse) a real session so the engine actually operates under this
+  // mandate instead of the display merely changing.
   const newSid = `DEMO_${cat.toUpperCase()}_01`;
-  document.getElementById("cmdSessionId").value = newSid;
-  document.getElementById("sessionLabel").textContent = `${newSid} (${p.name})`;
+  const body = {
+    session_id: newSid,
+    product_name: p.name,
+    target_price: p.target,
+    ceiling_price: p.ceiling,
+    moq: p.moq,
+    max_rounds: 5
+  };
+
+  const statusEl = document.getElementById("presetStatus");
+  try {
+    const res = await fetch("/api/v1/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (res.ok) {
+      currentSessionId = newSid;
+      document.getElementById("cmdSessionId").value = newSid;
+      document.getElementById("sessionLabel").textContent = `${newSid} (${p.name})`;
+      if (statusEl) {
+        statusEl.textContent = `Session ${newSid} created — engine now bound to this mandate.`;
+        statusEl.style.color = "#4ade80";
+      }
+      fetchSessionDetails(newSid);
+    } else {
+      const detail = await res.text();
+      if (statusEl) {
+        statusEl.textContent = `Could not create session (HTTP ${res.status}): ${detail.slice(0, 140)}`;
+        statusEl.style.color = "#f87171";
+      }
+    }
+  } catch (err) {
+    if (statusEl) {
+      statusEl.textContent = `Session creation failed: ${err.message}`;
+      statusEl.style.color = "#f87171";
+    }
+  }
+
   if (beliefChart) {
     beliefChart.data.labels = ["Prior"];
     beliefChart.data.datasets[0].data = [p.target * 1.08];
-    beliefChart.data.datasets[1].data = [5.0];
+    beliefChart.data.datasets[1].data = [null];
     beliefChart.update();
   }
 }
@@ -335,12 +381,10 @@ async function runMultiAuction() {
     const lastRound = data.trace[data.trace.length - 1];
     const suppliers = (data.suppliers && data.suppliers.length > 0)
       ? data.suppliers.map(s => typeof s === "object" ? s.name : s)
-      : [
-          "Supplier A (浙江頂尖雨具製造)",
-          "Supplier B (深圳宏達實業)",
-          "Supplier C (義烏博創商貿)",
-          "Supplier D (東莞榮耀五金)"
-        ];
+      // [修正] 這是永不觸發的防呆 fallback（API 永遠回傳 suppliers）。
+      // 舊版在此硬編了「浙江頂尖/深圳宏達/義烏博創/東莞榮耀」等虛構公司名，
+      // 與引擎真實身份(敏捷讓步型…) 錯位。改為中立標籤，不再捏造公司。
+      : ["Supplier A", "Supplier B", "Supplier C", "Supplier D"];
 
     cardsWrap.innerHTML = "";
     suppliers.forEach((sName, i) => {

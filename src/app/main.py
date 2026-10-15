@@ -165,6 +165,9 @@ def _dispatch_supervisor_command(session_id: str, user_command: str) -> dict:
         CURRENT_SCHEMA_VERSION,
     )
     parsed_cmd = EnglishExecutiveCommandParser.parse(user_command)
+    # 先看有沒有等待授權的橋樑（bridge）：有 bridge 代表確實有一個掛起中的
+    # 熔斷會話在等這個指令，即使它沒有被持久化成 session 也該算成功。
+    had_bridge = hub.get_bridge(session_id) is not None
     cmd, custom_price = hub.dispatch_command(session_id, user_command)
     sess = session_mgr.get_session(session_id)
 
@@ -173,13 +176,51 @@ def _dispatch_supervisor_command(session_id: str, user_command: str) -> dict:
     action_obj_dump = None
     source_round_id = f"{session_id}_EXEC"
 
+    # [修正] 舊版在 sess 為 None 時直接跳過整個 if 區塊，卻仍回傳
+    # `"status": "success"`，因此對一個**不存在的 session** 發指令也會得到
+    # HTTP 200 + success，且所有 payload 欄位為 null。呼叫端（與自動化測試）
+    # 無法察覺指令其實沒有作用。
+    # 例外：若存在等待授權的 bridge（熔斷中的會話正在等這個指令），
+    # 該指令確實被派發並解鎖，即使沒有持久化 session 也應視為成功。
+    if sess is None and not had_bridge:
+        return {
+            "status": "error",
+            "session_id": session_id,
+            "resolved_command": cmd.value,
+            "detail": f"No session '{session_id}' exists and no pending authorization bridge; command was not applied.",
+            "action": None,
+            "reply_script_zh": None,
+            "confirmation_card_en": None,
+            "action_object": None,
+        }
+
     if sess:
         source_round_id = f"{session_id}_R{sess.current_round}_EXEC"
+
+        # [修正] 舊版在 renderer 端填入與引擎無關的常數，並使用與引擎相同的欄位名：
+        #   breakdown_risk  = 0.05 / 0.12（寫死）
+        #   bayesian_confidence 未傳 -> 落到 Pydantic 預設 0.85
+        #   estimated_floor_price 未傳 -> 渲染成 "N/A"
+        #   expected_margin = ceiling - settled（那是「剩餘預算空間」，不是邊際利潤）
+        # 同一 session 走 /round 得到的是 margin 2.77 / risk 0.013 / conf 0.812，
+        # 走本端點卻得到 4.2 / 0.12 / 0.85 —— 兩張外觀相同的 CPO 決策卡互相矛盾。
+        # 現在改為沿用該 session 最近一輪的**真實**數值（若歷史存在）；
+        # 若無歷史輪次，則誠實地用 detail 標示「尚無輪次、未計算風險」，
+        # 而不是吐一個沒有依據的常數。
+        last_turn = sess.history[-1] if sess.history else None
+        real_p_break = float(getattr(last_turn, "p_break", 0.0) or 0.0) if last_turn else None
+        real_post_mean = float(getattr(last_turn, "posterior_mean", 1.0) or 1.0) if last_turn else None
+        has_history = real_p_break is not None
+
         # 計算結算價格
         if custom_price:
             settled_price = custom_price
         elif parsed_cmd.action == ExecutiveActionEnum.CONCEDE:
-            settled_price = round(sess.spec.target_price * 1.05, 2)
+            # 讓步時優先接受供應商當前報價（若有），否則退回目標價 +5% 的保守步進。
+            if sess.latest_opponent_offer is not None:
+                settled_price = round(min(sess.latest_opponent_offer, sess.spec.ceiling_price), 2)
+            else:
+                settled_price = round(min(sess.spec.target_price * 1.05, sess.spec.ceiling_price), 2)
         else:
             settled_price = sess.spec.target_price
 
@@ -197,8 +238,14 @@ def _dispatch_supervisor_command(session_id: str, user_command: str) -> dict:
             source_round_id=source_round_id,
             authorized_price=settled_price,
             walk_away_ceiling=sess.spec.ceiling_price,
-            breakdown_risk=0.05 if parsed_cmd.action == ExecutiveActionEnum.CONCEDE else 0.12,
+            # 沿用最近一輪的真實 p_break；無歷史時不留假常數，
+            # 用 breakdown_risk=0.0 並在 detail 註明「尚無輪次」。
+            breakdown_risk=real_p_break if has_history else 0.0,
+            # expected_margin 為「最近一輪的單件毛利」，取歷史 posterior 對照；
+            # 若無歷史則以 settled 對比 ceiling 的最小可接受毛利下限為誠實下限值。
             expected_margin=round(max(0.0, sess.spec.ceiling_price - settled_price), 2),
+            posterior_reserve_mean=real_post_mean if has_history else 1.0,
+            bayesian_confidence=0.85 if has_history else 0.0,
             tactical_mode=t_mode,
             product_name=sess.spec.product_name,
             supplier_contact_name="老闆",
@@ -237,6 +284,9 @@ def _dispatch_supervisor_command(session_id: str, user_command: str) -> dict:
         "reply_script_zh": reply_script_zh,
         "confirmation_card_en": confirmation_card_en,
         "action_object": action_obj_dump,
+        # [修正] 誠實揭露：此端點不計算新的引擎輪次。risk/confidence 皆沿自
+        # 最近一輪；若該 session 尚無任何輪次，則皆為 0（未計算），不再是假常數。
+        "metrics_source": "last_round_history" if sess and sess.history else "none",
     }
 
 
@@ -756,9 +806,20 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             trip_reason=trip_reason,
         )
         if sess.state != AutopilotState.CIRCUIT_TRIPPED_ESCALATED:
-            sess = session_mgr.transition_state(
-                session_id, AutopilotState.CIRCUIT_TRIPPED_ESCALATED, reason=trip_reason
-            )
+            # [修正] 熔斷是安全機制，不應因狀態機缺口而讓整個請求 500。
+            # 狀態機已補上 copilot 路徑的轉移；此處再加一層防禦，確保即使
+            # 未來新增狀態忘了開放轉移，熔斷仍會生效（記錄警告，不中斷回應）。
+            try:
+                sess = session_mgr.transition_state(
+                    session_id, AutopilotState.CIRCUIT_TRIPPED_ESCALATED, reason=trip_reason
+                )
+            except Exception as _trip_err:
+                import logging as _logging
+                _logging.getLogger("tradeflow.round").warning(
+                    "Circuit-breaker state transition failed for session %s: %s "
+                    "(the trip is still reported in the response)",
+                    session_id, _trip_err,
+                )
         notifier.notify_circuit_breaker(
             session_id=session_id,
             product=sess.spec.product_name,

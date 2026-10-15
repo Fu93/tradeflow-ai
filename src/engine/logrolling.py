@@ -40,6 +40,38 @@ class CorporateMandate(BaseModel):
     excess_holding_cost_rate: float = Field(default=0.05, ge=0.0, description="超額庫存持有成本率 (5%)")
     mold_fee_exemption_demanded: bool = Field(default=True, description="是否要求免除模具費")
     estimated_mold_fee: float = Field(default=3000.0, ge=0.0, description="預估模具費總額 (元)")
+    volume_discount_ratio: float = Field(
+        default=0.08,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "以量換價時假設的規模效應折讓率 (預設 8%)。"
+            "此為**未經真實工廠報價校準的選擇值**，非量測值；"
+            "不同品類/工廠應覆寫此欄位。舊版寫死於程式碼中，現開放設定。"
+        ),
+    )
+    supplier_production_cost_ratio: float = Field(
+        default=0.82,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "供應商生產成本佔目標價的比例 (預設 0.82)，用於估算供應商利潤。"
+            "**未經真實成本單校準**；舊版寫死為 0.82，現開放覆寫。"
+        ),
+    )
+    supplier_rush_cost_coefficient: float = Field(
+        default=0.08,
+        ge=0.0,
+        description=(
+            "供應商趕工成本係數 (預設 0.08)，與下方指數共同決定趕工成本曲線。"
+            "**兩個常數皆無公開文獻或成本單推導**；舊版寫死，現開放覆寫。"
+        ),
+    )
+    supplier_rush_cost_exponent: float = Field(
+        default=1.25,
+        gt=0.0,
+        description="供應商趕工成本對提前天數的凸性指數 (預設 1.25)。未經校準，可覆寫。",
+    )
     allowed_tradeoffs: List[TradeoffType] = Field(
         default_factory=lambda: [
             TradeoffType.DEPOSIT_FOR_LEADTIME,
@@ -298,7 +330,10 @@ class LogrollingEngine:
         # 條款置換策略 3: 起訂量換單價折讓 (VOLUME_FOR_PRICE)
         if TradeoffType.VOLUME_FOR_PRICE in mandate.allowed_tradeoffs and mandate.max_allowed_moq > offer.moq:
             for q_candidate in [mandate.max_allowed_moq, int((offer.moq + mandate.max_allowed_moq) / 2)]:
-                discount_ratio = 0.08  # 工廠規模效應折讓 8%
+                # [修正] 舊版把 0.08 寫死在此處，與 CorporateMandate 的其他條款
+                # （lead_day_shadow_value、buyer_capital_cost_rate 等）都走可設定
+                # Field 的做法不一致，呼叫端無法覆寫。現改為 mandate 上的欄位。
+                discount_ratio = mandate.volume_discount_ratio
                 p_discounted = max(mandate.target_price, round(offer.price * (1 - discount_ratio), 2))
                 prop = cls._create_proposal(
                     name="批量拉升規模效應置換單價折讓 (Volume for Price Concession)",
@@ -402,10 +437,17 @@ class LogrollingEngine:
         unit_effective_saving = buyer_total_surplus / q
 
         # 2. 供應商剩餘估計 (貨幣化)
-        est_prod_cost = mandate.target_price * 0.82
+        # [修正] 下列三個常數舊版寫死於此，且未在任何文件中揭露其來源。
+        # 它們是**未經真實工廠成本單校準的選擇值**，現提升為 mandate 欄位以便覆寫，
+        # 並在 description 中標明其性質，避免被誤讀為量測值。
+        est_prod_cost = mandate.target_price * mandate.supplier_production_cost_ratio
         supplier_profit = (p - est_prod_cost) * q
         supplier_cash_gain = p * q * extra_deposit_pct * mandate.supplier_capital_relief_rate * (l / 365.0)
-        supplier_rush_cost = 0.08 * (max(0, mandate.baseline_lead_days - l) ** 1.25) * q
+        supplier_rush_cost = (
+            mandate.supplier_rush_cost_coefficient
+            * (max(0, mandate.baseline_lead_days - l) ** mandate.supplier_rush_cost_exponent)
+            * q
+        )
         supplier_mold_cost = (mandate.estimated_mold_fee * 0.5) if mold_exempt else 0.0
 
         supplier_total_surplus = supplier_profit + supplier_cash_gain - supplier_rush_cost - supplier_mold_cost

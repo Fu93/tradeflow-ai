@@ -25,14 +25,19 @@ from . import model
 
 
 def _get_xp(use_gpu: bool):
-    """取得陣列運算後端 (CuPy GPU 或 NumPy CPU)。"""
+    """取得陣列運算後端 (CuPy GPU 或 NumPy CPU)。
+
+    回傳 (xp, backend_name)。backend_name 反映**實際**使用的後端，而非請求的
+    後端：若請求 GPU 但 cupy 不可用，名稱必須回報 CPU，否則輸出會宣稱一個
+    從未發生的 GPU 執行。
+    """
     if use_gpu:
         try:
-            import cupy as cp
-            return cp
+            import cupy as cp  # noqa: F401
+            return cp, "GPU (CuPy/ROCm)"
         except Exception:
-            pass
-    return np
+            return np, "CPU (NumPy Vectorized; GPU requested but CuPy unavailable)"
+    return np, "CPU (NumPy Vectorized)"
 
 
 class MultiSupplierSolver:
@@ -151,7 +156,10 @@ class MultiSupplierSolver:
         多供應商張量並行 Rollout 求解。
 
         rollout 數 = K x n_opp_samples x N_open x N_sched（由建構參數決定）。
-        預設 (K=4, S=50,000, N_open=20, N_sched=6) 每輪為 9.6M。
+        [修正] 舊版此處寫「(K=4, S=50,000, N_open=20, N_sched=6) 每輪為 9.6M」，
+        但 9.6M 對應的是 S=20,000：4 x 20,000 x 20 x 6 = 9,600,000。
+        以 S=50,000 計則為 4 x 50,000 x 20 x 6 = 24,000,000（每輪）。
+        本方法的預設 `n_opp_samples=20,000` 才是 9.6M 的來源。
 
         輸入形狀:
           supplier_offers: (K,) 各家當前歸一化報價
@@ -163,7 +171,8 @@ class MultiSupplierSolver:
         if rng is None:
             rng = np.random.default_rng(20261013)
 
-        xp = _get_xp(self.use_gpu)
+        xp, backend_name = _get_xp(self.use_gpu)
+        self._backend_name = backend_name
 
         # 候選策略網格 (N_open=40, N_sched=12)
         opens, scheds = model.strategy_grid(n_open=self.n_open, n_sched=self.n_sched)
@@ -266,7 +275,7 @@ class MultiSupplierSolver:
         return {
             "total_rollouts": total_rollouts,
             "elapsed_seconds": round(dt, 4),
-            "backend": "GPU (CuPy/ROCm)" if self.use_gpu else "CPU (NumPy Vectorized)",
+            "backend": getattr(self, "_backend_name", "CPU (NumPy Vectorized)"),
             "k_suppliers": k,
             "best_offers": best_offers,
             "best_sched_curves": best_sched_curves,
@@ -390,7 +399,7 @@ class MultiAuctionSession:
             "success": True,
             "k_suppliers": self.k,
             "suppliers": self.suppliers,
-            "backend": "GPU (CuPy/ROCm)" if self.use_gpu else "CPU (NumPy Vectorized)",
+            "backend": getattr(self, "_backend_name", "CPU (NumPy Vectorized)"),
             "product_target": self.target_price,
             "walk_away_ceiling": self.walk_away_ceiling,
             "moq": self.moq,

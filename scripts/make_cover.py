@@ -51,7 +51,10 @@ def main():
         ("Breakdown Risk", "6.7% vs 28.4%", "#C44E52"),
         ("Margin Gain", "+¥1.95 / unit", "#55A868"),
         ("Measured Throughput", f"{peak_mps:.1f}M / sec", "#4C72B0"),
-        ("Deposit Ceiling", "AST ≤ 60%", "#ED1C24"),
+        # [修正] 舊版寫 "AST ≤ 60%"，但 60% 只是 bilingual.py 產生的 assert 後備值；
+        # 實際約束出價的授權上限是 CorporateMandate.max_allowed_deposit_pct = 50%。
+        # 標示 60% 會讓評審以為授權額度比實際寬鬆，故改為真正的授權值。
+        ("Deposit Ceiling", "Mandate ≤ 50%", "#ED1C24"),
     ]
     # 4 個 chip，總寬須落在 x=70..1210 之內 → chip 寬 265、間距 20（step 285 會溢出）
     chip_w, chip_gap, chip_x0 = 265, 20, 70

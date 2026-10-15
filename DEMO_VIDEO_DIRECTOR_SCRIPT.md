@@ -1,4 +1,4 @@
-﻿# TradeFlow AI — 3分30秒 Demo 影片全流程分鏡導演腳本
+# TradeFlow AI — 3分30秒 Demo 影片全流程分鏡導演腳本
 (Shot-by-Shot Director's Guide for Hackathon Video Recording)
 
 > **核心目標**：在 3 分 30 秒內，讓 AMD 與 Evolus 評審徹底看懂：**這不是一個聊天機器人，而是一間由 AI 驅動、只有一個人的跨境貿易公司** —— 供應商端的對話、核價與風控由系統完成，決策權保留在人類手上，並以 AST 語法樹硬護欄防禦資金風險。
@@ -71,11 +71,11 @@
 ### 【第五幕：AMD 戰略定位與有力收官】(3:00 - 3:30) — 結尾昇華
 * **畫面**：
   * [3:00 - 3:15] 切換至 PPT Slide 7 (AMD 統一 ROCm 工具鏈架構圖)。
-  * [3:15 - 3:30] 切換至 GitHub 倉庫與終端 101 項測試全綠畫面，最後定格在 Cover Image (1280×720)。
+  * [3:15 - 3:30] 切換至 GitHub 倉庫與終端 110 項測試全綠畫面，最後定格在 Cover Image (1280×720)。
 * **旁白 (Voiceover)**：
-  > *"Why AMD? Our deterministic decision core is CPU-first by design — delivering sub-millisecond Stage-1 responses on AMD Zen CPUs without wasteful GPU overhead.*  
+  > *"Why AMD? Our deterministic decision core is CPU-first by design — delivering sub-millisecond Stage-1 responses on x86-64 CPUs without wasteful GPU overhead.*  
   > *For semantic understanding, we call an open model served on AMD infrastructure through the hackathon's tokenfactory endpoint — verified live, at 2 to 13 seconds per reasoning call.*  
-  > *And through our `_xp()` tensor abstraction, the exact same solver code scales from AMD Zen CPUs to AMD Instinct GPUs via ROCm, with no refactoring.*  
+  > *And through our `_xp()` tensor abstraction, the same solver code would scale from x86-64 CPUs to AMD Instinct GPUs via ROCm — untested, because no ROCm device was available to us.*  
   > *TradeFlow AI: one person, running a cross-border trading company. Not a chatbot. Thank you."*
 
 ---

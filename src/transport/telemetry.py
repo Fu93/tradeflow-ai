@@ -88,7 +88,10 @@ class TelemetryNotifier:
             f"• 最終成交單價: ¥{final_price:.2f}\n"
             f"• 採購節省幅度: {savings_pct:.1%}\n"
             f"• 協商總輪數: {rounds} 輪\n"
-            f"• 執行狀態: 100% 無人值守自動談判完成！"
+            # [修正] 舊版此處寫「執行狀態: 100% 無人值守自動談判完成！」，
+            # 與本專案的核心定位直接矛盾（README 明載「系統不代發要約 ——
+            # AI 提議，人類定奪」）。成交是引擎判定的結果，締約仍由人確認。
+            f"• 執行狀態: 引擎已完成策略求解；締約與發送仍待人工確認。"
         )
         return self._dispatch_all(session_id, title, content, event_type="DEAL_CLOSED")
 

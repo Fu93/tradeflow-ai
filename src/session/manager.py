@@ -65,27 +65,35 @@ VALID_TRANSITIONS: Dict[AutopilotState, List[AutopilotState]] = {
         AutopilotState.AWAITING_HUMAN_DECISION,
     ],
     # v5 採購副駕駛 (Copilot) 狀態流轉
+    # [修正] 熔斷 (CIRCUIT_TRIPPED_ESCALATED) 是安全機制，必須能從**任何非終止
+    # 狀態**觸發。舊版未把它列入 COPILOT_MONITORING 的允許轉移，導致 copilot
+    # 模式下只要觸發熔斷就會拋 InvalidStateTransitionError 並讓 /round 回 HTTP 500
+    # —— 也就是說，安全機制在最需要它的路徑上直接崩潰。
     AutopilotState.COPILOT_MONITORING: [
         AutopilotState.DISCREPANCY_ALERT,
         AutopilotState.AWAITING_HUMAN_DECISION,
         AutopilotState.AUTOPILOT_CRUISING,
+        AutopilotState.CIRCUIT_TRIPPED_ESCALATED,
         AutopilotState.DEAL_CLOSED,
         AutopilotState.WALK_AWAY,
     ],
     AutopilotState.DISCREPANCY_ALERT: [
         AutopilotState.AWAITING_HUMAN_DECISION,
         AutopilotState.COPILOT_MONITORING,
+        AutopilotState.CIRCUIT_TRIPPED_ESCALATED,
         AutopilotState.WALK_AWAY,
     ],
     AutopilotState.AWAITING_HUMAN_DECISION: [
         AutopilotState.HUMAN_APPROVED_APPLIED,
         AutopilotState.COPILOT_MONITORING,
+        AutopilotState.CIRCUIT_TRIPPED_ESCALATED,
         AutopilotState.DEAL_CLOSED,
         AutopilotState.WALK_AWAY,
     ],
     AutopilotState.HUMAN_APPROVED_APPLIED: [
         AutopilotState.COPILOT_MONITORING,
         AutopilotState.AWAITING_HUMAN_DECISION,
+        AutopilotState.CIRCUIT_TRIPPED_ESCALATED,
         AutopilotState.DEAL_CLOSED,
         AutopilotState.WALK_AWAY,
     ],

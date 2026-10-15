@@ -85,10 +85,11 @@ def save_all(reserve_mean, reserve_std, trace, target_price=12.0,
 
 
 def plot_benchmark(rows_or_summary, save_path=None):
-    """Wow #2：CPU (vectorized) vs AMD MI300X solve time.
+    """Wow #2：CPU (vectorized, measured) vs AMD MI300X 資料搬運下界。
 
     rows_or_summary: list of dicts 或 benchmark.run() 產出的 summary dict。
-    縱軸 log，清楚顯示 GPU 把大規模 rollout 壓到即時互動級 (0.42s)。
+    縱軸 log。MI300X 柱子是**資料搬運下界**（working_set ÷ HBM3 頻寬），
+    是物理下限而非執行時間預測 —— 不是實測值，圖中也已明確標註。
     """
     if isinstance(rows_or_summary, dict) and "single_supplier_grid" in rows_or_summary:
         rows = rows_or_summary["single_supplier_grid"]
@@ -97,17 +98,25 @@ def plot_benchmark(rows_or_summary, save_path=None):
 
     samples = [r["samples"] for r in rows]
     cpu = [r.get("cpu_seconds", r.get("seconds", 0.0)) for r in rows]
-    gpu = [r.get("mi300x_seconds", r.get("mi300x_projected_seconds", 0.0)) for r in rows]
+    # [修正] 舊版讀取 `mi300x_seconds`，而那是「CPU 計算時間 ÷ 假加速比」的假實測值；
+    # 圖例也直接標註成“AMD Instinct MI300X (HBM3)”實測。現改讀誠實的資料搬運下界
+    # `mi300x_transfer_lower_bound_seconds`，並把圖例/欄位標註為「下界 (data-movement
+    # lower bound, non-runtime)」。
+    gpu = [
+        r.get("mi300x_transfer_lower_bound_seconds",
+             r.get("mi300x_seconds", r.get("mi300x_projected_seconds", 0.0)))
+        for r in rows
+    ]
     x = np.arange(len(samples))
     fig, ax = plt.subplots(figsize=(7, 4))
-    ax.bar(x - 0.2, cpu, 0.4, label="CPU (vectorized, SIMD)", color="#4C72B0")
-    ax.bar(x + 0.2, gpu, 0.4, label="AMD Instinct MI300X (HBM3)", color="#C44E52")
+    ax.bar(x - 0.2, cpu, 0.4, label="CPU (vectorized, measured)", color="#4C72B0")
+    ax.bar(x + 0.2, gpu, 0.4, label="AMD MI300X HBM3 transfer (analytical lower bound, non-runtime)", color="#C44E52")
     ax.set_yscale("log")
     ax.set_xticks(x)
     ax.set_xticklabels([f"{s:,}" for s in samples])
     ax.set_xlabel("Opponent samples (rollouts = samples × 480 strategies)")
     ax.set_ylabel("Seconds (log scale)")
-    ax.set_title("Solve time: CPU vs AMD Instinct MI300X")
+    ax.set_title("Solve time: CPU (measured) vs AMD MI300X HBM3 transfer bound (analytical)")
     for i in x:
         cpu_lbl = f"{cpu[i]:.2f}s" if cpu[i] >= 0.01 else f"{cpu[i]*1000:.1f}ms"
         gpu_lbl = f"{gpu[i]:.2f}s" if gpu[i] >= 0.01 else f"{gpu[i]*1000:.2f}ms"

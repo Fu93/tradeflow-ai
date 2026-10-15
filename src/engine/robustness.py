@@ -11,12 +11,30 @@ from . import model
 from .solver import solve
 
 
+def _baseline_at_own_best(res_b) -> tuple[float, float, int]:
+    """在固定讓步基準**自己的**最優開盤檔取 margin/break。
+
+    [修正] 舊版以 `bi, bj = len(opens) // 2, 0` 讀取基準，即固定取第 20 檔開盤，
+    但引擎那一邊是用 `res["best"]` 取**全網格最優**。兩邊的選取規則不一致，
+    使比較偏向引擎：實測基準 margin 從 index 0 的 0.2085 單調遞減到 index 39 的
+    負值，硬取 index 20 得 0.0933，據此報出的 gain (+0.1623) 是誠實值 (+0.0360)
+    的 4.5 倍。
+
+    公平做法：兩邊都取各自可達的最優。這會讓 gain 變小，但那才是真的。
+    """
+    flat = int(np.argmax(res_b["exp_margin"]))
+    bi, bj = np.unravel_index(flat, res_b["exp_margin"].shape)
+    return float(res_b["exp_margin"][bi, bj]), float(res_b["exp_break"][bi, bj]), int(bi)
+
+
 def fixed_baseline_margin(rng, n_samples: int = 20_000, fixed_conc: float = 0.05,
                           reserve_mean=1.08, reserve_std=0.10):
     """固定類人基準：每輪固定讓 fixed_conc（如 5%/輪），與我們引擎的同情境期望邊際比。
 
     回傳 (engine_margin, engine_break, baseline_margin, baseline_break, gain)。
     gain = engine_margin - baseline_margin（>0 表示引擎優於固定策略）。
+
+    兩邊皆取各自網格上的最優開盤檔（見 `_baseline_at_own_best` 的修正說明）。
     """
     # 引擎解（在 480 策略中選最優）
     res = solve(n_opp_samples=n_samples, rng=rng, reserve_mean=reserve_mean, reserve_std=reserve_std)
@@ -24,19 +42,21 @@ def fixed_baseline_margin(rng, n_samples: int = 20_000, fixed_conc: float = 0.05
     engine_margin = float(res["exp_margin"][i, j])
     engine_break = float(res["exp_break"][i, j])
 
-    # 固定基準：開盤取中間檔，讓步曲線全 fixed_conc（人類常見的「固定讓步」）
+    # 固定基準：讓步曲線全 fixed_conc（人類常見的「固定讓步」），
+    # 開盤檔由基準自己選最優，而非人為指定中間檔。
     opens, scheds = model.strategy_grid()
     scheds_b = np.full_like(scheds, fixed_conc)
     res_b = solve(n_opp_samples=n_samples, opens=opens, scheds=scheds_b,
                   rng=rng, reserve_mean=reserve_mean, reserve_std=reserve_std)
-    bi, bj = len(opens) // 2, 0
-    baseline_margin = float(res_b["exp_margin"][bi, bj])
-    baseline_break = float(res_b["exp_break"][bi, bj])
+    baseline_margin, baseline_break, _ = _baseline_at_own_best(res_b)
     return engine_margin, engine_break, baseline_margin, baseline_break, engine_margin - baseline_margin
 
 
 def multi_baseline(rng, n_samples: int = 20_000, reserve_mean=1.08, reserve_std=0.10):
-    """多個類人基準對比（不同固定讓步率），回傳 [ {name,margin,break,gain}, ... ]。"""
+    """多個類人基準對比（不同固定讓步率），回傳 [ {name,margin,break,gain}, ... ]。
+
+    每個基準都取自己的最優開盤檔，與引擎的最優選取規則一致。
+    """
     res = solve(n_opp_samples=n_samples, rng=rng, reserve_mean=reserve_mean, reserve_std=reserve_std)
     i, j = res["best"]
     em = float(res["exp_margin"][i, j]); eb = float(res["exp_break"][i, j])
@@ -46,8 +66,7 @@ def multi_baseline(rng, n_samples: int = 20_000, reserve_mean=1.08, reserve_std=
         sb = np.full_like(scheds, conc)
         rb = solve(n_opp_samples=n_samples, opens=opens, scheds=sb, rng=rng,
                    reserve_mean=reserve_mean, reserve_std=reserve_std)
-        bi, bj = len(opens) // 2, 0
-        bm = float(rb["exp_margin"][bi, bj]); bb = float(rb["exp_break"][bi, bj])
+        bm, bb, _ = _baseline_at_own_best(rb)
         out.append({"name": f"fixed {conc*100:.0f}%/rd", "margin": bm, "break": bb,
                     "gain": em - bm})
     out.insert(0, {"name": "TradeFlow engine", "margin": em, "break": eb, "gain": 0.0})

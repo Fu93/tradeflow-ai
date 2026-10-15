@@ -112,11 +112,12 @@ def _write_env_config(updates: Dict[str, str]) -> None:
 
 
 _TELEMETRY_FIELDS = [
-    "CALLMEBOT_PHONE", "CALLMEBOT_API_KEY",
-    "PUSHPLUS_TOKEN",
+    # [修正] 舊版列出 CALLMEBOT_*/PUSHPLUS_*/SMTP_* 等 key，但
+    # TelemetryNotifier.__init__ 實際只接受這三個通道的參數。沿用真實通道 key，
+    # 避免「存了卻從未生效」的假配置。
+    "WHATSAPP_PHONE", "WHATSAPP_APIKEY",
+    "SERVERCHAN_SENDKEY",
     "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-    "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_TO",
-    "WECHAT_PUSHPLUS_TOKEN",
 ]
 
 
@@ -142,17 +143,15 @@ async def update_telemetry_config(request: Request):
         from src.transport.telemetry import TelemetryNotifier  # type: ignore
         import src.app.main as _main  # type: ignore
         cfg = _read_env_config()
+        # [修正] 舊版傳了 notifier 不認識的參數（callmebot_phone/pushplus_token/
+        # smtp_*），被 except Exception 吞掉 -> hot_reload 永遠 false，且配置從未生效。
+        # 現在只傳 TelemetryNotifier.__init__ 真正接受的通道參數。
         _main.notifier.__init__(  # type: ignore
-            callmebot_phone=cfg.get("CALLMEBOT_PHONE", ""),
-            callmebot_api_key=cfg.get("CALLMEBOT_API_KEY", ""),
-            pushplus_token=cfg.get("PUSHPLUS_TOKEN", ""),
-            telegram_bot_token=cfg.get("TELEGRAM_BOT_TOKEN", ""),
-            telegram_chat_id=cfg.get("TELEGRAM_CHAT_ID", ""),
-            smtp_host=cfg.get("SMTP_HOST", ""),
-            smtp_port=int(cfg.get("SMTP_PORT", "587")),
-            smtp_user=cfg.get("SMTP_USER", ""),
-            smtp_password=cfg.get("SMTP_PASSWORD", ""),
-            smtp_to=cfg.get("SMTP_TO", ""),
+            whatsapp_phone=cfg.get("WHATSAPP_PHONE") or None,
+            whatsapp_apikey=cfg.get("WHATSAPP_APIKEY") or None,
+            wechat_sendkey=cfg.get("SERVERCHAN_SENDKEY") or None,
+            telegram_token=cfg.get("TELEGRAM_BOT_TOKEN") or None,
+            telegram_chat_id=cfg.get("TELEGRAM_CHAT_ID") or None,
         )
         hot_reload = True
     except Exception as exc:
