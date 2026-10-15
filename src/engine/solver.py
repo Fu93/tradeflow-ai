@@ -4,8 +4,12 @@
 （陣列型別抽在 _xp()），其餘邏輯不變；對手樣本 × 策略族全部批量計算。
 
 每輪談判要「供應商回價 → 更新信念 → 在對手樣本×策略族上重解」，
-這就是需要 GPU 的工作：960 萬次 rollout 在 CPU 約 1 秒、純 loop 約 46 秒、
-MI300X 批量預期 ~0.4 秒。
+這就是需要 GPU 的工作：960 萬次 rollout 在 CPU 約 1 秒、純 loop 約 46 秒。
+
+[誠實揭露] 舊版此處寫「MI300X 批量預期 ~0.4 秒」。本專案**未在任何 AMD
+硬體上執行過**（開發機為 Intel Core Ultra 7 355，無獨立 GPU），因此
+0.4 秒不是實測值、也不是可信的效能預測；實際「上 GPU」後的執行時間仍是
+未知數。MI300X 的唯一量化指標見 benchmark.py 的 roofline 資料搬運下界。
 """
 from __future__ import annotations
 import numpy as np
@@ -63,6 +67,14 @@ def solve(
     blf = bluff[:, None, None]
     cr = conc[:, None, None]
 
+    # [誠實揭露] 下列 payoff / 對手讓步常數為編譯時固定之啟發式值，非經資料
+    # 擬合/訓練調出：
+    #   - 0.45  : 對手每輪吃掉的剩餘差距比例（bluff 越高吃越少）；
+    #   - 0.02  : 成交容差閾值（差距 ≤ 2% 視為成交）；
+    #   - 0.05  : p_deal 的指數衰減尺度（差距每多 5% 成交機率 e^-1）；
+    #   - 0.32  : 首輪差距超過此值判定「開盤過高」；
+    #   - 0.20/0.30*blf : 開盤過高時的破局額外懲罰（bluff 加重）；
+    #   - 0.10  : 破局懲罰權重（payoff 中扣 0.10）。
     gap = xp.abs(res - op)
     gap = xp.broadcast_to(gap, (n_opp_samples, len(opens), len(scheds))).astype(xp.float64)
     paid = op.copy()
@@ -81,6 +93,7 @@ def solve(
     p_break = xp.clip(
         1.0 - p_deal + (first_gap > 0.32) * (0.20 + 0.30 * blf), 0.0, 1.0
     )
+    # payoff 常數：成交時拿 (你的 ceiling − 已付總價)，破局扣 0.10（見上方揭露）。
     payoff = p_deal * (model.YOUR_CEILING - paid) - p_break * 0.10
     exp_margin = payoff.mean(axis=0)
     exp_break = p_break.mean(axis=0)
@@ -106,8 +119,7 @@ def bayes_update(
     prior_reserve_mean: float,
     prior_reserve_std: float,
     observed_offer: float,
-    lr: float = 0.3,
-    huber_delta: float = 0.30,
+    estimated_markup: float | None = None,
 ) -> tuple[float, float]:
     """雙模態高斯-均勻混合似然貝氏推斷 (Delegated to Bayesian v2 Engine).
 
@@ -115,12 +127,22 @@ def bayes_update(
     1. 生成模型：將正常報價歸入加成常態分佈，將極端試探性開價歸入區間均勻分佈；
     2. 責任度權重 (w_t)：惡意漫天要價使 w_t -> 0，均值不被拉飛；
     3. 矩匹配 (Moment Matching)：在無效噪聲下方差嚴格守恆，不產生虛假高置信度。
+
+    [修正/誠實揭露] 舊版帶有從未使用的死參數 `lr` 與 `huber_delta`
+    （所有呼叫端都只靠預設值，函數本體也完全沒用到）——會誤導讀者以為
+    更新步驟可調節。已刪除；實際更新演算法見 bayesian_v2.py。
+    另補上 `estimated_markup` 透傳，使下游可覆寫 bayesian_v2 的預設加成率
+    （舊版這條路徑完全無法覆寫，只能吃 0.08 硬編值）。
     """
     from .bayesian_v2 import robust_bayes_update
+    kwargs = {}
+    if estimated_markup is not None:
+        kwargs["estimated_markup"] = estimated_markup
     state = robust_bayes_update(
         prior_mean=prior_reserve_mean,
         prior_std=prior_reserve_std,
         observed_offer=observed_offer,
+        **kwargs,
     )
     return float(state.posterior_mean), float(state.posterior_std)
 
@@ -131,6 +153,11 @@ def compute_belief_confidence(prior_std: float, post_std: float, post_mean: floa
     基於後驗變異係數 (CV = post_std / post_mean) 與相對先驗方差縮減率 (Variance Reduction Ratio)：
     CV 越小，說明後驗分佈越集中；方差縮減越明顯，說明觀測提供的信息增益越高。
     映射至 [0.50, 0.98] 區間，徹底替換無量綱的 1.0 - post_std 錯誤公式。
+
+    [誠實揭露] 此映射為啟發式調校公式，係數 0.75 / 0.35 / 0.80 為編譯時固定常數，
+    非來自資料擬合或訓練：raw = 0.75 + 0.35·variance_reduction − 0.80·CV，
+    輸出 clip 至 [0.50, 0.98]。請勿把它誤讀成統計置信區間或模型校準度；
+    它是供 UI 呈現的相對收斂度指標。
     """
     if post_mean <= 0 or post_std <= 0:
         return 0.50
@@ -140,10 +167,17 @@ def compute_belief_confidence(prior_std: float, post_std: float, post_mean: floa
     return round(float(np.clip(raw_conf, 0.50, 0.98)), 3)
 
 
-def recommend(solve_result, target_price=12.0):
-    """把歸一化結果轉成可讀建議。"""
+def recommend(solve_result, target_price=12.0, opens=None, scheds=None):
+    """把歸一化結果轉成可讀建議。
+
+    [修正] 舊版在 `solve()` 接受自訂 opens/scheds 時，`recommend()` 卻只
+    重新呼叫 `model.strategy_grid()` 的**預設**網格來反查索引 —— 若呼叫端
+    傳了自訂網格，best 索引會對到錯誤的數值。
+    現在 recommend() 接受並沿用 solve() 使用的同一份 opens/scheds。
+    """
     i_open, i_sched = solve_result["best"]
-    opens, scheds = model.strategy_grid()
+    if opens is None or scheds is None:
+        opens, scheds = model.strategy_grid()
     return {
         "opening_offer_norm": float(opens[i_open]),
         "opening_offer_price": float(opens[i_open] * target_price),

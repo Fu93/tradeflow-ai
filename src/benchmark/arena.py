@@ -159,7 +159,8 @@ class AdversarialArena:
         seed: int = 20261013,
     ) -> Dict[str, Dict[str, Dict[str, float]]]:
         """
-        執行多輪錦標賽（涵蓋 TradeFlow Engine、Vanilla LLM Agent 與 Fixed 5%/rd Baseline）。
+        執行多輪錦標賽（涵蓋 TradeFlow Engine、Panic-Heuristic Buyer Proxy
+        （參數化，非 LLM）與 Fixed 5%/rd Baseline）。
         回傳結構化對抗勝率、節省率與預算邊界違背率。
         """
         rng = np.random.default_rng(seed)

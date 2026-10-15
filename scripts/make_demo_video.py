@@ -142,7 +142,9 @@ def frames_cpu(bench):
     title_bar(bg, "Wow #2 — 9.6M rollouts: CPU (measured) vs MI300X roofline bound", BLUE)
     row = next((b for b in grid if b["samples"] == 20000), grid[-1])
     cpu = row["cpu_seconds"]
-    mi = row["mi300x_seconds"]
+    # [審計修正] 新版 benchmark schema 不輸出 `mi300x_seconds`（那是「CPU ÷ 假加速比」
+    # 的假實測值）。現在直接讀誠實的 roofline 資料搬運下界欄位。
+    mi = row.get("mi300x_transfer_lower_bound_seconds", 0.0)
     mode = row.get("execution_mode", "")
     ax = inset_axes(fig, (0.55, 0.30, 0.41, 0.45))
     ax.barh([0.65], [cpu], height=0.20, color="#C44E52")

@@ -160,42 +160,11 @@
   // ---------------------------------------------------------------------------
   // 5. Multi-Platform Chat Bubble and Input Selectors
   // ---------------------------------------------------------------------------
-  const PLATFORMS = {
-    c1688: {
-      messageBubbles: ".im-message-item, .chat-msg-received, .msg-bubble, .message-receive",
-      inputField: ".chat-box textarea, .im-input-area textarea, #chatInput",
-      sendButton: ".im-send-btn, .btn-primary, #sendBtn",
-    },
-    alibaba: {
-      messageBubbles: ".im-msg-item, .chat-message-item, .message-bubble, .chat-item-receive",
-      inputField: ".chat-input textarea, textarea[placeholder*='message'], #chatInput",
-      sendButton: ".chat-send-btn, button[type='submit'], .btn-send",
-    },
-    globalsources: {
-      messageBubbles: ".msg-item-left, .chat-history-item-left, .receiver-msg",
-      inputField: ".chat-input-textarea, textarea.msg-textarea",
-      sendButton: ".btn-msg-send, button.send-btn",
-    },
-    made_in_china: {
-      messageBubbles: ".chat-list-left, .receive-bubble, .msg-content-left",
-      inputField: ".input-content textarea, textarea#msgInput",
-      sendButton: ".btn-send-msg, button#sendBtn",
-    },
-    whatsapp: {
-      messageBubbles: ".message-in, div[data-pre-plain-text]",
-      inputField: "footer div[contenteditable='true']",
-      sendButton: "button[data-testid='compose-btn-send'], span[data-icon='send']",
-    },
-    generic: {
-      messageBubbles: ".msg-received, .inbound-message, [data-role='seller'], .incoming, .chat-left, .message-left",
-      inputField: "textarea, input[type='text'], div[contenteditable='true']",
-      sendButton: "button[type='submit'], .send-button, #sendBtn, .btn-send",
-    },
-  };
-
-  // 注意：本擴充套件為 Copilot 模式，**刻意不提供**任何自動填入聊天框或自動點擊送出的能力。
-  // 相關的 findChatInput() / findSendButton() 已移除，以避免留下可被誤用的自動締約路徑。
-  // 採購員透過決策卡的「複製」按鈕取得草稿，自行貼上並手動發送。
+  // [修正/誠實揭露] 舊版在此定義了一個 `PLATFORMS` 查詢表（c1688/alibaba/
+  // globalsources/made_in_china/whatsapp/generic 的 DOM selector），但它**從未被
+  // 任何程式碼引用** —— 是死碼。本擴充為 Copilot 模式，**刻意不提供**任何自動
+  // 填入聊天框或自動點擊發送的能力；相關的 findChatInput() / findSendButton()
+  // 早已移除。死碼已刪除，僅保留對選擇器的說明供偵測入口使用。
 
   function extractPriceFromText(text) {
     if (!text) return null;
@@ -462,17 +431,25 @@
       const deck = this.shadowRoot.getElementById("tf-deck");
       if (!deck) return;
 
-      const winProb = Math.round((data.bayesian_belief_state?.deal_probability || 0.68) * 100);
+      // [修正/誠實揭露] 舊版 `data.bayesian_belief_state?.deal_probability || 0.68`
+      // 在後端沒給成交機率時仍顯示「68%」，是捏造的數字。改為：只有後端真實提供
+      // deal_probability 才顯示百分比，否則顯示「—」。
+      const dealProb = data.bayesian_belief_state?.deal_probability;
+      const winProb = dealProb != null ? Math.round(dealProb * 100) : null;
 
       const card1 = `【採購預算核定施壓 (推薦)】感謝報價。我方本期專案採購核定單價為 ¥${counterOffer}，現款現結走官方系統，若可配合將可立即簽核首批 PO。`;
-      const card2 = `【商業條款置換】若能保證 15 天交期且免除模具開機費，我方首批定金可提升至 35%，意向單價為 ¥${counterOffer}。`;
-      const card3 = `【備選供應商威懾】同規格備選廠出廠價在 ¥${(counterOffer * 0.98).toFixed(2)} 附近，若無法貼近我們將啟動第二供應商排產。`;
+      // [修正] 舊版硬寫「保證 15 天交期」「定金提升至 35%」，這些 15/35 是
+      // 未經驗證的編造條款，不該由前端虛構。改為不含捏造數字的通用表述。
+      const card2 = `【商業條款置換】若能就交期與模具開機費作出改善承諾，我方可就首批定金比例作出相應提升，意向價維持 ¥${counterOffer}。`;
+      // [修正] 舊版「* 0.98 給出備選廠出廠價」是捏造的競爭報價，前端沒有可靠來源。
+      // 改為只表明存在備選供應商、不宣稱其具體價格。
+      const card3 = `【備選供應商威懾】同規格的備選供應商已納入評估，若能就條件貼近我方要求，將有利於鎖定首批排產；具體價差請以多方比價結果為準。`;
 
       deck.style.display = "block";
       deck.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid #1e293b; padding-bottom: 8px; margin-bottom: 10px;">
           <span style="font-weight:700; color:#38bdf8; display:inline-flex; align-items:center;">${TF_SVG.radar}採購決策副駕駛 (Copilot Decision Deck)</span>
-          <span style="font-size:10px; background:#1e293b; color:#94a3b8; padding:2px 6px; border-radius:4px;">WIN PROB: ${winProb}%</span>
+          <span style="font-size:10px; background:#1e293b; color:#94a3b8; padding:2px 6px; border-radius:4px;">WIN PROB: ${winProb == null ? "—" : winProb + "%"}</span>
         </div>
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; background: #1e293b; padding: 8px; border-radius: 8px;">
           <div>供應商報價: <b style="color:#f59e0b;">¥${parseFloat(offer).toFixed(2)}</b></div>
@@ -751,8 +728,19 @@
       const data = msg.data;
       if (!data) return;
 
-      const offer = data.turn?.supplier_offer || 15.0;
-      const counterOffer = data.recommended_offer_price || data.turn?.buyer_counter_offer || (offer * 0.95).toFixed(2);
+      // [修正/誠實揭露] 舊版用 `|| 15.0` 與 `* 0.95` 捏造缺失的報價/建議價。
+      // 後端並未保證每次 SESSION_UPDATED 都帶 supplier_offer / counter-offer；
+      // 當缺值時就不該硬湊一個數字。改為依賴後端真實欄位；缺則回傳、不渲染假卡片。
+      const offer = data.turn?.supplier_offer;
+      const counterOffer =
+        data.recommended_offer_price ?? data.turn?.buyer_counter_offer;
+      if (offer == null || counterOffer == null) {
+        console.warn(
+          "[TradeFlow Copilot] SESSION_UPDATED missing supplier_offer/recommended_offer_price "
+          + `(offer=${offer}, counter=${counterOffer}) — skipping deck to avoid fabricated figures.`
+        );
+        return;
+      }
 
       // Check Circuit Breaker
       if (data.session?.state === "CIRCUIT_TRIPPED_ESCALATED" || data.turn?.breakdown_risk >= 0.15) {
@@ -760,7 +748,8 @@
         overlayEl.updateStatus(
           "CIRCUIT TRIPPED",
           "#ef4444",
-          `Breakdown risk ${((data.turn?.breakdown_risk || 0.15) * 100).toFixed(1)}% ≥ 15%. Telemetry alert sent!`
+          // [修正] 舊版 `|| 0.15` 在無風險值時也顯示 15.0%——改為只顯示後端有給的值。
+          `Breakdown risk ${data.turn?.breakdown_risk != null ? (data.turn.breakdown_risk * 100).toFixed(1) : "—"}% ≥ 15%. Telemetry alert sent!`
         );
         return;
       }

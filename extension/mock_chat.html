@@ -118,9 +118,12 @@
 </head>
 <body>
   <div class="chat-container">
+    <div style="background:#b45309; color:#fff; font-size:11px; padding:5px 12px; text-align:center;">
+      模擬測試資料（非真實供應商 / 非真實報價）— Mock Sandbox，僅供擴充元件開發測試
+    </div>
     <div class="chat-header">
       <div>
-        <div class="supplier-name">浙江頂尖雨具製造實業有限公司 (1688 認證金牌廠商)</div>
+        <div class="supplier-name">浙江頂尖雨具製造實業有限公司 (1688 認證金牌廠商) —【假設性測試對象】</div>
         <div class="supplier-status">● 線上洽談中 (MOQ 10,000 件)</div>
       </div>
       <div style="display: flex; gap: 6px; flex-wrap: wrap;">
@@ -191,6 +194,9 @@
 
     const simStagnantBtn = document.getElementById("btn-sim-stagnant");
 
+    // [誠實揭露] 這是模擬沙盒的**刻意測試資料**：本頁不呼叫任何後端，quoteSequence
+    // 用來在測試中回放一組降價報價，驗證擴充的偵測/決策卡流程。它不是即時市場報價，
+    // 也不代表任何真實供應商的出價（頁首已標示「非真實供應商 / 非真實報價」）。
     let quoteSequence = [14.80, 14.10, 13.50, 13.00, 12.60];
     let quoteIdx = 0;
 

@@ -31,6 +31,10 @@ class RobustBayesianInferenceEngine:
         domain_min: float = 0.80,          # 合理價格域下界 L_min
         domain_max: float = 2.50,          # 合理價格域上界 L_max
     ):
+        """[誠實揭露] 下列為編譯時固定的啟發式常數，非資料擬合：
+        obs_noise_std=0.06、prior_clean_prob=0.85、域 [0.80, 2.50]。
+        全域單例 _default_engine 以這些預設建立，但 update() 逐次接受
+        estimated_markup，可依需求覆寫。」"""
         self.obs_noise_std = obs_noise_std
         self.prior_clean_prob = prior_clean_prob
         self.domain_min = domain_min

@@ -15,7 +15,12 @@
    `simulate_reverse_auction()` 預設執行 3 輪 -> 累計約 28.8M rollouts（實測值）。
    若將 S 提升至 50,000，每輪為 24M；最大策略網格 (n_open=40, n_sched=12) 搭配
    S=50,000 時為 96M rollouts，但**示範路徑並未使用該網格**，故對外引用實測值。
-   支援 AMD ROCm/CuPy 顯存加速，並提供 NumPy CPU 高速向量化無縫降級。
+
+[硬體誠實揭露] 舊版此處寫「支援 AMD ROCm/CuPy 顯存加速」。本專案**從未在
+AMD 硬體上執行過**（開發機為 Intel Core Ultra 7 355，無獨立 GPU、無 ROCm）。
+此層的 `_get_xp(use_gpu=True)` 之「CuPy/ROCm 分支」是**未經實際驗證的**
+潛在路徑；實際執行一律回落至 NumPy CPU。對外所有效能數字皆為 CPU 實測，
+MI300X 的唯一量化是 benchmark.py 的 roofline 資料搬運下界。
 """
 from __future__ import annotations
 import time
@@ -127,8 +132,12 @@ class MultiSupplierSolver:
         """
         將供應商劃分為三大博弈戰術類別：
         - LEAN_IN: 首選深化 (全場最優且底價樂觀)
-        - SIDELINE: 牽制邊緣化 (報價偏高 > 1.2x 或強硬詐唬)
+        - SIDELINE: 牽制邊緣化 (報價偏高 > 1.12x 或強硬詐唬)
         - CROSS_ANCHOR: 交叉錨點 (中間價位，施加市場競爭壓力)
+
+        [誠實揭露] 舊版此處 docstring 寫「> 1.2x」，但程式實際用的是 **1.12**×
+        （`off > 1.12 * min_offer`）。係數 1.12 為固定啟發式常數（非資料擬合），
+        已把描述改正以與行為一致。
         """
         k = len(supplier_offers)
         if k == 0:
@@ -332,6 +341,11 @@ class MultiAuctionSession:
             walk_away_ceiling=self.walk_away_ceiling / self.target_price,
         )
 
+        # [誠實揭露] 這些是先驗常數（固定 1.08 / 0.10），非基地台資料：
+        # 第 1 輪 counter-offer 完全由此前見決定、**與第 1 輪來源報價無關**
+        # （輸入不變）；第 2 輪起才以 cross-anchoring 吃進各家報價。若需
+        # 第 1 輪即反映報價，應在建立 session 時把 prior_means 設成首輪
+        # 報價的函數 —— 目前 demo 路徑未這樣做。
         self.prior_means = np.full(self.k, 1.08, dtype=np.float32)
         self.prior_stds = np.full(self.k, 0.10, dtype=np.float32)
 
@@ -428,11 +442,17 @@ def simulate_reverse_auction(
     """
     多供應商逆向拍賣動態引擎。
 
-    徹底杜絕硬編碼報價數組：
+    誠實揭露：
     1. 自定義動態注入：外部傳入真實輪次報價 (`rounds_quotes`) 時，由 MultiAuctionSession 逐輪求解。
     2. 動態多 Agent 自博弈 (預設)：未傳入報價時，自動調用非 LLM 策略對抗 Agent
-       (Conceder, TitForTat, HardBargainer, Bluffing) 在每一輪根據買方出價「即時動態計算反饋出價」，
-       所有數字皆為運行時由數學模型生成，無任何預設數字數組。
+       (Conceder, TitForTat, HardBargainer, Bluffing) 在每一輪根據買方出價「即時動態計算反饋出價」。
+       供應商報價**確實**是運行時由對抗原型生成，無預設報價數組。
+       [誠實化] 但下列仍為編譯時固定常數，非資料：
+       - 買方第 1 輪自家報價基準 1.05（`b_offer or 1.05`）；
+       - 每個對抗原型之 init_price / reserve_price（下方字面值）；
+       - MultiAuctionSession 的前見 prior_means=1.08 / prior_stds=0.10，
+         使「第 1 輪 counter-offer」對首輪報價輸入不變（第 2 輪起才吃進報價）。
+       因此不能宣稱「所有數字皆運行時生成且零常數」。
     """
     if suppliers is None:
         suppliers = [

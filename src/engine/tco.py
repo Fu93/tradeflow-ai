@@ -117,7 +117,20 @@ class TCOEngine:
         offered_moq: Optional[int] = None,
         wacc: float = 0.08,
     ) -> Dict[str, Any]:
-        """計算非價格條款之非線性影子成本 (Shadow Cost)。"""
+        """計算非價格條款之非線性影子成本 (Shadow Cost)。
+
+        [誠實揭露] 下列為編譯時固定之啟發式 / 產業經驗常數，非資料擬合，
+        未經實證校準：
+        - 5：交期延遲的安全緩衝天數（超過才課罰）；
+        - 0.015 / 指數 1.75 / 除數 10：缺貨風險的超線性階梯懲罰曲線（超過
+          緩衝後以 ((delay-5)/10)^1.75 放大 1.5% 基價）；
+        - 90 / 365：庫存週轉視為平均 90 天；
+        - 0.08 / 1.2：滯銷降價風險（1 − exp(−1.2·excess_ratio) 之飽和收益，
+          基於 8% base 風險率）；
+        - 1.05：`is_unfavorable` 觸發閾值（等效價 > 原始價 1.05x 判定不利）。
+        若需不同情境，應以 TradeTermsSpec / 函數參數覆寫這些值，本方法目前
+        直接使用字面常數。
+        """
         lead_penalty = 0.0
         lead_breakdown = {"capital_cost": 0.0, "stockout_risk_cost": 0.0}
         if offered_lead_days is not None and offered_lead_days > baseline_lead_days:
@@ -125,7 +138,7 @@ class TCOEngine:
             # 資金佔用折算
             cap_cost = raw_price * (wacc * (delay / 365.0))
             crisis_cost = 0.0
-            # 5 天安全緩衝區之外，超線性懲罰 (階梯指數 1.75)
+            # 5 天安全緩衝區之外，超線性懲罰 (階梯指數 1.75) — 常數見上方揭露
             if delay > 5:
                 crisis_cost = raw_price * 0.015 * math.pow((delay - 5) / 10.0, 1.75)
             lead_penalty = cap_cost + crisis_cost
@@ -138,9 +151,9 @@ class TCOEngine:
         moq_breakdown = {"holding_cost": 0.0, "markdown_risk_cost": 0.0}
         if offered_moq is not None and offered_moq > baseline_moq:
             excess_ratio = (offered_moq - baseline_moq) / float(baseline_moq)
-            # 庫存持有資金佔用 (以平均 90 天滯銷週轉計)
+            # 庫存持有資金佔用 (以平均 90 天滯銷週轉計) — 常數見上方揭露
             holding_cost = raw_price * excess_ratio * (wacc * (90.0 / 365.0))
-            # 滯銷降價非線性飽和風險: 1 - exp(-1.2 * excess_ratio)
+            # 滯銷降價非線性飽和風險: 1 - exp(-1.2 * excess_ratio) — 常數見上方揭露
             markdown_risk = raw_price * excess_ratio * 0.08 * (1.0 - math.exp(-1.2 * excess_ratio))
             moq_penalty = holding_cost + markdown_risk
             moq_breakdown = {

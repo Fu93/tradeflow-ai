@@ -100,15 +100,19 @@
     </div>
     <div class="telemetry-channel">
       <span>WhatsApp (CallMeBot)</span>
-      <span class="channel-status" id="status-whatsapp">ONLINE</span>
+      <span class="channel-status" id="status-whatsapp">UNVERIFIED</span>
     </div>
     <div class="telemetry-channel">
       <span>WeChat (Server醬 / PushPlus)</span>
-      <span class="channel-status" id="status-wechat">ONLINE</span>
+      <span class="channel-status" id="status-wechat">UNVERIFIED</span>
     </div>
     <div class="telemetry-channel">
       <span>Telegram Bot Webhook</span>
       <span class="channel-status" id="status-telegram">STANDBY</span>
+    </div>
+    <div style="margin-top: 8px; font-size: 10px; color: var(--text-muted); line-height: 1.4;">
+      [誠實揭露] 此面板不會向 WhatsApp/WeChat/Telegram 發送心跳，無法隨時確認通道
+      在線；通道狀態皆為設定態標籤（起始為 UNVERIFIED / STANDBY），不代表已驗證可送達。
     </div>
     <div style="margin-top: 10px; font-size: 11px; color: var(--text-muted);">
       Last Mobile Signal: <strong id="val-last-signal" style="color: var(--text-main);">None</strong>

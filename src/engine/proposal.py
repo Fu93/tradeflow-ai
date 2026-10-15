@@ -16,13 +16,27 @@ def build_proposal(spec: dict, observed_offer: float | None = None):
     post_std = spec.get("prior_reserve_std", 0.10)
     if observed_offer is not None:
         post_mean, post_std = solver.bayes_update(post_mean, post_std, observed_offer)
+
+    tp = spec.get("target_price", 12.0)
+    # [修正/誠實揭露] 舊版把讓步軌跡的上限硬寫為 model.YOUR_CEILING (=規格目標
+    # 價的 1.35 倍)，完全忽略 spec 可能傳入的 walk_away_ceiling —— 若呼叫端把
+    # ceiling 設成別的值（例如 1.20 倍），proposal 仍會一路讓到 1.35 倍而破框。
+    # 現在沿用 spec 的 walk_away_ceiling 並歸一化為 target_price 的倍數；缺省時
+    # 才退回 model.YOUR_CEILING。求解器本身不感知 walk_away_ceiling，其固定的
+    # ceiling 常數揭露見 model.YOUR_CEILING —— proposal 這層是唯一能尊重該框的位置。
+    ceiling_mult = spec.get("walk_away_ceiling")
+    if ceiling_mult is not None and tp > 0:
+        ceiling_mult = ceiling_mult / tp
+    else:
+        ceiling_mult = model.YOUR_CEILING
+    ceiling_mult = max(ceiling_mult, 1.0)
+
     res = solver.solve(
         n_opp_samples=spec.get("n_samples", 20000),
         lambda_break=spec.get("lambda_break", 1.0),
         reserve_mean=post_mean, reserve_std=post_std,
     )
-    rec = solver.recommend(res, target_price=spec.get("target_price", 12.0))
-    tp = spec.get("target_price", 12.0)
+    rec = solver.recommend(res, target_price=tp)
     open_norm = rec["opening_offer_norm"]
     curve = rec["concession_curve"]
 
@@ -30,21 +44,22 @@ def build_proposal(spec: dict, observed_offer: float | None = None):
     offers = [open_norm]
     cur = open_norm
     for c in curve:
-        cur = cur + c * (model.YOUR_CEILING - open_norm)  # 朝上限方向讓（漲價=讓步）
+        cur = cur + c * (ceiling_mult - open_norm)  # 朝上限方向讓（漲價=讓步）
         # 注意：對採購方，「讓步」= 提高出價；朝 ceiling 收斂
-        offers.append(min(cur, model.YOUR_CEILING))
+        offers.append(min(cur, ceiling_mult))
     offers_px = [round(o * tp, 2) for o in offers]
 
     risk = "APPROVE" if rec["breakdown_prob"] < 0.15 else "HUMAN_REVIEW"
     text = (
         f"Recommended opening ¥{offers_px[0]:.2f} (target ¥{tp:.2f}, walk-away ceiling "
-        f"¥{model.YOUR_CEILING*tp:.2f}). Concede {curve[0]*100:.0f}% per round per the schedule. "
+        f"¥{ceiling_mult*tp:.2f}). Concede {curve[0]*100:.0f}% per round per the schedule. "
         f"Expected margin ¥{rec['expected_margin_price']:.2f}/unit, breakdown risk "
         f"{rec['breakdown_prob']:.1%}. Decision: {risk}."
     )
     return {
         "opening_offer_price": offers_px[0],
         "round_by_round_prices": offers_px,        # 含開盤共 ROUNDS+1 格
+        "ceiling_ref_multiple": round(float(ceiling_mult), 3),
         "concession_curve": [round(float(c), 3) for c in curve],
         "expected_margin_price": round(rec["expected_margin_price"], 2),
         "breakdown_prob": round(float(rec["breakdown_prob"]), 4),
