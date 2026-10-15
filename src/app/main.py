@@ -12,7 +12,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from ..engine import (
     solve,
@@ -295,6 +295,14 @@ def execute_session_command(session_id: str, body: SessionCommandBody):
 # ---- v4 會話管理 REST APIs ----
 
 class RoundActionRequest(BaseModel):
+    # Reject unknown fields. Without this, a misspelled key (e.g. sending
+    # `supplier_message` instead of `supplier_text`) was silently dropped by
+    # Pydantic, the round ran with empty inbound text, and the API returned
+    # HTTP 200 with a plausible-but-wrong NORMAL_COUNTER_OFFER decision instead
+    # of an error. Silent fallback to a default decision is the dangerous case:
+    # the caller cannot tell a real analysis from a no-input analysis.
+    model_config = ConfigDict(extra="forbid")
+
     opponent_raw_text: Optional[str] = None
     supplier_text: Optional[str] = None
     opponent_offer_price: Optional[float] = None
@@ -319,6 +327,10 @@ class RoundActionRequest(BaseModel):
 
 
 class ApproveActionRequest(BaseModel):
+    # See RoundActionRequest: a misspelled field must fail loudly, not silently
+    # approve with defaults.
+    model_config = ConfigDict(extra="forbid")
+
     action: str = "approve"  # "approve", "modify", "override", "reject"
     custom_price: Optional[float] = None
     custom_reply_text: Optional[str] = None
@@ -356,6 +368,8 @@ class MultiAuctionSupplierInput(BaseModel):
 
 
 class MultiAuctionRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     target_price: float = 12.0
     walk_away_ceiling: float = 16.2
     moq: int = 10000

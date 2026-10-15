@@ -62,5 +62,45 @@ class TestAPI(unittest.TestCase):
                           "degraded draft must be clearly labelled to the operator")
 
 
+class TestUnknownFieldRejection(unittest.TestCase):
+    """未知欄位必須回 422，不可被靜默忽略。
+
+    [REGRESSION] 原本 `RoundActionRequest` 未設 `extra="forbid"`，因此把
+    `supplier_text` 誤打成 `supplier_message` 時，Pydantic 會默默丟棄該欄位，
+    該輪以「空文本」執行，並回傳 HTTP 200 + 看似合理的 `NORMAL_COUNTER_OFFER`
+    決策。呼叫端無法分辨這是真實分析還是無輸入的預設值 —— 這比報錯更危險。
+    """
+
+    def setUp(self):
+        self.c = TestClient(api_main.app)
+
+    def test_round_rejects_unknown_field(self):
+        r = self.c.post(
+            "/api/v1/sessions/unknown-field-01/round",
+            json={"supplier_message": "原料漲價", "supplier_quote": 14.8},
+        )
+        self.assertEqual(
+            r.status_code, 422,
+            "a misspelled field must be rejected, not silently dropped",
+        )
+
+    def test_round_accepts_canonical_fields(self):
+        """正確欄位名仍須正常運作（確認 422 來自 extra=forbid，而非欄位改名）。"""
+        r = self.c.post(
+            "/api/v1/sessions/unknown-field-02/round",
+            json={"opponent_raw_text": "老闆，碰擊布原料暴漲，¥14.80 做不了",
+                  "opponent_offer_price": 14.80},
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["inbound_intent"], "CRY_POVERTY_COST_HIKE")
+
+    def test_multi_auction_rejects_unknown_field(self):
+        r = self.c.post(
+            "/api/v1/multi-auction/run",
+            json={"targt_price": 12.0},  # deliberate typo
+        )
+        self.assertEqual(r.status_code, 422)
+
+
 if __name__ == "__main__":
     unittest.main()
