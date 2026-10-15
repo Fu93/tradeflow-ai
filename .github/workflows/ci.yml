@@ -13,14 +13,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install deps
+          cache: pip
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install fastapi httpx
-      - name: Run tests
-        run: |
-          python tests/test_engine.py
-          python tests/test_evolus.py
-          python tests/test_benchmark.py
-          python tests/test_api.py
+
+      # Previously this job ran only 4 test files directly (test_engine,
+      # test_evolus, test_benchmark, test_api), so 97 of 101 tests never ran in
+      # CI and a regression anywhere else could not be detected.
+      - name: Run full test suite
+        run: python -m pytest tests -q
+
+      # Gate on the honesty checks this project relies on: no credential value
+      # in any tracked file, and no broken/`file:///` links in the docs.
+      - name: Verify no secrets are committed
+        run: python scripts/secret_scan.py
+
+      - name: Verify documentation links resolve
+        run: python scripts/check_doc_links.py
