@@ -180,7 +180,11 @@ class TestBilingualCognitiveBridge(unittest.TestCase):
         self.assertNotIn("美元", rendered)
 
     def test_chinese_surface_renderer_logroll(self):
-        """驗證中文渲染器正確渲染多維 Logrolling 置換條款。"""
+        """驗證中文渲染器正確渲染多維 Logrolling 置換條款。
+
+        [5.2 修正] Logrolling 引擎實際交換的正是「定金比例」與「起訂批量」，
+        舊版話術只提交期與模具費，決策與話術不一致；現必須忠實包含兩者。
+        """
         action_obj = TacticalActionObject(
             authorized_price=13.80,
             walk_away_ceiling=16.00,
@@ -189,6 +193,7 @@ class TestBilingualCognitiveBridge(unittest.TestCase):
             supplier_contact_name="王總",
             lead_days=18,
             deposit_pct=0.50,
+            moq=900,
             mold_fee_exempted=True,
             waive_mold_fee_amount=3000.0,
         )
@@ -198,6 +203,48 @@ class TestBilingualCognitiveBridge(unittest.TestCase):
         self.assertIn("50%", rendered)
         self.assertIn("18 天", rendered)
         self.assertIn("免除模具費 ¥3000", rendered)
+        # [5.2] 忠實渲染引擎真正交換的兩個維度
+        self.assertIn("900 件", rendered)
+        self.assertIn("定金", rendered)
+
+    def test_numeric_guardrail_rejects_price_floor_breach(self):
+        """[2.1 修正] 授權價旁另承諾更低價格必須被拒（舊版只檢查上限）。"""
+        draft = "老闆，¥13.00 出廠價可以，另外我們願意 ¥9.50 出廠價成交。"
+        with self.assertRaises(GuardrailViolationError):
+            NumericGuardrailValidator.validate_reply(
+                draft_text=draft, authorized_price=13.00, walk_away_ceiling=16.20,
+            )
+
+    def test_numeric_guardrail_rejects_paraphrased_compromise(self):
+        """[2.2 修正] 禁用詞改寫（同義變體）不得再繞過。"""
+        for phrase in ["私底下打款", "走私人帳戶", "不開票", "用二料"]:
+            with self.subTest(phrase=phrase):
+                with self.assertRaises(GuardrailViolationError):
+                    NumericGuardrailValidator.validate_reply(
+                        draft_text=f"老闆，我們{phrase}，¥13.00 出廠價可以。",
+                        authorized_price=13.00, walk_away_ceiling=16.20,
+                    )
+
+    def test_validate_bilingual_guardrails_english_card(self):
+        """[2.3 修正] 英文高管卡必須與中文面套用同一組數值護欄。"""
+        action_obj = TacticalActionObject(
+            authorized_price=12.20, walk_away_ceiling=15.50,
+            product_name="Aerospace Aluminum Enclosure",
+        )
+        zh = ChineseSurfaceRenderer.render(action_obj)
+        en = EnglishExecutiveRenderer.render_executive_card(action_obj)
+        # 正常配對必須放行
+        self.assertTrue(
+            NumericGuardrailValidator.validate_bilingual(
+                zh, en, authorized_price=12.20, walk_away_ceiling=15.50,
+            )
+        )
+        # 英文面被注入未授權讓步價時必須攔阻
+        tampered = "Dear Partner, we can go to USD 9.50/unit today."
+        with self.assertRaises(GuardrailViolationError):
+            NumericGuardrailValidator.validate_bilingual(
+                zh, tampered, authorized_price=12.20, walk_away_ceiling=15.50,
+            )
 
     def test_english_executive_renderer_card(self):
         """驗證英文高管決策卡包含貝氏底價、置信度、破裂風險與清晰指令。"""

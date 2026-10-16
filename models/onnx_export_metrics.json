@@ -1,0 +1,7 @@
+{
+  "held_out_ood_accuracy": 0.6307692307692307,
+  "held_out_ood_correct": 123,
+  "held_out_ood_total": 195,
+  "held_out_onnx_head_only_accuracy": 0.882051282051282,
+  "in_distribution_train_set_accuracy": 1.0
+}

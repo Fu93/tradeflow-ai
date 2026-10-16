@@ -1,7 +1,49 @@
-// TradeFlow AI — Web Portal Client Script (Vanilla JS, Zero NPM, Zero Emoji)
+﻿// TradeFlow AI — Web Portal Client Script (Vanilla JS, Zero NPM, Zero Emoji)
 
 let beliefChart = null;
 let currentSessionId = "";
+
+// ---------------------------------------------------------------------------
+// Security helpers: outbound auth + HTML escaping
+// ---------------------------------------------------------------------------
+// H9: the backend fail-closes in production without a valid X-API-Key. Leave
+// this empty for a sandbox demo where TRADEFLOW_API_KEY is unset (no header is
+// then sent and the sandbox gate allows it). When the backend operator sets a
+// real key, put it here; an empty constant sends no header at all, which is
+// deliberate (an empty header is indistinguishable from a bad key once a key
+// is configured).
+const TF_API_KEY = "";
+
+function tfAuthHeaders() {
+  return TF_API_KEY ? { "X-API-Key": TF_API_KEY } : {};
+}
+
+function tfJsonHeaders() {
+  const headers = { "Content-Type": "application/json" };
+  if (TF_API_KEY) headers["X-API-Key"] = TF_API_KEY;
+  return headers;
+}
+
+// Every backend/SSE-sourced string must pass through tfEsc() before it is
+// interpolated into an innerHTML template. Layout and CSS classes are
+// unchanged; only the values are escaped. session_id / product_name /
+// state are free-form strings persisted from the API, so they are untrusted.
+function tfEsc(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Numeric coercion for values that reach .toFixed(): a string sent by the
+// backend would throw a TypeError instead of rendering, so coerce first.
+function tfNum(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   initBeliefChart();
@@ -130,14 +172,16 @@ function renderSessions(sessions) {
     else if (s.state === "CIRCUIT_TRIPPED_ESCALATED" || s.state === "AWAITING_HUMAN_DECISION") stateClass = "badge-tripped";
     else if (s.state === "DEAL_CLOSED") stateClass = "badge-closed";
 
+    // H1: session_id / state / product are free-form strings persisted from
+    // the API and pushed over SSE. Every one is escaped before interpolation.
     item.innerHTML = `
       <div class="session-item-row">
-        <span class="session-item-id">${s.session_id}</span>
-        <span class="session-badge ${stateClass}">${s.state}</span>
+        <span class="session-item-id">${tfEsc(s.session_id)}</span>
+        <span class="session-badge ${tfEsc(stateClass)}">${tfEsc(s.state)}</span>
       </div>
       <div class="session-item-row" style="margin-top: 4px; color: #8899ac; font-size: 11px;">
-        <span>${s.product} (Target: ¥${s.target})</span>
-        <span>Rounds: ${s.rounds}</span>
+        <span>${tfEsc(s.product)} (Target: ¥${tfEsc(s.target)})</span>
+        <span>Rounds: ${tfEsc(s.rounds)}</span>
       </div>
     `;
     listEl.appendChild(item);
@@ -150,22 +194,23 @@ function selectSession(s) {
   document.getElementById("sessionLabel").textContent = s.session_id;
 
   // Update Circuit Breaker view
-  const pBreak = s.last_p_break !== null ? (s.last_p_break * 100).toFixed(1) : "0.0";
+  const pBreak = s.last_p_break != null ? (tfNum(s.last_p_break, 0) * 100).toFixed(1) : "0.0";
   document.getElementById("cbPct").textContent = `${pBreak}%`;
   document.getElementById("pBreak").textContent = `${pBreak}%`;
 
   const badge = document.getElementById("cbBadge");
   const ring = document.getElementById("cbRing");
 
+  const cbRisk = tfNum(s.last_p_break, 0);
   if (s.state === "AWAITING_HUMAN_DECISION") {
     badge.className = "cb-badge cb-warn";
     badge.textContent = "AWAITING HUMAN DECISION";
     ring.className = "cb-ring";
-  } else if (s.last_p_break >= 0.15) {
+  } else if (cbRisk >= 0.15) {
     badge.className = "cb-badge cb-tripped";
     badge.textContent = "CIRCUIT TRIPPED (ESCALATED)";
     ring.className = "cb-ring tripped";
-  } else if (s.last_p_break >= 0.08) {
+  } else if (cbRisk >= 0.08) {
     badge.className = "cb-badge cb-warn";
     badge.textContent = "CAUTION HIGH RISK";
     ring.className = "cb-ring";
@@ -179,8 +224,8 @@ function selectSession(s) {
     ring.className = "cb-ring";
   }
 
-  if (s.last_posterior !== null) {
-    document.getElementById("postMean").textContent = `¥${s.last_posterior.toFixed(2)}`;
+  if (s.last_posterior != null) {
+    document.getElementById("postMean").textContent = `¥${tfNum(s.last_posterior, 0).toFixed(2)}`;
   }
   document.getElementById("roundCount").textContent = s.rounds;
 
@@ -188,9 +233,50 @@ function selectSession(s) {
   fetchSessionDetails(s.session_id);
 }
 
+// V3: index.html:52 has onclick="refreshSessions()" but no such function was
+// ever defined, so the Refresh button was a dead control (and threw a
+// ReferenceError in the console). The SSE feed pushes every second anyway, but
+// an explicit refresh should still do something honest: re-read the session
+// list from the REST API and re-render it, rather than only clearing the view.
+async function refreshSessions() {
+  const listEl = document.getElementById("sessionList");
+  try {
+    const res = await fetch("/api/v1/sessions", { headers: tfAuthHeaders() });
+    if (!res.ok) {
+      if (listEl) {
+        listEl.innerHTML = `<div class="empty-state">Could not refresh sessions (HTTP ${tfEsc(res.status)}).</div>`;
+      }
+      return;
+    }
+    const data = await res.json();
+    const sessions = (Array.isArray(data) ? data : (data.sessions || [])).map((s) => {
+      // GET /api/v1/sessions returns full NegotiationSession objects whose
+      // fields live under `spec`; map them to the flat SSE snapshot shape that
+      // renderSessions() consumes so both paths render identically.
+      const spec = s.spec || {};
+      return {
+        session_id: spec.session_id || s.session_id,
+        state: s.state,
+        product: spec.product_name,
+        target: spec.target_price,
+        rounds: (s.history || []).length,
+        last_p_break: (s.history && s.history.length) ? s.history[s.history.length - 1].p_break : null,
+        last_posterior: (s.history && s.history.length) ? s.history[s.history.length - 1].posterior_mean : null,
+      };
+    });
+    renderSessions(sessions);
+  } catch (err) {
+    if (listEl) {
+      listEl.innerHTML = `<div class="empty-state">Could not refresh sessions: ${tfEsc(err.message)}</div>`;
+    }
+  }
+}
+
 async function fetchSessionDetails(sid) {
   try {
-    const res = await fetch(`/api/v1/sessions/${sid}`);
+    const res = await fetch(`/api/v1/sessions/${encodeURIComponent(sid)}`, {
+      headers: tfAuthHeaders()
+    });
     if (!res.ok) return;
     const data = await res.json();
     const sessObj = data.session || data;
@@ -283,7 +369,7 @@ async function applyCategoryPreset(cat) {
   try {
     const res = await fetch("/api/v1/sessions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: tfJsonHeaders(),
       body: JSON.stringify(body)
     });
     if (res.ok) {
@@ -298,7 +384,7 @@ async function applyCategoryPreset(cat) {
     } else {
       const detail = await res.text();
       if (statusEl) {
-        statusEl.textContent = `Could not create session (HTTP ${res.status}): ${detail.slice(0, 140)}`;
+        statusEl.textContent = `Could not create session (HTTP ${tfEsc(res.status)}): ${detail.slice(0, 140)}`;
         statusEl.style.color = "#f87171";
       }
     }
@@ -320,6 +406,12 @@ async function applyCategoryPreset(cat) {
 // ---------------------------------------------------------------------------
 // Remote Command Execution (Mobile Proxy)
 // ---------------------------------------------------------------------------
+// H9 (webhook half): POST /webhook/mobile-command is gated by a shared secret
+// (X-Webhook-Token = TRADEFLOW_WEBHOOK_TOKEN) which is fail-open in sandbox when
+// the server-side token is unset. Same truthy-guard rule as TF_API_KEY: send no
+// header when we have no token configured.
+const TF_WEBHOOK_TOKEN = "";
+
 async function sendCommand(cmdCode) {
   const sid = document.getElementById("cmdSessionId").value.trim() || currentSessionId;
   const resEl = document.getElementById("cmdResult");
@@ -336,21 +428,46 @@ async function sendCommand(cmdCode) {
   resEl.classList.remove("hidden");
 
   try {
+    const headers = { "Content-Type": "application/json" };
+    if (TF_WEBHOOK_TOKEN) headers["X-Webhook-Token"] = TF_WEBHOOK_TOKEN;
+
     const resp = await fetch("/webhook/mobile-command", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         command: cmdCode,
         session_id: sid
       })
     });
-    const result = await resp.json();
-    if (result.status === "success") {
+    // H4-style false-success guard: a 400/401/500 must never be reported as a
+    // successful dispatch. Read the body defensively (an error response with a
+    // non-JSON body would otherwise throw on .json()).
+    let result = null;
+    try {
+      result = await resp.json();
+    } catch (_) {
+      result = null;
+    }
+    if (!resp.ok) {
+      const detail = (result && result.detail) || "";
+      resEl.className = "cmd-result";
+      resEl.style.color = "#f87171";
+      resEl.textContent = `[HTTP ${resp.status}] Command NOT applied: ${detail || resp.statusText || "request rejected"}`;
+      return;
+    }
+    if (result && result.status === "success") {
       resEl.textContent = `[SUCCESS] Resolved Action: ${result.action} | Session state updated.`;
     } else {
-      resEl.textContent = `[FAILED] ${JSON.stringify(result)}`;
+      // HTTP 200 but the backend did not apply the command (e.g. unknown
+      // session with no pending authorization bridge). Do not claim success.
+      const reason = (result && (result.detail || result.reason)) || "no action applied";
+      resEl.className = "cmd-result";
+      resEl.style.color = "#f87171";
+      resEl.textContent = `[NOT APPLIED] ${reason}`;
     }
   } catch (err) {
+    resEl.className = "cmd-result";
+    resEl.style.color = "#f87171";
     resEl.textContent = `[NETWORK ERROR] ${err.message}`;
   }
 }
@@ -368,12 +485,20 @@ async function runMultiAuction() {
   summaryEl.classList.add("hidden");
 
   try {
-    const res = await fetch("/api/v1/multi-auction/run", { method: "POST" });
+    const res = await fetch("/api/v1/multi-auction/run", {
+      method: "POST",
+      headers: tfAuthHeaders()
+    });
+    if (!res.ok) {
+      loader.classList.add("hidden");
+      cardsWrap.innerHTML = `<div class="empty-state">Multi-auction rejected (HTTP ${tfEsc(res.status)}).</div>`;
+      return;
+    }
     const data = await res.json();
     loader.classList.add("hidden");
 
     if (!data.success) {
-      cardsWrap.innerHTML = `<div class="empty-state">Error running multi-auction: ${data.detail || "Unknown"}</div>`;
+      cardsWrap.innerHTML = `<div class="empty-state">Error running multi-auction: ${tfEsc(data.detail || "Unknown")}</div>`;
       return;
     }
 
@@ -391,7 +516,7 @@ async function runMultiAuction() {
       const quote = lastRound.quotes[i];
       const tactic = lastRound.tactics[i];
       const ceiling = lastRound.effective_ceilings_cny[i];
-      const pBreak = (lastRound.p_break_array[i] * 100).toFixed(1);
+      const pBreak = (tfNum(lastRound.p_break_array[i], 0) * 100).toFixed(1);
 
       let tagClass = "tactic-anchor";
       if (tactic === "LEAN_IN") tagClass = "tactic-lean";
@@ -401,28 +526,28 @@ async function runMultiAuction() {
       card.className = "supplier-card";
       card.innerHTML = `
         <div class="card-top">
-          <span class="supplier-title">${sName}</span>
-          <span class="tactic-tag ${tagClass}">${tactic}</span>
+          <span class="supplier-title">${tfEsc(sName)}</span>
+          <span class="tactic-tag ${tfEsc(tagClass)}">${tfEsc(tactic)}</span>
         </div>
         <div class="card-metrics">
-          <div>Quote: <span class="metric-val">¥${quote.toFixed(2)}</span></div>
-          <div>BATNA: <span class="metric-val">¥${ceiling.toFixed(2)}</span></div>
-          <div>Risk: <span class="metric-val">${pBreak}%</span></div>
+          <div>Quote: <span class="metric-val">¥${tfNum(quote, 0).toFixed(2)}</span></div>
+          <div>BATNA: <span class="metric-val">¥${tfNum(ceiling, 0).toFixed(2)}</span></div>
+          <div>Risk: <span class="metric-val">${tfEsc(pBreak)}%</span></div>
         </div>
       `;
       cardsWrap.appendChild(card);
     });
 
     summaryEl.innerHTML = `
-      <strong>Winner:</strong> ${data.winning_supplier} @ ¥${data.winning_price.toFixed(2)}<br/>
-      <strong>Savings:</strong> ¥${data.total_savings_cny.toLocaleString()} (${(data.total_savings_pct * 100).toFixed(1)}%)<br/>
-      <strong>Rollouts:</strong> ${data.total_rollouts.toLocaleString()} | Compute: ${data.total_compute_seconds}s (${data.backend})
+      <strong>Winner:</strong> ${tfEsc(data.winning_supplier)} @ ¥${tfNum(data.winning_price, 0).toFixed(2)}<br/>
+      <strong>Savings:</strong> ¥${tfNum(data.total_savings_cny, 0).toLocaleString()} (${(tfNum(data.total_savings_pct, 0) * 100).toFixed(1)}%)<br/>
+      <strong>Rollouts:</strong> ${tfNum(data.total_rollouts, 0).toLocaleString()} | Compute: ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)})
     `;
     summaryEl.classList.remove("hidden");
 
   } catch (err) {
     loader.classList.add("hidden");
-    cardsWrap.innerHTML = `<div class="empty-state">Request failed: ${err.message}</div>`;
+    cardsWrap.innerHTML = `<div class="empty-state">Request failed: ${tfEsc(err.message)}</div>`;
   }
 }
 
@@ -436,14 +561,20 @@ function toggleConfig() {
 
 async function fetchTelemetryConfig() {
   try {
-    const res = await fetch("/api/v1/config/telemetry");
-    if (!res.ok) return;
+    const res = await fetch("/api/v1/config/telemetry", { headers: tfAuthHeaders() });
+    if (!res.ok) {
+      console.warn("Telemetry config unavailable (HTTP", res.status + ")");
+      return;
+    }
     const data = await res.json();
     const cfg = data.config || {};
     for (const [key, val] of Object.entries(cfg)) {
       const input = document.getElementById(`cfg_${key}`);
-      if (input && val.set) {
-        input.placeholder = `Active (${val.preview})`;
+      // Backend may return {"set": bool, "preview": str} or, after the security
+      // hardening pass, only {"set": bool} with no credential preview at all.
+      // Handle both shapes so a missing preview does not render "Active (undefined)".
+      if (input && val && val.set) {
+        input.placeholder = val.preview ? `Active (${val.preview})` : "Active (configured)";
       }
     }
   } catch (err) {
@@ -454,8 +585,15 @@ async function fetchTelemetryConfig() {
 async function saveConfig() {
   const resEl = document.getElementById("configResult");
   const payload = {};
-  
-  ["CALLMEBOT_PHONE", "CALLMEBOT_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "PUSHPLUS_TOKEN"].forEach(f => {
+
+  // V2: the server allowlist (_TELEMETRY_FIELDS in routes_web.py:114-121,
+  // matching TelemetryNotifier.__init__) is WHATSAPP_PHONE / WHATSAPP_APIKEY /
+  // SERVERCHAN_SENDKEY / TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID. The previous
+  // list here (CALLMEBOT_*/PUSHPLUS_TOKEN) matched no allowlisted key, so
+  // saveConfig() silently posted an empty object and reported "[SAVED]" while
+  // nothing was ever written. Keep sending nothing for a key the operator did
+  // not fill in, but only name allowlisted keys.
+  ["WHATSAPP_PHONE", "WHATSAPP_APIKEY", "SERVERCHAN_SENDKEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"].forEach(f => {
     const el = document.getElementById(`cfg_${f}`);
     if (el && el.value.trim()) payload[f] = el.value.trim();
   });
@@ -463,15 +601,24 @@ async function saveConfig() {
   try {
     const res = await fetch("/api/v1/config/telemetry", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: tfJsonHeaders(),
       body: JSON.stringify(payload)
     });
+    if (!res.ok) {
+      resEl.className = "cmd-result";
+      resEl.style.color = "#f87171";
+      resEl.textContent = `[SAVE FAILED] HTTP ${res.status}: ${res.statusText || "request rejected"}`;
+      resEl.classList.remove("hidden");
+      return;
+    }
     const d = await res.json();
     resEl.className = "cmd-result";
-    resEl.textContent = `[SAVED] Hot reload status: ${d.hot_reload}. Updated: ${d.fields_updated.join(", ")}`;
+    const updated = Array.isArray(d.fields_updated) ? d.fields_updated.join(", ") : "";
+    resEl.textContent = `[SAVED] Hot reload status: ${d.hot_reload}. Updated: ${updated || "(no allowlisted fields changed)"}`;
     resEl.classList.remove("hidden");
   } catch (err) {
     resEl.className = "cmd-result";
+    resEl.style.color = "#f87171";
     resEl.textContent = `[SAVE ERROR] ${err.message}`;
     resEl.classList.remove("hidden");
   }
@@ -486,12 +633,20 @@ async function testPush(ch) {
   try {
     const res = await fetch("/api/v1/telemetry/test-push", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: tfJsonHeaders(),
       body: JSON.stringify({ channel: ch })
     });
+    if (!res.ok) {
+      resEl.className = "cmd-result";
+      resEl.style.color = "#f87171";
+      resEl.textContent = `[TEST FAILED] HTTP ${res.status}: ${res.statusText || "request rejected"}`;
+      return;
+    }
     const d = await res.json();
     resEl.textContent = `[RESULT] ${JSON.stringify(d.results)}`;
   } catch (err) {
+    resEl.className = "cmd-result";
+    resEl.style.color = "#f87171";
     resEl.textContent = `[TEST ERROR] ${err.message}`;
   }
 }

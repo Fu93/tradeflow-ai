@@ -27,12 +27,25 @@ class SessionExecutionBridge:
 
 
 class WebhookHub:
-    """全域 Webhook 雙向指令排程器（單例/中樞）。"""
+    """全域 Webhook 雙向指令排程器（單例/中樞）。
+
+    [REGRESSION] `_bridges` 舊版永不清理：只有 `wait_for_auth` 的 finally 會
+    unregister，而 dispatch_command 路徑不會，因此長期執行下是無界記憶體成長。
+    現在加上容量上限（超過時淘汰最舊的未授權橋樑）。
+    """
+
+    # register_bridge 併發存在上限（防止未清理的橋樑無界累積）。
+    MAX_BRIDGES = 256
 
     def __init__(self):
         self._bridges: Dict[str, SessionExecutionBridge] = {}
 
     def register_bridge(self, session_id: str) -> SessionExecutionBridge:
+        if session_id not in self._bridges and len(self._bridges) >= self.MAX_BRIDGES:
+            # 淘汰最舊的一筆（dict 保序），避免無界成長。
+            oldest = next(iter(self._bridges), None)
+            if oldest is not None:
+                self._bridges.pop(oldest, None)
         bridge = SessionExecutionBridge(session_id=session_id)
         self._bridges[session_id] = bridge
         return bridge
@@ -76,7 +89,14 @@ class WebhookHub:
 
         try:
             await asyncio.wait_for(bridge.auth_event.wait(), timeout=timeout_sec)
-            assert bridge.resolved_command is not None
+            # [REGRESSION] 舊版此處用 `assert bridge.resolved_command is not None`。
+            # assert 在 `python -O` 下會被移除，授權路徑就會靜默回傳 None，這是
+            # 控制流用 assert 的典型危害。改為明確拋錯。
+            if bridge.resolved_command is None:
+                raise RuntimeError(
+                    "Authorization invariant violated: bridge event was set without a "
+                    "resolved command."
+                )
             return bridge.resolved_command, bridge.custom_price
         except asyncio.TimeoutError:
             # 超時安全降級守衛：維持底線，不自作主張妥協

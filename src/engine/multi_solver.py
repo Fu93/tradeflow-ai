@@ -27,6 +27,7 @@ import time
 from typing import Optional, List, Dict, Any, Tuple
 import numpy as np
 from . import model
+from .solver import anchoring_multiplier
 
 
 def _get_xp(use_gpu: bool):
@@ -220,12 +221,20 @@ class MultiSupplierSolver:
         gap = xp.broadcast_to(gap, (k, s, n_open, n_sched)).copy()
         paid = xp.broadcast_to(op_t, (k, s, n_open, n_sched)).copy()
 
+        # [修正 §3.5] 與單供應商 solver 同源的「對手對我方開盤的錨定反應」：
+        # 開盤越硬（first_gap 越大）→ 對手讓步率越低。此項把開盤價真正帶進目標函式，
+        # 使 per-open 最佳分數不再是單調上升後崩塌的退化解。係數揭露見 solver.py
+        # 檔頭的 ANCHORING_REF / ANCHORING_BETA / ANCHORING_CLIP（皆為選定值）。
+        first_gap_t = xp.abs(res_t - op_t)
+        react_t = anchoring_multiplier(xp, first_gap_t)
+        cnc_eff = xp.clip(cnc_t * react_t, 0.0, 0.95)
+
         # 3. 5 輪向量化併發 Rollout
         for r_idx in range(self.rounds):
             step_buyer = sc_t[..., r_idx] * gap
             paid = paid + step_buyer
             gap = gap - step_buyer
-            step_opp = cnc_t * urg_t * (1.0 - 0.45 * blf_t) * gap
+            step_opp = cnc_eff * urg_t * (1.0 - 0.45 * blf_t) * gap
             gap = gap - step_opp
             gap = xp.maximum(gap, 0.0)
 
@@ -240,7 +249,12 @@ class MultiSupplierSolver:
         exp_margin = payoff.mean(axis=1)    # (K, O, C)
         exp_break = p_break.mean(axis=1)     # (K, O, C)
 
-        # 6. 為每家供應商求帕累托最優 (邊際 - 1.0 * 破局)
+        # 6. 為每家供應商做**純量選取**：邊際 − 1.0 · 破局之 argmax
+        # [修正 §3.4] 舊版註解稱此為「帕累托最優」，但加權和標量化的 argmax
+        # 只是落在前沿上的一點，並非前沿本身。真正的非支配篩選見
+        # solver._pareto_frontier_indices()（solver.solve() 亦以
+        # `pareto_frontier_size` 回報真前緣大小）。此處保留原選取規則以免
+        # 改變對外數值輸出，僅修正術語。
         scores = exp_margin - 1.0 * exp_break
         if hasattr(scores, "get"):  # CuPy
             scores_np = scores.get()
@@ -341,18 +355,67 @@ class MultiAuctionSession:
             walk_away_ceiling=self.walk_away_ceiling / self.target_price,
         )
 
-        # [誠實揭露] 這些是先驗常數（固定 1.08 / 0.10），非基地台資料：
-        # 第 1 輪 counter-offer 完全由此前見決定、**與第 1 輪來源報價無關**
-        # （輸入不變）；第 2 輪起才以 cross-anchoring 吃進各家報價。若需
-        # 第 1 輪即反映報價，應在建立 session 時把 prior_means 設成首輪
-        # 報價的函數 —— 目前 demo 路徑未這樣做。
-        self.prior_means = np.full(self.k, 1.08, dtype=np.float32)
-        self.prior_stds = np.full(self.k, 0.10, dtype=np.float32)
+        # 冷啟動（尚未觀測任何報價）時的先驗常數；非基地台資料。
+        # [修正 §3.2] 舊版把這兩個值當成「永遠的先驗」，且只在第 2 輪起才以
+        # cross-anchoring 吃進報價，使第 1 輪 `best_offers` 對首輪報價完全不變。
+        # 現在 step_round() 的第 1 輪會用 `_anchor_priors_to_quotes()` 以各家
+        # 首輪報價重新錨定 prior_means，第 1 輪 counter-offer 因此隨報價而異。
+        self.neutral_prior_mean = 1.08
+        self.neutral_prior_std = 0.10
+        # [誠實揭露] estimated_markup=0.08 與 bayesian_v2.py 的預設加成率同源，
+        # 為編譯時固定之**選定值**（非資料擬合）：假設「供應商首次報價 ≈ 底價 ×
+        # (1 + 8%)」。用它把首輪報價換算成底價先驗均值。
+        self.estimated_markup = 0.08
+        # 首輪先驗錨定的邊界常數（皆為選定值，非資料擬合；見 _anchor_priors_to_quotes）：
+        #   prior_rel_std         : sigma = prior_rel_std × mu（與舊版 0.10/1.08 同比例）
+        #   prior_mean_hard_cap_ratio: mu 不得超過 walk_away × 1.10（=1.485 @1.35，覆蓋
+        #                           model.OPP_TYPES 的底價乘數上界 1.18）
+        #   prior_mean_soft_margin: mu 必須低於本家報價此值（與 solve_reverse_auction_tensor
+        #                           步驟 2 的 `res < p − 0.10` 弱勢區間一致）
+        #   prior_mean_floor      : mu 絕對下界，避免極端報價把先驗壓到 0
+        self.prior_rel_std = 0.10 / 1.08
+        self.prior_mean_hard_cap_ratio = 1.10
+        self.prior_mean_soft_margin = 0.10
+        self.prior_mean_floor = 0.80
+        self.prior_means = np.full(self.k, self.neutral_prior_mean, dtype=np.float32)
+        self.prior_stds = np.full(self.k, self.neutral_prior_std, dtype=np.float32)
 
         self.current_round = 0
         self.trace: List[Dict[str, Any]] = []
         self.total_rollouts_accum = 0
         self.total_compute_seconds = 0.0
+
+    def _anchor_priors_to_quotes(self, offers_norm: np.ndarray) -> None:
+        """[修正 §3.2] 用各家**首輪報價**重新錨定底價先驗均值/標準差。
+
+        舊版第 1 輪固定用 prior_means=1.08，且 cross-anchoring 只從第 2 輪起
+        作用，使 4 家供應商拿到的首輪 counter-offer 完全相同（實測 4 家報價
+        13.26/15.60/15.92/16.80 → best_offers 四家相同，見 audit §3.2）。
+
+        這裡讓首輪先驗成為報價的函數，並保持**單調**（報價越高 → 先驗底價越高
+        → 首輪 counter-offer 越高）：
+
+            raw_i = p_i / (1 + markup)                      # 反推底價（markup=0.08 選定值）
+            mu_i  = min(raw_i, mu_hard_cap)                 # 不高於 OPP_TYPES 支撐上界
+            mu_i  = min(mu_i, p_i − soft_margin)            # 讓還價留在「弱勢」區間（同步驟 2）
+            mu_i  = max(mu_i, mu_floor)                     # 絕對下界
+
+        由於 `raw` 隨報價嚴格單調（raw_i = p_i/1.08，且 `p_i − soft_margin` 亦單調），
+        較高報價者的先驗底價較高 → 首輪 counter-offer 較高，4 家報價因此得到
+        分化且單調的 `best_offers`（正是 audit §3.2 缺失的行為）。
+
+        邊界常數皆為**選定值**（見 __init__ 揭露），非資料擬合。
+        """
+        soft_margin = self.prior_mean_soft_margin
+        hard_cap = self.prior_mean_hard_cap_ratio * self.walk_away_ceiling
+        raw = offers_norm / (1.0 + self.estimated_markup)
+        for i in range(self.k):
+            mu = float(raw[i])
+            mu = min(mu, hard_cap)
+            mu = min(mu, float(offers_norm[i]) - soft_margin)
+            mu = max(mu, self.prior_mean_floor)
+            self.prior_means[i] = mu
+            self.prior_stds[i] = max(0.02, self.prior_rel_std * mu)
 
     def step_round(self, quotes: List[float]) -> Dict[str, Any]:
         """傳入當前輪次各供應商的即時報價 (¥)，計算戰術標籤、BATNA 上限與買方對策。"""
@@ -365,8 +428,13 @@ class MultiAuctionSession:
         offers_norm = np.array([q / self.target_price for q in quotes], dtype=np.float32)
         best_lead_norm = float(np.min(offers_norm))
 
-        # 1. 交叉錨定貝氏更新 (第 2 輪起)
-        if r_idx > 1:
+        # 1. 交叉錨定貝氏更新
+        #    第 1 輪：先驗完全由**本輪報價**決定（[修正 §3.2]，舊版固定 1.08
+        #    導致四家首輪 counter-offer 相同）。
+        #    第 2 輪起：沿用前輪後驗並以 cross-anchoring 吃進新報價。
+        if r_idx == 1:
+            self._anchor_priors_to_quotes(offers_norm)
+        else:
             self.prior_means, self.prior_stds = self.solver.apply_cross_anchoring_update(
                 self.prior_means, self.prior_stds, offers_norm, best_lead_price=best_lead_norm
             )
@@ -391,6 +459,9 @@ class MultiAuctionSession:
             "effective_ceilings_cny": [float(c * self.target_price) for c in res["effective_ceilings"]],
             "p_break_array": [float(p) for p in res["p_break_array"]],
             "counter_offers_cny": [float(o * self.target_price) for o in res["best_offers"]],
+            # 僅新增鍵：本輪買方 counter-offer 的歸一化均值（見 simulate_reverse_auction
+            # 的自博弈回饋；[修正 §3.1] 舊版餵給對手的是幽靈常數 1.05+0.05）。
+            "counter_offers_mean_norm": float(np.mean(res["best_offers"])),
             "rollouts": res["total_rollouts"],
             "elapsed_seconds": res["elapsed_seconds"],
         }
@@ -413,7 +484,10 @@ class MultiAuctionSession:
             "success": True,
             "k_suppliers": self.k,
             "suppliers": self.suppliers,
-            "backend": getattr(self, "_backend_name", "CPU (NumPy Vectorized)"),
+            # [修正 §3.3] backend 記在 **solver** 上（見 solve_reverse_auction_tensor
+            # 的 `self._backend_name = backend_name`），不是 session 上。舊版用
+            # getattr(self, ...) 永遠讀不到 → 即使 use_gpu=True 也回報 CPU。
+            "backend": getattr(self.solver, "_backend_name", "CPU (NumPy Vectorized)"),
             "product_target": self.target_price,
             "walk_away_ceiling": self.walk_away_ceiling,
             "moq": self.moq,
@@ -425,6 +499,9 @@ class MultiAuctionSession:
             "total_rollouts_accum": self.total_rollouts_accum,
             "total_compute_seconds": round(self.total_compute_seconds, 4),
             "trace": self.trace,
+            # 僅新增鍵：最後一輪買方 counter-offer 的歸一化均值（自博弈回饋用；見
+            # simulate_reverse_auction 的 [修正 §3.1]）。
+            "counter_offers_mean_norm": float(self.trace[-1]["counter_offers_mean_norm"]),
         }
 
 
@@ -445,13 +522,16 @@ def simulate_reverse_auction(
     誠實揭露：
     1. 自定義動態注入：外部傳入真實輪次報價 (`rounds_quotes`) 時，由 MultiAuctionSession 逐輪求解。
     2. 動態多 Agent 自博弈 (預設)：未傳入報價時，自動調用非 LLM 策略對抗 Agent
-       (Conceder, TitForTat, HardBargainer, Bluffing) 在每一輪根據買方出價「即時動態計算反饋出價」。
-       供應商報價**確實**是運行時由對抗原型生成，無預設報價數組。
-       [誠實化] 但下列仍為編譯時固定常數，非資料：
-       - 買方第 1 輪自家報價基準 1.05（`b_offer or 1.05`）；
+       (Conceder, TitForTat, HardBargainer, Bluffing) 逐輪生成報價。供應商報價
+       **確實**是運行時由對抗原型生成，無預設報價數組。
+       [修正 §3.1] 舊版餵給對手的 buyer_history 是 `b_offer + 0.05`，而 `b_offer`
+       永遠是常數 1.05 → 買方歷史是**幽靈**、與引擎實際還價無關，TitForTat 的
+       鏡像機制形同虛設。現在 buyer_history 逐輪記錄 MultiAuctionSession 實際
+       算出的買方 counter-offer 均值（`counter_offers_mean_norm`），使會讀買方
+       行為的對手（如 TitForTat）確實對「買方第 1 輪出價」有反應。
+       [誠實化] 下列仍為編譯時固定常數，非資料：
        - 每個對抗原型之 init_price / reserve_price（下方字面值）；
-       - MultiAuctionSession 的前見 prior_means=1.08 / prior_stds=0.10，
-         使「第 1 輪 counter-offer」對首輪報價輸入不變（第 2 輪起才吃進報價）。
+       - MultiAuctionSession 的首輪先驗加成率 estimated_markup=0.08（選定值）。
        因此不能宣稱「所有數字皆運行時生成且零常數」。
     """
     if suppliers is None:
@@ -493,17 +573,26 @@ def simulate_reverse_auction(
         rng = np.random.default_rng(seed)
         buyer_histories: List[List[float]] = [[] for _ in range(k)]
         supp_histories: List[List[float]] = [[] for _ in range(k)]
+        # 買方第 1 輪自家報價基準（歸一化）—— 仍需一個開場值，因為第 1 輪
+        # 尚未有任何引擎還價可用。此為編譯時固定常數（非資料），誠實揭露於上方。
+        buyer_opening_norm = 1.05
+        round_info = None
 
         for r in range(1, n_rounds + 1):
             cur_round_quotes = []
             for i in range(k):
                 adv = adv_pool[i % len(adv_pool)]
-                b_offer = buyer_histories[i][-1] if buyer_histories[i] else 1.05
+                # [修正 §3.1] 買方「本輪」報價 = 引擎上一輪實際算出的 counter-offer
+                # 均值；第 1 輪才回退到固定開場值。舊版一律使用常數 1.05，使
+                # buyer_histories[i] 永遠是 [1.10, 1.15, …] 的幽靈序列，TitForTat
+                # 收到的 buyer_history 長度永遠 < 2 → 一律走 0.02 的 fallback。
+                b_offer = round_info["counter_offers_mean_norm"] if r > 1 else buyer_opening_norm
+                # 慣例與 arena.run_match 一致：history **含本輪**報價（先 append 再 respond）。
+                buyer_histories[i].append(b_offer)
                 offer_norm = adv.respond(r, b_offer, buyer_histories[i], supp_histories[i], rng)
                 supp_histories[i].append(offer_norm)
                 cur_round_quotes.append(round(float(offer_norm * target_price), 2))
-                buyer_histories[i].append(b_offer + 0.05)
 
-            session.step_round(cur_round_quotes)
+            round_info = session.step_round(cur_round_quotes)
 
     return session.get_summary()

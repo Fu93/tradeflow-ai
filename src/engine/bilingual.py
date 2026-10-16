@@ -20,15 +20,86 @@
 """
 from __future__ import annotations
 import ast
+import json
+import math
 import re
 from enum import Enum
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Iterable
 from pydantic import BaseModel, Field
 
 from src.engine.safe_regex import SafeLinearRegexEngine, SafeLinearPattern
 from src.engine.onnx_classifier import OnDeviceIntentClassifier
 
 CURRENT_SCHEMA_VERSION = "4.1.0"
+
+# ---------------------------------------------------------------------------
+# 價格掃描器 (單一真相源；供 NumericGuardrailValidator 與品名淨化共用)
+#
+# [獨立審計修正 C1] 舊版只認 `[¥￥$]|RMB` 作為「前綴」與 `元|塊|/件|/把|/個` 作為
+# 「後綴」，下列格式因此全部繞過護欄（皆已實測 PASS）：
+#   "…另外也可以做到 USD 15.50 一件。"、"…最高可以給您 15.50 RMB。"、
+#   "…可以做到 15.50/pcs。"、"…6.00 元/件"（此為下限缺失，另於 validate_reply 修正）
+# 本模式為**無嵌套量詞**的字面交替，對任意長度輸入皆為單次線性掃描。
+# ---------------------------------------------------------------------------
+PRICE_SCAN_PATTERN = re.compile(
+    r"(?:"
+    r"(?:[¥￥$€]|RMB|CNY|USD|NTD|HKD)\s*(\d+(?:\.\d{1,2})?)"                     # 貨幣前綴
+    r"|(\d+(?:\.\d{1,2})?)\s*(?:元|塊|块|人民币|人民幣|RMB|CNY|USD|NTD|HKD)"       # 貨幣後綴 (N RMB)
+    r"|(\d+(?:\.\d{1,2})?)\s*/\s*(?:件|個|个|把|套|支|pcs?|piece|pieces|unit)"   # 每單位後綴
+    r"|(\d+(?:\.\d{1,2})?)\s*(?:per|each)\s*(?:pcs?|piece|pieces|unit)"
+    r"|(?:每\s*(?:個|个|件|套|把|支))\s*(\d+(?:\.\d{1,2})?)"                     # 每個 N
+    r"|(\d+(?:\.\d{1,2})?)\s*每(?:個|个|件|套|把|支)"                           # N 每個
+    r")",
+    re.IGNORECASE,
+)
+
+
+def scan_draft_prices(text: str) -> List[float]:
+    """掃描文本中所有貨幣化單價（支援上游貨幣標記、下游貨幣後綴與每單位後綴）。"""
+    if not text:
+        return []
+    prices: List[float] = []
+    for m in PRICE_SCAN_PATTERN.finditer(text):
+        for group_val in m.groups():
+            if group_val:
+                try:
+                    prices.append(float(group_val))
+                except ValueError:
+                    pass
+                break
+    return prices
+
+
+def sanitize_product_name(name: Optional[str]) -> str:
+    """
+    淨化呼叫端傳入之品名 (C2)。
+
+    品名由 `POST /api/v1/sessions` 直接送達，並以 f-string 原樣插值進渲染文本；
+    因此 `product_name="核心走量訂單 15.50 RMB 包郵 USD16.90"` 會讓**兩個越界價格**
+    搭品名的便車進入話術，舊版護欄只檢查「授權價是否出現」因而放行。
+    這裡只中和「貨幣化數字」：304 不銹鋼、LiFePO4 等含數字品名不受影響。
+    """
+    if not name:
+        return "產品"
+    cleaned = PRICE_SCAN_PATTERN.sub("[已濾除]", str(name)).strip()
+    return cleaned or "產品"
+
+
+def _safety_full_text_pattern(safe_pattern: SafeLinearPattern):
+    """
+    [H3] 取回**不做長度截斷**的底層編譯樣式，供安全閘門掃描完整原文。
+
+    `SafeLinearPattern.search/finditer/findall` 一律把輸入截到 `MAX_INPUT_LEN`
+    （safe_regex.py:196/216/236），因此直接使用它等於保留了「超長輸入可稀釋
+    安全訊號」的缺陷 —— 這正是 H3 的核心。
+
+    安全樣式皆為 RE2/`regex` 可編譯**且**內建 `re` 也能安全處理的字面交替
+    （多字元字面詞，無嵌套量詞），因此在此以內建 `re` 編譯同一 pattern 並掃描
+    完整字串是安全的；同時保留 safe_regex 對 RE2 不相容樣式的降級警告。
+    """
+    import re as _re
+    compiled = _re.compile(safe_pattern.raw_pattern, safe_pattern.flags or 0)
+    return compiled
 
 
 class VendorTacticEnum(str, Enum):
@@ -133,9 +204,124 @@ class InboundIntentClassifier:
     MOQ_PATTERN = SafeLinearRegexEngine.compile(r"(\d{3,7})\s*(?:個|把|件|套|pcs)", re.IGNORECASE)
     LEAD_DAYS_PATTERN = SafeLinearRegexEngine.compile(r"(\d{1,3})\s*(?:天|工作日|days?)", re.IGNORECASE)
     DEPOSIT_PATTERN = SafeLinearRegexEngine.compile(r"(\d{1,2}(?:\.\d+)?)\s*%\s*(?:定金|訂金|預付)", re.IGNORECASE)
-    MOLD_FEE_PATTERN = SafeLinearRegexEngine.compile(r"(?:模具費|開模費|模具|開模)\s*[:：=加另算]*\s*(?:[¥￥$]|RMB)?\s*(\d+(?:\.\d{1,2})?)", re.IGNORECASE)
+    MOLD_FEE_PATTERN = SafeLinearRegexEngine.compile(
+        r"(?:模具費|开模费|模具费|開模費|打樣費|打样费)\s*(?:另計|另计)?\s*[:：=加另算]?\s*(?:[¥￥$]|RMB)?\s*(\d+(?:\.\d{1,2})?)",
+        re.IGNORECASE,
+    )
     QUALITY_SPEC_PATTERN = SafeLinearRegexEngine.compile(r"(原包|全新料|回料|水口料|304|316|201|AQL|TDS|公差|檢驗|質檢|驗貨|開模)", re.IGNORECASE)
 
+    # ------------------------------------------------------------------
+    # 欄位級夾制 (Field-level clamping)
+    #
+    # [C5 修正] 這些上下界原本**只**存在於 `_classify_impl` 的 Stage-1 路徑
+    # （`:292` 的 `0.1 <= candidate <= 50000.0`）。Stage-2 解析 LLM JSON 時完全沒有
+    # 對應夾制，因此單一幻覺欄位就能繞過 Stage-1 已強制的不變量。
+    # 現集中為單一真相源，兩條路徑共用同一組邊界。
+    # ------------------------------------------------------------------
+    MIN_MENTIONED_PRICE = 0.1
+    MAX_MENTIONED_PRICE = 50000.0
+    MIN_DEMANDED_MOQ = 1
+    MAX_DEMANDED_MOQ = 10_000_000
+    MIN_DEMANDED_MOLD_FEE = 0.0
+    MAX_DEMANDED_MOLD_FEE = 100_000_000.0
+
+    @staticmethod
+    def _is_finite_number(value: Any) -> bool:
+        try:
+            return math.isfinite(float(value))
+        except (TypeError, ValueError):
+            return False
+
+    @classmethod
+    def _clamp_price(cls, value: Any) -> Optional[float]:
+        """將外部/LLM 提供的價格夾制到合理區間；非有限或越界一律回 None（不猜測）。"""
+        if value is None or isinstance(value, bool):
+            return None
+        if not cls._is_finite_number(value):
+            return None
+        val = float(value)
+        if cls.MIN_MENTIONED_PRICE <= val <= cls.MAX_MENTIONED_PRICE:
+            return val
+        return None
+
+    @classmethod
+    def _clamp_moq(cls, value: Any) -> Optional[int]:
+        if value is None or isinstance(value, bool):
+            return None
+        if not cls._is_finite_number(value):
+            return None
+        val = float(value)
+        if cls.MIN_DEMANDED_MOQ <= val <= cls.MAX_DEMANDED_MOQ:
+            return int(val)
+        return None
+
+    @classmethod
+    def _clamp_mold_fee(cls, value: Any) -> Optional[float]:
+        if value is None or isinstance(value, bool):
+            return None
+        if not cls._is_finite_number(value):
+            return None
+        val = float(value)
+        if cls.MIN_DEMANDED_MOLD_FEE < val <= cls.MAX_DEMANDED_MOLD_FEE:
+            return val
+        return None
+
+    @classmethod
+    def _clamp_confidence(cls, value: Any) -> float:
+        if not cls._is_finite_number(value):
+            return 0.0
+        return max(0.0, min(1.0, float(value)))
+
+    @classmethod
+    def extract_immediate_escalation(cls, raw_text: str) -> bool:
+        """[H3] 與長度無關的合規升級閘門：是否需要升級（離線分流或材料降級）。"""
+        return cls.full_text_escalation_intent(raw_text) is not None
+
+    @classmethod
+    def full_text_escalation_intent(cls, raw_text: str) -> Optional[VendorTacticEnum]:
+        """
+        [H3 修正] 對**完整**原文（未截斷）判定需要升級的意圖，並回傳正確的意圖枚舉。
+
+        舊版先在 `_classify_impl` 把輸入截斷到 1000 字元，之後才做安全樣式比對，
+        因此 1600 字的閒聊後接「加個微信私下聊，走線下轉私帳」不會觸發任何風控
+        （實測：intent=NORMAL_COUNTER_OFFER、requires_escalation=False、無熔斷、
+         無通知，而**完整原文仍被持久化**為對手回合）。
+        knowledge/compliance_policy.md 的「Off-platform diversion → Freeze. Escalate.」
+        因此可僅靠長度打敗。
+
+        截斷可以限制**語意**比對器的成本，但不得限制**安全**閘門。本方法對完整
+        字串套用 Stage-1 的線性樣式（見 `_safety_full_text_pattern` 為何必須繞過
+        `SafeLinearPattern` 的內建截斷）。
+        """
+        if not raw_text:
+            return None
+        divert_re = _safety_full_text_pattern(cls.PATTERNS[0][1])
+        for m in divert_re.finditer(raw_text):
+            prefix = raw_text[max(0, m.start() - 8):m.start()]
+            suffix = raw_text[m.end():min(len(raw_text), m.end() + 12)]
+            if re.search(r"(?:不用走|不走|走|不用|別|别|不|免|無須|无需|不加|非|免了|不需|暫不|暂不)\s*$", prefix):
+                continue
+            if re.search(r"^\s*(?:就算了|免了|不用|就不必|不考慮|先不加|暫不)", suffix):
+                continue
+            return VendorTacticEnum.OFFLINE_BYPASS_DIVERT
+        if cls.extract_material_degrade_signal(raw_text):
+            return VendorTacticEnum.MATERIAL_SPEC_DEGRADE
+        return None
+
+    @classmethod
+    def extract_material_degrade_signal(cls, raw_text: str) -> bool:
+        """對完整字串（不截斷）偵測材料降級訊號，含否定語境豁免。"""
+        if not raw_text:
+            return False
+        degrade_re = _safety_full_text_pattern(cls.PATTERNS[1][1])
+        for m in degrade_re.finditer(raw_text):
+            prefix = raw_text[max(0, m.start() - 6):m.start()]
+            if re.search(r"(?:不做|不用|不採用|不采用|非|不收|排除|拒絕|拒绝)\s*$", prefix):
+                continue
+            return True
+        return False
+
+    # ------------------------------------------------------------------
     @classmethod
     def has_actionable_commercial_content(cls, raw_text: str) -> bool:
         """
@@ -217,11 +403,17 @@ class InboundIntentClassifier:
                     data = json.loads(match.group(0))
                     intent_str = data.get("primary_intent", "NORMAL_COUNTER_OFFER")
                     intent_enum = getattr(VendorTacticEnum, intent_str, VendorTacticEnum.NORMAL_COUNTER_OFFER)
+                    # [C5 修正] Stage-2 的 LLM 欄位過去直接流入決策輸入，未套用
+                    # Stage-1 在 `_classify_impl` 中對 `mentioned_price` 早已施行的
+                    # 0.1..50000 夾制。單一幻覺欄位因此足以製造出「看起來已成交」
+                    # 的狀態（實測 negative / 超界值原樣存入並觸發成交通知）。
+                    # LLM 輸出不得繞過 Stage-1 已強制的不變量。
                     return InboundTacticalClassification(
                         primary_intent=intent_enum,
-                        confidence=float(data.get("confidence", 0.85)),
-                        mentioned_price=data.get("mentioned_price"),
-                        demanded_moq=data.get("demanded_moq"),
+                        confidence=cls._clamp_confidence(data.get("confidence", 0.85)),
+                        mentioned_price=cls._clamp_price(data.get("mentioned_price")),
+                        demanded_moq=cls._clamp_moq(data.get("demanded_moq")),
+                        demanded_mold_fee=cls._clamp_mold_fee(data.get("demanded_mold_fee")),
                         tactical_rationale=data.get("tactical_rationale", "LLM zero-shot inference"),
                         requires_escalation=bool(data.get("requires_escalation", False)),
                     )
@@ -276,7 +468,36 @@ class InboundIntentClassifier:
                 tactical_rationale="Empty input; unclassified",
             )
 
-        # 0. 安全防護：截斷超長輸入，徹底杜絕 ReDoS 潛在回溯與內存佔用
+        # 0. 安全防護：[H3] 合規安全閘門必須先看**完整原文**，之後才做長度截斷。
+        #    舊版順序相反（先截斷再比對），使超長閒聊可稀釋並打敗升級閘門。
+        full_text = raw_text
+        escalation_intent = cls.full_text_escalation_intent(full_text)
+        if escalation_intent is not None:
+            # [假資料修正 §5.5] 即使走合規安全閘門，也把對方報出的模具費一併
+            # 抽出並回傳 —— 否則這條「先攔截」的高優先路徑會把數字丟掉，
+            # 下游取不到金額就退回舊版的寫死值。安全攔截與數值保真是兩件事。
+            gate_mold_fee = None
+            try:
+                _mf = cls.MOLD_FEE_PATTERN.search(full_text[:1000])
+                if _mf and _mf.group(1):
+                    _v = float(_mf.group(1))
+                    gate_mold_fee = _v if _v > 0 else None
+            except (ValueError, TypeError):
+                gate_mold_fee = None
+            return InboundTacticalClassification(
+                primary_intent=escalation_intent,
+                confidence=0.95 if escalation_intent == VendorTacticEnum.OFFLINE_BYPASS_DIVERT else 0.90,
+                mentioned_price=None,
+                demanded_mold_fee=gate_mold_fee,
+                tactical_rationale=(
+                    "Full-length compliance gate matched before semantic classification "
+                    "(length-independent escalation); original text length "
+                    f"{len(full_text)} exceeds the semantic truncation limit"
+                ),
+                requires_escalation=True,
+            )
+
+        # 1. 語意分類的成本上限：截斷超長輸入，杜絕 ReDoS 潛在回溯與內存佔用
         MAX_INPUT_LEN = 1000
         if len(raw_text) > MAX_INPUT_LEN:
             raw_text = raw_text[:MAX_INPUT_LEN]
@@ -439,6 +660,11 @@ class InboundIntentClassifier:
             confidence=0.30,
             mentioned_price=price_val,
             demanded_moq=moq_val,
+            # [假資料修正 §5.5] 舊版此處**漏傳** demanded_mold_fee，於是「未識別、
+            # 暫按正常處理」這條最高頻路徑會把已成功抽取的模具費靜默丟棄 ——
+            # 造成下游（logrolling）永遠取不到對方報出的金額。
+            # 這正是「幻燈片上有數字、實際不可用」的同類問題：抽取成功了卻沒傳出去。
+            demanded_mold_fee=mold_fee_val,
             tactical_rationale="No pattern/LLM matched; unclassified message treated as normal",
             requires_escalation=False,
         )
@@ -642,26 +868,44 @@ class GuardrailViolationError(ValueError):
 
 
 class ActionObjectASTGuardrail:
-    """基於 Python AST 抽象語法樹編譯之策略對象數值不變量硬護欄。"""
+    """基於 Python AST 抽象語法樹編譯之策略對象數值不變量硬護欄。
+
+    [C3 修正] 舊版以 `assert` 敘述實作，並在 `except AssertionError` 中轉譯為
+    `GuardrailViolationError`。`assert` 是**可被直譯器最佳化移除**的敘述：
+    `python -O` 底下 assert 全數剝除，`verify()` 對任何荒謬對象都回傳 True
+    （實測 `authorized_price=999.0, walk_away_ceiling=15.0, deposit_pct=0.95`）。
+    安全不變量不得依賴直譯器的 `-O` 旗標，故改用顯式 `if ...: raise`。
+    """
+
+    _GUARDRAIL_SNIPPET = (
+        "def _ast_check(auth_p, ceiling, dep, lead):\n"
+        "    if not auth_p > 0.0:\n"
+        "        raise ValueError('Authorized price must be positive')\n"
+        "    if not auth_p <= ceiling + 1e-4:\n"
+        "        raise ValueError('Authorized price exceeds walk-away ceiling')\n"
+        "    if not dep <= 0.6001:\n"
+        "        raise ValueError('Deposit percentage exceeds 60% system safety threshold')\n"
+        "    if not lead >= 1:\n"
+        "        raise ValueError('Lead time must be at least 1 day')\n"
+        "    return True\n"
+    )
 
     @classmethod
     def verify(cls, action_obj: TacticalActionObject) -> bool:
         """
-        以 AST 編譯 assert 樹驗證策略對象之硬性不變量：
+        以 AST 編譯檢查樹驗證策略對象之硬性不變量：
         1. 授權出價必須嚴格小於等於最大容忍上限 (加上浮點微小容差)。
         2. 授權出價必須大於零。
         3. 定金比例不得突破 60% 物理極限。
         4. 交期天數必須大於等於 1 天。
+
+        [已知邊界/誠實揭露] `walk_away_ceiling` 本身是**被驗證對象的輸入欄位**，
+        因此任何能建構 `TacticalActionObject` 的呼叫端都能順帶寫入自己的上限。
+        本護欄僅檢查「對象自身的內部一致性」，無法證明該上限等於獨立授權來源
+        （例如 `NegotiationSession.spec.ceiling_price` 或 `CorporateMandate`）。
+        需要獨立交叉驗證的呼叫端應另外比對，不應把本護欄當成授權來源的證明。
         """
-        code_str = (
-            "def _ast_check(auth_p, ceiling, dep, lead):\n"
-            "    assert auth_p > 0.0, 'Authorized price must be positive'\n"
-            "    assert auth_p <= ceiling + 1e-4, 'Authorized price exceeds walk-away ceiling'\n"
-            "    assert dep <= 0.6001, 'Deposit percentage exceeds 60% system safety threshold'\n"
-            "    assert lead >= 1, 'Lead time must be at least 1 day'\n"
-            "    return True\n"
-        )
-        tree = ast.parse(code_str)
+        tree = ast.parse(cls._GUARDRAIL_SNIPPET)
         compiled_code = compile(tree, filename="<action_object_ast_guardrail>", mode="exec")
         local_scope: Dict[str, Any] = {}
         exec(compiled_code, {}, local_scope)
@@ -673,7 +917,7 @@ class ActionObjectASTGuardrail:
                 action_obj.deposit_pct,
                 action_obj.lead_days,
             )
-        except AssertionError as exc:
+        except ValueError as exc:
             raise GuardrailViolationError(f"AST Invariant Violation: {exc}") from exc
         return True
 
@@ -723,7 +967,9 @@ class ChineseSurfaceRenderer:
         cls._check_schema_version(obj)
         p_val = obj.authorized_price
         contact = obj.supplier_contact_name or "老闆"
-        product = obj.product_name or "產品"
+        # [C2] 品名由呼叫端 (POST /api/v1/sessions) 提供且以 f-string 原樣插值，
+        # 因此必須先中和其中夾帶的貨幣化數字，否則會繞過文本層數值護欄。
+        product = sanitize_product_name(obj.product_name)
         deposit_pct_str = f"{int(round(obj.deposit_pct * 100))}%"
         r_idx = cls._extract_round_number(obj.source_round_id)
 
@@ -798,10 +1044,12 @@ class ChineseSurfaceRenderer:
 
         # 依據主戰術模式渲染
         if obj.tactical_mode == TacticalModeEnum.LOGROLL:
+            # [5.2 修正] Logrolling 引擎實際交換的正是「定金比例」與「起訂批量」，
+            # 舊版話術只提交期與模具費，忠實度不足（決策與話術不一致）。
             mold_clause = f"，且首批免除模具費 ¥{obj.waive_mold_fee_amount:.0f}" if obj.mold_fee_exempted else ""
             return (
                 f"{contact}，理解貴廠在製程與排單成本上的考量。若單價落定在 ¥{p_val:.2f}，"
-                f"我方展現充分誠意：今天特批預付 {deposit_pct_str} 定金現款秒結排單。"
+                f"我方展現充分誠意：首批訂單批量拉升至 {obj.moq} 件，今天特批預付 {deposit_pct_str} 定金現款秒結排單。"
                 f"但作為對等條件，交期必須壓縮至 {obj.lead_days} 天內交付{mold_clause}。"
                 f"若貴方確認，今天立即蓋章回傳 PO；否則我方只得啟動備案產能。"
             )
@@ -1061,12 +1309,130 @@ class CrossLingualSanityChecker:
 # 數值文字硬不變量護欄 (相容保留)
 # ---------------------------------------------------------------------------
 class NumericGuardrailValidator:
-    """確保生成文本中包含且僅包含法定授權數值，禁止擅自承諾或妥協。"""
+    """確保生成文本中包含且僅包含法定授權數值，禁止擅自承諾或妥協。
 
+    [獨立審計修正 2.1/2.2/C1] 舊版本質上只是一個「上限檢查 + 7 個字面子字串」：
+      * 只拒絕 `p > walk_away_ceiling + tolerance`，因此「授權價旁再附一個更低承諾價」
+        完全放行（實測："¥13.00 出廠價可以，另外我們願意 ¥9.50 出廠價成交" → PASSED）。
+      * 價格正則只認貨幣**前綴**與 `元|塊|/件|/把|/個` **後綴**，USD 前綴以外的
+        貨幣後綴（`15.50 RMB`）、`/pcs`、`/套` 等格式一律漏檢。
+      * 禁用詞只比對 7 個確切字串，改一個字即繞過（"私底下打款"、"走私人帳戶"、
+        "不開票"、"用二料" 皆實測 PASS）。
+
+    本版改為：上下界雙向夾制 + 更完整的貨幣格式掃描 + 可擴充的禁用片語集，
+    並明確區分「我方承諾價」與「非承諾語境下的數字」（成本費目、對手報價、遙測欄位），
+    後者不納入授權價位移的判定。
+    """
+
+    # 向後相容：原 7 個字面字串仍然存在並繼續以子字串比對。
     FORBIDDEN_COMPROMISE_WORDS = [
         "那我們再退一步", "再便宜點", "私下轉帳", "不開發票", "換次級料", "用回料", "私聊"
     ]
 
+    # [2.2] 片語級禁用模式集（確定性/離線，不使用 LLM）。
+    # 覆蓋原文的近義改寫：私底下/私人帳戶/私人帳號/不開票/用二料/二料/回料/次料/
+    # 走私單/私下打款/線下付款 等。
+    #
+    # [效能] 這些模式**刻意不含 `\s*`**：相鄰的可空 `\s*` 會造成歧義回溯，
+    # 對超長空白草稿呈二次成長（本護欄正是被要求不得成為 DoS 向量的元件）。
+    # 字元間空白改由 `_scan_forbidden_phrases` 先壓縮掉再比對，
+    # 因此英文高管卡上的「privately / off the books」間隔寫法仍無法規避。
+    FORBIDDEN_COMPROMISE_PATTERNS: List[Any] = [
+        re.compile(r"那?我們?再退一步"),
+        re.compile(r"再(?:便宜|讓|让|低|減|减)(?:一)?(?:點|点|些|步)"),
+        re.compile(r"私(?:下|底|自|人|聊)"),
+        re.compile(r"(?:轉|转|走|匯|汇)?(?:入)?私(?:人|下|底)?(?:帳|账|戶|户|號|号)?"),
+        re.compile(r"(?:線|线|走)下(?:付|打|結|结|走)"),
+        re.compile(r"(?:私下|線下|线下|線|线)(?:付|打款|轉帳|转账|走帳|走账)"),
+        re.compile(r"不(?:開|开)(?:發|发)?(?:票|發票|发票)"),
+        re.compile(r"(?:換|换|用|走)(?:次|二|回)(?:料|貨|货)"),
+        re.compile(r"(?:次|二|回)料"),
+        re.compile(r"走私單|走私单|私單|私单"),
+        re.compile(r"私(?:訊|讯|信)"),
+    ]
+
+    # 出現於價格**之前**時，代表該數字是成本費目 / 對手報價 / 遙測欄位 / 範例，
+    # 而非我方主動承諾的成交單價。刻意**不**包含「給到 / 報價 / 單價」等承諾動詞，
+    # 否則「我方願意給到 ¥9.50」會被誤判為非承諾而繞過下界。
+    NON_COMMITMENT_PRE_CONTEXT = re.compile(
+        r"(?:模具費|開模費|打樣費|樣品費|運費|物流費|加工費|模具|開模"
+        r"|已給到|同行|對手|對方|貴廠報|工廠報|對手報價|對方報價"
+        r"|Floor|Margin|Offer|Target|Ceiling|Inbound|Estimated|Expected"
+        r"|Authorized|Quote|Risk|fee|tooling|Reply|example|e\.g)\s*[:：=,]?\s*[¥￥$]?\s*$",
+        re.IGNORECASE,
+    )
+
+    # 片語被「拒絕」的語境。片語級黑名單無法理解語意，因此以同子句內的
+    # **強拒絕**標記豁免，讓確定性防禦不會誤傷自家合規話術
+    # （例如「私下微信恕不方便」、「驗收嚴檢拒收次料」）。
+    #
+    # [刻意保守] 只採認「強拒絕」詞，不採認弱否定（不用/不走/不加/不做/非）：
+    # 攻擊字串本身常以弱否定開頭（"可以私下打款嗎？不用走系統"），若納入豁免
+    # 反而製造新的繞過。誤傷弱否定的代價僅是降級到安全模板（fail closed）。
+    STRONG_REFUSAL = re.compile(
+        r"(?:拒收|拒絕|拒绝|嚴禁|严禁|禁止|杜絕|杜绝|恕不|不便|不予|不接受|不允許|不允许|勿)"
+    )
+    # 子句邊界（用於把豁免限制在同一語氣單位內，避免跨句誤豁免）。
+    CLAUSE_BOUNDARY = re.compile(r"[。！？，；!?,;\n]")
+
+    # ------------------------------------------------------------------
+    @classmethod
+    def _iter_price_spans(cls, text: str):
+        """於文本中尋找貨幣化價格，回傳 (值, 起點, 終點)。"""
+        if not text:
+            return
+        for m in PRICE_SCAN_PATTERN.finditer(text):
+            for idx in range(1, (m.re.groups or 0) + 1):
+                raw = m.group(idx)
+                if raw:
+                    try:
+                        yield float(raw), m.start(), m.end()
+                    except ValueError:
+                        pass
+                    break
+
+    @classmethod
+    def _is_commitment_price(cls, text: str, start: int, end: int) -> bool:
+        """判斷此數字是否為「我方主動承諾的單價」，而非成本費目 / 對手報價 / 遙測欄位。"""
+        pre = text[max(0, start - 10):start]
+        if cls.NON_COMMITMENT_PRE_CONTEXT.search(pre):
+            return False
+        return True
+
+    @classmethod
+    def _scan_forbidden_phrases(cls, text: str) -> None:
+        """片語級禁用詞掃描（含拒絕語境豁免）。
+
+        先在**正規化文字**（移除所有空白）上比對，讓「私 下 打 款」與
+        「私底下打款」等效；同時因為模式本身不含 `\\s*`，對超長空白草稿仍為線性。
+        拒絕語境豁免以「片語所屬子句」為範圍，且**只採認強拒絕詞**。
+        """
+        if not text:
+            return
+        compact = re.sub(r"\s+", "", text)
+        for pattern in cls.FORBIDDEN_COMPROMISE_PATTERNS:
+            for m in pattern.finditer(compact):
+                hit = m.group(0)
+                # 以正規化座標定位所屬子句，並在其中尋找強拒絕標記。
+                clause_start = 0
+                for boundary in cls.CLAUSE_BOUNDARY.finditer(compact):
+                    if boundary.end() <= m.start():
+                        clause_start = boundary.end()
+                    else:
+                        break
+                clause_end = len(compact)
+                for boundary in cls.CLAUSE_BOUNDARY.finditer(compact):
+                    if boundary.start() >= m.end():
+                        clause_end = boundary.start()
+                        break
+                clause = compact[clause_start:clause_end]
+                if cls.STRONG_REFUSAL.search(clause):
+                    continue
+                raise GuardrailViolationError(
+                    f"Forbidden compromise phrase detected: '{hit}'"
+                )
+
+    # ------------------------------------------------------------------
     @classmethod
     def validate_action_object(cls, obj: TacticalActionObject) -> bool:
         """以 AST 驗證結構化對象數值不變量。"""
@@ -1079,26 +1445,34 @@ class NumericGuardrailValidator:
         authorized_price: float,
         walk_away_ceiling: float,
         tolerance: float = 0.05,
+        authorized_floor: Optional[float] = None,
+        allowed_values: Optional[Iterable[float]] = None,
     ) -> bool:
         """
         驗證草稿中是否含有非授權報價或敏感妥協。
         - 授權報價必須在文字中明確體現。
-        - 文本中出現的所有價格均不得高於最高上限 walk_away_ceiling。
-        - 不得含有私下線下妥協詞彙。
+        - 文本中出現的所有**承諾單價**均不得高於上限 walk_away_ceiling。
+        - [2.1 修正] 亦不得**低於**授權下限 `authorized_floor`；未提供時預設為
+          `authorized_price`，因此「授權價旁再附一個更低承諾價」預設即被拒絕。
+        - [2.1 修正] 不得出現第二個未授權的承諾單價（例如授權 13.00 卻另承諾 14.00）。
+        - 不得含有私下/線下妥協片語（含近義改寫）。
+        - `allowed_values` 可列舉非承諾語境仍需放行的已知數字（成本費目、遙測欄位）。
         """
+        floor = authorized_price if authorized_floor is None else float(authorized_floor)
+        tolerated = tuple(float(v) for v in (allowed_values or ()))
+
+        # 1. 片語級禁用詞（原字面清單保底 + 近義模式集）
         for word in cls.FORBIDDEN_COMPROMISE_WORDS:
             if word in draft_text:
                 raise GuardrailViolationError(f"Forbidden compromise phrase detected: '{word}'")
+        cls._scan_forbidden_phrases(draft_text)
 
-        prices_found = []
-        for m in re.finditer(r"(?:[¥￥$]|RMB)\s*(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:元|塊|/件|/把|/個)", draft_text):
-            val_str = m.group(1) or m.group(2)
-            if val_str:
-                try:
-                    val = float(val_str)
-                    prices_found.append(val)
-                except ValueError:
-                    pass
+        # 2. 貨幣化價格掃描（更完整的格式覆蓋：C1）
+        spans = list(cls._iter_price_spans(draft_text))
+        prices_found = [v for v, _, _ in spans]
+
+        def _is_allowed(v: float) -> bool:
+            return any(abs(v - a) <= tolerance for a in (authorized_price,) + tolerated)
 
         has_authorized = any(abs(p - authorized_price) <= tolerance for p in prices_found)
         if not has_authorized:
@@ -1106,12 +1480,67 @@ class NumericGuardrailValidator:
                 f"Draft lacks authorized target price ¥{authorized_price:.2f}"
             )
 
-        for p in prices_found:
+        for p, start, end in spans:
+            if not cls._is_commitment_price(draft_text, start, end):
+                continue
+            if _is_allowed(p):
+                continue
             if p > walk_away_ceiling + tolerance:
                 raise GuardrailViolationError(
                     f"Price ¥{p:.2f} violates walk-away ceiling ¥{walk_away_ceiling:.2f}"
                 )
+            if p < floor - tolerance:
+                raise GuardrailViolationError(
+                    f"Price ¥{p:.2f} is below the authorized floor ¥{floor:.2f} "
+                    f"(unauthorized concession)"
+                )
+            # 在 [floor, ceiling] 內但不等於授權價 -> 第二個未授權承諾單價
+            raise GuardrailViolationError(
+                f"Unauthorized secondary commitment price ¥{p:.2f} "
+                f"(authorized target is ¥{authorized_price:.2f})"
+            )
 
+        return True
+
+    @classmethod
+    def validate_bilingual(
+        cls,
+        zh_text: str,
+        en_text: str,
+        authorized_price: float,
+        walk_away_ceiling: float,
+        tolerance: float = 0.05,
+        authorized_floor: Optional[float] = None,
+        allowed_values: Optional[Iterable[float]] = None,
+    ) -> bool:
+        """
+        [2.3 修正] 雙表面數值護欄入口點。
+
+        舊版 `main.py` 只對中文 `auto_reply_text` 呼叫 `validate_reply`，而推送給
+        主管手機的 `EnglishExecutiveRenderer.render_executive_card` 產物
+        （`src/transport/telemetry.py:55-57` 的實際決策依據）完全未受檢。
+        本方法讓中英文兩張表面使用同一組不變量，呼叫端一次驗證兩者。
+
+        英文卡上的成本/遙測欄位（Estimated Floor / Expected Margin / Inbound Offer /
+        Walk-Away Ceiling / Reply 範例）由 `NON_COMMITMENT_PRE_CONTEXT` 歸類為
+        非承諾數字，不納入授權價位移判定；真正的承諾單價仍受上下界夾制。
+        """
+        cls.validate_reply(
+            zh_text,
+            authorized_price=authorized_price,
+            walk_away_ceiling=walk_away_ceiling,
+            tolerance=tolerance,
+            authorized_floor=authorized_floor,
+            allowed_values=allowed_values,
+        )
+        cls.validate_reply(
+            en_text,
+            authorized_price=authorized_price,
+            walk_away_ceiling=walk_away_ceiling,
+            tolerance=tolerance,
+            authorized_floor=authorized_floor,
+            allowed_values=allowed_values,
+        )
         return True
 
 

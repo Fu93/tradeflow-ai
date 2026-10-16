@@ -2,7 +2,7 @@
 
 需要 fastapi + httpx（TestClient 依赖）。若未裝則跳過。
 """
-import sys, os
+import sys, os, shutil, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
@@ -15,10 +15,48 @@ except Exception as e:
 import unittest
 
 
-class TestAPI(unittest.TestCase):
+class _IsolatedClientCase(unittest.TestCase):
+    """Point the global SessionManager at a private temp store.
+
+    [REGRESSION] These API tests used to write the repo's REAL data/sessions.db
+    (session ids were fixed strings, and a failed assertion left rows behind).
+    The SessionManager now honours TRADEFLOW_DB_PATH / TRADEFLOW_STORE_DIR, so
+    every test class gets its own store and parallel runs cannot collide.
+    """
+
     def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="tf_test_api_")
+        self._orig_env = {
+            k: os.environ.get(k)
+            for k in ("TRADEFLOW_DB_PATH", "TRADEFLOW_STORE_DIR", "TRADEFLOW_WEBHOOK_TOKEN")
+        }
+        os.environ["TRADEFLOW_DB_PATH"] = os.path.join(self._tmp, "sessions.db")
+        os.environ["TRADEFLOW_STORE_DIR"] = os.path.join(self._tmp, "sessions_json")
+        # Keep the sandbox fail-open behaviour these tests were written against.
+        os.environ.pop("TRADEFLOW_WEBHOOK_TOKEN", None)
+        # Remember where the global manager pointed so tearDown can restore a LIVE
+        # location before the temp dir is deleted (otherwise a later test class
+        # would inherit a manager whose store_dir no longer exists).
+        self._prev_paths = (api_main.session_mgr.db_path, api_main.session_mgr.store_dir)
+        api_main.session_mgr.__init__(
+            db_path=os.environ["TRADEFLOW_DB_PATH"],
+            store_dir=os.environ["TRADEFLOW_STORE_DIR"],
+        )
         self.c = TestClient(api_main.app)
 
+    def tearDown(self):
+        for k, v in self._orig_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        api_main.session_mgr.__init__(
+            db_path=self._prev_paths[0], store_dir=self._prev_paths[1]
+        )
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+
+class TestAPI(_IsolatedClientCase):
     def test_health(self):
         r = self.c.get("/health")
         self.assertEqual(r.status_code, 200)
@@ -41,6 +79,9 @@ class TestAPI(unittest.TestCase):
         「外部整合壞掉」鎖進測試 —— 反而讓真正的 Evolus 回歸無法被察覺。
 
         正確的契約是：無論 Evolus 可用與否，端點都必須 200 並回傳可用的草稿。
+
+        [SECURITY] 該端點現在需要 X-Webhook-Token（production 強制）。這裡在
+        sandbox 且 token 未配置的前提下測試（fail-open），與 demo 行為一致。
         """
         r = self.c.post("/webhook/evolus", json={
             "extracted": {"target_price": 12.0},
@@ -61,8 +102,13 @@ class TestAPI(unittest.TestCase):
             self.assertIn("[DRAFT", draft,
                           "degraded draft must be clearly labelled to the operator")
 
+        # [SECURITY] 第三方 LLM 輸出是不可信內容，必須明確標記且標示未過護欄。
+        self.assertIn("[DRAFT", draft)
+        self.assertEqual(body.get("draft_source"), "external_llm_unverified")
+        self.assertFalse(body.get("draft_guardrail_passed", True))
 
-class TestUnknownFieldRejection(unittest.TestCase):
+
+class TestUnknownFieldRejection(_IsolatedClientCase):
     """未知欄位必須回 422，不可被靜默忽略。
 
     [REGRESSION] 原本 `RoundActionRequest` 未設 `extra="forbid"`，因此把
@@ -70,9 +116,6 @@ class TestUnknownFieldRejection(unittest.TestCase):
     該輪以「空文本」執行，並回傳 HTTP 200 + 看似合理的 `NORMAL_COUNTER_OFFER`
     決策。呼叫端無法分辨這是真實分析還是無輸入的預設值 —— 這比報錯更危險。
     """
-
-    def setUp(self):
-        self.c = TestClient(api_main.app)
 
     def test_round_rejects_unknown_field(self):
         r = self.c.post(
@@ -100,6 +143,42 @@ class TestUnknownFieldRejection(unittest.TestCase):
             json={"targt_price": 12.0},  # deliberate typo
         )
         self.assertEqual(r.status_code, 422)
+
+
+class TestApiAuthIsEnforced(_IsolatedClientCase):
+    """[audit §7 item 1] The old suite codified "no key needed" as PASSING.
+
+    With a key configured, every /api/v1 route must refuse an anonymous caller
+    with 401. This is the regression that the previous suite actively hid.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._orig_key = os.environ.get("TRADEFLOW_API_KEY")
+        os.environ["TRADEFLOW_API_KEY"] = "a-real-configured-key-1234"
+
+    def tearDown(self):
+        if self._orig_key is None:
+            os.environ.pop("TRADEFLOW_API_KEY", None)
+        else:
+            os.environ["TRADEFLOW_API_KEY"] = self._orig_key
+        super().tearDown()
+
+    def test_list_sessions_requires_key(self):
+        self.assertEqual(self.c.get("/api/v1/sessions").status_code, 401)
+
+    def test_round_requires_key(self):
+        r = self.c.post("/api/v1/sessions/auth-probe-01/round",
+                        json={"opponent_offer_price": 13.0})
+        self.assertEqual(r.status_code, 401)
+
+    def test_telemetry_config_requires_key(self):
+        self.assertEqual(self.c.get("/api/v1/config/telemetry").status_code, 401)
+
+    def test_valid_key_is_accepted(self):
+        r = self.c.get("/api/v1/sessions",
+                       headers={"X-API-Key": "a-real-configured-key-1234"})
+        self.assertEqual(r.status_code, 200)
 
 
 if __name__ == "__main__":

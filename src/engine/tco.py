@@ -14,6 +14,14 @@ from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 
+# 超額庫存的平均持有/滯銷週轉天數。**單一定義**，供本模組兩條 TCO 路徑
+# (calculate_effective_price 與 calculate_nonlinear_effective_tco) 共用，
+# 避免同一概念出現兩套數字（見 DEEP_DEFECT_AUDIT.md §4.7）。
+# [誠實揭露] 90 天為編譯時固定的產業經驗假設，非由買方實際庫存週轉率量測而得；
+# 呼叫端若持有真實週轉數據，應以此常數為基礎覆寫。
+INVENTORY_HOLDING_DAYS = 90.0
+
+
 class TradeTermsSpec(BaseModel):
     """採購方基準合約標準條款。"""
     baseline_lead_days: int = Field(default=20, description="基準標準交期 (天)")
@@ -22,7 +30,16 @@ class TradeTermsSpec(BaseModel):
     baseline_payment_credit_days: int = Field(default=0, description="基準驗收後帳期天數 (0=見提單走帳)")
     annual_cost_of_capital: float = Field(default=0.08, description="買方年化資本佔用成本 (8%)")
     daily_lead_delay_penalty_pct: float = Field(default=0.003, description="交期每延遲一天之違約險折算係數 (0.3%/天)")
-    excess_moq_holding_cost_rate: float = Field(default=0.05, description="超額庫存持有與滯銷風險年化費率 (5%)")
+    excess_moq_holding_cost_rate: float = Field(
+        default=0.05,
+        description=(
+            "超額庫存持有與滯銷風險**年化**費率 (5%)。"
+            "注意此為年化率，必須乘上持有天數/365 才是單件影子成本；"
+            "早期版本曾把年化率當成一次性費用直接乘，與本模組非線性路徑"
+            "（以 wacc × 90/365 折算）相差約 2.5 倍。兩條路徑現共用 "
+            "INVENTORY_HOLDING_DAYS 與本費率。"
+        ),
+    )
 
 
 class SupplierOfferedTerms(BaseModel):
@@ -65,11 +82,17 @@ class TCOEngine:
             lead_penalty = p_raw * delay_days * terms_spec.daily_lead_delay_penalty_pct
 
         # 2. 起訂量超額持有與倉儲影子成本 (MOQ Holding Cost)
+        # [修正 — 見 DEEP_DEFECT_AUDIT.md §4.7]
+        # 舊版此處為 `p_raw * excess_ratio * excess_moq_holding_cost_rate`，把
+        #「年化 5%」當成一次性費用直接乘，得到 0.05 的量級；而同模組的
+        # calculate_nonlinear_effective_tco 用 `wacc * 90/365` ≈ 0.0197。
+        # 同一概念兩套數字（相差 ~2.5 倍），且 main.py 與 logrolling.py 各用一套。
+        # 現統一：年化費率 × 持有天數/365，與非線性路徑同基準。
         moq_penalty = 0.0
         if offered.offered_moq is not None and offered.offered_moq > terms_spec.baseline_moq:
             excess_ratio = (offered.offered_moq - terms_spec.baseline_moq) / terms_spec.baseline_moq
-            # 超量部分按年化 5% 倉儲滯銷折算進單件單價
-            moq_penalty = p_raw * excess_ratio * terms_spec.excess_moq_holding_cost_rate
+            holding_years = INVENTORY_HOLDING_DAYS / 365.0
+            moq_penalty = p_raw * excess_ratio * terms_spec.excess_moq_holding_cost_rate * holding_years
 
         # 3. 付款條款與資金佔用成本 (Payment Terms Cashflow Cost)
         payment_penalty = 0.0
@@ -124,12 +147,22 @@ class TCOEngine:
         - 5：交期延遲的安全緩衝天數（超過才課罰）；
         - 0.015 / 指數 1.75 / 除數 10：缺貨風險的超線性階梯懲罰曲線（超過
           緩衝後以 ((delay-5)/10)^1.75 放大 1.5% 基價）；
-        - 90 / 365：庫存週轉視為平均 90 天；
+        - INVENTORY_HOLDING_DAYS (90) / 365：庫存週轉視為平均 90 天；
         - 0.08 / 1.2：滯銷降價風險（1 − exp(−1.2·excess_ratio) 之飽和收益，
           基於 8% base 風險率）；
         - 1.05：`is_unfavorable` 觸發閾值（等效價 > 原始價 1.05x 判定不利）。
         若需不同情境，應以 TradeTermsSpec / 函數參數覆寫這些值，本方法目前
         直接使用字面常數。
+
+        [與 calculate_effective_price 的關係 — 見 §4.7]
+        本方法與 calculate_effective_price 共用 INVENTORY_HOLDING_DAYS 作為持有
+        期間，但**刻意**分成兩項，非同一數字：
+          * holding_cost  = 庫存資金佔用，以 wacc 為年化率（資本成本觀點）；
+          * markdown_risk = 滯銷降價的非線性飽和風險（1 − e^(−1.2·excess_ratio)），
+            此項是線性路徑（單一「持有與滯銷」年化費率）所沒有的。
+        亦即本路徑 = 資本成本 + 非線性滯銷風險；線性路徑 = 單一綜合年化費率。
+        兩者的共同點是「年化率 × 持有天數/365」的量綱，且持有天數同源；
+        差異處已明文揭露，並由 tests/test_tco_consistency.py 固定。
         """
         lead_penalty = 0.0
         lead_breakdown = {"capital_cost": 0.0, "stockout_risk_cost": 0.0}
@@ -151,8 +184,8 @@ class TCOEngine:
         moq_breakdown = {"holding_cost": 0.0, "markdown_risk_cost": 0.0}
         if offered_moq is not None and offered_moq > baseline_moq:
             excess_ratio = (offered_moq - baseline_moq) / float(baseline_moq)
-            # 庫存持有資金佔用 (以平均 90 天滯銷週轉計) — 常數見上方揭露
-            holding_cost = raw_price * excess_ratio * (wacc * (90.0 / 365.0))
+            # 庫存持有資金佔用 (以平均 90 天滯銷週轉計) — 天數常數與線性路徑共用
+            holding_cost = raw_price * excess_ratio * (wacc * (INVENTORY_HOLDING_DAYS / 365.0))
             # 滯銷降價非線性飽和風險: 1 - exp(-1.2 * excess_ratio) — 常數見上方揭露
             markdown_risk = raw_price * excess_ratio * 0.08 * (1.0 - math.exp(-1.2 * excess_ratio))
             moq_penalty = holding_cost + markdown_risk

@@ -6,7 +6,13 @@
 3. 同音字/形似字/拼音字母混淆防繞過 (120 條)
 4. 禮貌拒絕、反諷與虛假讓步 (130 條)
 
-持久化為 data/benchmark_ood_500.json 與 src/benchmark/ood_500_dataset.py。
+持久化為 data/benchmark_ood_500.json，並重生 data/ood_train.json / data/ood_test.json 切分快照。
+
+[審計修正 §4.1] 舊版此腳本還會**覆寫** `src/benchmark/ood_500_dataset.py`，把它降級成
+8 行純載入器 —— 那會靜默刪除該模組現在承載的**可重現 train/test 切分**邏輯
+（`OOD_TRAIN_DATASET` / `OOD_TEST_DATASET`，修復「訓練即評測」污染的關鍵機制）。
+現版已移除該覆寫，改為呼叫 `materialize_split()` 重生切分快照；模組本身手工維護，
+並由 `tests/test_benchmark_integrity.py` 守門。
 
 [誠實揭露 / 資料生成方式]
 本資料集是**合成模板回收**生成，非 500 條各自獨立的自然語言樣本：
@@ -18,6 +24,12 @@
   **434 件共享 66 個自然語言模板**，真正的句式多樣性遠小於 500。
 - 用途：作為**負樣本標註一致性 / 對抗維度覆蓋**的基準，而非真實語料多樣性
   統計；引用時請勿宣稱「500 條獨特語料」。
+- **與分類正則的關係**：本生成器**不**匯入分類器，也不以分類器自我標註
+  （`ground_truth_intent` 由模板作者手工指定）。與 `src/engine/bilingual.py`
+  **分類正則字面量**共享 >=4-gram 者僅 **31/500**（舊文件宣稱的 199/500 實為
+  「與整個模組原始碼文字重疊」的計數，誇大約 6 倍；3-gram 判準給出 452/500，
+  可見短 n-gram 幾無鑑別力）。污染並非在生成階段產生，而是下游把整份資料集
+  拿去訓練 ONNX 分類頭後又用同一份評測造成的。
 """
 from __future__ import annotations
 import os
@@ -253,16 +265,27 @@ def save_ood_dataset():
         json.dump(data_dict, f, ensure_ascii=False, indent=2)
     print(f"Saved to {json_path} ({os.path.getsize(json_path) / 1024:.1f} KB)")
 
-    # 2. 寫入 Python 模組
-    os.makedirs("src/benchmark", exist_ok=True)
-    py_path = "src/benchmark/ood_500_dataset.py"
-    with open(py_path, "w", encoding="utf-8") as f:
-        f.write('"""TradeFlow 500-Item Ground-Truth OOD Benchmark Dataset."""\n')
-        f.write("import json\nimport os\nfrom typing import List, Dict, Any\n\n")
-        f.write("_json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', 'benchmark_ood_500.json')\n")
-        f.write("with open(_json_path, 'r', encoding='utf-8') as _f:\n")
-        f.write("    OOD_500_DATASET: List[Dict[str, Any]] = json.load(_f)\n")
-    print(f"Saved Python module to {py_path}")
+    # 2. [審計修正 §4.1] 不再改寫 `src/benchmark/ood_500_dataset.py`。
+    #
+    #    該模組現在除了載入整份 JSON，還負責匯出**可重現的模板級 train/test 切分**
+    #    （`OOD_TRAIN_DATASET` / `OOD_TEST_DATASET`），供 ONNX 分類頭訓練與 held-out
+    #    評測使用 —— 這是修復「訓練即評測」污染的關鍵機制。
+    #
+    #    舊版本此處以 `f.write(...)` 直接產生一個 8 行的純載入器，會**靜默覆蓋**掉
+    #    上述切分邏輯，使污染復辟。因此改為：只重生 JSON 與切分快照，模組本身由
+    #    `src/benchmark/ood_500_dataset.py` 手工維護。
+    #
+    #    若切分邏輯需要變更，請改該模組並重跑 `materialize_split()`；
+    #    `tests/test_benchmark_integrity.py` 會在切分消失或與快照不符時失敗。
+    from src.benchmark.ood_500_dataset import materialize_split
+
+    manifest = materialize_split()
+    print(
+        f"Regenerated split artifacts: data/ood_train.json ({manifest['train_count']}), "
+        f"data/ood_test.json ({manifest['test_count']}), "
+        f"template_overlap={manifest['template_overlap']}"
+    )
+    print("Preserved hand-maintained module src/benchmark/ood_500_dataset.py (split-aware).")
 
     # 驗證分佈
     from collections import Counter

@@ -131,7 +131,10 @@ def run_multi_supplier_demo(out_dir="results"):
 
     for round_info in res["trace"]:
         r = round_info["round"]
-        print(f"--- Round {r} (Evaluated {round_info['rollouts']:,} Rollouts in {round_info['elapsed_seconds']:.2f}s) ---")
+        # [誠實措辭] 見 DEEP_DEFECT_AUDIT.md §4.4：`rollouts` 是參數乘積
+        # (K x S x N_open x N_sched) 的**張量元素計數**，不是實際迴圈執行次數。
+        # 舊版寫 "Evaluated {n} Rollouts"，讀起來像量測值。
+        print(f"--- Round {r} (Tensor grid {round_info['rollouts']:,} cells in {round_info['elapsed_seconds']:.2f}s) ---")
         for i, supp in enumerate(suppliers):
             q = round_info["quotes"][i]
             tactic = round_info["tactics"][i]
@@ -146,7 +149,7 @@ def run_multi_supplier_demo(out_dir="results"):
     print(f"  Settled Unit Price : ¥{res['winning_price']:.2f} (Target ¥{res['product_target']:.2f}, Ceiling ¥{res['walk_away_ceiling']:.2f})")
     print(f"  Procurement Savings: {res['total_savings_pct']:.1%} (¥{res['walk_away_ceiling'] - res['winning_price']:.2f}/unit)")
     print(f"  Total Cash Saved   : ¥{res['total_savings_cny']:,.2f} for MOQ {res['moq']:,} units")
-    print(f"  Cumulative Rollouts: {res['total_rollouts_accum']:,} paths in {res['total_compute_seconds']:.2f}s tensor time")
+    print(f"  Tensor grid cells  : {res['total_rollouts_accum']:,} (parameterised, not an execution count) in {res['total_compute_seconds']:.2f}s tensor time")
     print(f"  Total Process Time : {total_elapsed:.2f}s\n")
 
     # 產出 Markdown 報表
@@ -158,7 +161,7 @@ def run_multi_supplier_demo(out_dir="results"):
 - Winning Supplier: {res['winning_supplier']}
 - Settled Price: ¥{res['winning_price']:.2f}
 - Procurement Savings: {res['total_savings_pct']:.1%} (¥{res['total_savings_cny']:,.2f} total)
-- Total Monte Carlo Rollouts: {res['total_rollouts_accum']:,}
+- Tensor Grid Cells: {res['total_rollouts_accum']:,} (= K x S x N_open x N_sched parameterised product, NOT a measured rollout/iteration count)
 
 | Round | Supplier | Quote (¥) | Tactic Classification | Dynamic BATNA Ceiling (¥) | Risk (%) | Counter-Offer (¥) |
 |---|---|---|---|---|---|---|
@@ -238,7 +241,24 @@ def run_benchmark():
     p_img = "results/benchmark.png"
     viz.plot_benchmark(report, p_img)
     print(f"\n[Hardware Detected] {report['hardware_detected']}")
-    print(f"[Roofline Model] Max Bandwidth Speedup: {report['roofline_specs']['theoretical_max_speedup']}x")
+    # [修正] 見 DEEP_DEFECT_AUDIT.md §4 附註：舊版在此讀取一個
+    # roofline_specs 中**已被移除**的鍵（名為 theoretical-max-speedup 的舊欄位），
+    # 但 `benchmark.run()` 自 commit 045d243 起只輸出 cpu_bandwidth_gb_s /
+    # mi300x_hbm3_bandwidth_gb_s / bandwidth_ratio_cpu_to_mi300x / note，
+    # 因此 `python -m src.cli --benchmark` 在全新 clone 上必定 KeyError 並以
+    # exit 1 結束（已實測）。
+    # 現改讀真正存在的鍵，並明確標示該比值**不是**加速預測（與 benchmark.py 的
+    # note 一致），避免把規格比值誤讀成可達成的加速倍率。
+    specs = report.get("roofline_specs", {})
+    ratio = specs.get("bandwidth_ratio_cpu_to_mi300x")
+    if ratio is not None:
+        print(
+            f"[Roofline Model] Bandwidth ratio CPU→MI300X: {ratio}x "
+            f"(specification ratio only — NOT a speedup prediction)"
+        )
+    else:
+        print("[Roofline Model] bandwidth ratio unavailable in this report.")
+    print(f"[Roofline Note] {specs.get('note', '(none)')}")
     print(f"[Saved Profile] -> {p_json}")
     print(f"[Saved Plot] -> {p_img}")
 

@@ -10,6 +10,17 @@ uvicorn>=0.29
 # accuracy thresholds. Verified by blocking the import: 3 failed, 98 passed.
 onnxruntime>=1.17
 
+# Loads the documented quickstart .env into os.environ (called by src/app/main.py).
+# Without it, TRADEFLOW_ENV / TRADEFLOW_API_KEY / telemetry credentials set in .env
+# never reach the process started via `python -m src.app.main`.
+python-dotenv>=1.0
+
+# Tier-2 backend for src/engine/safe_regex.py (10ms hard timeout guard against
+# ReDoS). Neither re2 nor regex was listed, so a clean install fell through to
+# stdlib `re`, which has no timeout and no O(n) guarantee. Not re2: it needs a
+# C++ build and would break the zero-friction quickstart.
+regex>=2024.0.0
+
 # --- Development / CI ---
 # Only needed to run the test suite; the application itself does not import them.
 pytest>=8.0

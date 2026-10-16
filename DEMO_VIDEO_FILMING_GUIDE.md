@@ -75,7 +75,9 @@ Use the real chart in the Web Portal (SSE-driven), not the matplotlib frame.
 
 Click **Run Auction**. 4 suppliers get tactic labels
 (`LEAN_IN` / `CROSS_ANCHOR` / `SIDELINE`) computed live from dynamic BATNA.
-The 28.8M rollout counter is real (measured), so this is safe to show.
+The 28.8M counter is a parameterised tensor-grid size (K x S x N_open x N_sched),
+NOT a measured rollout/iteration count — say "tensor grid cells" on camera, not
+"measured rollouts". It is still safe to show as a magnitude indicator.
 
 ---
 
@@ -116,8 +118,8 @@ frame `disc.png` already discloses this correctly — keep that discipline.
 | 0:20–0:50 | One-liner + architecture diagram; "math decides, LLM writes" | Originality |
 | 0:50–1:50 | **Moment A** — guardrail refuses an 85% deposit demand, live | Technology |
 | 1:50–2:25 | **Moment B** — belief update across 2 real rounds | Technology |
-| 2:25–2:45 | **Moment C** — Run Auction, 4 tactics, 28.8M rollouts | Technology |
-| 2:45–3:00 | Honest boundaries + repo URL + 110 tests green | Presentation |
+| 2:25–2:45 | **Moment C** — Run Auction, 4 tactics, 28.8M tensor grid cells | Technology |
+| 2:45–3:00 | Honest boundaries + repo URL + 326 tests green | Presentation |
 
 Record with **audio narration**. A silent screen recording reads as unfinished.
 
@@ -146,7 +148,7 @@ Fix the script or film to reality — do not read the 2ms line over a 2.5s wait.
 - [ ] `python -m src.app.main` running; `http://localhost:8000` returns 200
 - [ ] Use **`opponent_raw_text` / `opponent_offer_price`** for API calls —
       misspelled fields now return HTTP 422 (was silently ignored before today's fix)
-- [ ] `python -m pytest tests -q` → expect **110 passed** (say this number)
+- [ ] `python -m pytest tests -q` → expect **327 passed + 68 subtests** (say this number)
 - [ ] Narration audio recorded and verified on the exported file
 - [ ] Re-check: `ffprobe results/demo_video.mp4` must show **both** a video and an
       audio stream, duration ≥ 180s

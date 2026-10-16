@@ -1,0 +1,42 @@
+{
+  "method": "template-group-stratified-by-intent-v1",
+  "seed": 42,
+  "test_ratio": 0.3,
+  "source": "data/benchmark_ood_500.json",
+  "source_sha256": "c29ded4e9487478348ca6e443fecaf809e05c4d5254a866f79a8ac63e030a392",
+  "train_count": 305,
+  "test_count": 195,
+  "train_template_count": 42,
+  "test_template_count": 24,
+  "template_overlap": 0,
+  "text_overlap": 0,
+  "test_intent_counts": {
+    "CRY_POVERTY_COST_HIKE": 26,
+    "FINAL_DEAL_CONCESSION": 10,
+    "MATERIAL_SPEC_DEGRADE": 36,
+    "NORMAL_COUNTER_OFFER": 36,
+    "OFFLINE_BYPASS_DIVERT": 29,
+    "TAX_PACKAGING_UNBUNDLING": 30,
+    "TIER_VOLUME_BLACKMAIL": 28
+  },
+  "test_dimension_counts": {
+    "COASTAL_JARGON": 35,
+    "EVASION_OFFLINE": 65,
+    "MULTI_CLAUSE": 52,
+    "SARCASM_PSEUDO": 43
+  },
+  "train_intent_counts": {
+    "CRY_POVERTY_COST_HIKE": 52,
+    "FINAL_DEAL_CONCESSION": 10,
+    "MATERIAL_SPEC_DEGRADE": 47,
+    "NORMAL_COUNTER_OFFER": 57,
+    "OFFLINE_BYPASS_DIVERT": 46,
+    "TAX_PACKAGING_UNBUNDLING": 37,
+    "TIER_VOLUME_BLACKMAIL": 56
+  },
+  "train_pinned_texts": [
+    "行吧服了你了，就按你說的 12.50，發合同過來吧。"
+  ],
+  "train_sha256": "9ce7e0e2cc2a958ca0da001cfde63eea882e90ec49a01bed76a42e9c660a121d",
+  "test_sha256": "f09b487b3a64193b664df0ff5219b438cf32748f2299572b88ee970bb2013a46"
+}

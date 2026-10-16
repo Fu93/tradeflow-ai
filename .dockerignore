@@ -1,0 +1,42 @@
+# Docker build context exclusions.
+#
+# The Dockerfile currently COPYs only src/, models/, data/, seed_data/ and
+# knowledge/, so this file changes nothing today. It exists to make a future
+# broad `COPY . .` safe: without it, that one-line change would bake the real
+# credentials in `.env` and the runtime session database into the image.
+
+# ---- Secrets (never in an image) ----
+.env
+.env.*
+!.env.example
+.env.tmp
+*.pem
+*.key
+
+# ---- VCS / tooling ----
+.git
+.gitignore
+.github
+.pytest_cache
+__pycache__
+*/__pycache__
+*.py[cod]
+.venv
+venv
+
+# ---- Runtime state (regenerated locally, never shipped) ----
+# SQLite writes sidecars as `-wal` / `-shm` and `-journal`; `data/sessions_json/`
+# holds per-session snapshots.
+data/sessions.db
+data/sessions.db-wal
+data/sessions.db-shm
+data/sessions.db-journal
+data/sessions_json/
+
+# ---- Demo build intermediates ----
+results/_frames/
+results/pitch_preview/
+
+# ---- Local scratch / documentation noise ----
+_s4.py
+*.log

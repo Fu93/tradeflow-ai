@@ -26,10 +26,54 @@ jobs:
       - name: Run full test suite
         run: python -m pytest tests -q
 
-      # Gate on the honesty checks this project relies on: no credential value
-      # in any tracked file, and no broken/`file:///` links in the docs.
-      - name: Verify no secrets are committed
-        run: python scripts/secret_scan.py
+      # Gate on the honesty checks this project relies on.
+      #
+      # [FAIL-CLOSED] secret_scan.py reads the credential VALUES from .env and
+      # greps the tree for them. A CI runner has no .env, so before this fix it
+      # scanned for zero credentials and printed "[PASS] No credential value
+      # found" unconditionally — the gate could never fail.
+      #
+      # CI has no .env, so the scanner is now invoked with
+      # --allow-missing-env, which makes it print an explicit
+      # "NOT a security verification" warning and never claim a PASS it did not
+      # earn. To make this gate meaningful in CI, populate the credential values
+      # from repository secrets first; see the optional step below.
+      - name: Scan for committed credentials (no .env in CI)
+        run: python scripts/secret_scan.py --allow-missing-env
+
+      # Optional strengthening: when the CI environment provides the real
+      # credential values as secrets, write them to a throwaway .env so the scan
+      # becomes a genuine leak check instead of a no-op. This is skipped
+      # automatically when the secrets are not configured.
+      - name: Scan for committed credentials using configured secrets
+        if: ${{ secrets.EVOLUS_API_KEY != '' }}
+        env:
+          CI_EVOLUS_API_KEY: ${{ secrets.EVOLUS_API_KEY }}
+          CI_EVOLUS_APP_ID: ${{ secrets.EVOLUS_APP_ID }}
+          CI_VLLM_API_KEY: ${{ secrets.VLLM_API_KEY }}
+        run: |
+          python - <<'PY'
+          import os
+          keys = {
+              "EVOLUS_API_KEY": os.environ.get("CI_EVOLUS_API_KEY", ""),
+              "EVOLUS_APP_ID": os.environ.get("CI_EVOLUS_APP_ID", ""),
+              "VLLM_API_KEY": os.environ.get("CI_VLLM_API_KEY", ""),
+          }
+          with open(".env", "w", encoding="utf-8") as fh:
+              for k, v in keys.items():
+                  if v:
+                      fh.write(f"{k}={v}\n")
+          print("wrote .env with", len([v for v in keys.values() if v]), "credential(s)")
+          PY
+          python scripts/secret_scan.py
+          rm -f .env
 
       - name: Verify documentation links resolve
         run: python scripts/check_doc_links.py
+
+      # Run the guard tests explicitly so a regression in a security/integrity
+      # gate is visible as a named CI step rather than buried in the suite.
+      - name: Run security and integrity guard tests
+        run: |
+          python -m pytest tests/test_api_security.py tests/test_secret_scan.py \
+                           tests/test_benchmark_integrity.py tests/test_web_xss.py -q

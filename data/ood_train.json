@@ -1,0 +1,5811 @@
+[
+  {
+    "id": "OOD-1-001",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "放寬兩個絲的公差，單價算你 11.20，要緊配的話這價做不了。",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tolerance_slang_絲",
+      "negative_conditional"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-003",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "火花機清角和慢走絲夾具費另計，報價 15.00 是粗加工裸價。",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 15.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "machining_unbundle"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-004",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "陽極氧化做雙色高光每件加收兩塊五，單色噴砂算您 13.80。",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "surface_treatment_add"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-005",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "這批五金衝壓走非標冷軋板，厚度負公差做一個毫米，報價 8.60。",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 8.6,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "negative_tolerance_gauge"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-007",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "打白條和壓三結一免談，現在純銅棒現款提貨，出廠價 24.50。",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 24.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "cash_settlement_cry"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-008",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "CNC 四軸調機費起步八百，未滿一千件分攤下來單價得算 18.00。",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 1000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "cnc_setup_fee"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-009",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "線切割割一刀要加五毛，熱處理硬度做到 HRC58 另外加兩塊。",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "heat_treatment_unbundle"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-012",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "這批改用再生滌綸短纖，經緯克重偷兩個安，手感差別不大，單價 14.20。",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 14.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "weight_cheating_安"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-013",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "色卡打樣免費，但單剪米樣每米另外加收三十塊手工費，批發 16.50。",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 16.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_cut_fee"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-014",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "棉紗期貨天天拉漲停，這款全棉府綢每碼報價 19.80，三天內有效。",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 19.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "raw_fiber_inflation"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-015",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "定織定染起訂量八千碼起，翻單五千碼才能按大貨價 12.50 下缸。",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "custom_weaving_moq"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-016",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "防水塗層做常規防潑水，不包四級耐水壓檢測，報價 15.00。",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 15.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "coating_downgrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-017",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "染整環保蒸汽費上調，印花開版費一千二一個套色，單價 17.50。",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 17.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "printing_plate_fee"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-018",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "模具是一出四的，打樣只打一出二，調機費另算八百，產品算 6.80。",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 6.8,
+      "moq": null,
+      "mold_fee": 800.0,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "mold_cavity_limit"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-020",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "試模打樣三次費用自理，修模我們工廠承擔，出廠單件 8.90。",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 8.9,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "mold_trial_unbundle"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-021",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "ABS 顆粒噸價這月跳漲一千五，按原價 7.40 做工廠純賠電費。",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 7.4,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "resin_price_hike"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-022",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "注塑機噸位大，幾百套不夠清料費，單次打單至少三千套起跑。",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": 3000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "machine_tonnage_moq"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-023",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "模腔做普通拋光不鍍硬鉻，壽命保十萬模次，報價每件 4.80。",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 4.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "mold_plating_skip"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-024",
+    "dimension": "COASTAL_JARGON",
+    "industry": "CERAMICS",
+    "text": "窯爐不吃飽不點火，幾百套沒法開窯，氣價剛漲了兩塊一方。",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "kiln_firing_volume"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-028",
+    "dimension": "COASTAL_JARGON",
+    "industry": "ELECTRONICS",
+    "text": "SMT 貼片光開機費就要五百，首期未滿兩千片得均攤工程費，單片 3.20。",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 3.2,
+      "moq": 2000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "smt_setup_amortize"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-030",
+    "dimension": "COASTAL_JARGON",
+    "industry": "ELECTRONICS",
+    "text": "主控晶片現貨市場炒高三倍，按 16.00 走我們還得倒貼採購差價。",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 16.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "chip_spot_surge"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-031",
+    "dimension": "COASTAL_JARGON",
+    "industry": "ELECTRONICS",
+    "text": "Type-C 介面改用非標沖壓端子，不保一萬次插拔，報價 2.40。",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 2.4,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "terminal_durability_cheat"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-032",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】放寬兩個絲的公差，單價算你 11.20，要緊配的話這價做不了。（批次號 #131）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tolerance_slang_絲",
+      "negative_conditional"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-034",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】火花機清角和慢走絲夾具費另計，報價 15.00 是粗加工裸價。（批次號 #133）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 15.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "machining_unbundle"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-035",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】陽極氧化做雙色高光每件加收兩塊五，單色噴砂算您 13.80。（批次號 #134）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "surface_treatment_add"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-036",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】這批五金衝壓走非標冷軋板，厚度負公差做一個毫米，報價 8.60。（批次號 #135）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 8.6,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "negative_tolerance_gauge"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-038",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】打白條和壓三結一免談，現在純銅棒現款提貨，出廠價 24.50。（批次號 #137）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 24.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "cash_settlement_cry"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-039",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】CNC 四軸調機費起步八百，未滿一千件分攤下來單價得算 18.00。（批次號 #138）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 1000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "cnc_setup_fee"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-040",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】線切割割一刀要加五毛，熱處理硬度做到 HRC58 另外加兩塊。（批次號 #139）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "heat_treatment_unbundle"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-043",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】這批改用再生滌綸短纖，經緯克重偷兩個安，手感差別不大，單價 14.20。（批次號 #142）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 14.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "weight_cheating_安"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-044",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】色卡打樣免費，但單剪米樣每米另外加收三十塊手工費，批發 16.50。（批次號 #143）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 16.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_cut_fee"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-045",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】棉紗期貨天天拉漲停，這款全棉府綢每碼報價 19.80，三天內有效。（批次號 #144）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 19.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "raw_fiber_inflation"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-046",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】定織定染起訂量八千碼起，翻單五千碼才能按大貨價 12.50 下缸。（批次號 #145）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "custom_weaving_moq"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-047",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】防水塗層做常規防潑水，不包四級耐水壓檢測，報價 15.00。（批次號 #146）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 15.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "coating_downgrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-048",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】染整環保蒸汽費上調，印花開版費一千二一個套色，單價 17.50。（批次號 #147）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 17.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "printing_plate_fee"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-049",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】模具是一出四的，打樣只打一出二，調機費另算八百，產品算 6.80。（批次號 #148）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 6.8,
+      "moq": null,
+      "mold_fee": 800.0,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "mold_cavity_limit"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-051",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】試模打樣三次費用自理，修模我們工廠承擔，出廠單件 8.90。（批次號 #150）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 8.9,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "mold_trial_unbundle"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-052",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】ABS 顆粒噸價這月跳漲一千五，按原價 7.40 做工廠純賠電費。（批次號 #151）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 7.4,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "resin_price_hike"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-053",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】注塑機噸位大，幾百套不夠清料費，單次打單至少三千套起跑。（批次號 #152）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": 3000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "machine_tonnage_moq"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-054",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】模腔做普通拋光不鍍硬鉻，壽命保十萬模次，報價每件 4.80。（批次號 #153）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 4.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "mold_plating_skip"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-055",
+    "dimension": "COASTAL_JARGON",
+    "industry": "CERAMICS",
+    "text": "【工廠反饋】窯爐不吃飽不點火，幾百套沒法開窯，氣價剛漲了兩塊一方。（批次號 #154）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "kiln_firing_volume"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-059",
+    "dimension": "COASTAL_JARGON",
+    "industry": "ELECTRONICS",
+    "text": "【工廠反饋】SMT 貼片光開機費就要五百，首期未滿兩千片得均攤工程費，單片 3.20。（批次號 #158）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 3.2,
+      "moq": 2000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "smt_setup_amortize"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-061",
+    "dimension": "COASTAL_JARGON",
+    "industry": "ELECTRONICS",
+    "text": "【工廠反饋】主控晶片現貨市場炒高三倍，按 16.00 走我們還得倒貼採購差價。（批次號 #160）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 16.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "chip_spot_surge"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-062",
+    "dimension": "COASTAL_JARGON",
+    "industry": "ELECTRONICS",
+    "text": "【工廠反饋】Type-C 介面改用非標沖壓端子，不保一萬次插拔，報價 2.40。（批次號 #161）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 2.4,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "terminal_durability_cheat"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-063",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】放寬兩個絲的公差，單價算你 11.20，要緊配的話這價做不了。（批次號 #162）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tolerance_slang_絲",
+      "negative_conditional"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-065",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】火花機清角和慢走絲夾具費另計，報價 15.00 是粗加工裸價。（批次號 #164）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 15.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "machining_unbundle"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-066",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】陽極氧化做雙色高光每件加收兩塊五，單色噴砂算您 13.80。（批次號 #165）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "surface_treatment_add"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-067",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】這批五金衝壓走非標冷軋板，厚度負公差做一個毫米，報價 8.60。（批次號 #166）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 8.6,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "negative_tolerance_gauge"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-069",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】打白條和壓三結一免談，現在純銅棒現款提貨，出廠價 24.50。（批次號 #168）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 24.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "cash_settlement_cry"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-070",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】CNC 四軸調機費起步八百，未滿一千件分攤下來單價得算 18.00。（批次號 #169）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 1000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "cnc_setup_fee"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-071",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】線切割割一刀要加五毛，熱處理硬度做到 HRC58 另外加兩塊。（批次號 #170）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "heat_treatment_unbundle"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-074",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】這批改用再生滌綸短纖，經緯克重偷兩個安，手感差別不大，單價 14.20。（批次號 #173）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 14.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "weight_cheating_安"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-075",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】色卡打樣免費，但單剪米樣每米另外加收三十塊手工費，批發 16.50。（批次號 #174）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 16.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_cut_fee"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-076",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】棉紗期貨天天拉漲停，這款全棉府綢每碼報價 19.80，三天內有效。（批次號 #175）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 19.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "raw_fiber_inflation"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-077",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】定織定染起訂量八千碼起，翻單五千碼才能按大貨價 12.50 下缸。（批次號 #176）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "custom_weaving_moq"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-078",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】防水塗層做常規防潑水，不包四級耐水壓檢測，報價 15.00。（批次號 #177）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 15.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "coating_downgrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-079",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】染整環保蒸汽費上調，印花開版費一千二一個套色，單價 17.50。（批次號 #178）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 17.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "printing_plate_fee"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-080",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】模具是一出四的，打樣只打一出二，調機費另算八百，產品算 6.80。（批次號 #179）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 6.8,
+      "moq": null,
+      "mold_fee": 800.0,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "mold_cavity_limit"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-082",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】試模打樣三次費用自理，修模我們工廠承擔，出廠單件 8.90。（批次號 #181）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 8.9,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "mold_trial_unbundle"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-083",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】ABS 顆粒噸價這月跳漲一千五，按原價 7.40 做工廠純賠電費。（批次號 #182）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 7.4,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "resin_price_hike"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-084",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】注塑機噸位大，幾百套不夠清料費，單次打單至少三千套起跑。（批次號 #183）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": 3000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "machine_tonnage_moq"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-085",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】模腔做普通拋光不鍍硬鉻，壽命保十萬模次，報價每件 4.80。（批次號 #184）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 4.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "mold_plating_skip"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-086",
+    "dimension": "COASTAL_JARGON",
+    "industry": "CERAMICS",
+    "text": "【工廠反饋】窯爐不吃飽不點火，幾百套沒法開窯，氣價剛漲了兩塊一方。（批次號 #185）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "kiln_firing_volume"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-090",
+    "dimension": "COASTAL_JARGON",
+    "industry": "ELECTRONICS",
+    "text": "【工廠反饋】SMT 貼片光開機費就要五百，首期未滿兩千片得均攤工程費，單片 3.20。（批次號 #189）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 3.2,
+      "moq": 2000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "smt_setup_amortize"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-092",
+    "dimension": "COASTAL_JARGON",
+    "industry": "ELECTRONICS",
+    "text": "【工廠反饋】主控晶片現貨市場炒高三倍，按 16.00 走我們還得倒貼採購差價。（批次號 #191）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 16.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "chip_spot_surge"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-093",
+    "dimension": "COASTAL_JARGON",
+    "industry": "ELECTRONICS",
+    "text": "【工廠反饋】Type-C 介面改用非標沖壓端子，不保一萬次插拔，報價 2.40。（批次號 #192）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 2.4,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "terminal_durability_cheat"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-094",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】放寬兩個絲的公差，單價算你 11.20，要緊配的話這價做不了。（批次號 #193）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tolerance_slang_絲",
+      "negative_conditional"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-096",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】火花機清角和慢走絲夾具費另計，報價 15.00 是粗加工裸價。（批次號 #195）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 15.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "machining_unbundle"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-097",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】陽極氧化做雙色高光每件加收兩塊五，單色噴砂算您 13.80。（批次號 #196）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "surface_treatment_add"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-098",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】這批五金衝壓走非標冷軋板，厚度負公差做一個毫米，報價 8.60。（批次號 #197）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 8.6,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "negative_tolerance_gauge"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-100",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】打白條和壓三結一免談，現在純銅棒現款提貨，出廠價 24.50。（批次號 #199）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 24.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "cash_settlement_cry"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-101",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】CNC 四軸調機費起步八百，未滿一千件分攤下來單價得算 18.00。（批次號 #200）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 1000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "cnc_setup_fee"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-102",
+    "dimension": "COASTAL_JARGON",
+    "industry": "HARDWARE_MOLD",
+    "text": "【工廠反饋】線切割割一刀要加五毛，熱處理硬度做到 HRC58 另外加兩塊。（批次號 #201）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "heat_treatment_unbundle"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-105",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】這批改用再生滌綸短纖，經緯克重偷兩個安，手感差別不大，單價 14.20。（批次號 #204）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 14.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "weight_cheating_安"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-106",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】色卡打樣免費，但單剪米樣每米另外加收三十塊手工費，批發 16.50。（批次號 #205）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 16.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_cut_fee"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-107",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】棉紗期貨天天拉漲停，這款全棉府綢每碼報價 19.80，三天內有效。（批次號 #206）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 19.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "raw_fiber_inflation"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-108",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】定織定染起訂量八千碼起，翻單五千碼才能按大貨價 12.50 下缸。（批次號 #207）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "custom_weaving_moq"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-109",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】防水塗層做常規防潑水，不包四級耐水壓檢測，報價 15.00。（批次號 #208）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 15.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "coating_downgrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-110",
+    "dimension": "COASTAL_JARGON",
+    "industry": "TEXTILE",
+    "text": "【工廠反饋】染整環保蒸汽費上調，印花開版費一千二一個套色，單價 17.50。（批次號 #209）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 17.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "printing_plate_fee"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-111",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】模具是一出四的，打樣只打一出二，調機費另算八百，產品算 6.80。（批次號 #210）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 6.8,
+      "moq": null,
+      "mold_fee": 800.0,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "mold_cavity_limit"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-113",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】試模打樣三次費用自理，修模我們工廠承擔，出廠單件 8.90。（批次號 #212）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 8.9,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "mold_trial_unbundle"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-114",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】ABS 顆粒噸價這月跳漲一千五，按原價 7.40 做工廠純賠電費。（批次號 #213）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 7.4,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "resin_price_hike"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-115",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】注塑機噸位大，幾百套不夠清料費，單次打單至少三千套起跑。（批次號 #214）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": 3000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "machine_tonnage_moq"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-1-116",
+    "dimension": "COASTAL_JARGON",
+    "industry": "INJECTION",
+    "text": "【工廠反饋】模腔做普通拋光不鍍硬鉻，壽命保十萬模次，報價每件 4.80。（批次號 #215）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 4.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "mold_plating_skip"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-1-117",
+    "dimension": "COASTAL_JARGON",
+    "industry": "CERAMICS",
+    "text": "【工廠反饋】窯爐不吃飽不點火，幾百套沒法開窯，氣價剛漲了兩塊一方。（批次號 #216）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "kiln_firing_volume"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-001",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "單價十二塊不是不行，前提是彩盒你自己拉過來，模具費分三批返還，而且首單至少得下八千個。",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "multi_clause_interlock"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-002",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "13塊含稅可以做，但交期得放到45天之後，而且定金必須拉到50%，不然我們財務通不過。",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "logrolling_concession"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-005",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "出廠價 11.80 元做不了 304，除非換成 201 不鏽鋼，同時包裝改用熱縮膜替代彩盒。",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "material_and_pack_degrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-2-006",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "含13個點專票要加收8%稅點，若走公對私帳號可以按 12.20 直出，運費由買方承擔。",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tax_unbundle_clause"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-007",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "首期打樣 500 件按樣品價 18.00 收取，下大貨滿一萬件時全額抵扣貨款，交期 35 天。",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 10000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_tier_rebate"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-008",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "定金給到四成可以鎖定原料價 13.50，若是常規三成定金，遇到鋼價波動須按市價補差額。",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "deposit_price_peg"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-011",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：單價十二塊不是不行，前提是彩盒你自己拉過來，模具費分三批返還，而且首單至少得下八千個。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "multi_clause_interlock"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-012",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：13塊含稅可以做，但交期得放到45天之後，而且定金必須拉到50%，不然我們財務通不過。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "logrolling_concession"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-015",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：出廠價 11.80 元做不了 304，除非換成 201 不鏽鋼，同時包裝改用熱縮膜替代彩盒。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "material_and_pack_degrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-2-016",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：含13個點專票要加收8%稅點，若走公對私帳號可以按 12.20 直出，運費由買方承擔。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tax_unbundle_clause"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-017",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：首期打樣 500 件按樣品價 18.00 收取，下大貨滿一萬件時全額抵扣貨款，交期 35 天。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 10000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_tier_rebate"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-018",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：定金給到四成可以鎖定原料價 13.50，若是常規三成定金，遇到鋼價波動須按市價補差額。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "deposit_price_peg"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-021",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：單價十二塊不是不行，前提是彩盒你自己拉過來，模具費分三批返還，而且首單至少得下八千個。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "multi_clause_interlock"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-022",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：13塊含稅可以做，但交期得放到45天之後，而且定金必須拉到50%，不然我們財務通不過。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "logrolling_concession"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-025",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：出廠價 11.80 元做不了 304，除非換成 201 不鏽鋼，同時包裝改用熱縮膜替代彩盒。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "material_and_pack_degrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-2-026",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：含13個點專票要加收8%稅點，若走公對私帳號可以按 12.20 直出，運費由買方承擔。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tax_unbundle_clause"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-027",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：首期打樣 500 件按樣品價 18.00 收取，下大貨滿一萬件時全額抵扣貨款，交期 35 天。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 10000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_tier_rebate"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-028",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：定金給到四成可以鎖定原料價 13.50，若是常規三成定金，遇到鋼價波動須按市價補差額。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "deposit_price_peg"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-031",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：單價十二塊不是不行，前提是彩盒你自己拉過來，模具費分三批返還，而且首單至少得下八千個。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "multi_clause_interlock"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-032",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：13塊含稅可以做，但交期得放到45天之後，而且定金必須拉到50%，不然我們財務通不過。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "logrolling_concession"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-035",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：出廠價 11.80 元做不了 304，除非換成 201 不鏽鋼，同時包裝改用熱縮膜替代彩盒。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "material_and_pack_degrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-2-036",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：含13個點專票要加收8%稅點，若走公對私帳號可以按 12.20 直出，運費由買方承擔。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tax_unbundle_clause"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-037",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：首期打樣 500 件按樣品價 18.00 收取，下大貨滿一萬件時全額抵扣貨款，交期 35 天。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 10000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_tier_rebate"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-038",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：定金給到四成可以鎖定原料價 13.50，若是常規三成定金，遇到鋼價波動須按市價補差額。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "deposit_price_peg"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-041",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：單價十二塊不是不行，前提是彩盒你自己拉過來，模具費分三批返還，而且首單至少得下八千個。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "multi_clause_interlock"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-042",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：13塊含稅可以做，但交期得放到45天之後，而且定金必須拉到50%，不然我們財務通不過。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "logrolling_concession"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-045",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：出廠價 11.80 元做不了 304，除非換成 201 不鏽鋼，同時包裝改用熱縮膜替代彩盒。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "material_and_pack_degrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-2-046",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：含13個點專票要加收8%稅點，若走公對私帳號可以按 12.20 直出，運費由買方承擔。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tax_unbundle_clause"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-047",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：首期打樣 500 件按樣品價 18.00 收取，下大貨滿一萬件時全額抵扣貨款，交期 35 天。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 10000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_tier_rebate"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-048",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：定金給到四成可以鎖定原料價 13.50，若是常規三成定金，遇到鋼價波動須按市價補差額。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "deposit_price_peg"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-051",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：單價十二塊不是不行，前提是彩盒你自己拉過來，模具費分三批返還，而且首單至少得下八千個。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "multi_clause_interlock"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-052",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：13塊含稅可以做，但交期得放到45天之後，而且定金必須拉到50%，不然我們財務通不過。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "logrolling_concession"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-055",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：出廠價 11.80 元做不了 304，除非換成 201 不鏽鋼，同時包裝改用熱縮膜替代彩盒。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "material_and_pack_degrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-2-056",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：含13個點專票要加收8%稅點，若走公對私帳號可以按 12.20 直出，運費由買方承擔。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tax_unbundle_clause"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-057",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：首期打樣 500 件按樣品價 18.00 收取，下大貨滿一萬件時全額抵扣貨款，交期 35 天。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 10000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_tier_rebate"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-058",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：定金給到四成可以鎖定原料價 13.50，若是常規三成定金，遇到鋼價波動須按市價補差額。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "deposit_price_peg"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-061",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：單價十二塊不是不行，前提是彩盒你自己拉過來，模具費分三批返還，而且首單至少得下八千個。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "multi_clause_interlock"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-062",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：13塊含稅可以做，但交期得放到45天之後，而且定金必須拉到50%，不然我們財務通不過。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "logrolling_concession"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-065",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：出廠價 11.80 元做不了 304，除非換成 201 不鏽鋼，同時包裝改用熱縮膜替代彩盒。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "material_and_pack_degrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-2-066",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：含13個點專票要加收8%稅點，若走公對私帳號可以按 12.20 直出，運費由買方承擔。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tax_unbundle_clause"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-067",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：首期打樣 500 件按樣品價 18.00 收取，下大貨滿一萬件時全額抵扣貨款，交期 35 天。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 10000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_tier_rebate"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-068",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：定金給到四成可以鎖定原料價 13.50，若是常規三成定金，遇到鋼價波動須按市價補差額。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "deposit_price_peg"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-071",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：單價十二塊不是不行，前提是彩盒你自己拉過來，模具費分三批返還，而且首單至少得下八千個。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "multi_clause_interlock"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-072",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：13塊含稅可以做，但交期得放到45天之後，而且定金必須拉到50%，不然我們財務通不過。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "logrolling_concession"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-075",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：出廠價 11.80 元做不了 304，除非換成 201 不鏽鋼，同時包裝改用熱縮膜替代彩盒。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "material_and_pack_degrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-2-076",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：含13個點專票要加收8%稅點，若走公對私帳號可以按 12.20 直出，運費由買方承擔。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tax_unbundle_clause"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-077",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：首期打樣 500 件按樣品價 18.00 收取，下大貨滿一萬件時全額抵扣貨款，交期 35 天。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 10000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_tier_rebate"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-078",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：定金給到四成可以鎖定原料價 13.50，若是常規三成定金，遇到鋼價波動須按市價補差額。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "deposit_price_peg"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-081",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：單價十二塊不是不行，前提是彩盒你自己拉過來，模具費分三批返還，而且首單至少得下八千個。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "multi_clause_interlock"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-082",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：13塊含稅可以做，但交期得放到45天之後，而且定金必須拉到50%，不然我們財務通不過。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "logrolling_concession"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-085",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：出廠價 11.80 元做不了 304，除非換成 201 不鏽鋼，同時包裝改用熱縮膜替代彩盒。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "material_and_pack_degrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-2-086",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：含13個點專票要加收8%稅點，若走公對私帳號可以按 12.20 直出，運費由買方承擔。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tax_unbundle_clause"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-087",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：首期打樣 500 件按樣品價 18.00 收取，下大貨滿一萬件時全額抵扣貨款，交期 35 天。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 10000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_tier_rebate"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-088",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：定金給到四成可以鎖定原料價 13.50，若是常規三成定金，遇到鋼價波動須按市價補差額。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "deposit_price_peg"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-091",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：單價十二塊不是不行，前提是彩盒你自己拉過來，模具費分三批返還，而且首單至少得下八千個。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "multi_clause_interlock"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-092",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：13塊含稅可以做，但交期得放到45天之後，而且定金必須拉到50%，不然我們財務通不過。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "logrolling_concession"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-095",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：出廠價 11.80 元做不了 304，除非換成 201 不鏽鋼，同時包裝改用熱縮膜替代彩盒。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "material_and_pack_degrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-2-096",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：含13個點專票要加收8%稅點，若走公對私帳號可以按 12.20 直出，運費由買方承擔。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tax_unbundle_clause"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-097",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：首期打樣 500 件按樣品價 18.00 收取，下大貨滿一萬件時全額抵扣貨款，交期 35 天。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 10000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_tier_rebate"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-098",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：定金給到四成可以鎖定原料價 13.50，若是常規三成定金，遇到鋼價波動須按市價補差額。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "deposit_price_peg"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-101",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：單價十二塊不是不行，前提是彩盒你自己拉過來，模具費分三批返還，而且首單至少得下八千個。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "multi_clause_interlock"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-102",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：13塊含稅可以做，但交期得放到45天之後，而且定金必須拉到50%，不然我們財務通不過。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "logrolling_concession"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-105",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：出廠價 11.80 元做不了 304，除非換成 201 不鏽鋼，同時包裝改用熱縮膜替代彩盒。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "material_and_pack_degrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-2-106",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：含13個點專票要加收8%稅點，若走公對私帳號可以按 12.20 直出，運費由買方承擔。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tax_unbundle_clause"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-107",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：首期打樣 500 件按樣品價 18.00 收取，下大貨滿一萬件時全額抵扣貨款，交期 35 天。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 10000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_tier_rebate"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-108",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：定金給到四成可以鎖定原料價 13.50，若是常規三成定金，遇到鋼價波動須按市價補差額。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "deposit_price_peg"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-111",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：單價十二塊不是不行，前提是彩盒你自己拉過來，模具費分三批返還，而且首單至少得下八千個。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "multi_clause_interlock"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-112",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：13塊含稅可以做，但交期得放到45天之後，而且定金必須拉到50%，不然我們財務通不過。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "logrolling_concession"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-115",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：出廠價 11.80 元做不了 304，除非換成 201 不鏽鋼，同時包裝改用熱縮膜替代彩盒。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "material_and_pack_degrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-2-116",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：含13個點專票要加收8%稅點，若走公對私帳號可以按 12.20 直出，運費由買方承擔。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tax_unbundle_clause"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-117",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：首期打樣 500 件按樣品價 18.00 收取，下大貨滿一萬件時全額抵扣貨款，交期 35 天。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 10000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_tier_rebate"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-118",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：定金給到四成可以鎖定原料價 13.50，若是常規三成定金，遇到鋼價波動須按市價補差額。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "deposit_price_peg"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-121",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：單價十二塊不是不行，前提是彩盒你自己拉過來，模具費分三批返還，而且首單至少得下八千個。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": 8000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "multi_clause_interlock"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-122",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：13塊含稅可以做，但交期得放到45天之後，而且定金必須拉到50%，不然我們財務通不過。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "logrolling_concession"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-125",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：出廠價 11.80 元做不了 304，除非換成 201 不鏽鋼，同時包裝改用熱縮膜替代彩盒。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.8,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "material_and_pack_degrade"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-2-126",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：含13個點專票要加收8%稅點，若走公對私帳號可以按 12.20 直出，運費由買方承擔。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TAX_PACKAGING_UNBUNDLING",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "tax_unbundle_clause"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-127",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "GENERAL",
+    "text": "商務條款協議確認：首期打樣 500 件按樣品價 18.00 收取，下大貨滿一萬件時全額抵扣貨款，交期 35 天。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 18.0,
+      "moq": 10000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "sample_tier_rebate"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-2-128",
+    "dimension": "MULTI_CLAUSE",
+    "industry": "HARDWARE_MOLD",
+    "text": "商務條款協議確認：定金給到四成可以鎖定原料價 13.50，若是常規三成定金，遇到鋼價波動須按市價補差額。（備註條款：需採購方蓋章）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "deposit_price_peg"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-3-001",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "溦信私聊，號碼是壹三八00138000，轉私帳現款直接免掉三個點手續費，單價 12.00。",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_溦信",
+      "private_account"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-004",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "微心聊，電話聊細節，支持走老闆私人卡，報價算您 11.50 出廠。",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_heart_wechat"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-006",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "平台技術服務費高達五個點，轉線下簽紙質合同，出廠底價 13.20 給您。",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "offline_paper_contract"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-007",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "電話聯絡：1三8-I234-5678，數字字母混寫防屏蔽，加個微信細聊。",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "mixed_alpha_phone"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-008",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "看我賣家首頁滾動公告欄有私人手機號，直接打電話，走私單優惠大。",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "profile_banner_divert"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-011",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "不要加微信，任何線下交易本廠一概不予承認，在線簽合同最安全，報價 14.00。",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 14.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "anti_divert_assertion"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-3-014",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】溦信私聊，號碼是壹三八00138000，轉私帳現款直接免掉三個點手續費，單價 12.00。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_溦信",
+      "private_account"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-017",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】微心聊，電話聊細節，支持走老闆私人卡，報價算您 11.50 出廠。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_heart_wechat"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-019",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】平台技術服務費高達五個點，轉線下簽紙質合同，出廠底價 13.20 給您。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "offline_paper_contract"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-020",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】電話聯絡：1三8-I234-5678，數字字母混寫防屏蔽，加個微信細聊。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "mixed_alpha_phone"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-021",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】看我賣家首頁滾動公告欄有私人手機號，直接打電話，走私單優惠大。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "profile_banner_divert"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-024",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】不要加微信，任何線下交易本廠一概不予承認，在線簽合同最安全，報價 14.00。（對話記錄存檔）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 14.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "anti_divert_assertion"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-3-027",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】溦信私聊，號碼是壹三八00138000，轉私帳現款直接免掉三個點手續費，單價 12.00。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_溦信",
+      "private_account"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-030",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】微心聊，電話聊細節，支持走老闆私人卡，報價算您 11.50 出廠。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_heart_wechat"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-032",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】平台技術服務費高達五個點，轉線下簽紙質合同，出廠底價 13.20 給您。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "offline_paper_contract"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-033",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】電話聯絡：1三8-I234-5678，數字字母混寫防屏蔽，加個微信細聊。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "mixed_alpha_phone"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-034",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】看我賣家首頁滾動公告欄有私人手機號，直接打電話，走私單優惠大。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "profile_banner_divert"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-037",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】不要加微信，任何線下交易本廠一概不予承認，在線簽合同最安全，報價 14.00。（對話記錄存檔）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 14.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "anti_divert_assertion"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-3-040",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】溦信私聊，號碼是壹三八00138000，轉私帳現款直接免掉三個點手續費，單價 12.00。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_溦信",
+      "private_account"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-043",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】微心聊，電話聊細節，支持走老闆私人卡，報價算您 11.50 出廠。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_heart_wechat"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-045",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】平台技術服務費高達五個點，轉線下簽紙質合同，出廠底價 13.20 給您。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "offline_paper_contract"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-046",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】電話聯絡：1三8-I234-5678，數字字母混寫防屏蔽，加個微信細聊。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "mixed_alpha_phone"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-047",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】看我賣家首頁滾動公告欄有私人手機號，直接打電話，走私單優惠大。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "profile_banner_divert"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-050",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】不要加微信，任何線下交易本廠一概不予承認，在線簽合同最安全，報價 14.00。（對話記錄存檔）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 14.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "anti_divert_assertion"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-3-053",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】溦信私聊，號碼是壹三八00138000，轉私帳現款直接免掉三個點手續費，單價 12.00。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_溦信",
+      "private_account"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-056",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】微心聊，電話聊細節，支持走老闆私人卡，報價算您 11.50 出廠。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_heart_wechat"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-058",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】平台技術服務費高達五個點，轉線下簽紙質合同，出廠底價 13.20 給您。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "offline_paper_contract"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-059",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】電話聯絡：1三8-I234-5678，數字字母混寫防屏蔽，加個微信細聊。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "mixed_alpha_phone"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-060",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】看我賣家首頁滾動公告欄有私人手機號，直接打電話，走私單優惠大。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "profile_banner_divert"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-063",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】不要加微信，任何線下交易本廠一概不予承認，在線簽合同最安全，報價 14.00。（對話記錄存檔）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 14.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "anti_divert_assertion"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-3-066",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】溦信私聊，號碼是壹三八00138000，轉私帳現款直接免掉三個點手續費，單價 12.00。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_溦信",
+      "private_account"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-069",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】微心聊，電話聊細節，支持走老闆私人卡，報價算您 11.50 出廠。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_heart_wechat"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-071",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】平台技術服務費高達五個點，轉線下簽紙質合同，出廠底價 13.20 給您。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "offline_paper_contract"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-072",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】電話聯絡：1三8-I234-5678，數字字母混寫防屏蔽，加個微信細聊。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "mixed_alpha_phone"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-073",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】看我賣家首頁滾動公告欄有私人手機號，直接打電話，走私單優惠大。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "profile_banner_divert"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-076",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】不要加微信，任何線下交易本廠一概不予承認，在線簽合同最安全，報價 14.00。（對話記錄存檔）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 14.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "anti_divert_assertion"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-3-079",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】溦信私聊，號碼是壹三八00138000，轉私帳現款直接免掉三個點手續費，單價 12.00。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_溦信",
+      "private_account"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-082",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】微心聊，電話聊細節，支持走老闆私人卡，報價算您 11.50 出廠。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_heart_wechat"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-084",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】平台技術服務費高達五個點，轉線下簽紙質合同，出廠底價 13.20 給您。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "offline_paper_contract"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-085",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】電話聯絡：1三8-I234-5678，數字字母混寫防屏蔽，加個微信細聊。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "mixed_alpha_phone"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-086",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】看我賣家首頁滾動公告欄有私人手機號，直接打電話，走私單優惠大。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "profile_banner_divert"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-089",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】不要加微信，任何線下交易本廠一概不予承認，在線簽合同最安全，報價 14.00。（對話記錄存檔）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 14.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "anti_divert_assertion"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-3-092",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】溦信私聊，號碼是壹三八00138000，轉私帳現款直接免掉三個點手續費，單價 12.00。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_溦信",
+      "private_account"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-095",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】微心聊，電話聊細節，支持走老闆私人卡，報價算您 11.50 出廠。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_heart_wechat"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-097",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】平台技術服務費高達五個點，轉線下簽紙質合同，出廠底價 13.20 給您。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "offline_paper_contract"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-098",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】電話聯絡：1三8-I234-5678，數字字母混寫防屏蔽，加個微信細聊。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "mixed_alpha_phone"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-099",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】看我賣家首頁滾動公告欄有私人手機號，直接打電話，走私單優惠大。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "profile_banner_divert"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-102",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】不要加微信，任何線下交易本廠一概不予承認，在線簽合同最安全，報價 14.00。（對話記錄存檔）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 14.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "anti_divert_assertion"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-3-105",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】溦信私聊，號碼是壹三八00138000，轉私帳現款直接免掉三個點手續費，單價 12.00。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_溦信",
+      "private_account"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-108",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】微心聊，電話聊細節，支持走老闆私人卡，報價算您 11.50 出廠。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 11.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_heart_wechat"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-110",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】平台技術服務費高達五個點，轉線下簽紙質合同，出廠底價 13.20 給您。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "offline_paper_contract"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-111",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】電話聯絡：1三8-I234-5678，數字字母混寫防屏蔽，加個微信細聊。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "mixed_alpha_phone"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-112",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】看我賣家首頁滾動公告欄有私人手機號，直接打電話，走私單優惠大。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "profile_banner_divert"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-3-115",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】不要加微信，任何線下交易本廠一概不予承認，在線簽合同最安全，報價 14.00。（對話記錄存檔）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 14.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "anti_divert_assertion"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-3-118",
+    "dimension": "EVASION_OFFLINE",
+    "industry": "GENERAL",
+    "text": "【渠道通訊備註】溦信私聊，號碼是壹三八00138000，轉私帳現款直接免掉三個點手續費，單價 12.00。（對話記錄存檔）",
+    "ground_truth_intent": "OFFLINE_BYPASS_DIVERT",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "homophone_溦信",
+      "private_account"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-4-001",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "您這價格太有誠意了，我做不了您另請高明，去別家發財吧。",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "sarcastic_courtesy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-002",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "這價錢賣給您我不如關門大吉去喝西北風，工人都得集體討薪了。",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "hyperbolic_bankruptcy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-003",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "HARDWARE_MOLD",
+    "text": "您這砍價是按廢鐵稱斤買的吧？連工料電費都不夠！",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "scrap_iron_irony"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-006",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "行啊，9塊錢賣你，你先訂十萬件全款打過來，我馬上簽字蓋章。",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 9.0,
+      "moq": 100000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "pseudo_concession_trap"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-007",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "你要5塊錢一把也可以，傘布我用宣紙糊，保證按時交貨。",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 5.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "absurd_material_mockery"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-4-009",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "感謝貴司垂青，該規格我廠常規出廠底價為 13.20，利潤空間有限，望體諒。",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_refusal_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-010",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "十分理解貴司預算限制，若首期按 13.00 試單五百件，後續量大再行調價如何？",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": 500,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_trial_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-011",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "行吧服了你了，就按你說的 12.50，發合同過來吧。",
+    "ground_truth_intent": "FINAL_DEAL_CONCESSION",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "final_deal_concede"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-013",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】您這價格太有誠意了，我做不了您另請高明，去別家發財吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "sarcastic_courtesy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-014",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】這價錢賣給您我不如關門大吉去喝西北風，工人都得集體討薪了。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "hyperbolic_bankruptcy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-015",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "HARDWARE_MOLD",
+    "text": "【商務應答記錄】您這砍價是按廢鐵稱斤買的吧？連工料電費都不夠！（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "scrap_iron_irony"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-018",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行啊，9塊錢賣你，你先訂十萬件全款打過來，我馬上簽字蓋章。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 9.0,
+      "moq": 100000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "pseudo_concession_trap"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-019",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】你要5塊錢一把也可以，傘布我用宣紙糊，保證按時交貨。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 5.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "absurd_material_mockery"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-4-021",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】感謝貴司垂青，該規格我廠常規出廠底價為 13.20，利潤空間有限，望體諒。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_refusal_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-022",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】十分理解貴司預算限制，若首期按 13.00 試單五百件，後續量大再行調價如何？（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": 500,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_trial_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-023",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行吧服了你了，就按你說的 12.50，發合同過來吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "FINAL_DEAL_CONCESSION",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "final_deal_concede"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-025",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】您這價格太有誠意了，我做不了您另請高明，去別家發財吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "sarcastic_courtesy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-026",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】這價錢賣給您我不如關門大吉去喝西北風，工人都得集體討薪了。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "hyperbolic_bankruptcy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-027",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "HARDWARE_MOLD",
+    "text": "【商務應答記錄】您這砍價是按廢鐵稱斤買的吧？連工料電費都不夠！（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "scrap_iron_irony"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-030",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行啊，9塊錢賣你，你先訂十萬件全款打過來，我馬上簽字蓋章。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 9.0,
+      "moq": 100000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "pseudo_concession_trap"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-031",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】你要5塊錢一把也可以，傘布我用宣紙糊，保證按時交貨。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 5.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "absurd_material_mockery"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-4-033",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】感謝貴司垂青，該規格我廠常規出廠底價為 13.20，利潤空間有限，望體諒。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_refusal_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-034",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】十分理解貴司預算限制，若首期按 13.00 試單五百件，後續量大再行調價如何？（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": 500,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_trial_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-035",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行吧服了你了，就按你說的 12.50，發合同過來吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "FINAL_DEAL_CONCESSION",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "final_deal_concede"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-037",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】您這價格太有誠意了，我做不了您另請高明，去別家發財吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "sarcastic_courtesy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-038",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】這價錢賣給您我不如關門大吉去喝西北風，工人都得集體討薪了。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "hyperbolic_bankruptcy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-039",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "HARDWARE_MOLD",
+    "text": "【商務應答記錄】您這砍價是按廢鐵稱斤買的吧？連工料電費都不夠！（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "scrap_iron_irony"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-042",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行啊，9塊錢賣你，你先訂十萬件全款打過來，我馬上簽字蓋章。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 9.0,
+      "moq": 100000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "pseudo_concession_trap"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-043",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】你要5塊錢一把也可以，傘布我用宣紙糊，保證按時交貨。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 5.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "absurd_material_mockery"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-4-045",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】感謝貴司垂青，該規格我廠常規出廠底價為 13.20，利潤空間有限，望體諒。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_refusal_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-046",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】十分理解貴司預算限制，若首期按 13.00 試單五百件，後續量大再行調價如何？（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": 500,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_trial_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-047",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行吧服了你了，就按你說的 12.50，發合同過來吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "FINAL_DEAL_CONCESSION",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "final_deal_concede"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-049",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】您這價格太有誠意了，我做不了您另請高明，去別家發財吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "sarcastic_courtesy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-050",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】這價錢賣給您我不如關門大吉去喝西北風，工人都得集體討薪了。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "hyperbolic_bankruptcy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-051",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "HARDWARE_MOLD",
+    "text": "【商務應答記錄】您這砍價是按廢鐵稱斤買的吧？連工料電費都不夠！（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "scrap_iron_irony"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-054",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行啊，9塊錢賣你，你先訂十萬件全款打過來，我馬上簽字蓋章。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 9.0,
+      "moq": 100000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "pseudo_concession_trap"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-055",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】你要5塊錢一把也可以，傘布我用宣紙糊，保證按時交貨。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 5.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "absurd_material_mockery"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-4-057",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】感謝貴司垂青，該規格我廠常規出廠底價為 13.20，利潤空間有限，望體諒。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_refusal_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-058",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】十分理解貴司預算限制，若首期按 13.00 試單五百件，後續量大再行調價如何？（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": 500,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_trial_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-059",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行吧服了你了，就按你說的 12.50，發合同過來吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "FINAL_DEAL_CONCESSION",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "final_deal_concede"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-061",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】您這價格太有誠意了，我做不了您另請高明，去別家發財吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "sarcastic_courtesy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-062",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】這價錢賣給您我不如關門大吉去喝西北風，工人都得集體討薪了。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "hyperbolic_bankruptcy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-063",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "HARDWARE_MOLD",
+    "text": "【商務應答記錄】您這砍價是按廢鐵稱斤買的吧？連工料電費都不夠！（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "scrap_iron_irony"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-066",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行啊，9塊錢賣你，你先訂十萬件全款打過來，我馬上簽字蓋章。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 9.0,
+      "moq": 100000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "pseudo_concession_trap"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-067",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】你要5塊錢一把也可以，傘布我用宣紙糊，保證按時交貨。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 5.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "absurd_material_mockery"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-4-069",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】感謝貴司垂青，該規格我廠常規出廠底價為 13.20，利潤空間有限，望體諒。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_refusal_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-070",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】十分理解貴司預算限制，若首期按 13.00 試單五百件，後續量大再行調價如何？（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": 500,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_trial_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-071",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行吧服了你了，就按你說的 12.50，發合同過來吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "FINAL_DEAL_CONCESSION",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "final_deal_concede"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-073",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】您這價格太有誠意了，我做不了您另請高明，去別家發財吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "sarcastic_courtesy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-074",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】這價錢賣給您我不如關門大吉去喝西北風，工人都得集體討薪了。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "hyperbolic_bankruptcy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-075",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "HARDWARE_MOLD",
+    "text": "【商務應答記錄】您這砍價是按廢鐵稱斤買的吧？連工料電費都不夠！（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "scrap_iron_irony"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-078",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行啊，9塊錢賣你，你先訂十萬件全款打過來，我馬上簽字蓋章。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 9.0,
+      "moq": 100000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "pseudo_concession_trap"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-079",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】你要5塊錢一把也可以，傘布我用宣紙糊，保證按時交貨。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 5.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "absurd_material_mockery"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-4-081",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】感謝貴司垂青，該規格我廠常規出廠底價為 13.20，利潤空間有限，望體諒。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_refusal_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-082",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】十分理解貴司預算限制，若首期按 13.00 試單五百件，後續量大再行調價如何？（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": 500,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_trial_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-083",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行吧服了你了，就按你說的 12.50，發合同過來吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "FINAL_DEAL_CONCESSION",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "final_deal_concede"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-085",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】您這價格太有誠意了，我做不了您另請高明，去別家發財吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "sarcastic_courtesy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-086",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】這價錢賣給您我不如關門大吉去喝西北風，工人都得集體討薪了。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "hyperbolic_bankruptcy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-087",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "HARDWARE_MOLD",
+    "text": "【商務應答記錄】您這砍價是按廢鐵稱斤買的吧？連工料電費都不夠！（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "scrap_iron_irony"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-090",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行啊，9塊錢賣你，你先訂十萬件全款打過來，我馬上簽字蓋章。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 9.0,
+      "moq": 100000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "pseudo_concession_trap"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-091",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】你要5塊錢一把也可以，傘布我用宣紙糊，保證按時交貨。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 5.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "absurd_material_mockery"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-4-093",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】感謝貴司垂青，該規格我廠常規出廠底價為 13.20，利潤空間有限，望體諒。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_refusal_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-094",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】十分理解貴司預算限制，若首期按 13.00 試單五百件，後續量大再行調價如何？（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": 500,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_trial_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-095",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行吧服了你了，就按你說的 12.50，發合同過來吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "FINAL_DEAL_CONCESSION",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "final_deal_concede"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-097",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】您這價格太有誠意了，我做不了您另請高明，去別家發財吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "sarcastic_courtesy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-098",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】這價錢賣給您我不如關門大吉去喝西北風，工人都得集體討薪了。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "hyperbolic_bankruptcy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-099",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "HARDWARE_MOLD",
+    "text": "【商務應答記錄】您這砍價是按廢鐵稱斤買的吧？連工料電費都不夠！（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "scrap_iron_irony"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-102",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行啊，9塊錢賣你，你先訂十萬件全款打過來，我馬上簽字蓋章。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 9.0,
+      "moq": 100000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "pseudo_concession_trap"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-103",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】你要5塊錢一把也可以，傘布我用宣紙糊，保證按時交貨。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 5.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "absurd_material_mockery"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-4-105",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】感謝貴司垂青，該規格我廠常規出廠底價為 13.20，利潤空間有限，望體諒。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_refusal_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-106",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】十分理解貴司預算限制，若首期按 13.00 試單五百件，後續量大再行調價如何？（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": 500,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_trial_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-107",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行吧服了你了，就按你說的 12.50，發合同過來吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "FINAL_DEAL_CONCESSION",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "final_deal_concede"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-109",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】您這價格太有誠意了，我做不了您另請高明，去別家發財吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "sarcastic_courtesy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-110",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】這價錢賣給您我不如關門大吉去喝西北風，工人都得集體討薪了。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "hyperbolic_bankruptcy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-111",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "HARDWARE_MOLD",
+    "text": "【商務應答記錄】您這砍價是按廢鐵稱斤買的吧？連工料電費都不夠！（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "scrap_iron_irony"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-114",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行啊，9塊錢賣你，你先訂十萬件全款打過來，我馬上簽字蓋章。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 9.0,
+      "moq": 100000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "pseudo_concession_trap"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-115",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】你要5塊錢一把也可以，傘布我用宣紙糊，保證按時交貨。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 5.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "absurd_material_mockery"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-4-117",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】感謝貴司垂青，該規格我廠常規出廠底價為 13.20，利潤空間有限，望體諒。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_refusal_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-118",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】十分理解貴司預算限制，若首期按 13.00 試單五百件，後續量大再行調價如何？（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": 500,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_trial_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-119",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行吧服了你了，就按你說的 12.50，發合同過來吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "FINAL_DEAL_CONCESSION",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 12.5,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "final_deal_concede"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-121",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】您這價格太有誠意了，我做不了您另請高明，去別家發財吧。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "sarcastic_courtesy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-122",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】這價錢賣給您我不如關門大吉去喝西北風，工人都得集體討薪了。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "hyperbolic_bankruptcy"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-123",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "HARDWARE_MOLD",
+    "text": "【商務應答記錄】您這砍價是按廢鐵稱斤買的吧？連工料電費都不夠！（回覆日期 2026-10-14）",
+    "ground_truth_intent": "CRY_POVERTY_COST_HIKE",
+    "has_commercial_content": false,
+    "ground_truth_entities": {
+      "price": null,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "scrap_iron_irony"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-126",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】行啊，9塊錢賣你，你先訂十萬件全款打過來，我馬上簽字蓋章。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "TIER_VOLUME_BLACKMAIL",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 9.0,
+      "moq": 100000,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "pseudo_concession_trap"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-127",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】你要5塊錢一把也可以，傘布我用宣紙糊，保證按時交貨。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "MATERIAL_SPEC_DEGRADE",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 5.0,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": true,
+    "adversarial_features": [
+      "absurd_material_mockery"
+    ],
+    "risk_escalation_required": true
+  },
+  {
+    "id": "OOD-4-129",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】感謝貴司垂青，該規格我廠常規出廠底價為 13.20，利潤空間有限，望體諒。（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.2,
+      "moq": null,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_refusal_counter"
+    ],
+    "risk_escalation_required": false
+  },
+  {
+    "id": "OOD-4-130",
+    "dimension": "SARCASM_PSEUDO",
+    "industry": "GENERAL",
+    "text": "【商務應答記錄】十分理解貴司預算限制，若首期按 13.00 試單五百件，後續量大再行調價如何？（回覆日期 2026-10-14）",
+    "ground_truth_intent": "NORMAL_COUNTER_OFFER",
+    "has_commercial_content": true,
+    "ground_truth_entities": {
+      "price": 13.0,
+      "moq": 500,
+      "mold_fee": null,
+      "lead_days": null
+    },
+    "is_mixed_signal": false,
+    "adversarial_features": [
+      "polite_trial_counter"
+    ],
+    "risk_escalation_required": false
+  }
+]

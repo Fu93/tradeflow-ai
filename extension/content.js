@@ -166,6 +166,31 @@
   // 填入聊天框或自動點擊發送的能力；相關的 findChatInput() / findSendButton()
   // 早已移除。死碼已刪除，僅保留對選擇器的說明供偵測入口使用。
 
+  // ---------------------------------------------------------------------------
+  // 5b. Security helpers (H2/H5)
+  // ---------------------------------------------------------------------------
+  // H2 (F3): backend-sourced values (counterOffer) must be escaped before they
+  // are interpolated into the decision-deck innerHTML template. The card text is
+  // also injected into a data-* attribute, so a value containing a quote would
+  // break out of the attribute even with encodeURIComponent applied downstream.
+  function tfEsc(value) {
+    if (value === null || value === undefined) return "";
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // H2 (F3): counterOffer is rendered with toFixed() and must therefore be a
+  // real number. Previously it was interpolated raw, so a backend string (or an
+  // object) either rendered as "[object Object]" or threw inside .toFixed().
+  function tfNum(value, fallback) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
   function extractPriceFromText(text) {
     if (!text) return null;
     const patterns = [
@@ -197,6 +222,11 @@
         statusText: "COPILOT RADAR ON",
         statusColor: "#10b981",
         subText: "Should-Cost Radar Active • Human in the loop",
+        // H6 (F13): the LRU cache used to be the only de-dup, and the observer had
+        // no way to tell an operator-sent line from a supplier line. This flag is
+        // set while the deck's own copy action runs so that a node synthesised by
+        // us can never be re-ingested as an inbound quote.
+        suppressObserverOnce: false,
       };
     }
 
@@ -437,10 +467,16 @@
       const dealProb = data.bayesian_belief_state?.deal_probability;
       const winProb = dealProb != null ? Math.round(dealProb * 100) : null;
 
-      const card1 = `【採購預算核定施壓 (推薦)】感謝報價。我方本期專案採購核定單價為 ¥${counterOffer}，現款現結走官方系統，若可配合將可立即簽核首批 PO。`;
+      // H2 (F3): coerce the backend counter-offer to a real number and escape it
+      // before it is interpolated into the deck HTML. Card text is built with a
+      // single escaped copy (card1Safe/card2Safe/card3Safe) so the same string is
+      // safe in both the visible body and the data-text attribute.
+      const counterSafe = tfEsc(tfNum(counterOffer, 0).toFixed(2));
+
+      const card1 = `【採購預算核定施壓 (推薦)】感謝報價。我方本期專案採購核定單價為 ¥${counterSafe}，現款現結走官方系統，若可配合將可立即簽核首批 PO。`;
       // [修正] 舊版硬寫「保證 15 天交期」「定金提升至 35%」，這些 15/35 是
       // 未經驗證的編造條款，不該由前端虛構。改為不含捏造數字的通用表述。
-      const card2 = `【商業條款置換】若能就交期與模具開機費作出改善承諾，我方可就首批定金比例作出相應提升，意向價維持 ¥${counterOffer}。`;
+      const card2 = `【商業條款置換】若能就交期與模具開機費作出改善承諾，我方可就首批定金比例作出相應提升，意向價維持 ¥${counterSafe}。`;
       // [修正] 舊版「* 0.98 給出備選廠出廠價」是捏造的競爭報價，前端沒有可靠來源。
       // 改為只表明存在備選供應商、不宣稱其具體價格。
       const card3 = `【備選供應商威懾】同規格的備選供應商已納入評估，若能就條件貼近我方要求，將有利於鎖定首批排產；具體價差請以多方比價結果為準。`;
@@ -452,8 +488,8 @@
           <span style="font-size:10px; background:#1e293b; color:#94a3b8; padding:2px 6px; border-radius:4px;">WIN PROB: ${winProb == null ? "—" : winProb + "%"}</span>
         </div>
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; background: #1e293b; padding: 8px; border-radius: 8px;">
-          <div>供應商報價: <b style="color:#f59e0b;">¥${parseFloat(offer).toFixed(2)}</b></div>
-          <div>建議還盤價: <b style="color:#10b981;">¥${counterOffer}</b></div>
+          <div>供應商報價: <b style="color:#f59e0b;">¥${tfEsc(tfNum(offer, 0).toFixed(2))}</b></div>
+          <div>建議還盤價: <b style="color:#10b981;">¥${counterSafe}</b></div>
         </div>
         <div style="font-weight:600; color:#94a3b8; margin-bottom:6px; display:inline-flex; align-items:center;">${TF_SVG.cards}3 條商務反擊卡 (複製後請自行貼上發送)：</div>
 
@@ -482,13 +518,32 @@
         </div>
       `;
 
+      // H5 (F12): the whole human-in-the-loop design depends on the operator
+      // actually receiving the copied text, so a failed clipboard write must NOT
+      // show a green "已複製！" tick. Await the promise and surface failure.
       deck.querySelectorAll(".tf-copy-btn").forEach((btn) => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", async () => {
           const text = decodeURIComponent(btn.getAttribute("data-text") || "");
-          navigator.clipboard.writeText(text);
-          if (onCopy) onCopy(text);
-          btn.innerHTML = `${TF_SVG.check}已複製！`;
-          setTimeout(() => { btn.innerHTML = `${TF_SVG.copy}複製話術`; }, 2000);
+          const restore = () => {
+            btn.innerHTML = `${TF_SVG.copy}複製話術`;
+            btn.style.borderColor = "";
+          };
+          try {
+            await navigator.clipboard.writeText(text);
+            if (onCopy) onCopy(text);
+            btn.innerHTML = `${TF_SVG.check}已複製！`;
+            btn.style.borderColor = "#10b981";
+            setTimeout(restore, 2000);
+          } catch (err) {
+            // Do NOT pretend the copy worked. Tell the operator to copy manually
+            // and keep the failure visible (no auto-reset) so it cannot be missed.
+            console.warn("[TradeFlow Copilot] Clipboard write failed:", err);
+            btn.innerHTML = `${TF_SVG.copy}複製失敗，請手動選取`;
+            btn.style.borderColor = "#f59e0b";
+            // Fallback: expose the raw card text so the operator can select it
+            // manually (the whole design assumes a human sends the message).
+            btn.title = text;
+          }
         });
       });
     }
@@ -555,6 +610,64 @@
   // ---------------------------------------------------------------------------
   // 8. Targeted DOM Chat Observer Manager (Discovery -> Targeted Binding)
   // ---------------------------------------------------------------------------
+  // H6 (F13): the observer used to treat EVERY newly added element containing a
+  // price as an inbound SUPPLIER quote. When the operator pastes their own
+  // counter-offer into the chat, that same node is added to the observed
+  // container and was re-ingested as a supplier concession — corrupting the
+  // Bayesian posterior and letting the buyer's own text trip the circuit
+  // breaker against them.
+  //
+  // Direction filter: only nodes that look like a RECEIVED message are ingested.
+  // We read the class list of the node and its nearest ancestors/descendants for
+  // any "sent" marker (the platforms in manifest.json use msg-sent /
+  // message-out / chat-msg--out / outgoing, matching extension/mock_chat.html's
+  // msg-received vs msg-sent convention) and for an explicit "received" marker.
+  // A node that is clearly "sent" is dropped; a node that is clearly "received"
+  // is kept; an unmarked node keeps the legacy behaviour (ingest) so generic
+  // sites keep working.
+  //
+  // Matching is per class TOKEN, not a substring of the joined class string:
+  // substring matching would misclassify e.g. `some-thing` (contains "me-") or
+  // `absent` (contains "sent") as a sent message.
+  const SENT_CLASS_TOKENS = new Set([
+    "msg-sent", "message-out", "chat-msg--out", "outgoing", "sent", "self", "own-message",
+  ]);
+  const SENT_CLASS_PREFIXES = ["msg-sent-", "message-out-", "chat-msg--out-", "outgoing-", "own-message-", "self-", "sent-"];
+
+  function isSentClass(cls) {
+    const c = String(cls).toLowerCase();
+    if (SENT_CLASS_TOKENS.has(c)) return true;
+    return SENT_CLASS_PREFIXES.some((p) => c.startsWith(p));
+  }
+
+  function messageDirection(node) {
+    if (!node || !node.classList) return "unknown";
+    const parts = [];
+    const collect = (el) => {
+      if (el && el.classList) parts.push(...Array.from(el.classList));
+    };
+
+    // Walk up a few levels: platforms often put the direction class on a
+    // wrapper rather than the bubble itself.
+    let el = node;
+    for (let depth = 0; el && depth < 4; depth++) {
+      collect(el);
+      // Include directly nested bubbles too (the added node may be a wrapper).
+      el.querySelectorAll?.("[class*='msg'], [class*='message'], [class*='chat-msg']").forEach(collect);
+      el = el.parentElement;
+    }
+
+    const tokens = parts.map((p) => String(p).toLowerCase());
+    if (tokens.some(isSentClass)) return "sent";
+    const hasReceived = tokens.some(
+      (t) =>
+        t === "msg-received" || t === "message-in" || t === "incoming" || t === "received" ||
+        t.startsWith("msg-received-") || t.startsWith("message-in-") || t.startsWith("incoming-")
+    );
+    if (hasReceived) return "received";
+    return "unknown";
+  }
+
   class DOMChatObserverManager {
     constructor(onNewMessage) {
       this.onNewMessage = onNewMessage;
@@ -605,6 +718,10 @@
           if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
             mutation.addedNodes.forEach((node) => {
               if (node.nodeType === Node.ELEMENT_NODE) {
+                // H6 (F13): do not ingest the buyer's own (sent) message as an
+                // inbound supplier quote.
+                if (messageDirection(node) === "sent") return;
+
                 const text = (node.innerText || node.textContent || "").trim();
                 if (text && !this.lruCache.has(text)) {
                   this.lruCache.add(text);
@@ -701,10 +818,17 @@
     overlayEl.updateStatus("ENGINE SOLVING...", "#38bdf8", `Processing quote ¥${offer} via Bayesian MCTS`);
 
     // 3. Dispatch to background via Port
+    // V1 (F6) CONFIRMED: neither content.js nor background.js ever sent a `mode`
+    // field, so every round hit the backend's autonomous branch
+    // (RoundActionRequest.mode defaults to "autopilot", main.py:367), even while
+    // the HUD advertised "Copilot Mode" with a human-in-the-loop gate. Pass the
+    // operator's selected mode through; the simulator mode maps to the backend's
+    // "autopilot" value.
     portClient.send("SUBMIT_OFFER", {
       sessionId: sessionContext.sessionId,
       offer: offer,
       context: rawText,
+      mode: overlayEl._state.mode === "copilot" ? "copilot" : "autopilot",
     });
   }
 
@@ -721,7 +845,12 @@
     portClient = new RobustPortClient();
 
     // Register this tab's dynamic session context
-    portClient.send("REGISTER_SESSION", sessionContext);
+    portClient.send("REGISTER_SESSION", {
+      ...sessionContext,
+      // V1 (F6): record the HUD's selected mode alongside the context so the
+      // tab registry does not claim "autopilot" while the overlay shows Copilot.
+      mode: overlayEl?._state.mode === "copilot" ? "copilot" : "autopilot",
+    });
 
     // Listen for Engine updates
     portClient.on("SESSION_UPDATED", (msg) => {

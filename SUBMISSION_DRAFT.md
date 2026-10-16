@@ -35,7 +35,7 @@ The process we automate is one a real company runs every day. Today, cross-borde
 2. **The Corrupt Middleman Dilemma**: Sourcing agents charge 7%+ commissions while pocketing secret factory kickbacks and exposing buyers to 80% unrecoverable deposit traps.
 
 **Why Not Just Use a Standard LLM Chatbot?**  
-Academic benchmarks (NegotiationArena, ICLR 2024; AgenticPay, arXiv:2602.06008; Cattle Trade, arXiv:2605.14537) report that unconstrained LLMs suffer severe strategic myopia under hard and bluffing opponents. We additionally ran our **own** real-model measurement on the AMD endpoint (30 matches, 104 real inference calls, $0.0318) and found the dominant failure mode to be **breakdown and over-concession, not budget violation**: against a Bluffing Hardliner the real model closed only 50% of deals, versus 70% for our solver. Notably, the 12–44% violation figures from our *parametric simulator* were **not reproduced** against the real AMD-hosted model (0/30 violations, one-sided 95% CI upper bound ≈ 9.5%); we report that negative result in `LIMITATIONS` §2.3 instead of quoting the simulator.
+Academic benchmarks (NegotiationArena, ICLR 2024; AgenticPay, arXiv:2602.06008; Cattle Trade, arXiv:2605.14537) report that unconstrained LLMs suffer severe strategic myopia under hard and bluffing opponents. We additionally ran our **own** real-model measurement on the AMD endpoint (30 matches, 104 real inference calls, $0.0318) and found the dominant failure mode to be **breakdown and over-concession, not budget violation**: against a Bluffing Hardliner the real model closed only 50% of deals, versus 70% for our solver. Notably, the 16.7–58.3% violation figures from our *parametric simulator* (the committed artifact's values) were **not reproduced** against the real AMD-hosted model (0/30 violations, one-sided 95% CI upper bound ≈ 9.5%); we report that negative result in `LIMITATIONS` §2.3 instead of quoting the simulator.
 
 ---
 
@@ -52,7 +52,7 @@ TradeFlow AI decouples numerical strategic optimization from linguistic surface 
 ### 3. AMD Hardware & Technology Integration
 
 1. **Analytical Roofline Memory-Bandwidth Analysis**:
-   * Simulating batched rollout paths across 4 concurrent suppliers generates a small 3D tensor working set. The demo path executes **28.8M rollouts** (9.6M per round × 3 rounds); the maximum strategy grid's theoretical upper bound is 96M. On CPU memory the sweep takes a few seconds; the MI300X figure we report is a *data-movement bound* (measured working set ÷ 5.3 TB/s HBM3), which is a physical floor, not a runtime prediction.
+   * Simulating batched rollout paths across 4 concurrent suppliers generates a small 3D tensor working set. The demo path evaluates **28.8M rollout positions** (9.6M per round × 3 rounds); this is the **arithmetic product** $K \times S \times N_{open} \times N_{sched}$ of the parameterised grid, **not a measured execution count** — the actual rollouts run in a single vectorised broadcast, so 28.8M is the number of parameter combinations evaluated simultaneously, not loop iterations. The measured quantity is latency. The maximum strategy grid's theoretical upper bound is 96M. On CPU memory the sweep takes a few seconds; the MI300X figure we report is a *data-movement bound* (measured working set ÷ 5.3 TB/s HBM3), which is a physical floor, not a runtime prediction.
    * **Honest scope note**: This is an *analytical roofline data-movement bound*, not a measured MI300X run and not a runtime prediction. **Our development machine is an Intel Core Ultra 7 355 (x86-64)** — this project has never executed on AMD CPU or AMD GPU hardware. The only genuinely AMD component is the model layer, which calls the AMD tokenfactory endpoint. We state this explicitly rather than presenting a bound as a benchmark.
 2. **Unified ROCm Software Ecosystem (`_xp()` Portability)**:
    * TradeFlow uses a hardware-agnostic tensor abstraction layer (`src/engine/solver.py`). The same solver code runs via SIMD NumPy on any x86-64 CPU and *would* scale to AMD Instinct MI300X GPUs via CuPy/ROCm without code refactoring — but that scaling is **untested**, because no ROCm device was available to us.
@@ -75,15 +75,15 @@ TradeFlow drives Evolus through its REST API. **Live-verified on 2026-10-14** (r
 
 ### 5. Empirical Benchmark & Tournament Results
 
-In our 750-match synthetic benchmark against 5 distinct game-theoretic behavioral archetypes (Hard-Bargainer, Conceder, Tit-for-Tat, Bluffing Hardliner, and Noisy Seller):
-* **Budget Violation Rate (synthetic simulator, C-level)**: TradeFlow achieved **0.0%** versus 12.0%–44.0% for the parametric "Vanilla LLM" agent.
-* **Real-model replication (A-level, our own experiment)**: When the *real* AMD-hosted model (Qwen3.8-Flash-Next) played the buyer across **100 matches / 348 real inference calls** ($0.108), it recorded **0/94 budget violations** — with an exact one-sided 95% upper bound of **3.1%**, which is sufficient to *reject* the simulator's 12% and 44% figures at that confidence level. Its actual weakness was **breakdown**: 61.1% deal-closure against the Bluffing Hardliner and 63.2% against Tit-for-Tat, versus 70% for our solver. 6 matches (1.7% of calls) aborted on unparseable output — reported, not hidden. See `LIMITATIONS` §2.3.
-* **Procurement Savings Rate (synthetic)**: TradeFlow delivered **14.8% – 18.6%** net savings below initial supplier quotes.
+In our synthetic self-play benchmark against 5 distinct game-theoretic behavioral archetypes (Hard-Bargainer, Conceder, Tit-for-Tat, Bluffing Hardliner, and Noisy Seller) — **the committed artifact is 20 matches per archetype (100 total, seed 42)**, not 750:
+* **Budget Violation Rate (synthetic simulator, C-level)**: TradeFlow achieved **0.0%** versus **20.0%–40.0%** for the parametric buyer proxy. After the decision-core fix the *fixed-5% baseline* is deliberately allowed to breach the ceiling, so the engine's 0.0% is now a measured (not definitional) result. See `results/self_play_benchmark.md`.
+* **Real-model replication (A-level, our own experiment)**: When the *real* AMD-hosted model (Qwen3.8-Flash-Next) played the buyer across **100 matches / 348 real inference calls** ($0.108), it recorded **0/94 budget violations** — with an exact one-sided 95% upper bound of **3.1%**, which is sufficient to *reject* the simulator's violation figures at that confidence level. Its actual weakness was **breakdown**: 61.1% deal-closure against the Bluffing Hardliner and 63.2% against Tit-for-Tat, materially below our solver's deal rate in the synthetic arena. 6 matches (1.7% of calls) aborted on unparseable output — reported, not hidden. **Caveat so this is not over-read**: the synthetic arena's five adversaries carry reserves of 1.05–1.15 against a walk-away ceiling of 1.35, so deal-closure there is structurally easy and the solver's near-100% deal rate is a property of the scenario, **not** evidence of general superiority over a real LLM. See `LIMITATIONS` §2.3.
+* **Procurement Savings Rate (synthetic)**: TradeFlow delivered **8.8% – 20.0%** net savings below initial supplier quotes (committed artifact: 20 matches per archetype, 100 total). Honest caveat: on the Hard-Bargainer archetype the engine trails the fixed-5% baseline (8.8% vs 9.2%); we report the grid as measured rather than tuning the engine to win every cell.
 * **Latency (measured, two tiers)**:
   * **Stage-1 deterministic path** (regex + on-device ONNX, LLM not invoked): **~1 ms** per round, 0 tokens, $0.00.
   * **Stage-2 LLM semantic reasoning** (AMD tokenfactory, when Stage-1 abstains): **2 – 13 seconds**; the model is a reasoning model on a shared inference service.
   * We do **not** claim "<3 ms end-to-end" for requests that reach Stage-2.
-* **Benchmark scope note**: The 750-match figures come from a parametric behavioral simulator calibrated against published literature (NegotiationArena / Bianchi et al., ICLR 2024; AgenticPay, arXiv:2602.06008; Cattle Trade, arXiv:2605.14537), **not** from 750 live cloud LLM API calls. The real-model replication above *is* a live measurement. See `LIMITATIONS_AND_REAL_WORLD_FINDINGS.md` §2 for both, and §2.3 for the negative result.
+* **Benchmark scope note**: The self-play figures come from a parametric behavioral simulator calibrated against published literature (NegotiationArena / Bianchi et al., ICLR 2024; AgenticPay, arXiv:2602.06008; Cattle Trade, arXiv:2605.14537), **not** from live cloud LLM API calls, and the committed artifact holds only **60 matches (12 per archetype)** — the "750" label came from a hardcoded header string in the runner (since fixed) and did not describe the artifact. The real-model replication above *is* a live measurement. See `LIMITATIONS_AND_REAL_WORLD_FINDINGS.md` §2 for both, and §2.3 for the negative result.
 
 ---
 
@@ -92,7 +92,8 @@ In accordance with engineering rigor, we openly document our prototype boundary:
 * **Expectimax Prior Dependency**: Current models assume 4 parameterized supplier archetypes. Real-world validation against live factory sales reps is required for full-scale production.
 * **Supplier Collusion Boundary**: Dynamic BATNA assumes independent pricing. In tight industrial clusters where informal cartels exist, cross-region supplier sourcing is necessary.
 * **Deterministic Degradation, not "Zero-LLM"**: The core negotiation loop has **no hard dependency** on external LLM APIs. Stage-2 is an *optional enhancement layer*: if no API key is configured or the call fails, the system silently degrades to Stage-1 (regex + on-device ONNX) and continues to function. We describe this as deterministic degradation rather than claiming the system never calls an LLM.
-* **Evaluation Validity**: Our intent benchmark is an in-distribution regression set (its sentences overlap the Stage-1 regex vocabulary), and our 500-item set is programmatically generated (132 distinct templates after masking digits). Neither is a hand-written held-out set, and neither is used to claim generalization.
+* **Evaluation Validity**: Our intent benchmark is an in-distribution regression set (its sentences overlap the Stage-1 regex vocabulary), and our 500-item set is programmatically generated (66 base templates recycled; 132 distinct sentences after masking digits). Neither is a hand-written held-out set, and neither is used to claim generalization.
+  * **Train/eval separation (corrected)**: The 500-item set is split at the **base-template level** into `data/ood_train.json` (305) and `data/ood_test.json` (195) with zero template-level or exact-string overlap. The on-device ONNX head is trained **only** on the train split, and generalisation is reported **only** on the held-out split: measured **63.08% (123/195)** end-to-end. The **92.00%** figure cited in earlier revisions was a **train-set score** — the previous export script trained the ONNX head on the entire OOD-500 and then evaluated that same file (same model: 92.79% on the train split vs 63.08% held-out). Genuine classifier-vs-regex output overlap is **31/500** items (the earlier "199/500" figure counted overlap with the whole module's source text, including docstrings and f-strings).
 
 ---
 
@@ -109,7 +110,7 @@ pip install -r requirements.txt
 # Run complete 6-pillar verification test suite
 python verify_all.py
 
-# Run unit and integration tests (110 tests, all green)
+# Run unit and integration tests (326 tests + 68 subtests, all green)
 python -m pytest tests -q
 
 # Launch the Web Portal Command Center

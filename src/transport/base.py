@@ -3,11 +3,21 @@
 職責：定義跨通道（Email、瀏覽器、即時通訊）統一訊息模型與抽象契約。
 """
 from __future__ import annotations
+import logging
 import re
 from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger("tradeflow.transport.base")
+
+# 進入點輸入上限。本模組直接使用內建 `re`（未走 src/engine/safe_regex.py 的
+# 三層後端），因此截斷是唯一的資源保護。獨立審計量測到這些模式對**無上限**的
+# 來信文本呈二次成長：length 1,012 -> 11.3ms；16,012 -> 2,213ms；64,016 ->
+# 42,977ms（約 43 秒）。供應商郵件/聊天內容正是攻擊者可控的入口，故在此截斷。
+# 見 DEEP_DEFECT_AUDIT.md §附錄「safe_regex 未全面套用」。
+MAX_TEXT_LEN = 2000
 
 
 class InboundMessage(BaseModel):
@@ -42,9 +52,17 @@ class BaseTransport(ABC):
 
     @staticmethod
     def extract_offer(text: str) -> Optional[float]:
-        """階梯式價格正則提取器（支援 ¥, $, RMB, 元, 塊, 單價, 底價）。"""
+        """階梯式價格正則提取器（支援 ¥, $, RMB, 元, 塊, 單價, 底價）。
+
+        [安全] 輸入先截斷至 MAX_TEXT_LEN。此模組用的是內建 `re`（無超時守衛），
+        而未截斷的長文本會使這些模式呈二次成長（實測 64k 字元約 43 秒）。
+        截斷不改變正常商務訊息的抽取結果：價格線索總是出現在訊息前段，
+        且 MAX_TEXT_LEN 遠大於任何真實報價句長。
+        """
         if not text:
             return None
+        if len(text) > MAX_TEXT_LEN:
+            text = text[:MAX_TEXT_LEN]
         clean_text = text.replace(",", "").strip()
 
         currency = r"(?:[\$¥]|USD|RMB|CNY|NTD)?"

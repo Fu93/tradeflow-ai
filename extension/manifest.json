@@ -7,7 +7,8 @@
     "sidePanel",
     "storage",
     "tabs",
-    "alarms"
+    "alarms",
+    "clipboardWrite"
   ],
   "host_permissions": [
     "*://*.1688.com/*",

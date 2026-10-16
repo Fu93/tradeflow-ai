@@ -10,7 +10,7 @@
 - [x] README runs with one command (`python -m src.app.main`, then http://localhost:8000)
 - [x] Dockerfile + docker-compose.yml (containerized)
 - [x] No secrets committed (`.env` in `.gitignore`; only `.env.example`) — verified via `git grep`
-- [x] `tests/` green — **110 tests passing** (`python -m pytest tests -q`)
+- [x] `tests/` green — **326 tests + 68 subtests passing** (`python -m pytest tests -q`)
 
 ## Engine (decision core)
 - [x] Bayesian belief update + vectorized Expectimax (`src/engine/`)

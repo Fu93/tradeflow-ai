@@ -10,6 +10,39 @@
 
 const API_BASE_URL = "http://localhost:8000";
 
+// ---------------------------------------------------------------------------
+// Security helpers (H3): outbound auth + HTML escaping.
+// ---------------------------------------------------------------------------
+// H9: the backend fail-closes in production without a valid X-API-Key. Empty by
+// default so a sandbox demo with no configured key keeps working (no header is
+// sent at all when this is empty — an empty header is worse than none once a
+// real key is configured).
+const TF_API_KEY = "";
+
+function tfAuthHeaders() {
+  return TF_API_KEY ? { "X-API-Key": TF_API_KEY } : {};
+}
+
+// H3 (F5): round_number and every other backend-sourced value that is
+// interpolated into an innerHTML template must be escaped first. Layout and CSS
+// classes are unchanged.
+function tfEsc(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Numeric coercion for values that reach .toFixed()/.toLocaleString(): the
+// backend may send a numeric string, which would throw instead of rendering.
+function tfNum(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 // DOM Elements
 const statusBadge = document.getElementById("status-badge");
 const statusText = document.getElementById("status-text");
@@ -47,11 +80,15 @@ async function initPortConnection() {
       }
 
       if (msg.type === "COMMAND_RESULT") {
+        // H4: background.js now reports the REAL outcome (success is false for a
+        // non-2xx response and for an HTTP 200 whose body says the command was
+        // not applied). Never print "(OK)" for something that did not apply.
+        const statusSuffix = msg.httpStatus ? ` [HTTP ${msg.httpStatus}]` : "";
         if (msg.success) {
-          valLastSignal.innerText = `Command dispatched (${msg.result?.action || "OK"})`;
+          valLastSignal.innerText = `Command dispatched (${msg.result?.action || "OK"})${statusSuffix}`;
           valLastSignal.style.color = "var(--accent-emerald)";
         } else {
-          valLastSignal.innerText = `Command failed: ${msg.error}`;
+          valLastSignal.innerText = `Command NOT applied${statusSuffix}: ${msg.error || "unknown error"}`;
           valLastSignal.style.color = "var(--accent-rose)";
         }
       }
@@ -106,7 +143,9 @@ function handleSessionPush(sessionMeta) {
 
 async function fetchSessionFromBackend(sessionId) {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/sessions/${sessionId}`);
+    const res = await fetch(`${API_BASE_URL}/api/v1/sessions/${encodeURIComponent(sessionId)}`, {
+      headers: tfAuthHeaders(),
+    });
     if (!res.ok) {
       if (res.status === 404) {
         renderStandbyView(sessionId);
@@ -183,26 +222,29 @@ function renderEngineData(data) {
     statusBadge.style.color = "#10b981";
   }
 
-  valTargetPrice.innerText = `¥${(session.target_price || 12.0).toFixed(2)}`;
-  valReserveCeiling.innerText = `¥${(session.walk_away_ceiling || 16.2).toFixed(2)}`;
+  valTargetPrice.innerText = `¥${tfNum(session.target_price, 12.0).toFixed(2)}`;
+  valReserveCeiling.innerText = `¥${tfNum(session.walk_away_ceiling, 16.2).toFixed(2)}`;
 
-  valPosteriorMean.innerText = (belief.posterior_mean || 1.05).toFixed(3);
-  valPosteriorStd.innerText = (belief.posterior_std || 0.08).toFixed(3);
+  valPosteriorMean.innerText = tfNum(belief.posterior_mean, 1.05).toFixed(3);
+  valPosteriorStd.innerText = tfNum(belief.posterior_std, 0.08).toFixed(3);
 
-  const risk = turn.breakdown_risk || 0.048;
+  const risk = tfNum(turn.breakdown_risk, 0.048);
   valBreakdownRisk.innerText = `${(risk * 100).toFixed(1)}%`;
   progressBreakdown.style.width = `${Math.min(100, Math.max(5, risk * 100))}%`;
   valBreakdownRisk.style.color = risk >= 0.15 ? "#f43f5e" : "#10b981";
 
-  roundCounter.innerText = `Round ${turn.round_number || 1} / 5`;
+  // H3 (F5): turn.round_number is interpolated raw into innerHTML below; it is
+  // escaped with tfEsc() and the numeric fields are coerced with tfNum().
+  const roundNo = tfNum(turn.round_number, 1);
+  roundCounter.innerText = `Round ${roundNo} / 5`;
   turnsTimeline.innerHTML = `
     <div class="timeline-turn">
       <div style="display: flex; justify-content: space-between;">
-        <strong>Round ${turn.round_number || 1}</strong>
-        <span style="color: var(--accent-emerald);">¥${(data.recommended_offer_price || turn.buyer_counter_offer || 12.5).toFixed(2)} Counter</span>
+        <strong>Round ${tfEsc(roundNo)}</strong>
+        <span style="color: var(--accent-emerald);">¥${tfNum(data.recommended_offer_price, tfNum(turn.buyer_counter_offer, 12.5)).toFixed(2)} Counter</span>
       </div>
       <div style="color: var(--text-muted); margin-top: 2px;">
-        Supplier: ¥${(turn.supplier_offer || 15.0).toFixed(2)} | Risk: ${(risk * 100).toFixed(1)}%
+        Supplier: ¥${tfNum(turn.supplier_offer, 15.0).toFixed(2)} | Risk: ${(risk * 100).toFixed(1)}%
       </div>
     </div>
   `;
@@ -212,11 +254,11 @@ function renderSession(session) {
   if (!session) return;
 
   sessionIdDisplay.innerText = session.session_id;
-  valTargetPrice.innerText = `¥${session.target_price.toFixed(2)}`;
-  valReserveCeiling.innerText = `¥${session.walk_away_ceiling.toFixed(2)}`;
+  valTargetPrice.innerText = `¥${tfNum(session.target_price, 0).toFixed(2)}`;
+  valReserveCeiling.innerText = `¥${tfNum(session.walk_away_ceiling, 0).toFixed(2)}`;
 
-  valPosteriorMean.innerText = (session.current_posterior_mean || 1.08).toFixed(3);
-  valPosteriorStd.innerText = (session.current_posterior_std || 0.095).toFixed(3);
+  valPosteriorMean.innerText = tfNum(session.current_posterior_mean, 1.08).toFixed(3);
+  valPosteriorStd.innerText = tfNum(session.current_posterior_std, 0.095).toFixed(3);
 
   const stateStr = session.state || "COPILOT_MONITORING";
   statusText.innerText = stateStr.replace(/_/g, " ");
@@ -240,21 +282,25 @@ function renderSession(session) {
 
   if (turns.length > 0) {
     const lastTurn = turns[turns.length - 1];
-    const risk = lastTurn.breakdown_risk || 0.048;
+    const risk = tfNum(lastTurn.breakdown_risk, 0.048);
     valBreakdownRisk.innerText = `${(risk * 100).toFixed(1)}%`;
     progressBreakdown.style.width = `${Math.min(100, Math.max(5, risk * 100))}%`;
     valBreakdownRisk.style.color = risk >= 0.15 ? "#f43f5e" : "#10b981";
 
+    // H3 (F5) + H2-class coercion: every backend value rendered here is escaped
+    // (round_number, which is interpolated raw) or numerically coerced before
+    // .toFixed()/.toLocaleString(). The previous `t.buyer_counter_offer.toFixed(2)`
+    // threw a TypeError for any turn whose counter-offer was absent.
     turnsTimeline.innerHTML = turns
       .map(
         (t) => `
       <div class="timeline-turn">
         <div style="display: flex; justify-content: space-between;">
-          <strong>Round ${t.round_number}</strong>
-          <span style="color: var(--accent-emerald);">¥${t.buyer_counter_offer.toFixed(2)} Counter</span>
+          <strong>Round ${tfEsc(t.round_number)}</strong>
+          <span style="color: var(--accent-emerald);">¥${tfNum(t.buyer_counter_offer, 0).toFixed(2)} Counter</span>
         </div>
         <div style="color: var(--text-muted); margin-top: 2px;">
-          Supplier: ¥${t.supplier_offer.toFixed(2)} | Risk: ${(t.breakdown_risk * 100).toFixed(1)}%
+          Supplier: ¥${tfNum(t.supplier_offer, 0).toFixed(2)} | Risk: ${(tfNum(t.breakdown_risk, 0) * 100).toFixed(1)}%
         </div>
       </div>
     `

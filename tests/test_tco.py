@@ -42,7 +42,10 @@ class TestTCOEngine(unittest.TestCase):
         res = TCOEngine.calculate_effective_price(self.terms, offered)
         # 應有顯著的交期、MOQ 與資金佔用懲罰
         self.assertGreater(res.lead_time_penalty, 0.5)
-        self.assertGreater(res.moq_holding_penalty, 0.5)
+        # [修正] 見 DEEP_DEFECT_AUDIT.md §4.7：excess_moq_holding_cost_rate 為
+        # **年化**費率，舊版把它當一次性費用直接乘，使此值被誇大 ~3.65 倍。
+        # 現以 年化率 × 90/365 折算：11.50 × 2.0 × 0.05 × (90/365) ≈ 0.2836。
+        self.assertGreater(res.moq_holding_penalty, 0.25)
         self.assertGreater(res.payment_cost_penalty, 0.05)
         self.assertGreater(res.effective_unit_price, 11.50)
         self.assertFalse(res.is_favorable_vs_raw)

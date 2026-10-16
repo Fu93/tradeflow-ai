@@ -15,13 +15,26 @@ class TestMultiSupplierSimulation(unittest.TestCase):
 
         self.assertTrue(res["success"])
         self.assertIn("Supplier A", res["winning_supplier"])
-        self.assertAlmostEqual(res["winning_price"], 12.60)
-        self.assertGreater(res["total_savings_pct"], 0.20)  # > 20% savings
-        self.assertEqual(res["total_savings_cny"], (16.20 - 12.60) * 10000)
+
+        # [修正 §7.4] 舊版把最終結果寫死（winning_price==12.60），任何合法行為
+        # 變動都會誤判失敗，卻測不出結構缺陷。改為鎖定**關係不變量**：
+        # 贏家成交價 = 最後一輪最低報價；節省金額由 (ceiling − price) × moq 導出。
+        trace = res["trace"]
+        final_best = trace[-1]["best_quote"]
+        self.assertAlmostEqual(res["winning_price"], final_best)
+        self.assertEqual(trace[-1]["lead_supplier"], res["winning_supplier"])
+        self.assertAlmostEqual(
+            res["total_savings_cny"], (16.20 - final_best) * 10000
+        )
+        self.assertAlmostEqual(
+            res["total_savings_pct"], (16.20 - final_best) / 16.20
+        )
+        # 節省率必須為有意義的正值（成交價低於 walk-away 上限）
+        self.assertGreater(res["total_savings_pct"], 0.10)
+        self.assertLess(res["winning_price"], 16.20)
         self.assertGreater(res["total_rollouts_accum"], 5_000_000)
 
         # 檢驗 3 輪軌跡中各廠商動態 BATNA 上限是否逐步收縮
-        trace = res["trace"]
         self.assertEqual(len(trace), 3)
 
         # 驗證 Round 1 的戰術標籤（真實動態輸出）
@@ -33,6 +46,18 @@ class TestMultiSupplierSimulation(unittest.TestCase):
         # B、C 報價 (15.60, 15.92) 顯著高於最低價 13.26 (>1.12x) → 邊緣化牽制
         self.assertEqual(r1["tactics"][1], "SIDELINE")
         self.assertEqual(r1["tactics"][2], "SIDELINE")
+
+        # [新增 §3.2 回歸] 首輪 counter-offer 必須反映各家首輪報價 —— 舊版
+        # 四家完全相同（`prior_means=np.full(k,1.08)`），此斷言在修正前會失敗。
+        self.assertGreater(
+            len(set(round(c, 4) for c in r1["counter_offers_cny"])), 1,
+            msg=f"first-round counter-offers are identical: {r1['counter_offers_cny']}",
+        )
+        # 且必須隨報價單調不降（報價越高 → 還價越高）
+        counters = r1["counter_offers_cny"]
+        self.assertTrue(all(counters[i] <= counters[i + 1] + 1e-9
+                            for i in range(len(counters) - 1)),
+                        msg=f"counter-offers not monotone in quotes: {counters}")
 
         # 驗證非領先者的有效 BATNA 上限被交叉錨定壓制到低於初始 16.20
         self.assertLess(r1["effective_ceilings_cny"][1], 16.20)

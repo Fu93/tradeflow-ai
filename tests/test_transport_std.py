@@ -1,5 +1,8 @@
 """單元測試：Phase 2 通訊傳輸協定 (EmailStdTransport, WebhookHub, TelemetryNotifier) 與 API。"""
 import asyncio
+import os
+import shutil
+import tempfile
 import unittest
 from fastapi.testclient import TestClient
 
@@ -9,6 +12,7 @@ from src.transport.webhook_hub import WebhookHub, SessionExecutionBridge
 from src.transport.telemetry import TelemetryNotifier
 from src.session.schema import RemoteAuthCommand, SessionSpec
 from src.app.main import app
+import src.app.main as api_main
 
 
 class TestTransportStd(unittest.TestCase):
@@ -128,11 +132,51 @@ class TestTransportStd(unittest.TestCase):
 
 
 class TestAppV4Endpoints(unittest.TestCase):
+    """[REGRESSION — 見 DEEP_DEFECT_AUDIT.md §6.4 / w1 報告]
+
+    本類別是**最後一個**未隔離的 API 測試：它原本直接對 repo 真實的
+    `data/sessions.db` 建立會話（`test_session_and_round_processing` 每次執行
+    都留下 `sess_e2e_*` 資料列），使測試污染開發者的本機狀態，也讓平行執行
+    的測試互相碰撞。
+
+    現在比照 tests/test_api.py 的 `_IsolatedClientCase` 作法：每個測試類別
+    取得自己的暫存 DB 與快照目錄，並在 tearDown **先**把全域 manager 還原到
+    原本的位置，才刪除暫存目錄（否則後續測試類別會繼承一個已不存在的
+    store_dir）。
+    """
+
     def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="tf_test_transport_")
+        self._orig_env = {
+            k: os.environ.get(k)
+            for k in ("TRADEFLOW_DB_PATH", "TRADEFLOW_STORE_DIR", "TRADEFLOW_WEBHOOK_TOKEN")
+        }
+        os.environ["TRADEFLOW_DB_PATH"] = os.path.join(self._tmp, "sessions.db")
+        os.environ["TRADEFLOW_STORE_DIR"] = os.path.join(self._tmp, "sessions_json")
+        # 保持這些測試撰寫時的 sandbox fail-open 語意。
+        os.environ.pop("TRADEFLOW_WEBHOOK_TOKEN", None)
+        self._prev_paths = (api_main.session_mgr.db_path, api_main.session_mgr.store_dir)
+        api_main.session_mgr.__init__(
+            db_path=os.environ["TRADEFLOW_DB_PATH"],
+            store_dir=os.environ["TRADEFLOW_STORE_DIR"],
+        )
         self.client = TestClient(app)
 
+    def tearDown(self):
+        from src.transport.webhook_hub import hub
+        for k, v in self._orig_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        api_main.session_mgr.__init__(
+            db_path=self._prev_paths[0], store_dir=self._prev_paths[1]
+        )
+        hub._bridges.clear()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
     def test_mobile_command_endpoint(self):
-        """測試 POST /webhook/mobile-command 端點。"""
+        """測試 POST /webhook/mobile-command 端點（bridge 解鎖應回報成功）。"""
         from src.transport.webhook_hub import hub
         hub.register_bridge("sess_api_test")
 
@@ -143,6 +187,7 @@ class TestAppV4Endpoints(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
+        # bridge 被解鎖本身就是效果，必須回報 success（見 w1 修正）。
         self.assertEqual(data["status"], "success")
         self.assertEqual(data["resolved_command"], "CONCEDE")
 

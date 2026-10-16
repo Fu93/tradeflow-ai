@@ -106,7 +106,7 @@ if __name__ == "__main__":
     S = 20_000
     dt, (em, br, best) = bench(solve, S, opens, scheds)
     n = S * N_OPEN * N_SCHED
-    print(f"S={S:,}: {n:,} rollouts in {dt*1000:.0f} ms  -> "
+    print(f"S={S:,}: {n:,} rollout positions (S x opens x scheds, parameterised, not an execution count) in {dt*1000:.0f} ms  -> "
           f"{(dt*1000/1000):.2f} ms per 1k opponent samples")
     print(f"  建議首輪報價檔位 = opens[{best[0]}] = {opens[best[0]]:.3f}")
     print(f"  建議讓步曲線     = scheds[{best[1]}] = {np.round(scheds[best[1]],3)}")
@@ -115,19 +115,41 @@ if __name__ == "__main__":
 
     print()
     print("GPU 敘事（依現行 Analytical Roofline 模型，非主觀投影）：")
-    # loop 慢多少：v1 實測向量化/loop = 43x（benchmark_negotiation.py, S=2000）
+    # loop 慢多少：v1 實測向量化/loop 比值。v1 在不同 S 下量到 37x–43x；
+    # 兩份腳本過去各印一個數字而造成「互相矛盾」的外觀，此處統一為實測區間並標明來源。
     # 注意：這是**外推**，非本次實測 —— 本次只量了向量化路徑。
-    loop_s = dt * 43
-    # [審計修正] 舊版在此印出「MI300X 預期 ~0.3-0.6s（約 10-20x）」與「MI300X 0.4s」。
-    # 那兩個數字是人為選定的折扣倍率，已於 HARDCODED_DATA_AUDIT.md 移除。
-    # 現改為從物理量推導的 roofline 下界：工作集位元組 ÷ HBM3 峰值頻寬。
-    working_set_mb = (n * 8) / (1024 * 1024)
+    #
+    # [審計修正 §4.4] 舊版第 124 行沿用 `(n * 8) / (1024*1024)` 估算工作集，而該公式
+    # 正是 `src/engine/benchmark.py:57-66` 明文指出**低估 9.1 倍**、並已被 tracemalloc
+    # 實測取代的公式（9.6M rollout 的實測峰值為 665.9 MB，舊公式只給 73.2 MB）。
+    # 一個標榜「產品級、可驗數字」的 benchmark 不應再傳播它自己審計掉掉的數字。
+    # 現改為呼叫正式引擎量測，或以該模組常量做明示對照。
+    working_set_mb = None
+    working_set_source = None
+    try:
+        from src.engine import benchmark as engine_benchmark
+        from src.engine import model as engine_model
+
+        e_opens, e_scheds = engine_model.strategy_grid()
+        # 用與本腳本相同的 S；引擎的 tracemalloc 量測即為同一 solve() 家族。
+        working_set_mb = engine_benchmark._measure_working_set_mb(
+            S, e_opens, e_scheds, use_gpu=False
+        )
+        working_set_source = "tracemalloc 實測（src.engine.benchmark._measure_working_set_mb）"
+    except Exception as exc:  # 引擎不可用時退回明示標註的舊估值
+        legacy_mb = (n * 8) / (1024 * 1024)
+        working_set_mb = legacy_mb
+        working_set_source = (
+            f"舊版 n×8 公式（已知低估約 9.1 倍；因引擎不可用而退回，{type(exc).__name__}）"
+        )
+
     mi300x_lower_bound_s = (working_set_mb / 1024.0) / 5300.0
-    print(f"  * 每輪談判要在買方收信當下重解 1 次 = {S:,} 對手樣本 x {N_OPEN*N_SCHED} 策略 = {n:,} rollouts")
+    print(f"  * 每輪談判要在買方收信當下重解 1 次 = {S:,} 對手樣本 x {N_OPEN*N_SCHED} 策略 = {n:,} rollout 位")
     print(f"  * CPU 向量化（本次實測）= {dt*1000:.0f} ms")
-    print(f"  * 純 loop 時間為**外推值**（沿用 v1 實測的 43x 比值）~ {loop_s:.0f}s -> 不適合互動")
+    print(f"  * 純 loop 時間為**外推值**（沿用 v1 實測的 37–43x 比值）~ {dt*37:.0f}–{dt*43:.0f}s -> 不適合互動")
     print(f"  * MI300X：本機無 GPU，無實測值。Analytical Roofline **下界** = "
           f"工作集 {working_set_mb:.1f} MB ÷ 5300 GB/s = {mi300x_lower_bound_s*1000:.3f} ms")
+    print(f"    （工作集來源：{working_set_source}）")
     print(f"    （這是物理不可逾越的下界，**不是**預期實測時間；實際值會高於此）")
     print(f"  * 敘事：'收信後即時重解讓步計畫' —— 瓶頸是訪存頻寬，故 HBM3 與 DDR5 的頻寬比"
           f"（{5300.0/60.0:.1f}x）即為理論上限")

@@ -15,6 +15,69 @@ from __future__ import annotations
 import numpy as np
 from . import model
 
+# ============================================================================
+# [誠實揭露] 對抗式開盤錨定反應係數 (Adversarial Anchoring Reaction)
+#
+# 舊版 payoff 完全不含「對手如何回應我方開盤」這一項，於是：
+#   payoff = p_deal * (ceiling - paid) - p_break * 0.10
+# 在低開盤區間 p_deal ≈ 1、paid ≈ op，使逐開盤檔最優分數單調上升後崩塌
+# （實測 0.1361, 0.1410, …, 0.1507, …, -0.4457），「搜尋最佳開盤價」幾乎沒有張力
+# （DEEP_DEFECT_AUDIT §3.5）。這裡補上對手對開盤的反應項，使開盤價真正進入目標函式。
+#
+# 模型直覺：
+#   * 開盤越接近對手底價（first_gap 小）→ 對手視為接近成交／善意 → 讓步率上調；
+#   * 開盤越低（first_gap 大，強硬還價）→ 對手視為被壓價 → 讓步率下調（hardening）。
+# 數學形式（乘在對手每輪讓步率 cr 上）：
+#   react  = clip(1 - BETA * (first_gap - REF), CLIP_LO, CLIP_HI)
+#   cr_eff = clip(cr * react, 0, 0.95)
+#
+# 下列三個常數皆為**選定值**（啟發式，非資料擬合/訓練）：
+#   ANCHORING_REF  = 0.10 : 中性開盤差距參考尺度（歸一化，1.0 = 目標價）；
+#   ANCHORING_BETA = 1.00 : 差距每偏離參考 1.0，讓步率乘數的變動量；
+#   ANCHORING_CLIP = (0.50, 1.50) : 乘數上下界，避免外推時讓步率失控/歸零。
+# 設定 `solver.ANCHORING_BETA = 0.0` 可還原舊版（無錨定反應）的目標函式，
+# 此槓桿即迴歸測試的依據（見 tests/test_solver_behavior.py）。
+# ============================================================================
+ANCHORING_REF = 0.10
+ANCHORING_BETA = 1.00
+ANCHORING_CLIP = (0.50, 1.50)
+
+
+def anchoring_multiplier(xp, gap):
+    """後端無關（NumPy/CuPy）的對手讓步率錨定反應乘數。
+
+    react = clip(1 − BETA·(gap − REF), CLIP_LO, CLIP_HI)，見檔頭常數區的揭露。
+    """
+    react = 1.0 - ANCHORING_BETA * (gap - ANCHORING_REF)
+    return xp.clip(react, ANCHORING_CLIP[0], ANCHORING_CLIP[1])
+
+
+def _pareto_frontier_indices(margin: np.ndarray, break_prob: np.ndarray) -> list:
+    """真正的前沿篩選：回傳 (margin 極大, break 極小) 二目標下的第一層非支配集。
+
+    [修正 §3.4/§3.7] 舊版把 `argmax(margin − λ·break)` 稱為「帕雷托最優」，那是
+    術語誤用：加權和純量化的 argmax 只會落在前沿上的某一點，並不等於「回傳前沿」。
+    本函式才是真正的非支配篩選 (non-dominated filter)：策略 a 支配 b ⇔
+    margin_a ≥ margin_b 且 break_a ≤ break_b，且至少一項嚴格。
+
+    實作：一次廣播出 (n, n) 的支配關係矩陣（n = n_open × n_sched = 480），
+    再取「不被任何人支配」者。回傳 [i_open, i_sched] 索引串列，依 margin 由高到低排序。
+    """
+    m = np.asarray(margin, dtype=np.float64).ravel()
+    b = np.asarray(break_prob, dtype=np.float64).ravel()
+    n = m.size
+    if n == 0:
+        return []
+    # dominates[i, j] = i 支配 j
+    ge = m[:, None] >= m[None, :]
+    le = b[:, None] <= b[None, :]
+    strict = (m[:, None] > m[None, :]) | (b[:, None] < b[None, :])
+    dominated = (ge & le & strict).any(axis=0)
+    keep = np.flatnonzero(~dominated)
+    keep = keep[np.argsort(-m[keep])]
+    shape = np.asarray(margin).shape
+    return [[int(i), int(j)] for i, j in (np.unravel_index(int(f), shape) for f in keep)]
+
 
 def _xp(use_gpu: bool):
     """回傳陣列後端。use_gpu=True 時嘗試 cupy，失敗回 numpy。"""
@@ -43,8 +106,14 @@ def solve(
     回傳 dict：
       exp_margin : (n_open, n_sched) 期望邊際（歸一化）
       exp_break  : (n_open, n_sched) 期望破局機率
-      best       : (i_open, i_sched) 帕累托最優（邊際 − λ·破局）
+      best       : (i_open, i_sched) 純量選取（邊際 − λ·破局 之 argmax）
       best_score : 最優分數
+      pareto_frontier_size : (margin 極大, break 極小) 下的第一層非支配集大小
+
+    [修正 §3.4] 舊版把這裡的 `best` 描述為「帕雷托最優」，但它是加權和標量化
+    的 argmax。現在 docstring 與註解都改為「純量選取」，並另外提供真正的
+    非支配前沿（`_pareto_frontier_indices`，其大小以 `pareto_frontier_size`
+    回報）。`best` 索引與回傳鍵皆不變，僅新增 `pareto_frontier_size`。
     """
     xp = _xp(use_gpu)
     if rng is None:
@@ -78,18 +147,22 @@ def solve(
     gap = xp.abs(res - op)
     gap = xp.broadcast_to(gap, (n_opp_samples, len(opens), len(scheds))).astype(xp.float64)
     paid = op.copy()
+    # [修正 §3.5] 對手對我方開盤的錨定反應（見檔頭常數區的公式與揭露）。
+    # first_gap 是固定量（隨 op 變、與輪次無關），所以乘數可逐 (n_open) 預算。
+    first_gap = xp.abs(res - op)
+    react = anchoring_multiplier(xp, first_gap)
+    cr_eff = xp.clip(cr * react, 0.0, 0.95)
     for r in range(model.ROUNDS):
         step_you = cf[..., r] * gap
         paid = paid + step_you
         gap = gap - step_you
-        step_opp = cr * urg * (1.0 - 0.45 * blf) * gap
+        step_opp = cr_eff * urg * (1.0 - 0.45 * blf) * gap
         gap = gap - step_opp
         gap = xp.maximum(gap, 0.0)
 
     final_gap = gap
     tol = 0.02
     p_deal = xp.exp(-xp.maximum(final_gap - tol, 0.0) / 0.05)
-    first_gap = xp.abs(res - op)
     p_break = xp.clip(
         1.0 - p_deal + (first_gap > 0.32) * (0.20 + 0.30 * blf), 0.0, 1.0
     )
@@ -98,7 +171,7 @@ def solve(
     exp_margin = payoff.mean(axis=0)
     exp_break = p_break.mean(axis=0)
 
-    # 帕累托選擇：邊際 − λ·破局
+    # [修正 §3.4] 純量選取：邊際 − λ·破局 之 argmax（**非**帕雷托選擇）
     score = exp_margin - lambda_break * exp_break
     if hasattr(score, "get"):  # cupy
         best_idx = int(xp.argmax(score))
@@ -106,12 +179,20 @@ def solve(
     else:
         flat = int(np.argmax(np.asarray(score)))
     i_open, i_sched = divmod(flat, len(scheds))
+
+    margin_np = np.asarray(exp_margin.get() if hasattr(exp_margin, "get") else exp_margin)
+    break_np = np.asarray(exp_break.get() if hasattr(exp_break, "get") else exp_break)
+    frontier = _pareto_frontier_indices(margin_np, break_np)
+
     return {
-        "exp_margin": np.asarray(exp_margin),
-        "exp_break": np.asarray(exp_break),
+        "exp_margin": margin_np,
+        "exp_break": break_np,
         "best": (i_open, i_sched),
         "best_score": float(np.asarray(score).ravel()[flat]),
         "n_samples": n_opp_samples,
+        # 僅新增鍵（介面凍結允許）；標量化 argmax 與真前沿的量化差距。
+        "pareto_frontier": frontier,
+        "pareto_frontier_size": len(frontier),
     }
 
 

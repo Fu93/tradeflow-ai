@@ -140,21 +140,33 @@ class ASTMandateViolationError(Exception):
 
 
 class ASTMandateGuardrail:
-    """AST 企業授權防禦護欄核心校驗器。"""
+    """AST 企業授權防禦護欄核心校驗器。
+
+    [C3 修正] 舊版以 `assert` 實作，並在 `except AssertionError` 轉譯。`assert` 是
+    可被直譯器最佳化剝除的敘述：`python -O` 底下所有 assert 消失，
+    `verify_proposal()` 對任何越界方案一律放行（實測）。安全不變量不得依賴
+    `sys.flags.optimize`，故本版改為顯式 `if not ...: raise`。
+    """
+
+    _GUARDRAIL_SNIPPET = '''
+def evaluate_mandate_invariants(props, mandate):
+    if not props['proposed_price'] <= mandate['walk_away_ceiling'] + 1e-6:
+        raise ValueError("AST: 單價超出 walk_away_ceiling")
+    if not props['proposed_lead_days'] <= mandate['max_acceptable_lead_days']:
+        raise ValueError("AST: 交期超出 max_acceptable_lead_days")
+    if not props['proposed_deposit_pct'] <= mandate['max_allowed_deposit_pct'] + 1e-6:
+        raise ValueError("AST: 定金超出 max_allowed_deposit_pct")
+    if not props['proposed_moq'] <= mandate['max_allowed_moq']:
+        raise ValueError("AST: 起訂量超出 max_allowed_moq")
+    for t in props['tradeoff_types_used']:
+        if not t in mandate['allowed_tradeoffs']:
+            raise ValueError(f"AST: 未授權條款 {t}")
+    return True
+'''
 
     @classmethod
     def compile_guardrail_ast(cls) -> ast.Module:
-        code = """
-def evaluate_mandate_invariants(props, mandate):
-    assert props['proposed_price'] <= mandate['walk_away_ceiling'] + 1e-6, "AST: 單價超出 walk_away_ceiling"
-    assert props['proposed_lead_days'] <= mandate['max_acceptable_lead_days'], "AST: 交期超出 max_acceptable_lead_days"
-    assert props['proposed_deposit_pct'] <= mandate['max_allowed_deposit_pct'] + 1e-6, "AST: 定金超出 max_allowed_deposit_pct"
-    assert props['proposed_moq'] <= mandate['max_allowed_moq'], "AST: 起訂量超出 max_allowed_moq"
-    for t in props['tradeoff_types_used']:
-        assert t in mandate['allowed_tradeoffs'], f"AST: 未授權條款 {t}"
-    return True
-"""
-        return ast.parse(code)
+        return ast.parse(cls._GUARDRAIL_SNIPPET)
 
     @classmethod
     def verify_proposal(
@@ -162,7 +174,20 @@ def evaluate_mandate_invariants(props, mandate):
         proposal: Dict[str, Any],
         mandate: CorporateMandate,
         buyer_script: str = "",
+        buyer_script_en: str = "",
     ) -> bool:
+        """
+        驗證方案是否符合企業授權。
+
+        [2.4 修正] 舊版只驗證中文話術 (`buyer_script`)，英文外貿話術
+        (`buyer_script_en`) 完全未受檢 —— 而它同樣會送往對外通路。
+        現兩個表面皆納入同一組不變量。
+
+        [誠實揭露] 此護欄驗證的是「方案 vs 呼叫端提供的 mandate」，因此它
+        **不能**證明 mandate 本身等於獨立授權來源，也不檢查商業合理性
+        （例如供應商剩餘為負）。商業合理性由 `LogrollingEngine._is_feasible`
+        在候選建立時把關。
+        """
         tree = cls.compile_guardrail_ast()
         compiled_scope: Dict[str, Any] = {}
         exec(compile(tree, filename="<ast_mandate_guardrail>", mode="exec"), compiled_scope)
@@ -178,11 +203,13 @@ def evaluate_mandate_invariants(props, mandate):
 
         try:
             evaluator(proposal, mandate_dict)
-        except AssertionError as exc:
+        except ValueError as exc:
             raise ASTMandateViolationError(str(exc)) from exc
 
         if buyer_script:
             cls._audit_script_numerics(buyer_script, proposal, mandate)
+        if buyer_script_en:
+            cls._audit_script_numerics(buyer_script_en, proposal, mandate)
 
         return True
 
@@ -268,6 +295,42 @@ class LogrollingEngine:
     """企業授權多維條款置換引擎。"""
 
     @classmethod
+    def _is_feasible(cls, proposal: LogrollingProposal, mandate: CorporateMandate) -> bool:
+        """
+        [2.4 修正] 候選**建立時**的商業合理性與授權邊界過濾。
+
+        舊版把 AST 護欄放在「選出贏家之後」，且 `_create_proposal` 完全不做邊界檢查，
+        因此不可行／荒謬的候選仍會進入排名。實測：
+        `CorporateMandate(target_price=12, walk_away_ceiling=16.2)` +
+        `SupplierCurrentOffer(price=9.00, deposit_pct=0.60)` → SUCCEEDED，
+        推薦價 ¥10.50、定金 50%、`ast_guardrail_passed=True`，
+        且該方案的 `supplier_surplus_estimate` 為 **-2474.69**（工廠明顯虧損）。
+
+        本過濾在候選產生時即套用授權邊界與帕雷托合理性：
+          1. 價格不得超過 walk_away_ceiling。
+          2. 交期不得超過 max_acceptable_lead_days。
+          3. 定金不得超過 max_allowed_deposit_pct。
+          4. 起訂量不得超過 max_allowed_moq。
+          5. 供應商剩餘估計不得為負 —— 否則這不是「雙贏置換」，
+             不應被當成帕雷托改善推薦出去。
+        """
+        if proposal.proposed_price > mandate.walk_away_ceiling + 1e-6:
+            return False
+        if proposal.proposed_price <= 0.0:
+            return False
+        if proposal.proposed_lead_days > mandate.max_acceptable_lead_days:
+            return False
+        if proposal.proposed_lead_days < 1:
+            return False
+        if proposal.proposed_deposit_pct > mandate.max_allowed_deposit_pct + 1e-6:
+            return False
+        if proposal.proposed_moq > mandate.max_allowed_moq:
+            return False
+        if proposal.supplier_surplus_estimate < 0.0:
+            return False
+        return True
+
+    @classmethod
     def evaluate(
         cls,
         mandate: CorporateMandate,
@@ -275,9 +338,15 @@ class LogrollingEngine:
     ) -> LogrollingResult:
         """主入口：搜尋帕雷托最優前沿並返回最優置換對。"""
         candidates: List[LogrollingProposal] = []
+        rejected_candidates: List[LogrollingProposal] = []
 
-        # 基準：若維持工廠原樣條件
-        base_proposal = cls._create_proposal(
+        def _register(prop: LogrollingProposal) -> None:
+            (candidates if cls._is_feasible(prop, mandate) else rejected_candidates).append(prop)
+
+        # 基準：若維持工廠原樣條件。
+        # [2.4 修正] 基準方案**不**進入排名：維持現狀不是「改善」，否則它會
+        # 與真實方案競爭，且在報價已低於目標價時成為通吃的贏家。
+        baseline_proposal = cls._create_proposal(
             name="工廠原始報價 (Baseline)",
             p=offer.price,
             l=offer.lead_days,
@@ -288,14 +357,14 @@ class LogrollingEngine:
             mandate=mandate,
             offer=offer,
         )
-        candidates.append(base_proposal)
+        candidates.append(baseline_proposal)
 
         # 條款置換策略 1: 定金換交期 (DEPOSIT_FOR_LEADTIME)
         if TradeoffType.DEPOSIT_FOR_LEADTIME in mandate.allowed_tradeoffs:
             for d_candidate in [mandate.max_allowed_deposit_pct, (mandate.baseline_deposit_pct + mandate.max_allowed_deposit_pct) / 2]:
                 for l_candidate in [mandate.min_desired_lead_days, mandate.baseline_lead_days - 5, mandate.baseline_lead_days - 10]:
                     if l_candidate < mandate.baseline_lead_days and l_candidate >= mandate.min_desired_lead_days:
-                        prop = cls._create_proposal(
+                        _register(cls._create_proposal(
                             name="流動性定金置換產線交期壓縮 (Deposit for Lead Time)",
                             p=offer.price,
                             l=l_candidate,
@@ -305,8 +374,7 @@ class LogrollingEngine:
                             tradeoffs=[TradeoffType.DEPOSIT_FOR_LEADTIME],
                             mandate=mandate,
                             offer=offer,
-                        )
-                        candidates.append(prop)
+                        ))
 
         # 條款置換策略 2: 定金換交期 + 模具費全免 (DEPOSIT_FOR_LEADTIME + PRICE_FOR_TOOLING)
         if (
@@ -314,7 +382,7 @@ class LogrollingEngine:
             and TradeoffType.PRICE_FOR_TOOLING in mandate.allowed_tradeoffs
             and mandate.mold_fee_exemption_demanded
         ):
-            prop = cls._create_proposal(
+            _register(cls._create_proposal(
                 name="滿額定金現結換交期壓縮與模具全免 (Deposit for Lead Time & Tooling)",
                 p=offer.price,
                 l=mandate.min_desired_lead_days,
@@ -324,8 +392,7 @@ class LogrollingEngine:
                 tradeoffs=[TradeoffType.DEPOSIT_FOR_LEADTIME, TradeoffType.PRICE_FOR_TOOLING],
                 mandate=mandate,
                 offer=offer,
-            )
-            candidates.append(prop)
+            ))
 
         # 條款置換策略 3: 起訂量換單價折讓 (VOLUME_FOR_PRICE)
         if TradeoffType.VOLUME_FOR_PRICE in mandate.allowed_tradeoffs and mandate.max_allowed_moq > offer.moq:
@@ -335,7 +402,7 @@ class LogrollingEngine:
                 # Field 的做法不一致，呼叫端無法覆寫。現改為 mandate 上的欄位。
                 discount_ratio = mandate.volume_discount_ratio
                 p_discounted = max(mandate.target_price, round(offer.price * (1 - discount_ratio), 2))
-                prop = cls._create_proposal(
+                _register(cls._create_proposal(
                     name="批量拉升規模效應置換單價折讓 (Volume for Price Concession)",
                     p=p_discounted,
                     l=mandate.baseline_lead_days,
@@ -345,8 +412,7 @@ class LogrollingEngine:
                     tradeoffs=[TradeoffType.VOLUME_FOR_PRICE],
                     mandate=mandate,
                     offer=offer,
-                )
-                candidates.append(prop)
+                ))
 
         # 條款置換策略 4: 全維度複合黃金置換 (Triple Logrolling Synergy)
         if (
@@ -354,7 +420,7 @@ class LogrollingEngine:
             and TradeoffType.VOLUME_FOR_PRICE in mandate.allowed_tradeoffs
             and TradeoffType.PRICE_FOR_TOOLING in mandate.allowed_tradeoffs
         ):
-            prop = cls._create_proposal(
+            _register(cls._create_proposal(
                 name="全維度超級置換 (Triple Logrolling: Deposit + Volume + Tooling)",
                 p=round((offer.price + mandate.target_price) / 2, 2),
                 l=mandate.min_desired_lead_days,
@@ -368,16 +434,35 @@ class LogrollingEngine:
                 ],
                 mandate=mandate,
                 offer=offer,
-            )
-            candidates.append(prop)
+            ))
 
-        # 篩選可行解並進行帕雷托非支配排序
-        pareto_proposals = cls._filter_pareto_frontier(candidates)
+        # 篩選可行解並進行帕雷托非支配排序 —— 只對**可行策略候選**排名。
+        # 基準（維持現狀）與不可行方案皆不參與排名；若無任何可行策略候選，
+        # 則誠實地推薦「維持工廠原始條件」（買方不讓步），而不是把不可行方案
+        # 重新包裝成帕雷托改善。
+        strategy_candidates = [c for c in candidates if c.tradeoff_types_used]
+        pareto_source = strategy_candidates or [baseline_proposal]
+        pareto_proposals = cls._filter_pareto_frontier(pareto_source)
 
         # 按照買方總剩餘價值排序，取得最優解
         best_proposal = max(pareto_proposals, key=lambda x: x.buyer_surplus_value)
 
-        # AST 護欄驗證
+        # [2.4 修正] 護欄亦對**英文**話術執行（舊版只驗中文 buyer_script_zh），
+        # 且對整個帕雷托前沿的推薦方案逐一驗證，而非只檢查贏家。
+        ast_guardrail_passed = True
+        for prop in pareto_proposals:
+            ASTMandateGuardrail.verify_proposal(
+                proposal={
+                    "proposed_price": prop.proposed_price,
+                    "proposed_lead_days": prop.proposed_lead_days,
+                    "proposed_deposit_pct": prop.proposed_deposit_pct,
+                    "proposed_moq": prop.proposed_moq,
+                    "tradeoff_types_used": [t.value for t in prop.tradeoff_types_used],
+                },
+                mandate=mandate,
+                buyer_script=prop.buyer_script_zh,
+                buyer_script_en=prop.buyer_script_en,
+            )
         ASTMandateGuardrail.verify_proposal(
             proposal={
                 "proposed_price": best_proposal.proposed_price,
@@ -388,6 +473,7 @@ class LogrollingEngine:
             },
             mandate=mandate,
             buyer_script=best_proposal.buyer_script_zh,
+            buyer_script_en=best_proposal.buyer_script_en,
         )
 
         summary = (
@@ -405,7 +491,7 @@ class LogrollingEngine:
             all_pareto_proposals=pareto_proposals,
             original_supplier_offer=offer,
             total_candidates_evaluated=len(candidates),
-            ast_guardrail_passed=True,
+            ast_guardrail_passed=ast_guardrail_passed,
             summary_report=summary,
         )
 
@@ -423,15 +509,27 @@ class LogrollingEngine:
         offer: SupplierCurrentOffer,
     ) -> LogrollingProposal:
         # 1. 買方剩餘計算 (貨幣化)
-        price_surplus = (mandate.walk_away_ceiling - p) * q
-        lead_surplus = mandate.lead_day_shadow_value * max(0, mandate.baseline_lead_days - l) * q
+        # [5.5 修正] 舊版 `price_surplus = (ceiling - p) * q` 讓「拉升批量」機器式地
+        # 放大剩餘：多出的每一件都以 (ceiling - p) 全額計入收益，而超額庫存成本卻
+        # 只是一次性的 5% 單價，等於把「買更多庫存」當成免費獲利，推薦因此系統性
+        # 偏向量膨脹。修正後只對**買方真正需要的數量**計價，超出基準量的部分視為
+        # 庫存，其單價改善以超額持有成本率折算（即「量增不是白吃的錢」）。
+        required_qty = min(q, mandate.baseline_moq)
+        extra_qty = max(0, q - mandate.baseline_moq)
+
+        # 價格剩餘只在**買方真正需要的數量**上計價。超出基準量的部分是不需要的
+        # 庫存，不產生「剩餘」收益，並且要支付超額持有成本 —— 這正是「量增不是
+        # 免費的錢」。舊公式 `(ceiling - p) * q` 讓每一件多餘庫存都以完整價差
+        # 計入獲利，因此機器式地偏向量膨脹。
+        price_surplus = (mandate.walk_away_ceiling - p) * required_qty
+
+        lead_surplus = mandate.lead_day_shadow_value * max(0, mandate.baseline_lead_days - l) * required_qty
         mold_surplus = mandate.estimated_mold_fee if mold_exempt else 0.0
 
         extra_deposit_pct = max(0.0, d - mandate.baseline_deposit_pct)
         buyer_deposit_cost = p * q * extra_deposit_pct * mandate.buyer_capital_cost_rate * (l / 365.0)
 
-        extra_moq = max(0, q - mandate.baseline_moq)
-        buyer_moq_cost = p * extra_moq * mandate.excess_holding_cost_rate
+        buyer_moq_cost = p * extra_qty * mandate.excess_holding_cost_rate
 
         buyer_total_surplus = price_surplus + lead_surplus + mold_surplus - buyer_deposit_cost - buyer_moq_cost
         unit_effective_saving = buyer_total_surplus / q

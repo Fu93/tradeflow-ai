@@ -18,6 +18,26 @@ class TestMultiSolver(unittest.TestCase):
             walk_away_ceiling=1.35,
         )
 
+    def test_first_round_priors_are_anchored_to_quotes(self):
+        """[§3.2 回歸] 首輪 step_round 必須讓各家先驗隨報價分化，且單調。"""
+        from src.engine.multi_solver import MultiAuctionSession
+
+        session = MultiAuctionSession(n_samples=2000)
+        r1 = session.step_round([13.26, 15.60, 15.92, 16.80])
+
+        # 修正前：四家 counter-offer 完全相同（prior_means 固定 1.08）
+        counters = r1["counter_offers_cny"]
+        self.assertGreater(len(set(round(c, 4) for c in counters)), 1,
+                           msg=f"identical first-round counter-offers: {counters}")
+        self.assertTrue(all(counters[i] <= counters[i + 1] + 1e-9
+                            for i in range(len(counters) - 1)),
+                        msg=f"non-monotone counter-offers: {counters}")
+
+        # 先驗必須落在合理支撐區間（不高於本家報價、低於 walk-away 上限）
+        priors = [float(x) for x in session.prior_means]
+        self.assertTrue(all(p > 0.5 for p in priors), f"implausible priors: {priors}")
+        self.assertTrue(all(p < 1.35 for p in priors), f"priors exceed ceiling: {priors}")
+
     def test_dynamic_batna_computation(self):
         """測試動態 BATNA 是否根據競爭對手實時報價有效收緊上限。"""
         # 3 家供應商報價：A=1.15 (領先), B=1.28, C=1.32

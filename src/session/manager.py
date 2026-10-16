@@ -12,9 +12,13 @@ import json
 import sqlite3
 import tempfile
 import time
+import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
+from pydantic import ValidationError
+
+logger = logging.getLogger("tradeflow.session")
 
 from .schema import (
     NegotiationSession,
@@ -23,6 +27,14 @@ from .schema import (
     AutopilotState,
     RemoteAuthCommand,
 )
+
+# 測試/多實例隔離用的環境變數覆寫。
+# [REGRESSION] SessionManager 舊版硬編 `data/sessions.db` 與 `data/sessions_json`，
+# 因此任何並行測試或並行伺服器實例都會寫進同一個真實檔案，互相污染
+# （審計實測：test_api.py / test_api_v4.py 會直接寫 repo 的 data/sessions.db）。
+# 現在允許 TRADEFLOW_DB_PATH / TRADEFLOW_STORE_DIR 覆寫，預設值保持不變。
+DEFAULT_DB_PATH = os.getenv("TRADEFLOW_DB_PATH", "data/sessions.db")
+DEFAULT_STORE_DIR = os.getenv("TRADEFLOW_STORE_DIR", "data/sessions_json")
 
 
 class InvalidStateTransitionError(Exception):
@@ -108,9 +120,16 @@ class SessionManager:
 
     def __init__(
         self,
-        db_path: str = "data/sessions.db",
-        store_dir: str = "data/sessions_json",
+        db_path: str = None,
+        store_dir: str = None,
     ):
+        # 明確傳入的參數優先；否則採用（可被環境變數覆寫的）模組預設值。
+        # 讀取環境變數的時機放在 __init__ 而非 import 期，讓測試的 monkeypatch
+        # 或行程中修改仍能生效。
+        if db_path is None:
+            db_path = os.getenv("TRADEFLOW_DB_PATH", DEFAULT_DB_PATH)
+        if store_dir is None:
+            store_dir = os.getenv("TRADEFLOW_STORE_DIR", DEFAULT_STORE_DIR)
         self.db_path = os.path.abspath(db_path)
         self.store_dir = os.path.abspath(store_dir)
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
@@ -218,7 +237,22 @@ class SessionManager:
             if not row:
                 return None
 
-            spec = SessionSpec.model_validate_json(row["spec_json"])
+            # [REGRESSION] 若資料庫中已存在一筆損壞的 spec_json（例如舊版寫入的
+            # Infinity -> null 的 target_price），model_validate_json 會拋
+            # ValidationError 讓每一次 GET /api/v1/sessions 都 500，而且重開
+            # 資料庫依然持續損壞 —— 一個匿名請求即可永久打掛整條讀取路徑。
+            # 現在把壞列視為「不可用」：記 log、跳過該列，絕不讓整個 LIST/GET
+            # 端點因為一筆毒資料而崩潰。
+            try:
+                spec = SessionSpec.model_validate_json(row["spec_json"])
+            except ValidationError as ve:
+                logger.error(
+                    "Skipping session '%s': its stored spec_json is not a valid SessionSpec "
+                    "(%s). The row must be repaired or deleted; the row is excluded so the "
+                    "rest of the session store stays readable.",
+                    row["session_id"], ve,
+                )
+                return None
             turn_rows = conn.execute(
                 "SELECT * FROM turns WHERE session_id = ? ORDER BY id ASC;",
                 (session_id,),
@@ -271,37 +305,39 @@ class SessionManager:
         turn: NegotiationTurn,
         expected_version: Optional[int] = None,
     ) -> NegotiationSession:
+        """追加一輪對話並以 CAS 原子遞增版本號。
+
+        [REGRESSION] 舊版的 else 分支（expected_version 為 None 時）**完全沒有**
+        版本謂詞，而 RoundActionRequest.expected_version 預設為 None 且 /round
+        原樣帶下來，因此主要寫入路徑從不走受保護分支 —— 一個持舊快照的寫入者
+        可以靜默把 current_round 由 5 降回 1。
+        現在 always-CAS：未提供 expected_version 時，採用「剛讀到」的版本號作為
+        預期值（仍然有謂詞），讓真正的並發競爭一定被偵測到。
+        """
         session = self.get_session(session_id)
         if not session:
             raise KeyError(f"Session '{session_id}' not found.")
 
         now = datetime.now(timezone.utc)
         new_round = max(session.current_round, turn.round_index)
+        # always-CAS：未指定時以讀到的版本為預期，仍然執行原子比對。
+        expected = expected_version if expected_version is not None else session.version
 
         with self._get_connection() as conn:
-            # 1. 若指定 expected_version，先以 CAS 檢查版本號
-            if expected_version is not None:
-                cursor = conn.execute(
-                    """
-                    UPDATE sessions 
-                    SET current_round = ?, version = version + 1, updated_at = ? 
-                    WHERE session_id = ? AND version = ?;
-                    """,
-                    (new_round, now.isoformat(), session_id, expected_version),
-                )
-                if cursor.rowcount == 0:
-                    raise OptimisticLockConflictError(
-                        f"CAS optimistic lock conflict on session '{session_id}': "
-                        f"expected version {expected_version}, but record was modified concurrently."
-                    )
-            else:
-                conn.execute(
-                    """
-                    UPDATE sessions 
-                    SET current_round = ?, version = version + 1, updated_at = ? 
-                    WHERE session_id = ?;
-                    """,
-                    (new_round, now.isoformat(), session_id),
+            # 1. CAS 版本檢查（所有寫入路徑都帶版本謂詞）
+            cursor = conn.execute(
+                """
+                UPDATE sessions 
+                SET current_round = ?, version = version + 1, updated_at = ? 
+                WHERE session_id = ? AND version = ?;
+                """,
+                (new_round, now.isoformat(), session_id, expected),
+            )
+            if cursor.rowcount == 0:
+                raise OptimisticLockConflictError(
+                    f"CAS optimistic lock conflict on session '{session_id}': "
+                    f"expected version {expected}, but the record was modified concurrently "
+                    f"or does not exist."
                 )
 
             # 2. 插入輪次紀錄
@@ -328,7 +364,13 @@ class SessionManager:
 
         # 刷新快照
         updated_session = self.get_session(session_id)
-        assert updated_session is not None
+        # [REGRESSION] 舊版為 `assert updated_session is not None`：在 python -O 下
+        # 會被移除，寫入失敗將靜默回傳 None。改為明確拋錯。
+        if updated_session is None:
+            raise RuntimeError(
+                f"Persistence invariant violated: session '{session_id}' vanished after a "
+                "successful turn append."
+            )
         self._atomic_write_json(updated_session)
         return updated_session
 
@@ -359,9 +401,18 @@ class SessionManager:
                 f"Allowed transitions: {[s.value for s in allowed_next]}"
             )
 
+        # [REGRESSION] 舊版 `target_version = expected_version if ... else session.version`
+        # 是對的，但問題出在呼叫端：manager.py:362 這個三元式在 expected_version 為
+        # None 時會取「剛讀到的」版本，而真正持舊版號的呼叫端會被拿來與**剛讀到**
+        # 的版本比較 —— 於是合法的舊呼叫端得到 FALSE conflict，而省略版號的呼叫端
+        # 反而完全不做版本檢查。現在明確區分：
+        #   - expected_version 有給：以它為 CAS 謂詞（真正的樂觀鎖）。
+        #   - 未給：以讀到的版本為謂詞（仍保證原子，但不宣稱 caller 持有該版本）。
         target_version = expected_version if expected_version is not None else session.version
-        now = datetime.now(timezone.utc)
 
+        now = datetime.now(timezone.utc)
+        # 狀態轉移同樣一律帶版本謂詞（與 append_turn 一致），避免未指定版號時
+        # 出現無保護的寫入窗口。
         with self._get_connection() as conn:
             cursor = conn.execute(
                 """
@@ -380,7 +431,14 @@ class SessionManager:
                 )
 
         updated_session = self.get_session(session_id)
-        assert updated_session is not None
+        # [REGRESSION] 舊版用 `assert updated_session is not None`。assert 在
+        # `python -O` 之下會被移除，於是「寫入失敗」會靜默回傳 None 而不是報錯。
+        # 持久化路徑不該用 assert 做控制流。
+        if updated_session is None:
+            raise RuntimeError(
+                f"Persistence invariant violated: session '{session_id}' vanished after a "
+                "successful state transition."
+            )
         self._atomic_write_json(updated_session)
         return updated_session
 
@@ -404,9 +462,40 @@ class SessionManager:
             return self._atomic_write_json(sess)
         return None
 
+    def _snapshot_path(self, session_id: str) -> str:
+        """解析 session 快照路徑，並確保它落在 store_dir 內。
+
+        [REGRESSION] 舊版直接 `os.path.join(self.store_dir, f"{session_id}.json")`，
+        而 session_id 是呼叫端自由提供的字串：
+          - `../../models/vocab` 會逃出 store_dir（路徑穿越）；
+          - `C:/Users/.../pwn` 會讓 os.path.join **完全丟棄** store_dir，接著
+            os.replace 原子覆寫該絕對路徑（可達 seed_data/price_anchor.json，
+            而它餵給 demo_data 的目標價與品名）。
+        白名單（schema.SAFE_SESSION_ID_RE）+ 解析後必須落在 store_dir 內，雙重防禦。
+        """
+        from .schema import SAFE_SESSION_ID_RE
+
+        sid = str(session_id)
+        if not SAFE_SESSION_ID_RE.fullmatch(sid):
+            raise ValueError(
+                f"Refusing to write a session snapshot for unsafe session_id {sid!r}: "
+                "it must match ^[A-Za-z0-9._-]{1,128}$ (no path separators, no '..')."
+            )
+        store_root = os.path.realpath(self.store_dir)
+        candidate = os.path.join(store_root, f"{sid}.json")
+        target = os.path.realpath(candidate)
+        # 雙重檢查：即使白名單在未來被放寬，這裡仍確保路徑不會落在 store_dir 之外。
+        # 用 normcase 比較，避免 Windows 大小寫/正斜線差異造成誤判。
+        if os.path.normcase(os.path.dirname(target)) != os.path.normcase(store_root):
+            raise ValueError(
+                f"Refusing to write a session snapshot outside the store directory "
+                f"({target!r} is not directly inside {store_root!r})."
+            )
+        return target
+
     def _atomic_write_json(self, session: NegotiationSession, max_retries: int = 5) -> str:
         """跨平台安全的原子寫入快照，防範 Windows 鎖檔。"""
-        target_path = os.path.join(self.store_dir, f"{session.spec.session_id}.json")
+        target_path = self._snapshot_path(session.spec.session_id)
         data_str = session.model_dump_json(indent=2)
 
         # 在相同目錄下建立暫存檔，確保 os.replace 屬於同一磁碟卷原子操作

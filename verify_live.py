@@ -72,6 +72,12 @@ assert res_auc.status_code == 200
 auc_data = res_auc.json()
 assert auc_data['k_suppliers'] == 4
 assert auc_data['backend'] is not None
-print(f'[PASS] 7. Multi-Auction Run -> Winner: {auc_data["winning_supplier"]} (Rollouts: {auc_data["total_rollouts"]:,})')
+# [審計修正 §4.4] `total_rollouts` 是 K×S×N_open×N_sched 的**算術乘積**（張量位數），
+# 不是任何迴圈/核函數的執行次數統計。舊標籤 "Rollouts: N" 讓它讀起來像量測值。
+print(
+    f'[PASS] 7. Multi-Auction Run -> Winner: {auc_data["winning_supplier"]} '
+    f'(Rollout positions: {auc_data["total_rollouts"]:,} = K×S×N_open×N_sched, '
+    f'parameterised grid count; not a measured execution count)'
+)
 
 print('\nALL INTEGRATION ENDPOINTS TESTED AND VERIFIED!')

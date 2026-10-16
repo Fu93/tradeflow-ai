@@ -15,7 +15,7 @@ AMD Developer Hackathon: ACT III (lablab.ai, Online Build **2026/10/12–17**) �
 - 戰情門戶：http://localhost:8000 （Web Portal Dashboard）
 - 實證對抗與局限性報告：[LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](LIMITATIONS_AND_REAL_WORLD_FINDINGS.md)
 - 真實紅隊壓力測試實錄：[REAL_WORLD_STRESS_TEST_TRANSCRIPT.md](REAL_WORLD_STRESS_TEST_TRANSCRIPT.md)
-- 750場錦標賽基線數據：[results/self_play_benchmark.md](results/self_play_benchmark.md)
+- 自博弈錦標賽基線數據（C 級合成模擬；**100 場**，即 20 matches × 5 對手原型，seed=42）：[results/self_play_benchmark.md](results/self_play_benchmark.md)
 - 提交清單：[SUBMIT.md](SUBMIT.md) | 演示提案：[PITCH.md](PITCH.md) | 歷史規劃文件：[docs/archive/](docs/archive/README.md)
 
 ---
@@ -56,7 +56,7 @@ flowchart TD
     end
 
     subgraph GPULayer ["張量模擬與認知生成層 (Tensor Simulation & LLM - AMD RDNA / CDNA)"]
-        MCTS96M["多供應商張量並行逆向拍賣求解器 (實測 28.8M rollouts)"]
+        MCTS96M["多供應商張量並行逆向拍賣求解器 (參數化 28.8M rollout 位)]
         Logrolling["多維條款置換引擎 (交期/定金/模具費帕雷托對)"]
         LLMBridge["AMD 託管開源模型 / Evolus 商務話術起草"]
         MCTS96M --> Logrolling --> LLMBridge
@@ -81,9 +81,10 @@ flowchart TD
 
 ## 關鍵技術亮點
 
-1. **張量並行求解（實測 28,800,000 Rollouts）**：
-   - 示範路徑 `simulate_reverse_auction()`（Web「Run Auction」預設參數 $n_{samples}=20{,}000$）每輪執行 9.6M rollouts，共 3 輪，**累計 28.8M（實測值）**。
-   - rollout 數 = $K \times S \times N_{open} \times N_{sched}$；基準測試使用 50,000 樣本時為 72M；最大策略網格 (40×12) 的理論上界為 96M，但**未被任何實際路徑使用**。
+1. **張量並行求解（參數化 28,800,000 rollout 位，非執行計數）**：
+   - 示範路徑 `simulate_reverse_auction()`（Web「Run Auction」預設參數 $n_{samples}=20{,}000$）的 rollout 數為 $K \times S \times N_{open} \times N_{sched}$ 的**算術乘積**：每輪 9.6M，3 輪累計 **28.8M 個張量 rollout 位**。
+   - **這不是量測到的執行次數**：真正的 rollout 由**一次向量化廣播**完成，28.8M 是「被同時求值的參數組合數」（張量元素位數），不是迴圈迭代數。延遲才是量測值（單次 `solve()` 實測約 1.1 秒）。
+   - rollout 位 = $K \times S \times N_{open} \times N_{sched}$；基準測試使用 50,000 樣本時為 72M；最大策略網格 (40×12) 的理論上界為 96M，但**未被任何實際路徑使用**。
    - 同時評估 $K=4$ 家供應商、隨機對手微觀參數與多組出價/讓步曲線組合。
    - MI300X 上的加速為**分析性 roofline 訪存頻寬投影**，非實機量測（開發機為 **x86-64 CPU，Intel Core Ultra 7 355**，非 AMD 硬體）。
 2. **動態 BATNA 交叉壓制與 3 階戰術劃分**：
@@ -122,7 +123,7 @@ python -m src.app.main
 打開瀏覽器訪問 **`http://localhost:8000`**，即可進入量化採購戰情室：
 - **即時貝氏更新折線圖**：SSE 長連線每秒推播會話狀態與後驗收斂。
 - **安全熔斷儀表環**：破局率動態指示與手機遠端指令解鎖模擬按鍵。
-- **多供應商逆向拍賣看板**：一鍵點擊 `Run Auction` 觸發張量拍賣運算（實測 28.8M rollouts）。
+- **多供應商逆向拍賣看板**：一鍵點擊 `Run Auction` 觸發張量拍賣運算（參數化 28.8M rollout 位，非執行計數）。
 - **遙測渠道熱重載面板**：可視化配置 WhatsApp / Telegram / WeChat Token。
 
 ### 2. 命令列工具 (CLI 功能矩陣)
@@ -160,10 +161,10 @@ python -m src.cli
 
 ## 測試與驗證
 
-專案具備完整測試覆蓋（包含核心邏輯、張量運算、意圖分類、API 路由、併發 CAS、非同步語意與 E2E 閉環）。**目前 110 項測試全部通過**：
+專案具備完整測試覆蓋（包含核心邏輯、張量運算、意圖分類、API 路由、併發 CAS、非同步語意、安全護欄與 E2E 閉環）。**目前 326 項測試 + 68 subtests 全部通過**：
 
 ```bash
-# 運行全量測試套件 (110 項測試通過)
+# 運行全量測試套件 (326 項測試 + 68 subtests 通過)
 python -m pytest tests -q
 
 # 運行真實端到端整合業務鏈測試
@@ -173,7 +174,8 @@ python verify_live.py
 > **評測效力邊界揭露 (Evaluation Validity Disclosure)**：  
 > 為維持技術誠信，我們明確區分下列兩類評測的效力：
 > - `tests/test_intent_benchmark.py` 為 **in-distribution 回歸集**，其樣本與 Stage-1 正則關鍵詞高度重疊（60 條中 54 條含相同詞幹），僅用於偵測行為退化，**不可**據此宣稱泛化能力。
-> - `tests/test_ood_500_benchmark.py` 為 **程式化生成之合成對抗覆蓋集**（500 條中遮蔽數字後僅 132 條互異），實測 Accuracy 92.00%、P99 延遲 0.49ms。
+> - `tests/test_ood_500_benchmark.py` 評測的是 **合成對抗覆蓋集的 held-out 切分**（500 條切出 held-out 195 條，模板與 ONNX 訓練集完全不相交），**held-out 實測 Accuracy 63.08%**、P99 延遲 0.27–1.14ms（12 次執行區間）。
+> - **更正紀錄**：本文件先前引用的 **92.00% 其實是訓練集分數** —— 舊版 `scripts/export_onnx_intent_model.py` 以整份 OOD-500 訓練 ONNX 分類頭，再用同一份評測；同一份模型在訓練切分上實測 92.79%、在 held-out 切分僅 63.08%，該差距即記憶成分。現行切分、訓練與門檻已全部改以 held-out 為準。
 > - 兩者的斷言門檻皆已調至貼近實測值，以確保能實際攔截回歸而非流於形式。
 
 驗證輸出結果（`python verify_live.py`）：
@@ -184,7 +186,7 @@ python verify_live.py
 [PASS] 4. Round 1 Cruising -> Intent: CRY_POVERTY_COST_HIKE
 [PASS] 5. Round 2 Circuit Breaker Tripped -> Reason: Security escalation: OFFLINE_BYPASS_DIVERT
 [PASS] 6. Mobile Webhook Command Executed -> Action: concede_step
-[PASS] 7. Multi-Auction Run -> Winner: Supplier A (浙江頂尖雨具製造) (Rollouts: 28,800,000)
+[PASS] 7. Multi-Auction Run -> Winner: Supplier A (浙江頂尖雨具製造) (Rollout positions: 28,800,000; parameterised, not an execution count)
 ```
 
 ---
@@ -213,10 +215,10 @@ python verify_live.py
 | 評審維度 | TradeFlow AI 實踐細節 |
 |---|---|
 | **Originality** | 打破「以 LLM 為決策核心」的慣例，開創「數學核心做決策，LLM 只做表面語言表達」架構。並以「**一間只有一個人的 AI 原生貿易公司**」作為產品形態，而非又一個採購 SaaS。 |
-| **Business Value** | 對照傳統兩條路徑（自己熬夜談 / 7% 佣金代理），本方案為 **1 人營運**、**0% 預算擊穿**、**無中間人故無回扣風險**。可量化增益：節省率 14.8%–18.6%。 |
+| **Business Value** | 對照傳統兩條路徑（自己熬夜談 / 7% 佣金代理），本方案為 **1 人營運**、**0% 預算擊穿**、**無中間人故無回扣風險**。可量化增益（C 級合成模擬、20 場/對手原型、共 100 場；`results/self_play_benchmark.md`）：節省率 **8.8%–20.0%**。<br>*該區間為參數化對手模型下的模擬結果；解析度仍有限（每格 20 場），且引擎在 Hard-Bargainer 上仍略遜於「每輪固定讓 5%」基準（8.8% vs 9.2%）—— 我們如實報告，不挑選有利格。* |
 | **Application of Technology (AMD)** | ① 引擎為張量廣播密集型任務，`_xp()` 抽象層可自 CPU 無痛擴展至 AMD Instinct GPU（ROCm/CuPy）。② Stage-2 語意層**已實連** AMD 託管開源模型端點（實測 HTTP 200）。<br>*MI300X 時延為分析性 roofline 資料搬運下界，非實機量測，亦非執行時間預測。*<br>*開發機為 Intel Core Ultra 7 355（x86-64），本專案**未**在 AMD CPU 上執行過。* |
 | **Evolus Integration** | 真實 API 呼叫已產生 usage stats：AI Tools `email` / `doc-structure` / `sentiment`（共 8.33 credits），並由 `src/app/orchestrator.py` 完成「Evolus 回呼 → 引擎 → Evolus 起草」端到端鏈路。<br>*workflow 與 agent 尚未建立，我們不宣稱已完成。* |
-| **Presentation & Rigor** | 純 Python 一鍵啟動、**110 項測試覆蓋**、含「評測效力邊界揭露」與完整局限性報告、生產級 SQLite WAL 與安全熔斷防護。 |
+| **Presentation & Rigor** | 純 Python 一鍵啟動、**326 項測試 + 68 subtests**、含「評測效力邊界揭露」與完整局限性報告、生產級 SQLite WAL 與安全熔斷防護。 |
 
 ---
 
