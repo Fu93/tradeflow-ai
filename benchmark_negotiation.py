@@ -111,11 +111,27 @@ def rollout_loop(n_opp_samples, n_offers, n_conc, rounds):
     return payoff, pd
 
 
-def bench(fn, *a):
-    fn(*a)
-    t = time.perf_counter()
-    fn(*a)
-    return time.perf_counter() - t
+def bench(fn, *a, reps: int = 5):
+    """暖機 1 次後實測 reps 次取 median±std。
+
+    [修正] 舊版只計時 1 次 —— 單次量測受 OS 調度與快取狀態抖動影響，重跑數字
+    可漂移 ±20%。回傳值改為 reps 次的 median（純量，呼叫端簽名相容）；統計
+    明細（reps/median/std 三個鍵）放在 bench.last_stats，由呼叫端附加印出，
+    既有輸出欄位全部保留。
+    """
+    import statistics
+    fn(*a)  # 暖機：排除首次載入/分配造成的離群值
+    samples = []
+    for _ in range(reps):
+        t0 = time.perf_counter()
+        fn(*a)
+        samples.append(time.perf_counter() - t0)
+    bench.last_stats = {
+        "reps": reps,
+        "median": statistics.median(samples),
+        "std": statistics.pstdev(samples),
+    }
+    return bench.last_stats["median"]
 
 
 if __name__ == "__main__":
@@ -124,8 +140,10 @@ if __name__ == "__main__":
     print(f"{'samples':>10} {'vectorized ms':>14} {'rollouts':>14} {'us/rollout':>11}")
     for S in (2_000, 10_000, 50_000):
         t = bench(rollout_batch, S, N_OFFERS, N_CONC, ROUNDS)
+        st = bench.last_stats
         n = S * N_OFFERS * N_CONC
-        print(f"{S:>10,} {t*1000:>14.1f} {n:>14,} {t*1e6/n:>11.3f}")
+        print(f"{S:>10,} {t*1000:>14.1f} {n:>14,} {t*1e6/n:>11.3f}"
+              f"  | reps={st['reps']} median={st['median']*1000:.1f}ms std={st['std']*1000:.1f}ms")
 
     print()
     t = bench(rollout_batch, 200_000, N_OFFERS, N_CONC, ROUNDS)
@@ -135,10 +153,14 @@ if __name__ == "__main__":
     print()
     S = 2_000
     tv = bench(rollout_batch, S, N_OFFERS, N_CONC, ROUNDS)
+    stv = bench.last_stats
     tl = bench(rollout_loop, S, N_OFFERS, N_CONC, ROUNDS)
+    stl = bench.last_stats
     n = S * N_OFFERS * N_CONC
     print(f"loop baseline S={S:,}: {tl*1000:.0f} ms  ({tl*1e6/n:.2f} us/rollout)")
     print(f"vectorized   S={S:,}: {tv*1000:.1f} ms  -> speedup {tl/tv:,.0f}x")
+    print(f"  計時統計: reps={stv['reps']} | vectorized median={stv['median']*1000:.1f}ms "
+          f"std={stv['std']*1000:.1f}ms | loop median={stl['median']*1000:.0f}ms std={stl['std']*1000:.0f}ms")
     print()
     print("READ:")
     print("  * 10k-200k opponent samples vectorized = sub-second on CPU.")

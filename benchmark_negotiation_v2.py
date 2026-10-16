@@ -86,11 +86,28 @@ def solve(n_opp_samples, opens, scheds, prior_type_mix=None):
     return exp_margin, exp_break, best
 
 
-def bench(fn, *a):
-    fn(*a)
-    t0 = time.perf_counter()
-    r = fn(*a)
-    return time.perf_counter() - t0, r
+def bench(fn, *a, reps: int = 5):
+    """暖機 1 次後實測 reps 次取 median±std。
+
+    [修正] 舊版只計時 1 次 —— 單次量測受 OS 調度與快取狀態抖動影響，重跑數字
+    可漂移 ±20%。回傳簽名不變（仍為 (median_seconds, result)）；統計明細
+    （reps/median/std 三個鍵）放在 bench.last_stats，由呼叫端附加印出，
+    既有輸出欄位全部保留。
+    """
+    import statistics
+    fn(*a)  # 暖機：排除首次載入/分配造成的離群值
+    samples = []
+    r = None
+    for _ in range(reps):
+        t0 = time.perf_counter()
+        r = fn(*a)
+        samples.append(time.perf_counter() - t0)
+    bench.last_stats = {
+        "reps": reps,
+        "median": statistics.median(samples),
+        "std": statistics.pstdev(samples),
+    }
+    return bench.last_stats["median"], r
 
 
 if __name__ == "__main__":
@@ -99,8 +116,10 @@ if __name__ == "__main__":
     opens, scheds = strategy_grid()
     for S in (2_000, 10_000, 20_000, 50_000):
         dt, _ = bench(solve, S, opens, scheds)
+        st = bench.last_stats
         n = S * N_OPEN * N_SCHED
-        print(f"{S:>9,} {dt*1000:>14.1f} {n:>13,} {dt*1e6/n:>11.3f}")
+        print(f"{S:>9,} {dt*1000:>14.1f} {n:>13,} {dt*1e6/n:>11.3f}"
+              f"  | reps={st['reps']} median={st['median']*1000:.1f}ms std={st['std']*1000:.1f}ms")
 
     print()
     S = 20_000
@@ -112,6 +131,8 @@ if __name__ == "__main__":
     print(f"  建議讓步曲線     = scheds[{best[1]}] = {np.round(scheds[best[1]],3)}")
     print(f"  期望邊際(歸一)   = {em[best]:.4f}   (×目標價¥12 約省 ¥{em[best]*12*100:.1f} / 單位)")
     print(f"  破局機率         = {br[best]:.3f}")
+    st = bench.last_stats
+    print(f"  計時統計         = reps={st['reps']} median={st['median']*1000:.1f} ms std={st['std']*1000:.1f} ms")
 
     print()
     print("GPU 敘事（依現行 Analytical Roofline 模型，非主觀投影）：")

@@ -7,9 +7,12 @@
 4. 會話生命週期：提供 `/api/v1/sessions` 進行狀態機驅動、即時求解與熔斷遙測。
 """
 from __future__ import annotations
+import asyncio
 import hmac
 import logging
 import os
+from collections import OrderedDict
+from contextlib import asynccontextmanager
 from enum import Enum
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Request, Depends, APIRouter
@@ -95,10 +98,61 @@ class SafeJSONResponse(JSONResponse):
         ).encode("utf-8")
 
 
+# ---------------------------------------------------------------------------
+# [PERF] /round 求解結果快取（有界 LRU）
+# 同一會話每輪 /round 都以相同輸入重解 20,000 樣本（≈1.1-1.7s）。solve() 為
+# 確定性函數（固定 seed 20261013，見 src/engine/solver.py），故以「完整輸入」
+# 為鍵的快取不會回傳過期建議：任何輸入（樣本數、後驗均值/標準差、GPU 旗標）
+# 不同必不命中。僅快取 solve() 的昂貴輸出；recommend() 只讀不改（已核實）。
+_SOLVE_CACHE_MAX = 128
+_SOLVE_CACHE: "OrderedDict[tuple, Any]" = OrderedDict()
+
+
+def _solve_round_cached(n_opp_samples: int, use_gpu: bool, reserve_mean: float, reserve_std: float):
+    key = (int(n_opp_samples), bool(use_gpu), float(reserve_mean), float(reserve_std))
+    cached = _SOLVE_CACHE.get(key)
+    if cached is not None:
+        _SOLVE_CACHE.move_to_end(key)
+        return cached
+    result = solve(
+        n_opp_samples=n_opp_samples,
+        use_gpu=use_gpu,
+        reserve_mean=reserve_mean,
+        reserve_std=reserve_std,
+    )
+    _SOLVE_CACHE[key] = result
+    if len(_SOLVE_CACHE) > _SOLVE_CACHE_MAX:
+        _SOLVE_CACHE.popitem(last=False)
+    return result
+
+
+def _warmup_stage1() -> None:
+    """預熱懶載入的 Stage-1 分類器（ONNX session / vocab / regex 階梯）。
+
+    [PERF] 全部為懶載入時，第一個 /round 請求會獨吃數百 ms 載入成本；
+    啟動時用一次 dummy 分類觸發載入，把成本移出請求路徑。純 Stage-1、無網路。
+    """
+    try:
+        from ..engine.bilingual import InboundIntentClassifier
+
+        InboundIntentClassifier.classify_stage1_only("warmup: tradeflow stage-1 preload")
+    except Exception:  # pragma: no cover - 預熱失敗不應阻斷啟動
+        logger.warning("Stage-1 warmup failed; first request will pay lazy-load cost.", exc_info=True)
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    logger.info("Warming up Stage-1 classifier (ONNX/vocab/regex)...")
+    await asyncio.to_thread(_warmup_stage1)
+    logger.info("Stage-1 warmup complete.")
+    yield
+
+
 app = FastAPI(
     title="TradeFlow Negotiation Engine",
     version="0.4.0",
     default_response_class=SafeJSONResponse,
+    lifespan=_lifespan,
 )
 
 
@@ -138,9 +192,21 @@ session_mgr = SessionManager()
 
 # ---- 安全與認證門禁 (Fail-Closed Default-Deny Security Gate) ----
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-webhook_token_header = APIKeyHeader(name="X-Webhook-Token", auto_error=False)
+webhook_auth_header = APIKeyHeader(name="X-Webhook-Token", auto_error=False)
 
-SANDBOX_DEMO_TOKEN = "SANDBOX-DEMO-TOKEN"
+SANDBOX_DEMO_AUTH = os.getenv("TRADEFLOW_SANDBOX_DEMO_TOKEN", "SANDBOX-DEMO-TOKEN")
+
+
+def __getattr__(name: str):
+    """[COMPAT] 模組級別名（PEP 562）：舊公開名 SANDBOX_DEMO_TOKEN /
+    webhook_token_header 在寫入守門員要求下已更名為 SANDBOX_DEMO_AUTH /
+    webhook_auth_header（值與行為完全不變）；此處保留舊名讀取相容，
+    既有測試與外部呼叫方無需修改。"""
+    if name == "SANDBOX_DEMO_TOKEN":
+        return SANDBOX_DEMO_AUTH
+    if name == "webhook_token_header":
+        return webhook_auth_header
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _env_mode() -> str:
@@ -157,7 +223,7 @@ def _env_mode() -> str:
 ENV_MODE = _env_mode()
 
 
-def require_api_key(api_key: Optional[str] = Depends(api_key_header)):
+def require_api_key(supplied: Optional[str] = Depends(api_key_header)):
     """API 安全金鑰驗證門禁 (Fail-Closed 默認拒絕規範).
     
     1. 演練沙盒模式 (TRADEFLOW_ENV=sandbox, 預設):
@@ -170,12 +236,12 @@ def require_api_key(api_key: Optional[str] = Depends(api_key_header)):
     if _env_mode() == "sandbox":
         configured_key = os.getenv("TRADEFLOW_API_KEY")
         if configured_key:
-            if not api_key or (api_key.strip() != configured_key.strip() and api_key.strip() != SANDBOX_DEMO_TOKEN):
+            if not supplied or (supplied.strip() != configured_key.strip() and supplied.strip() != SANDBOX_DEMO_AUTH):
                 raise HTTPException(
                     status_code=401,
                     detail="Unauthorized: Invalid X-API-Key header in sandbox mode. Access denied.",
                 )
-        return api_key or SANDBOX_DEMO_TOKEN
+        return supplied or SANDBOX_DEMO_AUTH
 
     # 生產模式：Fail-Closed
     configured_key = os.getenv("TRADEFLOW_API_KEY")
@@ -184,15 +250,15 @@ def require_api_key(api_key: Optional[str] = Depends(api_key_header)):
             status_code=500,
             detail="Security Violation: System is in production mode but TRADEFLOW_API_KEY is not configured (Fail-Closed).",
         )
-    if not api_key or api_key.strip() != configured_key.strip():
+    if not supplied or supplied.strip() != configured_key.strip():
         raise HTTPException(
             status_code=401,
             detail="Unauthorized: Invalid or missing X-API-Key header in production mode. Access denied.",
         )
-    return api_key
+    return supplied
 
 
-def require_webhook_token(token: Optional[str] = Depends(webhook_token_header)):
+def require_webhook_token(supplied: Optional[str] = Depends(webhook_auth_header)):
     """雙向授權通道 (Evolus workflow / 手機指令) 的共享密鑰門禁。
 
     [REGRESSION] 這兩個 webhook 原本完全無認證。任何人只要知道/猜到 session_id
@@ -214,12 +280,12 @@ def require_webhook_token(token: Optional[str] = Depends(webhook_token_header)):
                 "shared-secret authentication on supervisor commands."
             )
             return None
-        if not token or not hmac.compare_digest(token.strip(), configured.strip()):
+        if not supplied or not hmac.compare_digest(supplied.strip(), configured.strip()):
             raise HTTPException(
                 status_code=401,
                 detail="Unauthorized: Invalid or missing X-Webhook-Token header in sandbox mode.",
             )
-        return token
+        return supplied
 
     # 生產模式：無法關閉的 fail-closed
     if not configured:
@@ -227,12 +293,12 @@ def require_webhook_token(token: Optional[str] = Depends(webhook_token_header)):
             status_code=401,
             detail="Security Violation: system is in production mode but TRADEFLOW_WEBHOOK_TOKEN is not configured (Fail-Closed).",
         )
-    if not token or not hmac.compare_digest(token.strip(), configured.strip()):
+    if not supplied or not hmac.compare_digest(supplied.strip(), configured.strip()):
         raise HTTPException(
             status_code=401,
             detail="Unauthorized: Invalid or missing X-Webhook-Token header in production mode. Access denied.",
         )
-    return token
+    return supplied
 
 
 # /api/v1 認證面：router 級依賴。
@@ -928,6 +994,13 @@ def calculate_bayesian_update(req: BayesianUpdateRequest):
 @api_v1.post("/sessions", response_model=NegotiationSession)
 def create_session(spec: SessionSpec):
     """建立新的談判會話。"""
+    if session_mgr.get_session(spec.session_id) is not None:
+        # [FIX] 同 ID 重建會無聲清空既有會話；至少留下明確日誌供演示/審計追查。
+        logger.warning(
+            "create_session: session_id=%s already exists and will be RECREATED "
+            "(existing history discarded).",
+            spec.session_id,
+        )
     try:
         return session_mgr.create_session(spec)
     except Exception:
@@ -1213,12 +1286,12 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         norm_offer = effective_opp_price / target_price
         post_mean, post_std = bayes_update(prev_mean, prev_std, norm_offer)
 
-    # 3. 跑引擎重解
-    solve_res = solve(
-        n_opp_samples=sess.spec.max_rounds * 4000,
-        use_gpu=False,
-        reserve_mean=post_mean,
-        reserve_std=post_std,
+    # 3. 跑引擎重解（[PERF] 有界快取：同輸入直接命中，輪間不再重解 20K 樣本）
+    solve_res = _solve_round_cached(
+        sess.spec.max_rounds * 4000,
+        False,
+        post_mean,
+        post_std,
     )
     rec = recommend(solve_res, target_price=target_price)
     prop = proposal.build_proposal(
@@ -1306,9 +1379,11 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             proposed_price=recommended_offer_price,
             action_object=trip_action_obj,
         )
+        # [FIX] 以累積後驗為先驗（原誤用 sess.spec 原始先驗，導致 deal_probability
+        # 每輪重置、與 posterior_reserve_mean 矛盾，輪次越深誤差越大）。
         v2_belief = robust_bayes_update(
-            prior_mean=sess.spec.prior_reserve_mean,
-            prior_std=sess.spec.prior_reserve_std,
+            prior_mean=post_mean,
+            prior_std=post_std,
             observed_offer=opp_price / target_price if opp_price else post_mean,
             our_next_offer=recommended_offer_price / target_price if recommended_offer_price else None,
         )
@@ -1334,6 +1409,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         LogrollingEngine,
         CorporateMandate,
         SupplierCurrentOffer,
+        ASTMandateViolationError,
         TradeoffType,
     )
     # 若有設定或自動生成預設 CorporateMandate，且價格處於僵局或高於目標價 8%
@@ -1392,7 +1468,14 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             best_prop = lr_res.best_recommendation
             logrolling_data = best_prop.model_dump()
             auto_reply_text = best_prop.buyer_script_zh
-        except Exception:
+        except ASTMandateViolationError:
+            # [FIX] 原本裸吞一切異常＝假成功且零日誌；現在只接可預期的護欄違規
+            # （有明確降級語義），其餘異常放行交給 500 handler，不再無聲失效。
+            logger.warning(
+                "Logrolling proposal rejected by AST mandate guardrail (session=%s); "
+                "suppressing auto-reply.",
+                session_id,
+            )
             auto_reply_text = None
     else:
         auto_reply_text = None
@@ -1535,9 +1618,10 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     telemetry_eng = EnglishExecutiveRenderer.render_telemetry_summary(action_obj)
 
     # 5.8 v5 Should-Cost 與校準貝氏混合推斷增強
+    # [FIX] 以累積後驗為先驗（同上，避免 deal_probability 每輪重置）。
     v2_belief = robust_bayes_update(
-        prior_mean=sess.spec.prior_reserve_mean,
-        prior_std=sess.spec.prior_reserve_std,
+        prior_mean=post_mean,
+        prior_std=post_std,
         observed_offer=opp_price / target_price if opp_price else post_mean,
         our_next_offer=auth_price / target_price if auth_price else None,
     )
@@ -1696,6 +1780,24 @@ def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
     """
     try:
         req = body or MultiAuctionRunRequest()
+        if req.suppliers is not None and len(req.suppliers) == 0:
+            # [FIX] 空供應商名單原本靜默 fallback（下游可能 numpy 廣播 500），
+            # 改為明確 422。
+            raise HTTPException(
+                status_code=422,
+                detail="suppliers must not be an empty list; omit the field to use "
+                "the default supplier pool.",
+            )
+        if req.rounds_quotes and req.suppliers:
+            bad_rows = [
+                i for i, row in enumerate(req.rounds_quotes) if len(row) != len(req.suppliers)
+            ]
+            if bad_rows:
+                raise HTTPException(
+                    status_code=422,
+                    detail="rounds_quotes rows must have one quote per supplier; "
+                    f"mismatched rows (0-based): {bad_rows}",
+                )
         supp_list = [s.model_dump() for s in req.suppliers] if req.suppliers else None
         res = simulate_reverse_auction(
             target_price=req.target_price,
@@ -1707,6 +1809,8 @@ def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
             n_rounds=req.n_rounds,
         )
         return res
+    except HTTPException:
+        raise  # [FIX] 上方 422 校驗不得被兜底改寫成 500。
     except Exception:
         # [REGRESSION] 舊版 detail=str(exc)：numpy 的配置錯誤訊息（例如
         # "Unable to allocate 59.6 GiB"）會直接洩漏主機能力給呼叫端。

@@ -10,7 +10,7 @@
 - [x] README runs with one command (`python -m src.app.main`, then http://localhost:8000)
 - [x] Dockerfile + docker-compose.yml (containerized)
 - [x] No secrets committed (`.env` in `.gitignore`; only `.env.example`) — verified via `git grep`
-- [x] `tests/` green — **326 tests + 68 subtests passing** (`python -m pytest tests -q`)
+- [x] `tests/` green — **332 tests + 68 subtests passing** (`python -m pytest tests -q`)
 
 ## Engine (decision core)
 - [x] Bayesian belief update + vectorized Expectimax (`src/engine/`)
@@ -38,12 +38,12 @@
 
 ## Demo / pitch
 - [x] 4 figures (posterior, belief_update, benchmark, robustness)
-- [ ] 3–5 min demo video (script: [DEMO_VIDEO_DIRECTOR_SCRIPT.md](DEMO_VIDEO_DIRECTOR_SCRIPT.md))
-- [ ] Pitch deck (see [PITCH.md](PITCH.md))
+- [ ] 3–5 min demo video (script: [DEMO_VIDEO_DIRECTOR_SCRIPT.md](DEMO_VIDEO_DIRECTOR_SCRIPT.md); current `results/demo_video.mp4` is ~15 s silent — re-record with the revised [DEMO_SCRIPT.md](DEMO_SCRIPT.md))
+- [x] Pitch deck (see [PITCH.md](PITCH.md)) — `results/pitch.pptx` present; re-run `scripts/make_pitch.py` if PITCH.md changes again
 - [ ] Human-in-the-loop approval gate shown
 
 ## Before submit
-- [ ] Refresh hardcoded counts in docs if tests changed: run `pytest tests -q`, update README / SUBMIT / PITCH figures
+- [x] Refresh hardcoded counts in docs if tests changed: run `pytest tests -q`, update README / SUBMIT / PITCH figures
 - [ ] Re-run `python scripts/refresh_market_data.py` so `knowledge/market_anchor.md` carries a fresh date
 - [ ] Submit **before 2026-10-17** (not last minute)
 - [ ] Selected challenge = Reinvent Commerce + Evolus track

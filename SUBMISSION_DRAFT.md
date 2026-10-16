@@ -13,7 +13,7 @@
 | Field Name | Submission Content |
 |---|---|
 | **Project Name** | **TradeFlow AI** |
-| **Tagline (140 chars)** | An AI-native trading company of one: a quantitative negotiation engine that runs cross-border supplier sourcing end-to-end, powered by AMD ROCm and Evolus. |
+| **Tagline (140 chars)** | AI-native trading company of one: a quantitative negotiation engine running cross-border sourcing end-to-end, powered by AMD ROCm + Evolus. |
 | **Track 1** | Reinvent Commerce |
 | **Track 2** | Evolus Business Agents on AMD |
 | **Public GitHub URL** | https://github.com/Fu93/tradeflow-ai |
@@ -35,14 +35,14 @@ The process we automate is one a real company runs every day. Today, cross-borde
 2. **The Corrupt Middleman Dilemma**: Sourcing agents charge 7%+ commissions while pocketing secret factory kickbacks and exposing buyers to 80% unrecoverable deposit traps.
 
 **Why Not Just Use a Standard LLM Chatbot?**  
-Academic benchmarks (NegotiationArena, ICLR 2024; AgenticPay, arXiv:2602.06008; Cattle Trade, arXiv:2605.14537) report that unconstrained LLMs suffer severe strategic myopia under hard and bluffing opponents. We additionally ran our **own** real-model measurement on the AMD endpoint (30 matches, 104 real inference calls, $0.0318) and found the dominant failure mode to be **breakdown and over-concession, not budget violation**: against a Bluffing Hardliner the real model closed only 50% of deals, versus 70% for our solver. Notably, the 16.7–58.3% violation figures from our *parametric simulator* (the committed artifact's values) were **not reproduced** against the real AMD-hosted model (0/30 violations, one-sided 95% CI upper bound ≈ 9.5%); we report that negative result in `LIMITATIONS` §2.3 instead of quoting the simulator.
+Academic benchmarks (NegotiationArena, ICLR 2024; AgenticPay, arXiv:2602.06008; Cattle Trade, arXiv:2605.14537) report that unconstrained LLMs suffer severe strategic myopia under hard and bluffing opponents. We additionally ran our **own** real-model measurement on the AMD endpoint (**100 matches, 348 real inference calls, $0.108**) and found the dominant failure mode to be **breakdown and over-concession, not budget violation**: against a Bluffing Hardliner the real model closed only **61.1%** of deals. Notably, the **20.0%–40.0%** violation figures from our *parametric simulator* (the committed artifact's values) were **not reproduced** against the real AMD-hosted model (**0/94 violations, one-sided 95% CI upper bound ≈ 3.1%**); we report that negative result in `LIMITATIONS` §2.3 instead of quoting the simulator.
 
 ---
 
 ### 2. Our Solution: "Math Governs Strategy, LLM Expresses Jargon"
 TradeFlow AI decouples numerical strategic optimization from linguistic surface generation:
-* **Strategy Layer (Numerical Decision Core, no LLM in the decision path)**: Evaluates 20,000 Bayesian opponent belief samples across 480 candidate price-concession curves using a Vectorized Expectimax solver. Measured on this CPU (`results/bench.json`): the full 20K-sample × 480-curve grid (9.6M rollouts) solves in **~1.1s**; a 2K-sample grid in ~0.14s. Sole reliance on math — the LLM is never allowed to decide a price; it only renders an already-computed and AST-validated decision.
-* **AST Invariant Guardrail (Tier 1 Defense)**: Syntactically audits every `TacticalActionObject` via Python AST compiler before execution, physically guaranteeing that `authorized_price <= budget_ceiling` and `deposit <= 60%`.
+* **Strategy Layer (Numerical Decision Core, no LLM in the decision path)**: Evaluates 20,000 Bayesian opponent belief samples across 480 candidate price-concession curves using a Vectorized Expectimax solver. Measured on the development machine (Intel Core Ultra 7 355, x86-64 CPU; `results/bench.json`): the full 20K-sample × 480-curve grid (9.6M rollouts) solves in **~1.7s**; a 2K-sample grid in ~0.30s. Sole reliance on math — the LLM is never allowed to decide a price; it only renders an already-computed and AST-validated decision.
+* **AST Invariant Guardrail (Tier 1 Defense)**: Syntactically audits every `TacticalActionObject` via Python AST compiler before execution, physically guaranteeing that `authorized_price <= budget_ceiling` and `deposit <= 60%` (AST red line; the Logrolling business rule is stricter, at `deposit <= 50%`).
 * **Deterministic Coastal Jargon Renderer (Tier 2 Defense)**: Automatically crafts authentic Zhejiang/Guangdong industrial cluster merchant jargon to eliminate identity premiums, while presenting executive English CPO decision cards for western buyers.
 * **Pareto Logrolling (Multi-Attribute Swaps)**: When unit price hits an impasse, automatically unlocks non-price concessions (e.g., swapping higher initial deposit for zero mold fees or shortened delivery lead times).
 * **Compliance Air-Gap Gate (HITL)**: Automatically freezes execution when breakdown risk exceeds 15% or anti-scraping CAPTCHAs are detected, routing a 1/2/3 authorization prompt to the buyer's smartphone via WhatsApp/Telegram.
@@ -69,7 +69,7 @@ TradeFlow drives Evolus through its REST API. **Live-verified on 2026-10-14** (r
 * **AI Tools — `doc-structure`** (`POST /api/v1/ai-tools/doc-structure/run`): ✓ verified — parses supplier quotation text into structured JSON, correctly extracting unit price, MOQ, lead time, deposit and mold fee. `creditsConsumed: 2.12`
 * **AI Tools — `sentiment`** (`POST /api/v1/ai-tools/sentiment/run`): ✓ verified — `creditsConsumed: 3.75`
 * **App-driven REST integration**: ✓ verified — `src/app/orchestrator.py` receives an Evolus callback, runs the decision engine, then calls Evolus AI Tools to draft the reply. The draft correctly cites the engine-computed target price (¥13.12) against the supplier's actual quote (¥15, MOQ 500).
-* **Workflow / Agents / Knowledge Library**: *Planned.* Our workspace currently has no workflow or agent created (`GET /api/v1/workflows` → `[]`), and Evolus exposes no knowledge-library REST collection at the path we probed. We do not claim these as complete.
+* **Workflow**: *Planned.* Our workspace currently has no workflow created (`GET /api/v1/workflows` → `[]`). The **agent** (`Supplier Negotiation Analyst`, AMD-hosted model bound) and the **Personal Library** knowledge base (market anchor / spec baseline / compliance policy) are **created and live-verified on 2026-10-14** (see `LIMITATIONS` §12). We do not claim the workflow as complete; it is a follow-up hardening item, not a qualification gap.
 
 ---
 
@@ -83,7 +83,7 @@ In our synthetic self-play benchmark against 5 distinct game-theoretic behaviora
   * **Stage-1 deterministic path** (regex + on-device ONNX, LLM not invoked): **~1 ms** per round, 0 tokens, $0.00.
   * **Stage-2 LLM semantic reasoning** (AMD tokenfactory, when Stage-1 abstains): **2 – 13 seconds**; the model is a reasoning model on a shared inference service.
   * We do **not** claim "<3 ms end-to-end" for requests that reach Stage-2.
-* **Benchmark scope note**: The self-play figures come from a parametric behavioral simulator calibrated against published literature (NegotiationArena / Bianchi et al., ICLR 2024; AgenticPay, arXiv:2602.06008; Cattle Trade, arXiv:2605.14537), **not** from live cloud LLM API calls, and the committed artifact holds only **60 matches (12 per archetype)** — the "750" label came from a hardcoded header string in the runner (since fixed) and did not describe the artifact. The real-model replication above *is* a live measurement. See `LIMITATIONS_AND_REAL_WORLD_FINDINGS.md` §2 for both, and §2.3 for the negative result.
+* **Benchmark scope note**: The self-play figures come from a parametric behavioral simulator calibrated against published literature (NegotiationArena / Bianchi et al., ICLR 2024; AgenticPay, arXiv:2602.06008; Cattle Trade, arXiv:2605.14537), **not** from live cloud LLM API calls; the committed artifact holds **100 matches (20 per archetype, seed 42)** — the "750" label came from a hardcoded header string in the runner (since fixed) and did not describe the artifact. The real-model replication above *is* a live measurement. See `LIMITATIONS_AND_REAL_WORLD_FINDINGS.md` §2 for both, and §2.3 for the negative result.
 
 ---
 
@@ -110,7 +110,7 @@ pip install -r requirements.txt
 # Run complete 6-pillar verification test suite
 python verify_all.py
 
-# Run unit and integration tests (326 tests + 68 subtests, all green)
+# Run unit and integration tests (332 tests + 68 subtests, all green)
 python -m pytest tests -q
 
 # Launch the Web Portal Command Center

@@ -17,10 +17,12 @@ const API_BASE_URL = "http://localhost:8000";
 // default so a sandbox demo with no configured key keeps working (no header is
 // sent at all when this is empty — an empty header is worse than none once a
 // real key is configured).
-const TF_API_KEY = "";
+const TF_API_KEY = localStorage.getItem("tfApiKey") || "";
 
 function tfAuthHeaders() {
-  return TF_API_KEY ? { "X-API-Key": TF_API_KEY } : {};
+  const headers = {};
+  if (TF_API_KEY) headers["X-API-Key"] = TF_API_KEY;
+  return headers;
 }
 
 // H3 (F5): round_number and every other backend-sourced value that is
@@ -87,6 +89,14 @@ async function initPortConnection() {
         if (msg.success) {
           valLastSignal.innerText = `Command dispatched (${msg.result?.action || "OK"})${statusSuffix}`;
           valLastSignal.style.color = "var(--accent-emerald)";
+        } else if (
+          msg.result?.status === "ignored" ||
+          /ignored/i.test(String(msg.error || ""))
+        ) {
+          // P1-4: AWAITING_HUMAN_DECISION 下指令 1/2 後端回 200 + status=ignored，
+          // 這是正常語義（指令在熔斷掛起時才生效），不是錯誤，不該紅字。
+          valLastSignal.innerText = `Command received — applies once the circuit breaker arms the session${statusSuffix}`;
+          valLastSignal.style.color = "#f59e0b";
         } else {
           valLastSignal.innerText = `Command NOT applied${statusSuffix}: ${msg.error || "unknown error"}`;
           valLastSignal.style.color = "var(--accent-rose)";
@@ -172,9 +182,9 @@ function renderDormantView() {
   valReserveCeiling.innerText = "--";
   valPosteriorMean.innerText = "--";
   valPosteriorStd.innerText = "--";
-  valBreakdownRisk.innerText = "0.0%";
+  valBreakdownRisk.innerText = "--";
   progressBreakdown.style.width = "0%";
-  roundCounter.innerText = "Round 0 / 0";
+  roundCounter.innerText = "Round — / —";
   turnsTimeline.innerHTML = `
     <div style="color: var(--text-muted); font-size: 11px; padding: 12px 0; text-align: center;">
       Switch to a 1688 / Alibaba / WhatsApp tab to view live negotiation radar.
@@ -189,13 +199,14 @@ function renderStandbyView(sessionId) {
   statusBadge.style.background = "rgba(6, 182, 212, 0.2)";
   statusBadge.style.color = "#06b6d4";
 
-  valTargetPrice.innerText = "¥12.00";
-  valReserveCeiling.innerText = "¥16.20";
-  valPosteriorMean.innerText = "1.000";
-  valPosteriorStd.innerText = "0.150";
-  valBreakdownRisk.innerText = "0.0%";
-  progressBreakdown.style.width = "5%";
-  roundCounter.innerText = "Round 0 / 5";
+  // P1-2: 待命視圖不再顯示寫死的示例數字，全部以 "--" 呈現。
+  valTargetPrice.innerText = "--";
+  valReserveCeiling.innerText = "--";
+  valPosteriorMean.innerText = "--";
+  valPosteriorStd.innerText = "--";
+  valBreakdownRisk.innerText = "--";
+  progressBreakdown.style.width = "0%";
+  roundCounter.innerText = "Round — / —";
   turnsTimeline.innerHTML = `
     <div style="color: var(--text-muted); font-size: 11px; padding: 8px 0;">
       Awaiting supplier inbound quote in chat...
@@ -222,29 +233,54 @@ function renderEngineData(data) {
     statusBadge.style.color = "#10b981";
   }
 
-  valTargetPrice.innerText = `¥${tfNum(session.target_price, 12.0).toFixed(2)}`;
-  valReserveCeiling.innerText = `¥${tfNum(session.walk_away_ceiling, 16.2).toFixed(2)}`;
+  // P1-1/P1-2: NegotiationSession 的值在 spec 內層；turn 風險欄位是 p_break。
+  // 缺值顯示 "--"，絕不捏造數字。
+  const spec = session.spec || {};
+  const tPrice = tfNum(spec.target_price ?? session.target_price, null);
+  const cPrice = tfNum(spec.ceiling_price ?? session.walk_away_ceiling, null);
+  valTargetPrice.innerText = tPrice === null ? "--" : `¥${tPrice.toFixed(2)}`;
+  valReserveCeiling.innerText = cPrice === null ? "--" : `¥${cPrice.toFixed(2)}`;
 
-  valPosteriorMean.innerText = tfNum(belief.posterior_mean, 1.05).toFixed(3);
-  valPosteriorStd.innerText = tfNum(belief.posterior_std, 0.08).toFixed(3);
+  const postMean = tfNum(belief.posterior_mean, null);
+  valPosteriorMean.innerText = postMean === null ? "--" : postMean.toFixed(3);
+  const postStd = tfNum(belief.posterior_std, null);
+  valPosteriorStd.innerText = postStd === null ? "--" : postStd.toFixed(3);
 
-  const risk = tfNum(turn.breakdown_risk, 0.048);
-  valBreakdownRisk.innerText = `${(risk * 100).toFixed(1)}%`;
-  progressBreakdown.style.width = `${Math.min(100, Math.max(5, risk * 100))}%`;
-  valBreakdownRisk.style.color = risk >= 0.15 ? "#f43f5e" : "#10b981";
+  const risk = tfNum(turn?.p_break ?? turn?.breakdown_risk, null);
+  if (risk === null) {
+    valBreakdownRisk.innerText = "--";
+    progressBreakdown.style.width = "0%";
+    valBreakdownRisk.style.color = "";
+  } else {
+    valBreakdownRisk.innerText = `${(risk * 100).toFixed(1)}%`;
+    progressBreakdown.style.width = `${Math.min(100, Math.max(5, risk * 100))}%`;
+    valBreakdownRisk.style.color = risk >= 0.15 ? "#f43f5e" : "#10b981";
+  }
 
   // H3 (F5): turn.round_number is interpolated raw into innerHTML below; it is
   // escaped with tfEsc() and the numeric fields are coerced with tfNum().
-  const roundNo = tfNum(turn.round_number, 1);
-  roundCounter.innerText = `Round ${roundNo} / 5`;
+  // P0-2/P1-2 契約修正：autopilot turn 欄位為 round_index/parsed_price；風險在
+  // action_object.breakdown_risk 或 turn.p_break；缺值一律 "--"，不捏造。
+  const action = data.action_object || {};
+  const maxRounds = tfNum(spec.max_rounds, null);
+  const roundNo = tfNum(turn?.round_index ?? session.current_round, null);
+  roundCounter.innerText = `Round ${roundNo === null ? "—" : roundNo} / ${maxRounds === null ? "—" : maxRounds}`;
+  const counterOffer = tfNum(
+    data.recommended_offer_price ?? action.authorized_price ?? turn?.buyer_counter_offer,
+    null,
+  );
+  const supplierPrice = tfNum(
+    data.effective_opp_price ?? action.counterpart_offered_price ?? turn?.parsed_price,
+    null,
+  );
   turnsTimeline.innerHTML = `
     <div class="timeline-turn">
       <div style="display: flex; justify-content: space-between;">
-        <strong>Round ${tfEsc(roundNo)}</strong>
-        <span style="color: var(--accent-emerald);">¥${tfNum(data.recommended_offer_price, tfNum(turn.buyer_counter_offer, 12.5)).toFixed(2)} Counter</span>
+        <strong>Round ${roundNo === null ? "—" : tfEsc(roundNo)}</strong>
+        <span style="color: var(--accent-emerald);">${counterOffer === null ? "Counter: --" : `¥${counterOffer.toFixed(2)} Counter`}</span>
       </div>
       <div style="color: var(--text-muted); margin-top: 2px;">
-        Supplier: ¥${tfNum(turn.supplier_offer, 15.0).toFixed(2)} | Risk: ${(risk * 100).toFixed(1)}%
+        Supplier: ${supplierPrice === null ? "--" : `¥${supplierPrice.toFixed(2)}`} | Risk: ${risk === null ? "--" : `${(risk * 100).toFixed(1)}%`}
       </div>
     </div>
   `;
@@ -253,12 +289,21 @@ function renderEngineData(data) {
 function renderSession(session) {
   if (!session) return;
 
-  sessionIdDisplay.innerText = session.session_id;
-  valTargetPrice.innerText = `¥${tfNum(session.target_price, 0).toFixed(2)}`;
-  valReserveCeiling.innerText = `¥${tfNum(session.walk_away_ceiling, 0).toFixed(2)}`;
+  // P1-1: NegotiationSession 形狀 — 值在 spec 內層、輪次在 history 陣列。
+  const spec2 = session.spec || {};
+  const t0 = Array.isArray(session.history) && session.history.length
+    ? session.history[session.history.length - 1]
+    : null;
+  sessionIdDisplay.innerText = spec2.session_id ?? session.session_id ?? "";
+  const tPrice0 = tfNum(spec2.target_price, null);
+  const cPrice0 = tfNum(spec2.ceiling_price, null);
+  valTargetPrice.innerText = tPrice0 === null ? "--" : `¥${tPrice0.toFixed(2)}`;
+  valReserveCeiling.innerText = cPrice0 === null ? "--" : `¥${cPrice0.toFixed(2)}`;
 
-  valPosteriorMean.innerText = tfNum(session.current_posterior_mean, 1.08).toFixed(3);
-  valPosteriorStd.innerText = tfNum(session.current_posterior_std, 0.095).toFixed(3);
+  const pm0 = tfNum(t0?.posterior_mean, null);
+  const ps0 = tfNum(t0?.posterior_std, null);
+  valPosteriorMean.innerText = pm0 === null ? "--" : pm0.toFixed(3);
+  valPosteriorStd.innerText = ps0 === null ? "--" : ps0.toFixed(3);
 
   const stateStr = session.state || "COPILOT_MONITORING";
   statusText.innerText = stateStr.replace(/_/g, " ");
@@ -277,12 +322,13 @@ function renderSession(session) {
     statusBadge.style.color = "#06b6d4";
   }
 
-  const turns = session.turns || [];
-  roundCounter.innerText = `Round ${turns.length} / ${session.max_rounds || 5}`;
+  const turns = Array.isArray(session.history) ? session.history : session.turns || [];
+  const maxRounds0 = tfNum(spec2.max_rounds, null);
+  roundCounter.innerText = `Round ${turns.length} / ${maxRounds0 === null ? "—" : maxRounds0}`;
 
   if (turns.length > 0) {
     const lastTurn = turns[turns.length - 1];
-    const risk = tfNum(lastTurn.breakdown_risk, 0.048);
+    const risk = tfNum(lastTurn.p_break ?? lastTurn.breakdown_risk, 0);
     valBreakdownRisk.innerText = `${(risk * 100).toFixed(1)}%`;
     progressBreakdown.style.width = `${Math.min(100, Math.max(5, risk * 100))}%`;
     valBreakdownRisk.style.color = risk >= 0.15 ? "#f43f5e" : "#10b981";
@@ -292,20 +338,26 @@ function renderSession(session) {
     // .toFixed()/.toLocaleString(). The previous `t.buyer_counter_offer.toFixed(2)`
     // threw a TypeError for any turn whose counter-offer was absent.
     turnsTimeline.innerHTML = turns
-      .map(
-        (t) => `
+      .slice()
+      .reverse()
+      .map((t) => {
+        // P1-1: turn 契約欄位為 round_index/parsed_price/p_break；缺值 "--"。
+        const tRisk = tfNum(t.p_break ?? t.breakdown_risk, null);
+        const tCounter = tfNum(t.buyer_counter_offer, null);
+        const tSupplier = tfNum(t.parsed_price ?? t.supplier_offer, null);
+        const tRound = t.round_index ?? t.round_number ?? "—";
+        return `
       <div class="timeline-turn">
         <div style="display: flex; justify-content: space-between;">
-          <strong>Round ${tfEsc(t.round_number)}</strong>
-          <span style="color: var(--accent-emerald);">¥${tfNum(t.buyer_counter_offer, 0).toFixed(2)} Counter</span>
+          <strong>Round ${tfEsc(tRound)}</strong>
+          <span style="color: var(--accent-emerald);">${tCounter === null ? "Counter: --" : `¥${tCounter.toFixed(2)} Counter`}</span>
         </div>
         <div style="color: var(--text-muted); margin-top: 2px;">
-          Supplier: ¥${tfNum(t.supplier_offer, 0).toFixed(2)} | Risk: ${(tfNum(t.breakdown_risk, 0) * 100).toFixed(1)}%
+          Supplier: ${tSupplier === null ? "--" : `¥${tSupplier.toFixed(2)}`} | Risk: ${tRisk === null ? "--" : `${(tRisk * 100).toFixed(1)}%`}
         </div>
       </div>
-    `
-      )
-      .reverse()
+    `;
+      })
       .join("");
   }
 }

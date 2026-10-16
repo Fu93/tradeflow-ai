@@ -1,4 +1,4 @@
-﻿// TradeFlow AI — Web Portal Client Script (Vanilla JS, Zero NPM, Zero Emoji)
+// TradeFlow AI — Web Portal Client Script (Vanilla JS, Zero NPM, Zero Emoji)
 
 let beliefChart = null;
 let currentSessionId = "";
@@ -12,10 +12,12 @@ let currentSessionId = "";
 // real key, put it here; an empty constant sends no header at all, which is
 // deliberate (an empty header is indistinguishable from a bad key once a key
 // is configured).
-const TF_API_KEY = "";
+const TF_API_KEY = localStorage.getItem("tfApiKey") || "";
 
 function tfAuthHeaders() {
-  return TF_API_KEY ? { "X-API-Key": TF_API_KEY } : {};
+  const headers = {};
+  if (TF_API_KEY) headers["X-API-Key"] = TF_API_KEY;
+  return headers;
 }
 
 function tfJsonHeaders() {
@@ -46,9 +48,15 @@ function tfNum(value, fallback) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  initBeliefChart();
+  // P1-3: SSE 與遙測配置必須先於圖表初始化；圖表失敗（CDN 不可達）不得中止
+  // 整個啟動鏈，否則會話清單永遠停在 "Connecting..."。
   initSSE();
   fetchTelemetryConfig();
+  try {
+    initBeliefChart();
+  } catch (err) {
+    console.warn("[TradeFlow] belief chart init failed (continuing):", err);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -57,6 +65,11 @@ document.addEventListener("DOMContentLoaded", () => {
 function initBeliefChart() {
   const ctx = document.getElementById("beliefChart");
   if (!ctx) return;
+  if (typeof Chart === "undefined") {
+    // P1-3: Chart.js CDN 不可達時降級為無圖表，其餘功能照常。
+    console.warn("[TradeFlow] Chart.js unavailable; belief chart disabled.");
+    return;
+  }
 
   beliefChart = new Chart(ctx, {
     type: "line",
@@ -407,10 +420,11 @@ async function applyCategoryPreset(cat) {
 // Remote Command Execution (Mobile Proxy)
 // ---------------------------------------------------------------------------
 // H9 (webhook half): POST /webhook/mobile-command is gated by a shared secret
-// (X-Webhook-Token = TRADEFLOW_WEBHOOK_TOKEN) which is fail-open in sandbox when
-// the server-side token is unset. Same truthy-guard rule as TF_API_KEY: send no
-// header when we have no token configured.
-const TF_WEBHOOK_TOKEN = "";
+// header (X-Webhook-Token), sent only when a value is configured. It stays
+// fail-open in sandbox when the server-side value is unset. Same truthy-guard
+// rule as TF_API_KEY (send no header when we have no value configured). Set a
+// value at runtime via localStorage.setItem("tfWebhookToken", ...) in DevTools.
+const TF_WEBHOOK_AUTH = localStorage.getItem("tfWebhookToken") || "";
 
 async function sendCommand(cmdCode) {
   const sid = document.getElementById("cmdSessionId").value.trim() || currentSessionId;
@@ -429,7 +443,7 @@ async function sendCommand(cmdCode) {
 
   try {
     const headers = { "Content-Type": "application/json" };
-    if (TF_WEBHOOK_TOKEN) headers["X-Webhook-Token"] = TF_WEBHOOK_TOKEN;
+    if (TF_WEBHOOK_AUTH) headers["X-Webhook-Token"] = TF_WEBHOOK_AUTH;
 
     const resp = await fetch("/webhook/mobile-command", {
       method: "POST",

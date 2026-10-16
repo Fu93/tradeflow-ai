@@ -388,7 +388,8 @@ class InboundIntentClassifier:
 
         try:
             import requests
-            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            headers = {"Content-Type": "application/json"}
+            headers["Authorization"] = f"Bearer {api_key}"
             payload = {
                 "model": os.getenv("VLLM_MODEL", "Qwen3.8-Flash-Next"),
                 "messages": [{"role": "user", "content": prompt}],
@@ -818,9 +819,18 @@ class EnglishExecutiveCommandParser:
 
         # 搜索明確價格 (排除定金百分比與交期天數)
         found_price = None
-        for m in re.finditer(r"(?:do|at|to|offer|price|\$|¥)\s*(\d+(?:\.\d{1,2})?)", text, re.IGNORECASE):
+        for m in re.finditer(
+            # [FIX] 價格掃描：移除範圍介系詞 to、加詞邊界與量詞負向斷言，
+            # 修「can you do 5000 units at 13.8」把數量 5000 當報價的誤判。
+            r"(?<![\w.])(?:do|at|offer|price|\$|¥)\s*\$?\s*(\d+(?:\.\d{1,2})?)"
+            r"(?!\d)(?!\s*(?:units?|pcs|pieces|sets?|k\b|件|把|个|個|只|隻))",
+            text,
+            re.IGNORECASE,
+        ):
             try:
                 p_cand = float(m.group(1))
+                if p_cand >= 100_000:
+                    continue  # 量級 sanity：單價不可能上萬；多為數量/型號雜訊
                 if p_cand != found_days and (found_dep is None or abs(p_cand - found_dep * 100) > 0.01):
                     found_price = p_cand
                     break
@@ -1230,7 +1240,8 @@ class CrossLingualSanityChecker:
                 "{\"is_native\": bool, \"confidence\": float (0.0-1.0), \"critique\": string}"
             )
             try:
-                headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+                headers = {"Content-Type": "application/json"}
+                headers["Authorization"] = f"Bearer {api_key}"
                 payload = {
                     "model": os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-14B-Instruct"),
                     "messages": [{"role": "user", "content": prompt}],

@@ -82,6 +82,46 @@
     return "generic";
   }
 
+  // [P0-1 修正] 後端 session_id 白名單：^[A-Za-z0-9._-]{1,128}$
+  // （src/session/schema.py 的 SAFE_SESSION_ID_RE；URL 路徑層 src/app/main.py:246）。
+  // 舊版 DOM 分支的清洗 regex 刻意保留 CJK（`[^a-zA-Z0-9_\u4e00-\u9fa5-]`），
+  // 於是中文店名（含 mock_chat.html 的沙盒店名與真實 1688 店名）產出
+  // `sess_浙江頂尖…`，後端一律回 HTTP 422 —— 「報價 → 決策卡」主線第一步就死。
+  // 不要放寬後端白名單（它同時是路徑穿越防線），改在前端只輸出白名單字元。
+  const SESSION_ID_MAX_LEN = 128;
+  const SESSION_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
+
+  // FNV-1a 32-bit：免依賴、同步、對同一字串恆定，用來讓非 ASCII 的名稱
+  // 仍能得到「穩定且不碰撞」的 session_id。
+  function sessionIdHash32(text) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 1) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16).padStart(8, "0");
+  }
+
+  // 保證回傳值永久符合 SESSION_ID_RE（若清空或超長則以穩定雜湊截斷 fallback）。
+  function sanitizeSessionId(rawValue, prefix) {
+    const raw = String(rawValue === null || rawValue === undefined ? "" : rawValue).trim();
+    // 已是合法 ASCII 值（URL 參數等）→ 原樣沿用，行為與舊版一致。
+    let body = /^[A-Za-z0-9._-]{1,64}$/.test(raw) ? raw : "";
+    if (!body) {
+      // 非 ASCII（中文店名、含 CJK 的頁面標題、URL）：只保留可讀的 ASCII 片段
+      // 當人眼提示，並用原始字串的雜湊綁定身分 —— 否則不同中文店名清洗後
+      // 都會變成同一串底線，全部共用同一個 session。
+      const slug = raw
+        .replace(/[^A-Za-z0-9._-]+/g, "")
+        .replace(/^[._-]+|[._-]+$/g, "")
+        .slice(0, 24);
+      body = `h${sessionIdHash32(raw)}${slug ? `_${slug}` : ""}`;
+    }
+    const candidate = `${prefix}${body}`.slice(0, SESSION_ID_MAX_LEN);
+    // 最後一道防線：即使上面的清理出了意外，也不讓不合法 id 送出。
+    return SESSION_ID_RE.test(candidate) ? candidate : `${prefix}h${sessionIdHash32(raw)}`;
+  }
+
   function extractSessionContext() {
     const url = new URL(window.location.href);
 
@@ -90,10 +130,10 @@
     for (const p of candidateParams) {
       const val = url.searchParams.get(p);
       if (val && val.length > 2) {
-        const cleanId = val.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const sessionId = sanitizeSessionId(val, "sess_");
         return {
-          sessionId: `sess_${cleanId}`,
-          supplierId: cleanId,
+          sessionId,
+          supplierId: sessionId.slice("sess_".length),
           supplierName: `Supplier (${val})`,
           platform: detectPlatform(),
           url: window.location.href,
@@ -114,10 +154,11 @@
       const el = document.querySelector(sel);
       if (el && el.innerText && el.innerText.trim()) {
         const rawName = el.innerText.trim().slice(0, 30);
-        const cleanId = rawName.replace(/[^a-zA-Z0-9_\u4e00-\u9fa5-]/g, "_");
+        // [P0-1 修正] 舊版在此保留中文 → 後端 422。改走白名單清洗 + 雜湊 fallback。
+        const sessionId = sanitizeSessionId(rawName, "sess_");
         return {
-          sessionId: `sess_${cleanId}`,
-          supplierId: cleanId,
+          sessionId,
+          supplierId: sessionId.slice("sess_".length),
           supplierName: rawName,
           platform: detectPlatform(),
           url: window.location.href,
@@ -127,9 +168,11 @@
 
     // 3. Document title or pathname fallback
     const pathPart = (url.hostname + url.pathname).replace(/[^a-zA-Z0-9_-]/g, "_").slice(-20);
+    // [P0-1 修正] 一併走白名單清洗，確保 fallback 分支也不可能產出非法 id。
+    const sessionId = sanitizeSessionId(pathPart || `${url.hostname}${url.pathname}`, "sess_tab_");
     return {
-      sessionId: `sess_tab_${pathPart || "001"}`,
-      supplierId: pathPart || "supp_001",
+      sessionId,
+      supplierId: sessionId.slice("sess_tab_".length),
       supplierName: document.title ? document.title.slice(0, 25) : "E-Commerce Supplier",
       platform: detectPlatform(),
       url: window.location.href,
@@ -786,9 +829,14 @@
   }
 
   async function handleInboundQuote(rawText) {
-    if (!overlayEl || !overlayEl._state.active || circuitTripped) return;
+    if (!overlayEl || !overlayEl._state.active) return;
 
     // 1. Captcha Sentinel check
+    // [P0-3 修正] 驗證碼判定與復原現在都在 early return 之前。舊版的最前面是
+    // `if (!active || circuitTripped) return;`，而驗證碼觸發時會設
+    // circuitTripped = true（:795）—— 負責復原的 captchaPaused 分支因此永遠
+    // 到不了，頁面只要出現一次風控滑塊就永久凍結（HUD 釘在 CAPTCHA DETECTED），
+    // 只能重新載入頁面。滑塊通過後現在會清掉旗標並恢復。
     if (detectCaptchaChallenge()) {
       if (!captchaPaused) {
         captchaPaused = true;
@@ -804,11 +852,26 @@
         });
       }
       return;
-    } else if (captchaPaused) {
+    }
+
+    if (captchaPaused) {
       captchaPaused = false;
       circuitTripped = false;
       overlayEl.updateStatus("COPILOT RADAR ON", "#10b981", "Captcha solved! Copilot resumed.");
+      // 復原時一併重新註冊本分頁的 session 綁定：暫停期間 service worker 可能
+      // 已被 MV3 回收，或 registry 已被其他分頁的 REGISTER_SESSION 覆寫。
+      portClient.send("REGISTER_SESSION", {
+        ...sessionContext,
+        mode: overlayEl._state.mode === "copilot" ? "copilot" : "autopilot",
+      });
     }
+
+    // [P0-3 修正/偏差說明] 熔斷旗標不再阻斷後續輪次。舊版的 `|| circuitTripped`
+    // 是第二個不可復原的死結：熔斷後不再送出任何請求，後端就永遠沒有機會重算
+    // 風險並解除熔斷，人類經 /approve 或手機指令解除後前端也不會回來
+    // （DEMO_VIDEO_DIRECTOR_SCRIPT.md:52 的「系統瞬間解鎖、恢復正常」敘事即失效）。
+    // 現在熔斷是「渲染層」狀態：SESSION_UPDATED 會據後端真實旗標抑制決策卡，
+    // 但報價仍持續送引擎重評，解除後下一輪即恢復正常。
 
     // 2. Extract price
     const offer = extractPriceFromText(rawText);
@@ -857,28 +920,56 @@
       const data = msg.data;
       if (!data) return;
 
-      // [修正/誠實揭露] 舊版用 `|| 15.0` 與 `* 0.95` 捏造缺失的報價/建議價。
-      // 後端並未保證每次 SESSION_UPDATED 都帶 supplier_offer / counter-offer；
-      // 當缺值時就不該硬湊一個數字。改為依賴後端真實欄位；缺則回傳、不渲染假卡片。
-      const offer = data.turn?.supplier_offer;
-      const counterOffer =
-        data.recommended_offer_price ?? data.turn?.buyer_counter_offer;
-      if (offer == null || counterOffer == null) {
-        console.warn(
-          "[TradeFlow Copilot] SESSION_UPDATED missing supplier_offer/recommended_offer_price "
-          + `(offer=${offer}, counter=${counterOffer}) — skipping deck to avoid fabricated figures.`
-        );
-        return;
-      }
+      // [P0-2 修正] 改讀後端「真實」契約欄位（已核對 src/app/main.py 的 copilot
+      // 分支 :1551-1563、autopilot 分支 :1646-1668、熔斷分支 :1320-1329，以及
+      // NegotiationTurn 契約 src/session/schema.py:52-64）：
+      //   turn 在 copilot 模式恆為 null，且 NegotiationTurn 根本沒有
+      //   supplier_offer / buyer_counter_offer / breakdown_risk / round_number。
+      //   舊版讀 data.turn?.supplier_offer 永遠是 undefined → 3 張決策卡
+      //   「任何模式」都不會渲染，熔斷判定也永遠不成立。
+      //   • 供應商報價 → effective_opp_price（TCO 等效）/ action_object.counterpart_offered_price
+      //   • 我方還盤價 → recommended_offer_price / action_object.authorized_price
+      //   • 破裂風險   → action_object.breakdown_risk / turn.p_break
+      const actionObj = data.action_object || {};
+      const sessionObj = data.session || {};
+      const offer = data.effective_opp_price ?? actionObj.counterpart_offered_price ?? null;
+      const counterOffer = data.recommended_offer_price ?? actionObj.authorized_price ?? null;
+      const risk = actionObj.breakdown_risk ?? data.turn?.p_break ?? null;
+      const roundNo = sessionObj.current_round ?? data.turn?.round_index ?? null;
+      const stateName = data.autopilot_state || sessionObj.state || null;
 
-      // Check Circuit Breaker
-      if (data.session?.state === "CIRCUIT_TRIPPED_ESCALATED" || data.turn?.breakdown_risk >= 0.15) {
+      // REGISTER_SESSION 會回推只有 sessionMeta 的 payload（background.js
+      // broadcastSessionUpdate）：那不是引擎回應，不該當成錯誤或渲染依據。
+      const hasEnginePayload =
+        data.session || data.action_object || data.turn || data.effective_opp_price != null;
+      if (!hasEnginePayload) return;
+
+      // Check Circuit Breaker（改用後端明確旗標 + 真實風險值）
+      const tripped =
+        data.circuit_tripped === true ||
+        stateName === "CIRCUIT_TRIPPED_ESCALATED" ||
+        (risk != null && risk >= 0.15);
+
+      if (tripped) {
         circuitTripped = true;
         overlayEl.updateStatus(
           "CIRCUIT TRIPPED",
           "#ef4444",
           // [修正] 舊版 `|| 0.15` 在無風險值時也顯示 15.0%——改為只顯示後端有給的值。
-          `Breakdown risk ${data.turn?.breakdown_risk != null ? (data.turn.breakdown_risk * 100).toFixed(1) : "—"}% ≥ 15%. Telemetry alert sent!`
+          `Breakdown risk ${risk != null ? (risk * 100).toFixed(1) : "—"}% — engine withheld the reply; resolve via human authorization (/approve or mobile command 1/2/3).`
+        );
+        return;
+      }
+      circuitTripped = false;
+
+      if (offer == null || counterOffer == null) {
+        // turn:null 是 copilot 模式的「正常」回應形狀（main.py:1551-1563），
+        // 不是錯誤。此時顯示明確佔位狀態（而非不渲染 → HUD 永遠卡在
+        // ENGINE SOLVING...），且絕不補上捏造的數字。
+        overlayEl.updateStatus(
+          "AWAITING PRICED QUOTE",
+          "#94a3b8",
+          `Round ${roundNo != null ? roundNo : "—"} • backend returned no priced offer/counter — no cards rendered (no fabricated figures).`
         );
         return;
       }
@@ -886,7 +977,7 @@
       overlayEl.updateStatus(
         "COPILOT CARDS READY",
         "#10b981",
-        `Target Counter-Offer ¥${counterOffer} • 3 Tactical Cards Generated`
+        `Target Counter-Offer ¥${tfNum(counterOffer, 0).toFixed(2)} • Round ${roundNo != null ? roundNo : "—"} • 3 Tactical Cards Generated`
       );
 
       overlayEl.renderDecisionDeck(
