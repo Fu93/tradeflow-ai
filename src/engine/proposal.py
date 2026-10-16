@@ -40,11 +40,21 @@ def build_proposal(spec: dict, observed_offer: float | None = None):
     open_norm = rec["opening_offer_norm"]
     curve = rec["concession_curve"]
 
+    # [修正/誠實揭露] 求解器的開盤網格上限固定為 model.YOUR_CEILING(=1.35)，完全不感知
+    # 呼叫端的 walk_away_ceiling。若呼叫端把 ceiling 設得比該網格上限更緊（例如 1.20 倍），
+    # 舊版開盤價 open_norm 會直接沿用網格挑出的值（最高可到 1.33 倍）而不做裁剪，
+    # 造成 `opening_offer_price` 突破自己宣稱的 walk-away ceiling —— 違反「AI 不越過上限」承諾。
+    # 現於本層唯一能尊重該上限的位置強制裁剪開盤價，並讓「讓步起點」ref 同時用裁剪後值，
+    # 使逐輪讓步也在有效範圍內收斂。
+    open_norm = min(open_norm, ceiling_mult)
+    ref = open_norm
+    curve = rec["concession_curve"]
+
     # 逐輪報價：開盤後每輪依 curve 讓步（相對 gap 的線性近似，便於人執行）
-    offers = [open_norm]
-    cur = open_norm
+    offers = [ref]
+    cur = ref
     for c in curve:
-        cur = cur + c * (ceiling_mult - open_norm)  # 朝上限方向讓（漲價=讓步）
+        cur = cur + c * (ceiling_mult - ref)  # 朝上限方向讓（漲價=讓步）
         # 注意：對採購方，「讓步」= 提高出價；朝 ceiling 收斂
         offers.append(min(cur, ceiling_mult))
     offers_px = [round(o * tp, 2) for o in offers]

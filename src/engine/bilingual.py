@@ -82,7 +82,7 @@ class InboundIntentClassifier:
     PATTERNS: List[Tuple[VendorTacticEnum, Any, float, bool]] = [
         (
             VendorTacticEnum.OFFLINE_BYPASS_DIVERT,
-            SafeLinearRegexEngine.compile(r"(加個?微信|加个?微信|私下聊|電話聊|电话聊|wx|私聊|轉私帳|转私账|線下付|线下付|1[3-9]\d{9}|v\s*信|微\s*信|\+v|加\s*(?:我)?\s*v|私發|私发|私下交易|走線下|走线下)", re.IGNORECASE),
+            SafeLinearRegexEngine.compile(r"(加個?微信|加个?微信|私下聊|電話聊|电话聊|wx|私聊|轉私帳|转私账|線下付|线下付|v\s*信|微\s*信|\+v|加\s*(?:我)?\s*v|私發|私发|私下交易|走線下|走线下)", re.IGNORECASE),
             0.95,
             True,  # 脫離平台直接觸發風控警報
         ),
@@ -272,7 +272,8 @@ class InboundIntentClassifier:
         if not raw_text:
             return InboundTacticalClassification(
                 primary_intent=VendorTacticEnum.NORMAL_COUNTER_OFFER,
-                tactical_rationale="Empty input"
+                confidence=0.0,
+                tactical_rationale="Empty input; unclassified",
             )
 
         # 0. 安全防護：截斷超長輸入，徹底杜絕 ReDoS 潛在回溯與內存佔用
@@ -429,12 +430,16 @@ class InboundIntentClassifier:
                 return llm_res
 
         # 5. 常規報價對話保底
+        # [誠實揭露] 此分支表示「正則階梯全未命中 且 (無 LLM 或 LLM 未回)」——我們並未
+        # 真正識別出這是正常報價。舊版以 confidence=0.70 固定回 NORMAL_COUNTER_OFFER，
+        # 會在沒有任何判定信號時偽裝成「高把握的正常報價」。現改為低把握預設，
+        # 讓下游可藉 confidence 區分「確信的正常報價」與「未識別、暫按正常處理」。
         return InboundTacticalClassification(
             primary_intent=VendorTacticEnum.NORMAL_COUNTER_OFFER,
-            confidence=0.70,
+            confidence=0.30,
             mentioned_price=price_val,
             demanded_moq=moq_val,
-            tactical_rationale="Regular pricing dialogue",
+            tactical_rationale="No pattern/LLM matched; unclassified message treated as normal",
             requires_escalation=False,
         )
 

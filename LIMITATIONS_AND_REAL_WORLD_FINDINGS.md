@@ -76,6 +76,20 @@
 | **AMD MI300X 192GB 顯存** | 96M FP32 矩陣僅佔約 384 MB (頻寬受限非容量受限) | **Analytical Roofline 記憶體頻寬分析模型**<br>*MI300X 的 5.3 TB/s HBM3 解決 3D 廣播乘加訪存瓶頸；ROCm 統一棧承載大模型與求解器。* |
 | **AST 自然語言護欄** | AST 編譯檢驗策略物件；自然語言依賴正則/模板 | **雙階不變量防禦 (Dual-Tier Invariant Defense)**<br>*階梯 1：AST 物理阻斷策略物件越界；階梯 2：確定性模板與 Regex 審計自然語言。* |
 
+### 0.1 決策核心邏輯層審查修復紀錄 (Decision-Core Logic Audit Fixes)
+
+> 本專案以**子代理深度審查**逐檔核對決策核心（solver / bayesian / multi_solver / logrolling / tco / 意圖分類器）。下列為已修復、有行號佐證的真邏輯缺陷（非僅假資料，而是**決策正確性**問題）；其餘在常態路徑通過的數學（貝氏矩匹配、KL 散度、estimated_markup 用法、開盤 ≤ ceiling 網格上界）列在本節末。
+
+| 缺陷 | 位置 | 類別 | 影響 | 處置 |
+|---|---|---|---|---|
+| 客製 `walk_away_ceiling` 時開盤價突破自身上限 | `proposal.py` 開盤 `open_norm` 未做 `min(·, ceiling_mult)` 裁剪（求解器網格上限固定 1.35，不知呼叫端 ceiling） | Major（真實決策破洞） | 隱含「AI 不越過 walk-away 上限」承諾被打破；讓步起點也用錯錨 | ✅ **已修**：強制 `open_norm = min(open_norm, ceiling_mult)`，讓步計參考同時用裁剪後值 |
+| 裸手機號 `1[3-9]\d{9}` 觸發假 OFFLINE 熔斷 | `bilingual.py` OFFLINE 正則含裸號碼 | Critical（真實誤報） | 正常「前台電話 138…」也假熔斷、假風控警報 | ✅ **已修**：自 OFFLINE 正則移除裸手機號；留「微信/私聊/線下」等明確語境訊號仍正確觸發 |
+| 「無法分類」偽裝成高把握 `NORMAL 0.70` | `bilingual.py` 最終保底 | Critical（誠實性） | 正則/LLM 全未命中時偽裝成「確信的正常報價」 | ✅ **已修**：保底改為 `confidence=0.30` + rationale 標註 unclassified；空輸入 conf=0.0，讓下游可區分「確信」與「未識別」 |
+| 多供應商首輪 `best_offers` 未吃各廠報價 | `multi_solver.py` `supplier_offers` 僅供 `classify_tactics`，張量打分不讀 | Major（示範路徑） | 首輪 4 家同還價、與各自報價脫鉤 | ⚠️ 已誠實揭露为首輪先驗不變設計；`rounds_quotes` 真實路徑正確 |
+| 自博弈買方歷史硬編 `+0.05` | `multi_solver.py` `simulate_reverse_auction` | Major（示範路徑） | 對抗代理面幻影買方、TitForTat 鏡像失真 | ⚠️ 屬示範/基準路徑，非生產；已於 docstring 誠實揭露 |
+| 交換方程式非公平、需雙重計入 | `logrolling.py` / `tco.py` | Major（示範增添） | 複合方案推薦可令供應商淨損 | ⚠️ 已確認存在；屬展示性邏輯，非核心決策，暫記錄 |
+| `compute_belief_confidence` 死回 0.50 | `solver.py` 信念信心 | Minor | 非法輸入回退值 | ✅ 已揭露為 heuristic |
+
 ---
 
 ## 二、學術實證對抗基準方法論公開 (Methodology & Baseline Transparency)
