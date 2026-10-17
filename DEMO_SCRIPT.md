@@ -5,13 +5,18 @@
 
 ---
 
-## Scene 0 — Hook (0:00–0:12)
-> "Every B2B procurement team negotiates the same way: gut feel and a round number.
+## Scene 0 — Hook (0:00–0:45)
+> "This is a **constrained-decision prototype**, and no real supplier has transacted through it —
+> every number you're about to see comes from our own sandbox and our measured benchmark runs.
+> With that said. Every B2B procurement team negotiates the same way: gut feel and a round number.
 > Today's AI buyers are just chatbots — they'll draft the email but they can't tell you
 > **why** an offer is optimal. So we built the opposite: a decision engine that does the math,
 > and an LLM that only writes the words."
 
 **Visual**: cover image / title slide.
+**Note**: lead with the disclosure in the first 15 seconds. It is already in the README's upfront
+notice and LIMITATIONS §零; the video must not bury it, or a judge who discovers it later reads
+the omission as a bait-and-switch.
 
 ## Scene 1 — Wow #1: Belief update (0:12–1:05)
 > "We model the supplier as one of four archetypes with an unknown reserve price. We start with
@@ -72,9 +77,23 @@ knowledge-grounded analysis, ending in two human-selectable drafts.
 
 ---
 
-## Recording checklist
-- [ ] Scene 4 screen recording of the live Evolus agent (Personal Library RAG; allow 40–120 s)
-- [ ] Voice-over, ~150 words per minute
-- [ ] 1280×720 minimum (1080p preferred)
-- [ ] Export MP4 (H.264) + host on YouTube/Streamable
-- [ ] Link in lablab submission + README
+## Recording checklist (updated after the final audit)
+- [ ] **Spoken disclaimer in the first 15 seconds** — "no real supplier has transacted; all data is
+      our own sandbox and measured benchmarks" (Scene 0).
+- [ ] Scene 4 screen recording of the live Evolus agent (Personal Library RAG; allow 40–120 s).
+- [ ] **Numbers to read off the screen, do not recite from this script** — these were verified on a
+      fresh clone of the public repo and are the only ones safe to say:
+      | What | Verified value |
+      |---|---|
+      | R1 recommended counter (¥14.80 offer, target ¥12, ceiling ¥16.20, MOQ 5000) | **¥13.02** |
+      | R1 breakdown risk | **2.2%** |
+      | Posterior after R1 (mean / std) | **1.132 / 0.055** |
+      | Full `/round` HTTP latency | **~2.6 s** |
+      | `solve(20_000 samples)` | **1.68 s** (`results/bench.json`) |
+      | Multi-auction | **2.5–2.7 s**, winner ¥12.60, **22.2%** / **¥36,000**, **28,800,000** grid cells |
+      | Robustness | 6.7% vs 28.3%, **+¥0.40/unit**; prior×0.5 → **88.1%** breakdown |
+- [ ] Say "**28.8 million tensor grid cells**" for the auction, NOT "rollouts executed".
+- [ ] Say "**MI300X data-movement lower bound**" for the GPU number, never a measured runtime.
+- [ ] Voice-over, ~150 words per minute; 1280×720 minimum; export MP4 (H.264).
+- [ ] Current `results/demo_video.mp4` is 19.3 s and silent — it does not satisfy the 3–5 min
+      audio requirement.

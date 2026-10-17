@@ -72,7 +72,7 @@
 ### 【第五幕：AMD 戰略定位與有力收官】(3:00 - 3:30) — 結尾昇華
 * **畫面**：
   * [3:00 - 3:15] 切換至 PPT Slide 7 (AMD 統一 ROCm 工具鏈架構圖)。
-  * [3:15 - 3:30] 切換至 GitHub 倉庫與終端 327 項測試 + 68 subtests 全綠畫面，最後定格在 Cover Image (1280×720)。
+  * [3:15 - 3:30] 切換至 GitHub 倉庫與終端 332 項測試 + 68 subtests 全綠畫面，最後定格在 Cover Image (1280×720)。
 * **旁白 (Voiceover)**：
   > *"Why AMD? Our deterministic decision core is CPU-first by design — delivering sub-millisecond Stage-1 intent classification on x86-64 CPUs (measured mean ~0.13 ms, p99 ~0.49 ms) without wasteful GPU overhead.*  
   > *For semantic understanding, we call an open model served on AMD infrastructure through the hackathon's tokenfactory endpoint — verified live, at 2 to 13 seconds per reasoning call.*  

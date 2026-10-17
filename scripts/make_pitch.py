@@ -45,7 +45,7 @@ SLIDES = [
      ["1. Belief convergence: Bayesian posterior reserve tracking across rounds (results/belief_update.png).",
       "2. AST guardrail rejects a >60% deposit demand — the object is blocked before it can be rendered.",
       "3. Multi-supplier reverse auction: 4 dynamic adversary agents quote round-by-round; BATNA ceilings tighten.",
-      "All reproducible: verify_all.py (6 pillars), verify_live.py (7 E2E checks), 327 tests + 68 subtests green."]),
+      "All reproducible: verify_all.py (6 pillars), verify_live.py (7 E2E checks), 332 tests + 68 subtests green."]),
     ("User story: a single operator",
      ["An Amazon outdoor seller buys ~50,000 umbrellas/yr from China.",
       "Status quo: Google Translate on 1688 invites a foreigner markup and hidden mould fees; agents charge 7% and take kickbacks.",

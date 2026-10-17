@@ -83,7 +83,7 @@ flowchart TD
 
 1. **張量並行求解（參數化 28,800,000 rollout 位，非執行計數）**：
    - 示範路徑 `simulate_reverse_auction()`（Web「Run Auction」預設參數 $n_{samples}=20{,}000$）的 rollout 數為 $K \times S \times N_{open} \times N_{sched}$ 的**算術乘積**：每輪 9.6M，3 輪累計 **28.8M 個張量 rollout 位**。
-   - **這不是量測到的執行次數**：真正的 rollout 由**一次向量化廣播**完成，28.8M 是「被同時求值的參數組合數」（張量元素位數），不是迴圈迭代數。延遲才是量測值（預設 20K 樣本 `solve()` 實測約 1.7 秒；完整 HTTP 輪次約 3.3 秒；2K 樣本約 0.30 秒；量測環境：開發機 Intel Core Ultra 7 355（x86-64 CPU），詳見 `results/bench.json` 與 LIMITATIONS §6.1）。
+   - **這不是量測到的執行次數**：真正的 rollout 由**一次向量化廣播**完成，28.8M 是「被同時求值的參數組合數」（張量元素位數），不是迴圈迭代數。延遲才是量測值（預設 20K 樣本 `solve()` 實測約 1.7 秒；完整 HTTP 輪次實測 約 2.6 秒；2K 樣本約 0.30 秒；量測環境：開發機 Intel Core Ultra 7 355（x86-64 CPU），詳見 `results/bench.json` 與 LIMITATIONS §6.1）。
    - rollout 位 = $K \times S \times N_{open} \times N_{sched}$；基準測試使用 50,000 樣本時為 72M；最大策略網格 (40×12) 的理論上界為 96M，但**未被任何實際路徑使用**。
    - 同時評估 $K=4$ 家供應商、隨機對手微觀參數與多組出價/讓步曲線組合。
    - MI300X 上的加速為**分析性 roofline 訪存頻寬投影**，非實機量測（開發機為 **x86-64 CPU，Intel Core Ultra 7 355**，非 AMD 硬體）。
