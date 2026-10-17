@@ -26,6 +26,13 @@ sys.exit(1 if missing else 0)"
 # Unbuffered stdout so container logs appear immediately.
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONIOENCODING=utf-8
+# Render and other hosts inject PORT. Compose publishes 8000.
+ENV PORT=8000
 
 EXPOSE 8000
+
+# python:3.12-slim has no curl. Hit /health with the stdlib client.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=25s --retries=8 \
+  CMD python -c "import os,urllib.request; p=os.environ.get('PORT','8000'); urllib.request.urlopen('http://127.0.0.1:'+p+'/health', timeout=4).read()"
+
 CMD ["python", "-m", "src.app.main"]

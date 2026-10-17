@@ -41,6 +41,11 @@ jobs:
       - name: Run full test suite
         run: python -m pytest tests -q
 
+      # No API key in CI. The script must exit 0 and record a skip, not a pass
+      # that pretends the AMD endpoint was checked.
+      - name: AMD endpoint probe skips without a key
+        run: python scripts/verify_amd_endpoint.py --evidence /tmp/amd_endpoint_evidence.json
+
       # Gate on the honesty checks this project relies on.
       #
       # [FAIL-CLOSED] secret_scan.py reads the credential VALUES from .env and

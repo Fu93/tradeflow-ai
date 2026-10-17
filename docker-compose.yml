@@ -4,7 +4,25 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
-    # 引擎在 MI300X 上批量跑；vLLM 由你自建 AMD droplet 提供，
-    # 這裡不包 vLLM（避免把 GPU 綁進容器），走 VLLM_BASE_URL 指向外部。
+      - path: .env
+        required: false
+    environment:
+      # The published port is 8000. The process also honours PORT.
+      PORT: "8000"
+    # The decision engine runs in this container on NumPy unless the image
+    # actually has CuPy/ROCm and TRADEFLOW_SOLVER_BACKEND=cupy. This compose
+    # file does not attach a GPU and does not run the solver on MI300X.
+    # An AMD tokenfactory / vLLM endpoint, if configured in .env, is remote.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os,urllib.request; p=os.environ.get('PORT','8000'); urllib.request.urlopen('http://127.0.0.1:'+p+'/health', timeout=4).read()",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 25s
     command: python -m src.app.main
