@@ -100,6 +100,38 @@ class TestMultiSolver(unittest.TestCase):
         for m in res["exp_margin_array"]:
             self.assertFalse(np.isnan(m))
 
+    def test_summary_reports_every_savings_baseline_consistently(self):
+        """[誠實揭露回歸] 三個節省率必須各自與其基準一致，且可從結果重算。
+
+        原本只驗到 `total_savings_pct`（相對 walk-away 上限）。但那個 22.2% 最
+        容易被讀成「比供應商報價省 22%」，因此 get_summary 另外回報相對首輪
+        報價與相對目標價的兩個基準；這三組數字任一被寫死都不會被既有測試抓到。
+        """
+        from src.engine.multi_solver import MultiAuctionSession
+
+        session = MultiAuctionSession(
+            target_price=12.0, walk_away_ceiling=16.2, moq=10_000, n_samples=5000,
+        )
+        session.step_round([13.26, 15.60, 15.92, 16.80])
+        session.step_round([12.98, 15.10, 15.60, 16.40])
+        s = session.get_summary()
+
+        ceiling = s["walk_away_ceiling"]
+        target = s["product_target"]
+        moq = s["moq"]
+        final = s["winning_price"]
+        first = s["first_round_best_quote"]
+
+        self.assertEqual(s["total_savings_baseline"], "walk_away_ceiling")
+        self.assertAlmostEqual(s["total_savings_baseline_value"], ceiling)
+        self.assertAlmostEqual(s["total_savings_pct"], (ceiling - final) / ceiling)
+        self.assertAlmostEqual(s["total_savings_cny"], (ceiling - final) * moq)
+        self.assertAlmostEqual(s["savings_vs_first_quote_pct"], (first - final) / first)
+        self.assertAlmostEqual(s["savings_vs_first_quote_cny"], (first - final) * moq)
+        self.assertAlmostEqual(s["savings_vs_target_pct"], (target - final) / target)
+        # 三個基準不可全部等於同一個常數（否則就是同一個數字貼三次標籤）
+        self.assertNotAlmostEqual(s["total_savings_pct"], s["savings_vs_first_quote_pct"])
+
     def test_circuit_breaker_tripped(self):
         """測試當對手報價極高引發破局率超標時，觸發熔斷旗標。"""
         # 供應商報出極端高價 (1.34，接近上限 1.35)

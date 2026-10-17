@@ -334,10 +334,10 @@ class MultiAuctionSession:
     ):
         if suppliers is None:
             suppliers = [
-                {"name": "Supplier A (敏捷讓步型)", "profile": "Agile Conceder"},
-                {"name": "Supplier B (對等互惠型)", "profile": "Rational Tit-for-Tat"},
-                {"name": "Supplier C (強硬死守型)", "profile": "Moderate Hardliner"},
-                {"name": "Supplier D (高價溢價型)", "profile": "Stubborn Over-priced"},
+                {"name": "Supplier A (Agile Conceder)", "profile": "Agile Conceder"},
+                {"name": "Supplier B (Rational Tit-for-Tat)", "profile": "Rational Tit-for-Tat"},
+                {"name": "Supplier C (Moderate Hardliner)", "profile": "Moderate Hardliner"},
+                {"name": "Supplier D (Stubborn Over-priced)", "profile": "Stubborn Over-priced"},
             ]
         self.suppliers = suppliers
         self.k = len(suppliers)
@@ -477,8 +477,23 @@ class MultiAuctionSession:
         final_quote = last_round["best_quote"]
         winning_idx = int(np.argmin(last_round["quotes"]))
         winning_supplier = self.suppliers[winning_idx]["name"]
+        # [誠實揭露 — 2026-10-17 深度稽查] 此處的「節省」是**相對我方 walk-away
+        # 上限**（最壞情況下願意付的最高價），不是相對供應商的首輪報價或目標價。
+        # 實測：首輪最低 ¥13.26、成交 ¥12.60、上限 ¥16.20 → total_savings_pct 為
+        # 22.2%（相對上限），但相對首輪報價只省 5.0%、相對目標價則完全沒省到。
+        # 舊版只回「Savings 22.2%」一個數字，儀表板/文件很容易被讀成「比報價省
+        # 22%」。現在同時回三個基準與各自的 baseline，讓任一數字都能被檢驗。
+        first_round = self.trace[0]
+        first_best_quote = first_round["best_quote"]
         total_savings_pct = (self.walk_away_ceiling - final_quote) / self.walk_away_ceiling
         total_savings_cny = (self.walk_away_ceiling - final_quote) * self.moq
+        savings_vs_first_quote_pct = (
+            (first_best_quote - final_quote) / first_best_quote if first_best_quote else 0.0
+        )
+        savings_vs_first_quote_cny = (first_best_quote - final_quote) * self.moq
+        savings_vs_target_pct = (
+            (self.target_price - final_quote) / self.target_price if self.target_price else 0.0
+        )
 
         return {
             "success": True,
@@ -495,6 +510,13 @@ class MultiAuctionSession:
             "winning_price": final_quote,
             "total_savings_pct": total_savings_pct,
             "total_savings_cny": total_savings_cny,
+            # 明確標示基準與其他對照，避免 22.2% 被誤讀成「比報價省 22%」。
+            "total_savings_baseline": "walk_away_ceiling",
+            "total_savings_baseline_value": self.walk_away_ceiling,
+            "first_round_best_quote": first_best_quote,
+            "savings_vs_first_quote_pct": savings_vs_first_quote_pct,
+            "savings_vs_first_quote_cny": savings_vs_first_quote_cny,
+            "savings_vs_target_pct": savings_vs_target_pct,
             "total_rollouts": self.total_rollouts_accum,
             "total_rollouts_accum": self.total_rollouts_accum,
             "total_compute_seconds": round(self.total_compute_seconds, 4),
@@ -536,10 +558,10 @@ def simulate_reverse_auction(
     """
     if suppliers is None:
         suppliers = [
-            {"name": "Supplier A (敏捷讓步型)", "profile": "Agile Conceder"},
-            {"name": "Supplier B (對等互惠型)", "profile": "Rational Tit-for-Tat"},
-            {"name": "Supplier C (強硬死守型)", "profile": "Moderate Hardliner"},
-            {"name": "Supplier D (高價溢價型)", "profile": "Stubborn Over-priced"},
+            {"name": "Supplier A (Agile Conceder)", "profile": "Agile Conceder"},
+            {"name": "Supplier B (Rational Tit-for-Tat)", "profile": "Rational Tit-for-Tat"},
+            {"name": "Supplier C (Moderate Hardliner)", "profile": "Moderate Hardliner"},
+            {"name": "Supplier D (Stubborn Over-priced)", "profile": "Stubborn Over-priced"},
         ]
     k = len(suppliers)
 

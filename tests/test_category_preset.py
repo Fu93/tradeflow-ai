@@ -24,6 +24,20 @@ except Exception as e:  # pragma: no cover
     print(f"SKIP test_category_preset: {e}")
     raise SystemExit(0)
 
+
+def test_preset_rounds_never_touch_the_real_session_store():
+    """[AUDIT FIX — 2026-10-17] 這個測試會 POST /api/v1/sessions 並跑一輪，而它
+    過去直接寫進 repo 的 data/sessions.db：benchmark 執行後，使用者的本機示範
+    資料庫就多出 TEST_PRESET_UMBRELLA / _CNC_CASE / _BATTERY 三筆真實會話。
+
+    現在由 tests/conftest.py 的 autouse fixture 把整個模組導向臨時目錄。這裡
+    釘住那個前提：一旦 fixture 被移除或寫壞，這個測試會先紅，而不是等到使用者
+    發現儀表板多了一排殘骸。
+    """
+    db_path = api_main.session_mgr.db_path
+    assert os.path.basename(os.path.dirname(db_path)).startswith("tf_test_"), db_path
+    assert db_path != os.path.abspath(os.path.join("data", "sessions.db")), db_path
+
 # 與 src/web/static/js/app.js 的 CATEGORY_PRESETS 對應。若前端改了 preset，
 # 這裡必須同步；不一致時本測試會失敗，提醒更新。
 EXPECTED_PRESETS = {

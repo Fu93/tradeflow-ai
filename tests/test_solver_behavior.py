@@ -216,6 +216,41 @@ class TestParetoTerminologyAndFrontier(unittest.TestCase):
         res = solver.solve(n_opp_samples=2000)
         self.assertIn(list(res["best"]), [list(p) for p in res["pareto_frontier"]])
 
+    def test_scalar_best_really_is_the_argmax_of_the_objective(self):
+        """`best` 必須是 `exp_margin − λ·exp_break` 的 argmax，不是任何常數索引。
+
+        [為什麼需要這個測試] 原本只檢查「best 落在前沿上」與「best_score 存在」，
+        但 (0, 0) 這個索引本身就落在前沿上，所以把 `best` 寫死成 0,0 也能全綠。
+        這裡改用回傳的兩個期望值矩陣重算目標函式，索引一旦被寫死就會失敗。
+        """
+        lam = 1.0
+        res = solver.solve(n_opp_samples=2000, lambda_break=lam)
+        margin = np.asarray(res["exp_margin"])
+        brk = np.asarray(res["exp_break"])
+        score = margin - lam * brk
+        expected = np.unravel_index(int(np.argmax(score)), score.shape)
+        got = tuple(int(x) for x in res["best"])
+        self.assertEqual(got, tuple(int(x) for x in expected),
+                         msg=f"best={got} is not the argmax ({expected}) of margin-{lam}*break")
+        self.assertAlmostEqual(res["best_score"], float(score[got]), places=9)
+        # 這個案例的最優索引不是 (0, 0)，所以寫死索引一定會被抓到
+        self.assertNotEqual(got, (0, 0))
+
+    def test_recommend_reports_the_selected_open_and_curve(self):
+        """`recommend` 必須用 `best` 索引取值，不能自己另挑一格。"""
+        from src.engine import model
+
+        opens, scheds = model.strategy_grid()
+        res = solver.solve(n_opp_samples=2000, opens=opens, scheds=scheds)
+        rec = solver.recommend(res, target_price=12.0, opens=opens, scheds=scheds)
+        i_open, i_sched = res["best"]
+        self.assertAlmostEqual(rec["opening_offer_norm"], float(opens[i_open]), places=12)
+        self.assertAlmostEqual(rec["opening_offer_price"], float(opens[i_open] * 12.0), places=9)
+        self.assertEqual(rec["concession_curve"], [float(x) for x in scheds[i_sched]])
+        self.assertAlmostEqual(
+            rec["expected_margin_norm"], float(np.asarray(res["exp_margin"])[i_open, i_sched]), places=12
+        )
+
 
 class TestOpeningPriceSensitivity(unittest.TestCase):
     """§3.5 — 目標函式必須對開盤價有真正的張力（內部極值）。"""

@@ -1,240 +1,303 @@
-/* TradeFlow Autopilot — FinTech Dark Theme Stylesheet */
+/* TradeFlow Copilot — side panel
+   Same paper dossier language as the dashboard: ruled blocks, decimal-aligned
+   figures, and one red seal reserved for authority and risk.
+   The variable names below are referenced from sidepanel.js, so they stay. */
+
 :root {
-  --bg-primary: #090d16;
-  --bg-surface: #111827;
-  --bg-card: #1f293d;
-  --border-color: #374151;
-  --text-main: #f9fafb;
-  --text-muted: #9ca3af;
-  --accent-cyan: #06b6d4;
-  --accent-emerald: #10b981;
-  --accent-rose: #f43f5e;
-  --accent-amber: #f59e0b;
-  --glow-emerald: 0 0 16px rgba(16, 185, 129, 0.3);
-  --glow-cyan: 0 0 16px rgba(6, 182, 212, 0.3);
-  --glow-rose: 0 0 16px rgba(244, 63, 94, 0.35);
+  --paper: #dfe2db;
+  --sheet: #f2f2ec;
+  --sheet-sunk: #e8e9e1;
+  --ink: #1b2622;
+  --ink-soft: #55645c;
+  --ink-faint: #8b968d;
+  --rule: #c2c8bd;
+  --rule-strong: #9ba79c;
+  --seal: #a33a2a;
+  --seal-tint: #f0ddd7;
+  --steel: #2e4f63;
+  --moss: #46664c;
+  --ochre: #8d641b;
+
+  --display: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --text: "Segoe UI", system-ui, -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+
+  /* Names consumed by sidepanel.js — mapped onto the palette above. */
+  --text-main: var(--ink);
+  --text-muted: var(--ink-faint);
+  --accent-cyan: var(--steel);
+  --accent-emerald: var(--moss);
+  --accent-rose: var(--seal);
+  --accent-amber: var(--ochre);
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  background-color: var(--bg-primary);
-  color: var(--text-main);
-  padding: 16px;
-  font-size: 13px;
-  line-height: 1.5;
   min-width: 320px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(27, 38, 34, 0.028) 0,
+    rgba(27, 38, 34, 0.028) 1px,
+    transparent 1px,
+    transparent 26px
+  );
 }
 
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+:focus-visible { outline: 2px solid var(--seal); outline-offset: 2px; }
+
+/* ------------------------------------------------------------------ header */
+
+.deck-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
   gap: 8px;
-  /* [P2] 側邊欄（約 400px 寬）下，標題與狀態膠囊會互相擠壓，導致
-     "Copilot Decision Deck" 被截斷成 "...Dec k"。允許換行並讓文字可收縮。 */
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 10px 12px 9px;
+  background: var(--paper);
+  border-bottom: 2px solid var(--ink);
 }
 
-.logo-group {
-  display: flex;
+.deck-mark {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.mark-tick { color: var(--seal); padding: 0 1px; }
+
+.deck-sub { font-size: 11px; color: var(--ink-faint); }
+
+/* sidepanel.js rewrites className to "status-pill" / "status-pill tripped". */
+.status-pill {
+  justify-self: end;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0; /* 讓子元素可縮小，避免 overflow 被裁切 */
-  flex: 1 1 auto;
-}
-
-.logo-group > div {
-  min-width: 0;
-}
-
-.logo-badge {
-  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-emerald));
-  color: #000;
-  font-weight: 900;
-  padding: 3px 7px;
-  border-radius: 6px;
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  flex: 0 0 auto;
-}
-
-.title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-main);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.version {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 14px;
-  margin-bottom: 14px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-}
-
-.card-title {
-  font-size: 11px;
-  font-weight: 700;
+  gap: 5px;
+  padding: 2px 7px;
+  border: 1px solid currentColor;
+  color: var(--steel);
+  font-family: var(--display);
+  font-size: 10px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: var(--text-muted);
-  margin-bottom: 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  white-space: nowrap;
 }
 
-.metric-grid {
+.status-pill .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-pill.tripped { color: var(--seal); border-color: var(--seal); background: var(--seal-tint); }
+
+/* ------------------------------------------------------------------ blocks */
+
+.block {
+  padding: 11px 12px 13px;
+  border-bottom: 1px solid var(--rule-strong);
+  background: var(--sheet);
+}
+
+.block-last { border-bottom: 0; padding-bottom: 22px; }
+
+.block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.block-head h2 {
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.note { font-size: 10px; color: var(--ink-faint); text-align: right; }
+
+#btn-refresh {
+  padding: 1px 7px;
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+  color: var(--ink-soft);
+  font-family: var(--text);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+#btn-refresh:hover { border-color: var(--ink); color: var(--ink); }
+
+/* -------------------------------------------------------------------- deal */
+
+.ref-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+
+.ref-row strong {
+  font-family: var(--display);
+  font-size: 12px;
+  color: var(--steel);
+  word-break: break-all;
+  text-align: right;
+}
+
+.terms { width: 100%; border-collapse: collapse; }
+
+.terms th,
+.terms td {
+  padding: 5px 0;
+  border-bottom: 1px dotted var(--rule);
+  text-align: left;
+  font-size: 11px;
+  font-weight: 400;
+  vertical-align: baseline;
+}
+
+.terms th { color: var(--ink-faint); }
+.terms td {
+  text-align: right;
+  font-family: var(--display);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.terms tr:last-child th,
+.terms tr:last-child td { border-bottom: 0; }
+
+/* ------------------------------------------------------------------ belief */
+
+.stat-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
 }
 
-.metric-box {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 10px;
+.stat { display: flex; flex-direction: column; gap: 1px; }
+
+.stat-label { font-size: 10px; color: var(--ink-faint); }
+
+.stat-value {
+  font-family: var(--display);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
 }
 
-.metric-label {
-  font-size: 10px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-
-.metric-value {
-  font-size: 18px;
-  font-weight: 700;
-  margin-top: 2px;
-  color: var(--accent-cyan);
-}
-
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 700;
-  background: rgba(16, 185, 129, 0.15);
-  color: var(--accent-emerald);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-}
-
-.status-pill.tripped {
-  background: rgba(244, 63, 94, 0.15);
-  color: var(--accent-rose);
-  border: 1px solid rgba(244, 63, 94, 0.3);
-  box-shadow: var(--glow-rose);
-  animation: pulse-border 1.5s infinite;
-}
-
-@keyframes pulse-border {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.02); }
-  100% { transform: scale(1); }
-}
-
-.progress-bar-bg {
-  width: 100%;
-  height: 8px;
-  background: var(--bg-card);
-  border-radius: 4px;
-  overflow: hidden;
-  margin-top: 6px;
-}
-
-.progress-bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent-emerald), var(--accent-amber), var(--accent-rose));
-  width: 12%;
-  transition: width 0.4s ease;
-}
-
-.timeline {
+.risk-row {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 160px;
-  overflow-y: auto;
-  padding-right: 4px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 8px;
 }
+
+.risk-row strong {
+  font-family: var(--display);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar {
+  height: 4px;
+  margin-top: 5px;
+  background: var(--sheet-sunk);
+  border: 1px solid var(--rule);
+}
+
+.bar-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--moss);
+  transition: width 0.3s ease;
+}
+
+.fineprint {
+  margin-top: 7px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
+/* ---------------------------------------------------------------- timeline */
+
+.timeline { display: flex; flex-direction: column; gap: 8px; }
 
 .timeline-turn {
-  background: var(--bg-card);
-  border-left: 3px solid var(--accent-cyan);
-  padding: 8px 10px;
-  border-radius: 0 6px 6px 0;
+  padding: 6px 8px;
+  background: var(--paper);
+  border-left: 2px solid var(--steel);
   font-size: 11px;
 }
 
-.btn-group {
+.timeline-turn strong { font-family: var(--display); font-size: 12px; }
+
+.empty { font-size: 11px; color: var(--ink-faint); line-height: 1.5; }
+
+/* --------------------------------------------------------------- telemetry */
+
+.channels td { font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.channel-status { color: var(--ochre); }
+
+.last-signal {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+.last-signal strong { color: var(--ink-soft); font-family: var(--display); }
+
+/* --------------------------------------------------------------- overrides */
+
+.override-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-top: 10px;
+  margin-bottom: 8px;
 }
 
-button {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  color: var(--text-main);
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-button:hover {
-  background: #2d3b55;
-  border-color: var(--accent-cyan);
-}
-
-button.primary {
-  background: linear-gradient(135deg, #0284c7, #0369a1);
-  border-color: #0284c7;
-  color: #fff;
-}
-
-button.danger {
-  background: linear-gradient(135deg, #e11d48, #be123c);
-  border-color: #e11d48;
-  color: #fff;
-}
-
-.telemetry-channel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(55, 65, 81, 0.4);
+.ov {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 9px;
+  background: var(--sheet-sunk);
+  border: 1px solid var(--rule-strong);
+  color: var(--ink);
+  font-family: var(--text);
   font-size: 11px;
+  text-align: left;
+  cursor: pointer;
 }
 
-.channel-status {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--accent-emerald);
+.ov:hover { background: var(--paper); }
+.ov b { font-family: var(--display); font-size: 18px; line-height: 1; }
+.ov-wide { width: 100%; }
+
+.ov-concede b { color: var(--moss); }
+.ov-hold b { color: var(--ochre); }
+.ov-abort b { color: var(--seal); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
 }

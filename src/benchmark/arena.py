@@ -322,9 +322,9 @@ class AdversarialArena:
         meta = getattr(self, "last_tournament_meta", None) or getattr(tournament_results, "meta", None) or {}
         n_matches = meta.get("n_matches_per_adversary", "?")
         lines = [
-            f"每對手場次 (n_matches_per_adversary): {n_matches} · seed: {meta.get('seed', '?')}",
+            f"Matches per archetype (n_matches_per_adversary): {n_matches} · seed: {meta.get('seed', '?')}",
             "",
-            "| 對手類型 (Opponent Archetype) | 策略代理 (Agent) | N | 談判勝率 (Deal %) | 平均節省率 (Savings %) | 破局率 (Breakdown %) | 預算違規率 (Violation %) | 平均輪數 (Rounds) |",
+            "| Opponent archetype | Agent | N | Deal % | Savings % | Breakdown % | Violation % | Rounds |",
             "|---|---|---|---|---|---|---|---|",
         ]
 

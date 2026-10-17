@@ -1,5 +1,10 @@
 # 封存文件索引 (Archived Documents Index)
 
+> **Language note**: the archived planning documents are kept in their original Chinese;
+> they are internal build records, not submission material. Everything submitted
+> (README, PITCH, SUBMIT, SUBMISSION_DRAFT, LIMITATIONS, the demo-video guides and the
+> extension docs) is in English.
+
 本目錄保存 TradeFlow AI 在黑客松期間產生、**已被取代的歷史規劃文件**。
 保留目的是可追溯性（為什麼做了某些技術決策），**不是**現行開發依據。
 

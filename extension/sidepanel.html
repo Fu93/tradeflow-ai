@@ -6,129 +6,106 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <!-- Header -->
-  <header>
-    <div class="logo-group">
-      <div class="logo-badge">TF-AI</div>
-      <div>
-        <div class="title">Copilot Decision Deck</div>
-        <div class="version">v5.0 Enterprise Copilot</div>
-      </div>
-    </div>
+  <header class="deck-head">
+    <div class="deck-mark">TradeFlow<span class="mark-tick">·</span>AI</div>
+    <div class="deck-sub">Copilot deck</div>
     <div id="status-badge" class="status-pill">
-      <span style="font-size: 8px;">●</span>
+      <span class="dot"></span>
       <span id="status-text">CRUISING</span>
     </div>
   </header>
 
-  <!-- Active Session Config -->
-  <div class="card">
-    <div class="card-title">
-      <span>Negotiation Session</span>
-      <button id="btn-refresh" style="padding: 2px 8px; font-size: 10px;">Refresh</button>
+  <section class="block">
+    <div class="block-head">
+      <h2>Deal</h2>
+      <button id="btn-refresh" type="button">Reload</button>
     </div>
-    <div style="font-size: 11px; margin-bottom: 8px;">
-      <span style="color: var(--text-muted);">Session ID:</span>
-      <strong id="session-id-display" style="color: var(--accent-cyan);">--</strong>
+    <div class="ref-row">
+      <span>Reference</span>
+      <strong id="session-id-display">—</strong>
     </div>
-    <div class="metric-grid">
-      <div class="metric-box">
-        <div class="metric-label">Target Price</div>
-        <div class="metric-value" id="val-target-price">--</div>
-      </div>
-      <div class="metric-box">
-        <div class="metric-label">Reserve Ceiling</div>
-        <div class="metric-value" id="val-reserve-ceiling" style="color: var(--accent-rose);">--</div>
-      </div>
-    </div>
-  </div>
+    <table class="terms">
+      <tbody>
+        <tr><th>Target price</th><td id="val-target-price">—</td></tr>
+        <tr><th>Reserve ceiling</th><td id="val-reserve-ceiling">—</td></tr>
+      </tbody>
+    </table>
+  </section>
 
-  <!-- Real-time Bayesian Belief -->
-  <div class="card">
-    <div class="card-title">
-      <span>Bayesian Opponent Belief</span>
-      <!-- [誠實揭露] 此標籤原本寫「MI300X MCTS」。後端在示範路徑上實際以
-           NumPy CPU 執行（solve(use_gpu=False)），專案從未在任何 AMD 硬體上
-           實測過，因此標示 MI300X 屬不實硬體宣稱。改為描述實際演算法名稱。 -->
-      <span style="color: var(--accent-emerald); font-size: 10px;">Expectimax + Bayesian v2</span>
+  <section class="block">
+    <div class="block-head">
+      <h2>Opponent belief</h2>
+      <span class="note">Expectimax + Bayesian v2</span>
     </div>
-    <div class="metric-grid">
-      <div class="metric-box">
-        <div class="metric-label">Posterior Mean (&mu;)</div>
-        <div class="metric-value" id="val-posterior-mean">--</div>
+    <div class="stat-pair">
+      <div class="stat">
+        <span class="stat-label">Posterior mean (&mu;)</span>
+        <span class="stat-value" id="val-posterior-mean">—</span>
       </div>
-      <div class="metric-box">
-        <div class="metric-label">Uncertainty (&sigma;)</div>
-        <div class="metric-value" id="val-posterior-std" style="color: var(--accent-amber);">--</div>
+      <div class="stat">
+        <span class="stat-label">Uncertainty (&sigma;)</span>
+        <span class="stat-value" id="val-posterior-std">—</span>
       </div>
     </div>
-    <div style="margin-top: 12px;">
-      <div style="display: flex; justify-content: space-between; font-size: 11px;">
-        <span style="color: var(--text-muted);">Breakdown Probability</span>
-        <strong id="val-breakdown-risk" style="color: var(--accent-emerald);">--</strong>
-      </div>
-      <div class="progress-bar-bg">
-        <div id="progress-breakdown" class="progress-bar-fill"></div>
-      </div>
-      <div style="font-size: 9px; color: var(--text-muted); margin-top: 3px;">
-        Safety threshold: 15.0% (Triggers emergency mobile escalation)
-      </div>
+    <div class="risk-row">
+      <span class="stat-label">Breakdown probability</span>
+      <strong id="val-breakdown-risk">—</strong>
     </div>
-  </div>
+    <div class="bar"><div id="progress-breakdown" class="bar-fill"></div></div>
+    <p class="fineprint">
+      At 15% the engine stops proposing and waits for you. The bar shows the
+      measured probability, not a target.
+    </p>
+  </section>
 
-  <!-- Negotiation Turns Timeline -->
-  <div class="card">
-    <div class="card-title">
-      <span>Live Round History</span>
-      <span id="round-counter" style="color: var(--accent-cyan); font-size: 11px;">Round — / —</span>
+  <section class="block">
+    <div class="block-head">
+      <h2>Rounds</h2>
+      <span id="round-counter" class="note">Round — / —</span>
     </div>
     <div class="timeline" id="turns-timeline">
-      <div style="color: var(--text-muted); font-size: 11px; padding: 12px 0; text-align: center;">
-        Switch to a 1688 / Alibaba / WhatsApp tab to view live negotiation radar.
-      </div>
+      <p class="empty">Open a 1688, Alibaba or WhatsApp chat to track a deal here.</p>
     </div>
-  </div>
+  </section>
 
-  <!-- Two-Way Mobile Telemetry Status -->
-  <div class="card">
-    <div class="card-title">
-      <span>Mobile Telemetry Bridge</span>
-      <span style="color: var(--accent-emerald); font-size: 10px;">ACTIVE</span>
+  <section class="block">
+    <div class="block-head">
+      <h2>Mobile telemetry</h2>
+      <span class="note">alert channels</span>
     </div>
-    <div class="telemetry-channel">
-      <span>WhatsApp (CallMeBot)</span>
-      <span class="channel-status" id="status-whatsapp">UNVERIFIED</span>
+    <table class="terms channels">
+      <tbody>
+        <tr><th>WhatsApp (CallMeBot)</th><td class="channel-status" id="status-whatsapp">UNVERIFIED</td></tr>
+        <tr><th>WeChat (ServerChan / PushPlus)</th><td class="channel-status" id="status-wechat">UNVERIFIED</td></tr>
+        <tr><th>Telegram bot</th><td class="channel-status" id="status-telegram">STANDBY</td></tr>
+      </tbody>
+    </table>
+    <p class="fineprint">
+      A channel label is a setting, not proof of delivery. This panel sends no
+      heartbeat, so a saved channel may still be unreachable.
+    </p>
+    <div class="last-signal">
+      Last mobile signal <strong id="val-last-signal">None</strong>
     </div>
-    <div class="telemetry-channel">
-      <span>WeChat (Server醬 / PushPlus)</span>
-      <span class="channel-status" id="status-wechat">UNVERIFIED</span>
-    </div>
-    <div class="telemetry-channel">
-      <span>Telegram Bot Webhook</span>
-      <span class="channel-status" id="status-telegram">STANDBY</span>
-    </div>
-    <div style="margin-top: 8px; font-size: 10px; color: var(--text-muted); line-height: 1.4;">
-      [誠實揭露] 此面板不會向 WhatsApp/WeChat/Telegram 發送心跳，無法隨時確認通道
-      在線；通道狀態皆為設定態標籤（起始為 UNVERIFIED / STANDBY），不代表已驗證可送達。
-    </div>
-    <div style="margin-top: 10px; font-size: 11px; color: var(--text-muted);">
-      Last Mobile Signal: <strong id="val-last-signal" style="color: var(--text-main);">None</strong>
-    </div>
-  </div>
+  </section>
 
-  <!-- Manual Overrides -->
-  <div class="card">
-    <div class="card-title">
-      <span>Tactical Manual Overrides</span>
+  <section class="block block-last">
+    <div class="block-head">
+      <h2>Manual overrides</h2>
+      <span class="note">same replies as your phone</span>
     </div>
-    <div class="btn-group">
-      <button id="btn-concede">Concede 1 Step (1)</button>
-      <button id="btn-hold">Hold Firm (2)</button>
+    <div class="override-grid">
+      <button id="btn-concede" type="button" class="ov ov-concede">
+        <b>1</b><span>Concede a step</span>
+      </button>
+      <button id="btn-hold" type="button" class="ov ov-hold">
+        <b>2</b><span>Hold firm</span>
+      </button>
     </div>
-    <div style="margin-top: 8px;">
-      <button id="btn-abort" class="danger" style="width: 100%;">Emergency Abort / Walk Away (3)</button>
-    </div>
-  </div>
+    <button id="btn-abort" type="button" class="ov ov-abort ov-wide">
+      <b>3</b><span>Walk away</span>
+    </button>
+  </section>
 
   <script src="sidepanel.js"></script>
 </body>

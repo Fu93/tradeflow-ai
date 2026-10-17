@@ -21,6 +21,7 @@
 from __future__ import annotations
 import ast
 import json
+import logging
 import math
 import re
 from enum import Enum
@@ -29,6 +30,8 @@ from pydantic import BaseModel, Field
 
 from src.engine.safe_regex import SafeLinearRegexEngine, SafeLinearPattern
 from src.engine.onnx_classifier import OnDeviceIntentClassifier
+
+logger = logging.getLogger("tradeflow.bilingual")
 
 CURRENT_SCHEMA_VERSION = "4.1.0"
 
@@ -149,6 +152,11 @@ class InboundTacticalClassification(BaseModel):
 # ---------------------------------------------------------------------------
 class InboundIntentClassifier:
     """供應商對話 7 大核心博弈套路分類器。"""
+
+    # Stage-2 最近一次呼叫的可觀測狀態（供 API 回報真實失敗原因，而不是只回
+    # stage2_available=false 讓呼叫端猜）。每次 classify_with_llm 開頭重設。
+    last_llm_error: Optional[str] = None
+    last_llm_latency_ms: Optional[float] = None
 
     PATTERNS: List[Tuple[VendorTacticEnum, Any, float, bool]] = [
         (
@@ -363,6 +371,10 @@ class InboundIntentClassifier:
                 return None
             return s
 
+        cls.last_llm_error = None
+        cls.last_llm_latency_ms = None
+        _t0 = None
+
         base_url = _real(os.getenv("VLLM_BASE_URL")) or "https://api.evolus.ai/v1"
         if _real(os.getenv("VLLM_API_KEY")):
             api_key = os.getenv("VLLM_API_KEY")
@@ -387,39 +399,78 @@ class InboundIntentClassifier:
         )
 
         try:
+            import time as _time
             import requests
             headers = {"Content-Type": "application/json"}
             headers["Authorization"] = f"Bearer {api_key}"
+            # [P0 REGRESSION] 舊版 timeout=30.0。實測同一端點（Qwen3.8-Flash-Next，
+            # reasoning 模型）對本提示需 30–48 秒，於是請求必定在 30 秒逾時，
+            # 例外被 `except Exception: pass` 吞掉，API 在 31 秒後回 200 +
+            # stage2_available=false —— 看起來像「模型判斷不需要 Stage-2」，
+            # 實際上是每次都被客戶端自己切斷。現在 timeout 可配置（預設 90 秒），
+            # 且失敗原因會記錄並可經 last_llm_error 回報。
             payload = {
                 "model": os.getenv("VLLM_MODEL", "Qwen3.8-Flash-Next"),
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.0,
-                "max_tokens": 500,
+                "max_tokens": int(os.getenv("VLLM_MAX_TOKENS", "500")),
             }
-            resp = requests.post(f"{base_url}/chat/completions", headers=headers, json=payload, timeout=30.0)
-            if resp.status_code == 200:
-                content = resp.json()["choices"][0]["message"]["content"]
-                match = re.search(r"\{.*\}", content, re.DOTALL)
-                if match:
-                    data = json.loads(match.group(0))
-                    intent_str = data.get("primary_intent", "NORMAL_COUNTER_OFFER")
-                    intent_enum = getattr(VendorTacticEnum, intent_str, VendorTacticEnum.NORMAL_COUNTER_OFFER)
-                    # [C5 修正] Stage-2 的 LLM 欄位過去直接流入決策輸入，未套用
-                    # Stage-1 在 `_classify_impl` 中對 `mentioned_price` 早已施行的
-                    # 0.1..50000 夾制。單一幻覺欄位因此足以製造出「看起來已成交」
-                    # 的狀態（實測 negative / 超界值原樣存入並觸發成交通知）。
-                    # LLM 輸出不得繞過 Stage-1 已強制的不變量。
-                    return InboundTacticalClassification(
-                        primary_intent=intent_enum,
-                        confidence=cls._clamp_confidence(data.get("confidence", 0.85)),
-                        mentioned_price=cls._clamp_price(data.get("mentioned_price")),
-                        demanded_moq=cls._clamp_moq(data.get("demanded_moq")),
-                        demanded_mold_fee=cls._clamp_mold_fee(data.get("demanded_mold_fee")),
-                        tactical_rationale=data.get("tactical_rationale", "LLM zero-shot inference"),
-                        requires_escalation=bool(data.get("requires_escalation", False)),
-                    )
-        except Exception:
-            pass
+            _t0 = _time.perf_counter()
+            resp = requests.post(
+                f"{base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=float(os.getenv("VLLM_TIMEOUT_SECONDS", "90")),
+            )
+            cls.last_llm_latency_ms = round((_time.perf_counter() - _t0) * 1000.0, 1)
+            if resp.status_code != 200:
+                cls.last_llm_error = (
+                    f"Stage-2 endpoint returned HTTP {resp.status_code}: "
+                    f"{(resp.text or '')[:200]}"
+                )
+                logger.warning("Stage-2 LLM call failed: %s", cls.last_llm_error)
+                return None
+            content = resp.json()["choices"][0]["message"]["content"]
+            if not content or not content.strip():
+                cls.last_llm_error = (
+                    "Stage-2 endpoint returned an empty message content "
+                    "(reasoning models may exhaust max_tokens before answering; "
+                    "raise VLLM_MAX_TOKENS)"
+                )
+                logger.warning("Stage-2 LLM call produced empty content")
+                return None
+            match = re.search(r"\{.*\}", content, re.DOTALL)
+            if match:
+                data = json.loads(match.group(0))
+                intent_str = data.get("primary_intent", "NORMAL_COUNTER_OFFER")
+                intent_enum = getattr(VendorTacticEnum, intent_str, VendorTacticEnum.NORMAL_COUNTER_OFFER)
+                # [C5 修正] Stage-2 的 LLM 欄位過去直接流入決策輸入，未套用
+                # Stage-1 在 `_classify_impl` 中對 `mentioned_price` 早已施行的
+                # 0.1..50000 夾制。單一幻覺欄位因此足以製造出「看起來已成交」
+                # 的狀態（實測 negative / 超界值原樣存入並觸發成交通知）。
+                # LLM 輸出不得繞過 Stage-1 已強制的不變量。
+                return InboundTacticalClassification(
+                    primary_intent=intent_enum,
+                    confidence=cls._clamp_confidence(data.get("confidence", 0.85)),
+                    mentioned_price=cls._clamp_price(data.get("mentioned_price")),
+                    demanded_moq=cls._clamp_moq(data.get("demanded_moq")),
+                    demanded_mold_fee=cls._clamp_mold_fee(data.get("demanded_mold_fee")),
+                    tactical_rationale=data.get("tactical_rationale", "LLM zero-shot inference"),
+                    requires_escalation=bool(data.get("requires_escalation", False)),
+                )
+            cls.last_llm_error = "Stage-2 endpoint returned no parsable JSON object"
+            logger.warning(
+                "Stage-2 LLM returned non-JSON content (first 200 chars): %r",
+                (content or "")[:200],
+            )
+        except Exception as exc:
+            # 絕不無聲吞錯：記錄型別與訊息（不含憑證），並留下可供 API 回報的狀態。
+            import time as _time
+            if _t0 is None:
+                _t0 = _time.perf_counter()
+            cls.last_llm_latency_ms = round((_time.perf_counter() - _t0) * 1000.0, 1)
+            cls.last_llm_error = f"{type(exc).__name__}: {exc}"
+            logger.warning("Stage-2 LLM call raised: %s", cls.last_llm_error)
         return None
 
     @classmethod
@@ -1074,9 +1125,19 @@ class ChineseSurfaceRenderer:
             )
 
         elif obj.tactical_mode == TacticalModeEnum.CROSS_ANCHOR:
-            lead_str = f"¥{obj.competing_lead_price:.2f}" if obj.competing_lead_price else "同規格同行報價"
+            # [P1 REGRESSION] 舊版在沒有真實比價來源（competing_lead_price=None）時
+            # 把佔位字串塞進同一個句子，產出「合格樣品已給到 同規格同行報價。」
+            # 這是語法破碎的中文，而且「已給到」仍暗示我方已收到一份不存在的報價。
+            # 現在分成兩個完整句子：有真實來源才陳述金額；沒有來源只說「正在評估」，
+            # 不宣稱已取得任何樣品或報價（保留測試所需的「同規格同行報價」片語）。
+            if obj.competing_lead_price:
+                anchor_sentence = (
+                    f"我們同步評估了同規格同行，合格樣品已給到 ¥{obj.competing_lead_price:.2f}。"
+                )
+            else:
+                anchor_sentence = "我們正同步評估同規格同行報價，但目前不便引用未經確認的金額。"
             return (
-                f"你們工藝我們很看好，但報價確實超出採購預算。我們同步評估了同規格同行，合格樣品已給到 {lead_str}。"
+                f"你們工藝我們很看好，但報價確實超出採購預算。{anchor_sentence}"
                 f"我們更傾向與你們配合，意向價 ¥{p_val:.2f} 能做我們就敲定，否則只能按採購流程選備選庫了。"
             )
 

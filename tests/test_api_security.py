@@ -845,7 +845,27 @@ class TestNoInternalLeakInErrors(_IsolatedCase):
 # ---------------------------------------------------------------------------
 
 class TestSseErrorSurfacing(_IsolatedCase):
-    """[SSE] A session-read failure must be visible, not swallowed."""
+    """[SSE] A session-read failure must be visible, not swallowed.
+
+    [P1 AUDIT FIX — 2026-10-17] Starlette 1.7 的 TestClient 會把整個 streaming
+    response 緩衝到串流結束才交給呼叫端（testclient.handle_request 先把 app 跑到
+    完成，再包成 ByteStream）。SSE 串流的生命週期上限原本硬寫 300 秒，因此本類別
+    每個測試都會靜默等待 ~300 秒（單獨執行看起來像當機，整套測試因此多花約
+    10 分鐘）。現在把上限改成可經 TRADEFLOW_SSE_MAX_SECONDS 設定，並在此類別
+    縮到 1 秒：斷言完全不變（仍是串流的第一個 data 幀），但執行時間降到約 1 秒。
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._orig_sse_cap = os.environ.get("TRADEFLOW_SSE_MAX_SECONDS")
+        os.environ["TRADEFLOW_SSE_MAX_SECONDS"] = "1"
+
+    def tearDown(self):
+        if self._orig_sse_cap is None:
+            os.environ.pop("TRADEFLOW_SSE_MAX_SECONDS", None)
+        else:
+            os.environ["TRADEFLOW_SSE_MAX_SECONDS"] = self._orig_sse_cap
+        super().tearDown()
 
     def _first_sse_frame(self) -> dict:
         with self.c.stream("GET", "/api/v1/stream/session") as resp:

@@ -40,7 +40,11 @@ function tfEsc(value) {
 
 // Numeric coercion for values that reach .toFixed()/.toLocaleString(): the
 // backend may send a numeric string, which would throw instead of rendering.
+// [P0 REGRESSION — 2026-10-17 實機稽查] Number(null)/Number("") 都是 0，舊版把
+// 「後端沒有此值」渲染成 0（¥0.00 / 0.0% 風險）。缺值一律回 fallback，由呼叫端
+// 顯示 "--"；0 是合法量測值，只有真正的 null/undefined/空字串才會被視為缺值。
 function tfNum(value, fallback) {
+  if (value === null || value === undefined || value === "") return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
@@ -98,7 +102,7 @@ async function initPortConnection() {
           // P1-4: AWAITING_HUMAN_DECISION 下指令 1/2 後端回 200 + status=ignored，
           // 這是正常語義（指令在熔斷掛起時才生效），不是錯誤，不該紅字。
           valLastSignal.innerText = `Command received — applies once the circuit breaker arms the session${statusSuffix}`;
-          valLastSignal.style.color = "#f59e0b";
+          valLastSignal.style.color = "#8d641b";
         } else {
           valLastSignal.innerText = `Command NOT applied${statusSuffix}: ${msg.error || "unknown error"}`;
           valLastSignal.style.color = "var(--accent-rose)";
@@ -187,7 +191,7 @@ function renderDormantView() {
   statusText.innerText = "STANDBY";
   statusBadge.className = "status-pill";
   statusBadge.style.background = "rgba(100, 116, 139, 0.25)";
-  statusBadge.style.color = "#94a3b8";
+  statusBadge.style.color = "#8b968d";
 
   valTargetPrice.innerText = "--";
   valReserveCeiling.innerText = "--";
@@ -207,8 +211,8 @@ function renderStandbyView(sessionId) {
   sessionIdDisplay.innerText = sessionId;
   statusText.innerText = "RADAR LISTENING";
   statusBadge.className = "status-pill";
-  statusBadge.style.background = "rgba(6, 182, 212, 0.2)";
-  statusBadge.style.color = "#06b6d4";
+  statusBadge.style.background = "rgba(46, 79, 99, 0.12)";
+  statusBadge.style.color = "#2e4f63";
 
   // P1-2: 待命視圖不再顯示寫死的示例數字，全部以 "--" 呈現。
   valTargetPrice.innerText = "--";
@@ -238,11 +242,11 @@ function renderEngineData(data) {
   if (session.state === "CIRCUIT_TRIPPED_ESCALATED") {
     statusBadge.className = "status-pill tripped";
     statusBadge.style.background = "rgba(244, 63, 94, 0.25)";
-    statusBadge.style.color = "#f43f5e";
+    statusBadge.style.color = "#a33a2a";
   } else {
     statusBadge.className = "status-pill";
     statusBadge.style.background = "rgba(16, 185, 129, 0.25)";
-    statusBadge.style.color = "#10b981";
+    statusBadge.style.color = "#46664c";
   }
 
   // P1-1/P1-2: NegotiationSession 的值在 spec 內層；turn 風險欄位是 p_break。
@@ -280,7 +284,7 @@ function renderEngineData(data) {
   } else {
     valBreakdownRisk.innerText = `${(risk * 100).toFixed(1)}%`;
     progressBreakdown.style.width = `${Math.min(100, Math.max(5, risk * 100))}%`;
-    valBreakdownRisk.style.color = risk >= 0.15 ? "#f43f5e" : "#10b981";
+    valBreakdownRisk.style.color = risk >= 0.15 ? "#a33a2a" : "#46664c";
   }
 
   // H3 (F5): turn.round_number is interpolated raw into innerHTML below; it is
@@ -345,15 +349,15 @@ function renderSession(session) {
   if (stateStr === "CIRCUIT_TRIPPED_ESCALATED") {
     statusBadge.className = "status-pill tripped";
     statusBadge.style.background = "rgba(244, 63, 94, 0.25)";
-    statusBadge.style.color = "#f43f5e";
+    statusBadge.style.color = "#a33a2a";
   } else if (stateStr === "COMPLETED") {
     statusBadge.className = "status-pill";
     statusBadge.style.background = "rgba(16, 185, 129, 0.25)";
-    statusBadge.style.color = "#10b981";
+    statusBadge.style.color = "#46664c";
   } else {
     statusBadge.className = "status-pill";
-    statusBadge.style.background = "rgba(6, 182, 212, 0.2)";
-    statusBadge.style.color = "#06b6d4";
+    statusBadge.style.background = "rgba(46, 79, 99, 0.12)";
+    statusBadge.style.color = "#2e4f63";
   }
 
   const turns = Array.isArray(session.history) ? session.history : session.turns || [];
@@ -371,11 +375,17 @@ function renderSession(session) {
   }
 
   if (turns.length > 0) {
-    const lastTurn = turns[turns.length - 1];
-    const risk = tfNum(lastTurn.p_break ?? lastTurn.breakdown_risk, 0);
-    valBreakdownRisk.innerText = `${(risk * 100).toFixed(1)}%`;
-    progressBreakdown.style.width = `${Math.min(100, Math.max(5, risk * 100))}%`;
-    valBreakdownRisk.style.color = risk >= 0.15 ? "#f43f5e" : "#10b981";
+    // [P0 REGRESSION — 2026-10-17 稽查] 舊版只取最後一輪且 fallback = 0。
+    // 人工核准輪、或任何缺 p_break 的輪次，會讓面板顯示「0.0% 破局風險」。
+    // 現在往回找第一個真實量測值；全都沒有時顯示 "--"。
+    let risk = null;
+    for (let i = turns.length - 1; i >= 0; i -= 1) {
+      const v = tfNum(turns[i].p_break ?? turns[i].breakdown_risk, null);
+      if (v !== null) { risk = v; break; }
+    }
+    valBreakdownRisk.innerText = risk === null ? "--" : `${(risk * 100).toFixed(1)}%`;
+    progressBreakdown.style.width = risk === null ? "0%" : `${Math.min(100, Math.max(5, risk * 100))}%`;
+    valBreakdownRisk.style.color = risk === null ? "" : (risk >= 0.15 ? "#a33a2a" : "#46664c");
 
     // H3 (F5) + H2-class coercion: every backend value rendered here is escaped
     // (round_number, which is interpolated raw) or numerically coerced before

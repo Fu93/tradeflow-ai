@@ -1,7 +1,7 @@
 # TradeFlow AI — Demo Video Script (3–5 min target)
 
-> 現況：`results/demo_video.mp4`（~15s silent visual, 3 Wows）已用真實數據離線產出。
-> 本稿是旁白腳本；接上 Evolus key + vLLM 後，把 Scene 5 換成真 demo 錄影即可成片。
+> Status: `results/demo_video.mp4` (~15s silent visual, 3 "wow" beats) is produced offline from real data.
+> This is the narration script; once the Evolus key and vLLM endpoint are wired up, swap Scene 5 for a real screen recording and the video is done.
 
 ---
 
@@ -15,7 +15,7 @@
 
 **Visual**: cover image / title slide.
 **Note**: lead with the disclosure in the first 15 seconds. It is already in the README's upfront
-notice and LIMITATIONS §零; the video must not bury it, or a judge who discovers it later reads
+notice and LIMITATIONS §0; the video must not bury it, or a judge who discovers it later reads
 the omission as a bait-and-switch.
 
 ## Scene 1 — Wow #1: Belief update (0:12–1:05)

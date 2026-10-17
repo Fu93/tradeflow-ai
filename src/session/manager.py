@@ -281,7 +281,11 @@ class SessionManager:
             for t in reversed(history):
                 if latest_opp is None and t.sender == "opponent" and t.parsed_price is not None:
                     latest_opp = t.parsed_price
-                if latest_our is None and t.sender == "buyer_agent" and t.parsed_price is not None:
+                # [P0 REGRESSION] 舊版只看 buyer_agent。人工核准寫入的輪次是
+                # buyer_human_approved，於是 /approve 之後 latest_our_offer 變回
+                # None，API/儀表板把「已核准的報價」顯示成 ¥0.00。
+                if latest_our is None and t.sender in ("buyer_agent", "buyer_human_approved") \
+                        and t.parsed_price is not None:
                     latest_our = t.parsed_price
 
             ver = row["version"] if "version" in row.keys() else 1
@@ -298,6 +302,43 @@ class SessionManager:
                 created_at=datetime.fromisoformat(row["created_at"]),
                 updated_at=datetime.fromisoformat(row["updated_at"]),
             )
+
+    def annotate_last_turn(
+        self,
+        session_id: str,
+        extra: dict,
+    ) -> bool:
+        """合併額外欄位到該會話最新一則 turn 的 metadata。
+
+        用途：copilot 模式的「引擎建議價」只有等 logrolling/AST 都跑完才
+        知道，而對手輪次在更早之前就已 append。/approve 需要一個持久化、
+        可稽核的建議價，否則只能退回 target_price（實測會核准錯數字）。
+
+        這是**就地 merge**，不新增輪次、不改 current_round/version 的語義；
+        回傳 False 代表沒有可標註的輪次。
+        """
+        if not isinstance(extra, dict) or not extra:
+            return False
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT id, metadata_json FROM turns WHERE session_id = ? "
+                "ORDER BY id DESC LIMIT 1;",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            try:
+                meta = json.loads(row["metadata_json"] or "{}")
+            except (TypeError, ValueError):
+                meta = {}
+            if not isinstance(meta, dict):
+                meta = {}
+            meta.update(extra)
+            conn.execute(
+                "UPDATE turns SET metadata_json = ? WHERE id = ?;",
+                (json.dumps(meta, ensure_ascii=False), row["id"]),
+            )
+        return True
 
     def append_turn(
         self,

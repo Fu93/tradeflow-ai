@@ -1,7 +1,20 @@
+import os
 import sys
+import tempfile
+
+# [AUDIT FIX — 2026-10-17] 這支指令是 README 教使用者跑的驗證腳本，但它過去直接
+# 寫進 repo 的 data/sessions.db：跑完之後儀表板就多出 test-session-live-01
+# （以及每次重跑覆蓋掉的歷史）。驗證的是 HTTP 介面，不是持久化資料，所以預設
+# 導向臨時目錄；若你就是要寫進真實資料庫（例如要留一份示範資料），自己在環境
+# 變數設 TRADEFLOW_DB_PATH / TRADEFLOW_STORE_DIR 即可，這裡用 setdefault 尊重它。
+_SMOKE_DIR = tempfile.mkdtemp(prefix="tf_verify_live_")
+os.environ.setdefault("TRADEFLOW_DB_PATH", os.path.join(_SMOKE_DIR, "sessions.db"))
+os.environ.setdefault("TRADEFLOW_STORE_DIR", os.path.join(_SMOKE_DIR, "sessions_json"))
+
 from fastapi.testclient import TestClient
 import src.app.main as m
 
+print(f"[info] isolated session store: {m.session_mgr.db_path}")
 client = TestClient(m.app)
 
 # 1. 測試 Web Dashboard 首頁

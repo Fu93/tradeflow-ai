@@ -77,3 +77,12 @@ jobs:
         run: |
           python -m pytest tests/test_api_security.py tests/test_secret_scan.py \
                            tests/test_benchmark_integrity.py tests/test_web_xss.py -q
+
+      # One named test per defect found in the 2026-10-17 audit, so a regression
+      # in any of them shows up as a failed step instead of hiding inside the
+      # suite: zero-evidence rounds, /approve using the engine's price instead of
+      # the target, approvals inventing a 0% breakdown risk, unsynchronised
+      # savings baselines, silent Stage-2 failures, unearned competing quotes,
+      # and the copilot generated reply vanishing on reload.
+      - name: Run 2026-10-17 audit regression tests
+        run: python -m pytest tests/test_audit_2026_10_17_fixes.py -q

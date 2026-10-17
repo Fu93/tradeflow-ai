@@ -10,239 +10,303 @@
        is retained) but restricts script origins to this server and jsdelivr, and
        blocks object/base injection. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" />
-  <title>TradeFlow AI — Procurement War Room</title>
+  <title>TradeFlow AI — Deal Dossier</title>
   <link rel="stylesheet" href="/static/css/theme.css" />
-  <!-- Chart.js via CDN — no npm/node required. `integrity` pins the exact
-       bytes (sha384) and `crossorigin` is required for SRI to be enforced on a
-       cross-origin script; without them a compromised CDN response would run
-       arbitrary code in the operator's dashboard. Bump both together when
-       upgrading Chart.js. -->
-  <!-- [P1 離線韌性] Chart.js 原本只從 jsdelivr CDN 載入。評審現場 Wi-Fi 若不通或
-       阻擋 CDN，`typeof Chart === "undefined"` 會讓「即時貝氏更新折線圖」整塊空白
-       （app.js:68 有降級保護，不會崩頁，但 demo 旁白正要指的圖就不見了）。
-       現在改為**本地優先**：先載入 repo 內自帶的 chart.umd.min.js，失敗才回退 CDN。
-       本地檔與 CDN 版為同一份位元組（SHA-384 已核對相符：
-       sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g）。 -->
   <!-- Chart.js: local-first so an offline venue still renders the belief chart,
        with the pinned CDN as fallback. `integrity` pins the exact bytes (sha384)
        and `crossorigin` is required for SRI to be enforced on a cross-origin
-       script; without them a compromised CDN response would run arbitrary code
-       in the operator's dashboard. Bump both together when upgrading Chart.js.
-       The local copy is byte-identical to this CDN file (SHA-384 verified). -->
+       script; without it a compromised CDN response would run arbitrary code in
+       the operator's dashboard. Bump both together when upgrading Chart.js.
+       The local copy is byte-identical to this CDN file (SHA-384 verified:
+       sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g). -->
   <script src="/static/js/chart.umd.min.js" crossorigin="anonymous"
           onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';s.integrity='sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g';s.crossOrigin='anonymous';document.head.appendChild(s);"></script>
 </head>
 <body>
-  <!-- ===== HEADER ===== -->
-  <header class="header">
-    <div class="header-brand">
-      <span class="brand-logo">TF</span>
-      <span class="brand-name">TradeFlow AI</span>
-      <span class="brand-sub">Procurement Decision Copilot</span>
+
+  <!-- ===================== MASTHEAD ===================== -->
+  <header class="masthead">
+    <div class="masthead-id">
+      <span class="mark">TradeFlow<span class="mark-tick">·</span>AI</span>
+      <span class="desk">Procurement decision desk</span>
     </div>
-    <div class="header-status">
-      <span class="status-dot" id="sseStatus"></span>
-      <span class="status-label" id="sseLabel">Connecting...</span>
-      <span class="version-badge">v5.0 · Copilot Radar</span>
+    <div class="masthead-feed">
+      <span class="feed-dot" id="sseStatus"></span>
+      <span class="feed-label" id="sseLabel">Connecting…</span>
+      <span class="feed-ver">v5.0</span>
     </div>
   </header>
 
-  <!-- ===== MAIN GRID ===== -->
-  <main class="war-room">
+  <main class="dossier">
 
-    <!-- LEFT COLUMN: Bayesian Belief + Session List -->
-    <aside class="col-left">
-
-      <!-- Bayesian Belief Chart -->
-      <section class="panel" id="beliefPanel">
-        <div class="panel-header">
-          <span class="panel-title">Bayesian Belief Update</span>
-          <span class="panel-badge" id="sessionLabel">No active session</span>
-        </div>
-        <div class="chart-wrap">
-          <canvas id="beliefChart"></canvas>
-        </div>
-        <div class="belief-stats" id="beliefStats">
-          <div class="stat"><span class="stat-label">Posterior Mean</span><span class="stat-val" id="postMean">--</span></div>
-          <div class="stat"><span class="stat-label">Break Probability</span><span class="stat-val" id="pBreak">--</span></div>
-          <div class="stat"><span class="stat-label">Rounds</span><span class="stat-val" id="roundCount">0</span></div>
-        </div>
-      </section>
-
-      <!-- [P0 新增] Engine Decision：原本整個儀表板**沒有任何**位置顯示引擎的
-           核心輸出（意圖判定 / 建議還價 / 破局風險 / 生成話術）。評審在頁面上
-           點來點去都看不到產品真正算出來的東西，只能看到會話清單與圖表。
-           此面板由 GET /api/v1/sessions/{id} 的 history[-1] 與 action_object
-           填入；缺值一律顯示 "—"，不捏造。 -->
-      <section class="panel" id="decisionPanel">
-        <div class="panel-header">
-          <span class="panel-title">Engine Decision</span>
-          <span class="panel-badge" id="decisionRound">—</span>
-        </div>
-        <div class="belief-stats">
-          <div class="stat"><span class="stat-label">Supplier Intent</span><span class="stat-val" id="decisionIntent">—</span></div>
-          <div class="stat"><span class="stat-label">Recommended Counter</span><span class="stat-val" id="decisionCounter">—</span></div>
-          <div class="stat"><span class="stat-label">Breakdown Risk</span><span class="stat-val" id="decisionRisk">—</span></div>
-        </div>
-        <div class="decision-reply">
-          <div class="stat-label" style="margin-bottom:6px;">Latest Generated Reply (human sends manually)</div>
-          <div id="decisionReply" class="decision-reply-text">—</div>
-        </div>
-      </section>
-
-      <!-- Active Sessions -->
-      <section class="panel" id="sessionsPanel">
-        <div class="panel-header">
-          <span class="panel-title">Active Sessions</span>
-          <button class="btn-ghost" onclick="refreshSessions()">Refresh</button>
-        </div>
-        <div id="sessionList" class="session-list">
-          <div class="empty-state">No sessions. Start via API or CLI.</div>
-        </div>
-      </section>
-
-    </aside>
-
-    <!-- CENTER: Circuit Breaker + Mobile Command Pad -->
-    <section class="col-center">
-
-      <!-- Circuit Breaker Status -->
-      <div class="panel cb-panel" id="cbPanel">
-        <div class="panel-header">
-          <span class="panel-title">Circuit Breaker</span>
-          <span class="cb-badge cb-safe" id="cbBadge">COPILOT MONITORING</span>
-        </div>
-        <div class="cb-ring" id="cbRing">
-          <div class="cb-ring-inner">
-            <div class="cb-pct" id="cbPct">0.0%</div>
-            <div class="cb-label">Break Risk</div>
-          </div>
-        </div>
-        <div class="cb-thresholds">
-          <div class="threshold-row">
-            <span class="thr-color thr-safe"></span><span>Safe &lt; 8%</span>
-          </div>
-          <div class="threshold-row">
-            <span class="thr-color thr-warn"></span><span>Caution 8-15%</span>
-          </div>
-          <div class="threshold-row">
-            <span class="thr-color thr-danger"></span><span>TRIPPED &gt;= 15%</span>
-          </div>
+    <!-- ===================== FILE HEAD ===================== -->
+    <section class="file-head">
+      <div class="file-meta">
+        <span class="file-kicker">Deal file</span>
+        <h1 class="file-title" id="dealTitle">No deal selected</h1>
+        <div class="file-ref">
+          <span class="ref-label">Reference</span>
+          <span class="ref-value" id="sessionLabel">—</span>
         </div>
       </div>
+      <!-- The state stamp replaces the old status pill: JS keeps writing
+           textContent/className here, so cb-badge/cb-safe/… must stay. -->
+      <div class="stamp-wrap">
+        <span class="cb-badge cb-safe" id="cbBadge">COPILOT MONITORING</span>
+        <span class="stamp-note">Approval stays with the buyer</span>
+      </div>
+    </section>
 
-      <!-- Mobile Command Pad -->
-      <div class="panel cmd-panel">
-        <div class="panel-header">
-          <span class="panel-title">Remote Command</span>
-          <span class="panel-sub">Mirrors phone reply (1/2/3)</span>
-        </div>
-        <div class="session-select-row">
-          <label>Session ID</label>
-          <input id="cmdSessionId" type="text" placeholder="session-001" class="input-dark" />
-        </div>
+    <!-- ===================== BODY ===================== -->
+    <div class="sheet-grid">
+
+      <!-- ---------------- LEFT: the negotiation in progress ---------------- -->
+      <div class="col-main">
+
+        <!-- Price ladder: where the supplier sits inside the authorised range.
+             This is the one number a buyer reads first, so it gets the space. -->
+        <section class="sheet ladder-sheet" id="ladderSheet">
+          <div class="sheet-head">
+            <h2 class="sheet-title">Price ladder</h2>
+            <span class="sheet-note" id="ladderNote">Select a deal to plot the quote</span>
+          </div>
+
+          <div class="ladder is-empty" id="ladder">
+            <div class="ladder-scale">
+              <div class="scale-mark" id="ladderCeilingMark">
+                <span class="scale-name">Walk-away ceiling</span>
+                <span class="scale-value" id="ladderCeiling">—</span>
+              </div>
+              <div class="scale-mark" id="ladderTargetMark">
+                <span class="scale-name">Target</span>
+                <span class="scale-value" id="ladderTarget">—</span>
+              </div>
+            </div>
+            <div class="ladder-track">
+              <div class="track-ticks" id="ladderTicks"></div>
+              <p class="ladder-hint" id="ladderHint">No quote on this deal yet.</p>
+              <div class="track-marker marker-ask" id="ladderAskMarker" hidden>
+                <span class="marker-pin"></span>
+                <span class="marker-tag">Supplier ask <b id="ladderAskValue">—</b></span>
+              </div>
+              <div class="track-marker marker-counter" id="ladderCounterMarker" hidden>
+                <span class="marker-pin"></span>
+                <span class="marker-tag">Engine counter <b id="ladderCounterValue">—</b></span>
+              </div>
+            </div>
+
+            <!-- The two derived numbers sit beside the axis they are derived from. -->
+            <dl class="ladder-readout">
+              <div>
+                <dt>Room left to ceiling</dt>
+                <dd id="ladderRoom">—</dd>
+              </div>
+              <div>
+                <dt>Supplier premium over target</dt>
+                <dd id="ladderPremium">—</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+
+        <!-- Engine output: intent, counter, risk, and the sentence a human sends. -->
+        <section class="sheet decision-sheet" id="decisionPanel">
+          <div class="sheet-head">
+            <h2 class="sheet-title">Engine decision</h2>
+            <span class="sheet-note" id="decisionRound">—</span>
+          </div>
+
+          <div class="decision-grid">
+            <div class="field field-last">
+              <span class="field-label">Last supplier message</span>
+              <span class="field-value" id="decisionIntent">—</span>
+            </div>
+            <div class="field">
+              <span class="field-label">Recommended counter</span>
+              <span class="field-value field-money" id="decisionCounter">—</span>
+            </div>
+            <div class="field">
+              <span class="field-label">Breakdown risk</span>
+              <span class="field-value" id="decisionRisk">—</span>
+            </div>
+          </div>
+
+          <div class="reply-block">
+            <div class="reply-head">
+              <span class="reply-label">Draft reply — you paste and send it yourself</span>
+              <button class="btn-quiet" type="button" id="copyReplyBtn" onclick="copyDraftReply()">Copy draft</button>
+            </div>
+            <p class="reply-text" id="decisionReply">—</p>
+          </div>
+        </section>
+
+        <!-- Belief: the model behind the counter, kept subordinate to the decision. -->
+        <section class="sheet belief-sheet" id="beliefPanel">
+          <div class="sheet-head">
+            <h2 class="sheet-title">Opponent belief</h2>
+            <span class="sheet-note">posterior over the supplier's reserve price</span>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="beliefChart"></canvas>
+            <p class="chart-empty" id="beliefEmpty">No rounds on file yet. The chart draws once the supplier replies.</p>
+          </div>
+          <div class="belief-stats" id="beliefStats">
+            <div class="stat"><span class="stat-label">Posterior mean</span><span class="stat-val" id="postMean">—</span></div>
+            <div class="stat"><span class="stat-label">Break probability</span><span class="stat-val" id="pBreak">—</span></div>
+            <div class="stat"><span class="stat-label">Rounds logged</span><span class="stat-val" id="roundCount">0</span></div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- ---------------- RIGHT RAIL ---------------- -->
+      <aside class="col-rail">
+
+        <!-- Risk gauge -->
+        <section class="sheet risk-sheet" id="cbPanel">
+          <div class="sheet-head">
+            <h2 class="sheet-title">Breakdown risk</h2>
+          </div>
+          <div class="risk-readout" id="cbRing">
+            <span class="risk-value" id="cbPct">—</span>
+            <div class="risk-scale">
+              <div class="risk-bar"><span class="risk-marker"></span></div>
+              <div class="risk-ticks">
+                <span>safe &lt; 8%</span>
+                <span>caution 8–15%</span>
+                <span>trip ≥ 15%</span>
+              </div>
+            </div>
+          </div>
+          <p class="fineprint">
+            The marker sits at the measured probability. At 15% the engine stops
+            proposing and waits for you.
+          </p>
+        </section>
+
+        <!-- Mandate -->
+        <section class="sheet mandate-sheet" id="mandatePanel">
+          <div class="sheet-head">
+            <h2 class="sheet-title">Mandate</h2>
+            <span class="sheet-note">what you are allowed to sign</span>
+          </div>
+          <label class="select-row" for="presetCategorySelect">
+            <span>Commodity</span>
+            <select id="presetCategorySelect" class="input-plain" onchange="applyCategoryPreset(this.value)">
+              <option value="umbrella">Carbon auto umbrella (HS 6601)</option>
+              <option value="cnc_case">Aerospace CNC metal case (HS 3926)</option>
+              <option value="battery">Industrial LiFePO4 pack (HS 8507)</option>
+            </select>
+          </label>
+          <table class="terms">
+            <tbody>
+              <tr><th>Target / ceiling <span class="tag-enforced">enforced</span></th><td id="mandatePrice">¥12.0 / ¥16.2</td></tr>
+              <tr><th>Lead time <span class="tag-target">target</span></th><td id="mandateLead">12 - 35 days</td></tr>
+              <tr><th>Deposit <span class="tag-target">target</span></th><td id="mandateDeposit">30% - 50%</td></tr>
+              <tr><th>Mold fee <span class="tag-target">target</span></th><td id="mandateTooling">Exemption demanded, no amount assumed</td></tr>
+            </tbody>
+          </table>
+          <div id="logrollingBox" class="logrolling">
+            <span class="logrolling-flag">Logrolling active</span>
+            <p id="logrollingText">Agent trades cashflow deposit for lead time and tooling exemption when price is firm.</p>
+          </div>
+          <p class="fineprint">
+            Only target price, ceiling and MOQ bind the solver. Lead time, deposit and
+            tooling are negotiating targets: the logrolling model plans against its own
+            baseline (25 days / 30%) and labels any term the supplier never stated as a
+            buyer-side assumption, not as the supplier's offer.
+          </p>
+          <p class="fineprint" id="presetStatus">Pick a commodity to open a deal bound to that mandate.</p>
+        </section>
+
+        <!-- Deals -->
+        <section class="sheet session-sheet" id="sessionsPanel">
+          <div class="sheet-head">
+            <h2 class="sheet-title">Deals</h2>
+            <button class="btn-quiet" type="button" onclick="refreshSessions()">Reload</button>
+          </div>
+          <div id="sessionList" class="session-list">
+            <div class="empty-state">No deals on file. Start one from the API, the CLI, or the commodity picker above.</div>
+          </div>
+        </section>
+
+        <!-- Auction -->
+        <section class="sheet auction-sheet" id="tacticPanel">
+          <div class="sheet-head">
+            <h2 class="sheet-title">Four-supplier auction</h2>
+            <button class="btn-quiet" type="button" onclick="runMultiAuction()">Run</button>
+          </div>
+          <div id="auctionLoader" class="loader hidden">Computing the parameterised tensor grid…</div>
+          <div id="supplierCards" class="supplier-cards">
+            <div class="empty-state">Run the auction to compare four suppliers on price, terms and walk-away risk.</div>
+          </div>
+          <div id="auctionSummary" class="auction-summary hidden"></div>
+        </section>
+
+      </aside>
+    </div>
+
+    <!-- ===================== FOOT: commands + telemetry ===================== -->
+    <footer class="foot">
+      <section class="foot-block command-block">
+        <h2 class="sheet-title">Remote command</h2>
+        <p class="fineprint">The same 1 / 2 / 3 replies you would send from your phone.</p>
+        <label class="cmd-session">
+          <span>Deal</span>
+          <input id="cmdSessionId" type="text" placeholder="session id" class="input-plain" />
+        </label>
         <div class="cmd-buttons">
           <button class="cmd-btn cmd-concede" onclick="sendCommand('1')">
             <span class="cmd-num">1</span>
-            <span class="cmd-name">Concede Step</span>
-            <span class="cmd-desc">Accept current offer and proceed</span>
+            <span class="cmd-name">Concede a step</span>
+            <span class="cmd-desc">Move toward the current offer</span>
           </button>
           <button class="cmd-btn cmd-hold" onclick="sendCommand('2')">
             <span class="cmd-num">2</span>
-            <span class="cmd-name">Hold Firm</span>
-            <span class="cmd-desc">Maintain position, apply pressure</span>
+            <span class="cmd-name">Hold firm</span>
+            <span class="cmd-desc">Keep the position, ask again</span>
           </button>
           <button class="cmd-btn cmd-walkaway" onclick="sendCommand('3')">
             <span class="cmd-num">3</span>
-            <span class="cmd-name">Walk Away</span>
-            <span class="cmd-desc">Terminate negotiation immediately</span>
+            <span class="cmd-name">Walk away</span>
+            <span class="cmd-desc">End the negotiation now</span>
           </button>
         </div>
         <div id="cmdResult" class="cmd-result hidden"></div>
-      </div>
-
-      <!-- Corporate Mandate Governance Card -->
-      <div class="panel mandate-panel" id="mandatePanel">
-        <div class="panel-header">
-          <span class="panel-title">Corporate Mandate (Governance Envelope)</span>
-          <span class="cb-badge cb-safe">AST ENFORCED</span>
-        </div>
-        <div style="padding: 6px 10px 0; display: flex; align-items: center; justify-content: space-between; font-size: 11px;">
-          <span style="color: #8899ac;">Commodity Category:</span>
-          <select id="presetCategorySelect" class="input-dark" style="padding: 2px 6px; font-size: 11px; width: 60%;" onchange="applyCategoryPreset(this.value)">
-            <option value="umbrella">Carbon Auto Umbrella (HS 6601)</option>
-            <option value="cnc_case">Aerospace CNC Metal Case (HS 3926)</option>
-            <option value="battery">Industrial LiFePO4 Battery Pack (HS 8507)</option>
-          </select>
-        </div>
-        <div class="mandate-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; font-size: 11px;">
-          <div class="stat"><span class="stat-label">Target / Ceiling</span><span class="stat-val" id="mandatePrice">¥12.0 / ¥16.2</span></div>
-          <div class="stat"><span class="stat-label">Lead Time Envelope</span><span class="stat-val" id="mandateLead">12 - 35 Days</span></div>
-          <div class="stat"><span class="stat-label">Deposit Authorized</span><span class="stat-val" id="mandateDeposit">30% - 50%</span></div>
-          <div class="stat"><span class="stat-label">Mold Fee Policy</span><span class="stat-val" id="mandateTooling">Exemption Demanded</span></div>
-        </div>
-        <div id="logrollingBox" class="logrolling-box" style="margin: 0 10px 10px; padding: 8px; background: rgba(6, 182, 212, 0.08); border-left: 3px solid #06b6d4; font-size: 11px; color: #cbd5e1;">
-          <div style="font-weight: 600; color: #38bdf8; margin-bottom: 2px;">Pareto Logrolling Engine: ACTIVE</div>
-          <div id="logrollingText">Agent dynamically exchanges cashflow deposit for expedited lead-time and tooling exemption when price is firm.</div>
-        </div>
-        <!-- Feedback for the category selector: switching it now creates a real
-             session, so the operator must see whether that succeeded. -->
-        <div id="presetStatus" style="padding: 0 10px 10px; font-size: 11px; color: #8899ac;">
-          Select a commodity category to create a session bound to that mandate.
-        </div>
-      </div>
-
-    </section>
-
-    <!-- RIGHT COLUMN: Multi-Supplier Tactic Board + Config -->
-    <aside class="col-right">
-
-      <!-- Multi-Supplier Tactic Board -->
-      <section class="panel" id="tacticPanel">
-        <div class="panel-header">
-          <span class="panel-title">Multi-Supplier Tactic Board</span>
-          <button class="btn-ghost" onclick="runMultiAuction()">Run Auction</button>
-        </div>
-        <!-- "28.8M" is the tensor-grid size (K x S x N_open x N_sched), not a
-             measured rollout count; the elapsed/compute figure shown in the
-             summary is what the backend actually reports. -->
-        <div id="auctionLoader" class="loader hidden">Computing tensor grid (28.8M cells)...</div>
-        <div id="supplierCards" class="supplier-cards">
-          <div class="empty-state">Click "Run Auction" to execute 4-supplier reverse auction.</div>
-        </div>
-        <div id="auctionSummary" class="auction-summary hidden"></div>
       </section>
 
-      <!-- Telemetry Config -->
-      <section class="panel" id="configPanel">
-        <div class="panel-header">
-          <span class="panel-title">Telemetry Config</span>
-          <button class="btn-ghost" onclick="toggleConfig()">Toggle</button>
+      <section class="foot-block telemetry-block" id="configPanel">
+        <div class="sheet-head">
+          <h2 class="sheet-title">Mobile telemetry</h2>
+          <button class="btn-quiet" type="button" onclick="toggleConfig()">Settings</button>
         </div>
+        <p class="fineprint">
+          Alert channels for escalations. Nothing is sent until you configure a
+          channel, and a saved channel is not proof of delivery.
+        </p>
         <div id="configBody" class="config-body hidden">
           <div class="config-group">
-            <div class="config-section-label">WhatsApp (CallMeBot)</div>
-            <input id="cfg_WHATSAPP_PHONE" type="text" placeholder="Phone +1234..." class="input-dark" />
-            <input id="cfg_WHATSAPP_APIKEY" type="text" placeholder="API Key" class="input-dark" />
+            <label class="config-section-label" for="cfg_WHATSAPP_PHONE">WhatsApp (CallMeBot)</label>
+            <input id="cfg_WHATSAPP_PHONE" type="text" placeholder="Phone +1234…" class="input-plain" />
+            <input id="cfg_WHATSAPP_APIKEY" type="text" placeholder="API key" class="input-plain" />
           </div>
           <div class="config-group">
-            <div class="config-section-label">Telegram Bot</div>
-            <input id="cfg_TELEGRAM_BOT_TOKEN" type="text" placeholder="Bot Token" class="input-dark" />
-            <input id="cfg_TELEGRAM_CHAT_ID" type="text" placeholder="Chat ID" class="input-dark" />
+            <label class="config-section-label" for="cfg_TELEGRAM_BOT_TOKEN">Telegram bot</label>
+            <input id="cfg_TELEGRAM_BOT_TOKEN" type="text" placeholder="Bot token" class="input-plain" />
+            <input id="cfg_TELEGRAM_CHAT_ID" type="text" placeholder="Chat id" class="input-plain" />
           </div>
           <div class="config-group">
-            <div class="config-section-label">WeChat (ServerChan)</div>
-            <input id="cfg_SERVERCHAN_SENDKEY" type="text" placeholder="SendKey" class="input-dark" />
+            <label class="config-section-label" for="cfg_SERVERCHAN_SENDKEY">WeChat (ServerChan)</label>
+            <input id="cfg_SERVERCHAN_SENDKEY" type="text" placeholder="SendKey" class="input-plain" />
           </div>
           <div class="config-actions">
-            <button class="btn-primary" onclick="saveConfig()">Save + Hot Reload</button>
-            <button class="btn-ghost" onclick="testPush('all')">Test Push</button>
+            <button class="btn-primary" type="button" onclick="saveConfig()">Save and reload</button>
+            <button class="btn-quiet" type="button" onclick="testPush('all')">Send test</button>
           </div>
           <div id="configResult" class="cmd-result hidden"></div>
         </div>
       </section>
-
-    </aside>
+    </footer>
   </main>
 
   <script src="/static/js/app.js"></script>

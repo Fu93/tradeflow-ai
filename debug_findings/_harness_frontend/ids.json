@@ -1,0 +1,74 @@
+{
+  "harness": "extension/content.js sanitizer extracted from source",
+  "backendPattern": "^(?:[A-Za-z0-9._-]{1,128})$",
+  "sanitizerPattern": "/^[A-Za-z0-9._-]{1,128}$/",
+  "mockName": "浙江頂尖雨具製造實業有限公司 (1688 認證金牌廠商) —",
+  "mockNameId": "sess_h4282510a_1688",
+  "legacyCjkId": "sess_浙江頂尖雨具製造實業有限公司__1688_認證金牌廠商___",
+  "rows": [
+    {
+      "name": "mock supplier name (DOM branch, real mock_chat.html text)",
+      "id": "sess_h4282510a_1688",
+      "okWhitelist": true,
+      "okStable": true,
+      "okLen": true
+    },
+    {
+      "name": "other CJK supplier name",
+      "id": "sess_he531cc52",
+      "okWhitelist": true,
+      "okStable": true,
+      "okLen": true
+    },
+    {
+      "name": "pure CJK, no ASCII at all",
+      "id": "sess_hdab1bc71",
+      "okWhitelist": true,
+      "okStable": true,
+      "okLen": true
+    },
+    {
+      "name": "ASCII url param",
+      "id": "sess_abc123",
+      "okWhitelist": true,
+      "okStable": true,
+      "okLen": true
+    },
+    {
+      "name": "ASCII supplier name (legacy behaviour preserved)",
+      "id": "sess_ACME_Corp",
+      "okWhitelist": true,
+      "okStable": true,
+      "okLen": true
+    },
+    {
+      "name": "200-char ASCII value",
+      "id": "sess_h97bd3c2d_AAAAAAAAAAAAAAAAAAAAAAAA",
+      "okWhitelist": true,
+      "okStable": true,
+      "okLen": true
+    },
+    {
+      "name": "path traversal attempt",
+      "id": "sess_hccb5c058_etcpasswd",
+      "okWhitelist": true,
+      "okStable": true,
+      "okLen": true
+    },
+    {
+      "name": "whitespace only",
+      "id": "sess_h811c9dc5",
+      "okWhitelist": true,
+      "okStable": true,
+      "okLen": true
+    },
+    {
+      "name": "200-char CJK with tab prefix",
+      "id": "sess_tab_hfb76b31d",
+      "okWhitelist": true,
+      "okStable": true,
+      "okLen": true
+    }
+  ],
+  "failures": 0
+}

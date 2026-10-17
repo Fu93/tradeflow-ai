@@ -15,6 +15,14 @@ from .benchmark import AdversarialArena
 from .engine.multi_solver import simulate_reverse_auction
 from .app.demo_data import DEMO_SPEC, SUPPLIER_REPLIES
 
+# Windows consoles default to cp1252 / cp936, which mangled ¥ and — in earlier
+# runs (the operator saw "?12.51"). Force UTF-8 output where the stream allows it.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):  # redirected / non-reconfigurable stream
+        pass
+
 
 def run_demo():
     print("=== TradeFlow Negotiation Engine demo (auto umbrella export) ===")
@@ -50,10 +58,19 @@ def run_demo():
     # 那些數字既非本機實測，也與現行的 Analytical Roofline 下界不符（0.4s 曾被
     # 人為折扣係數推出，已於 HARDCODED_DATA_AUDIT.md 移除）。
     # 改為只報告本次實際測得的 CPU 耗時，並明確標注 GPU 數字為理論下界而非實測。
-    rollouts = DEMO_SPEC["n_samples"] * 480
+    # [誠實揭露] 這裡的數字是「張量元素位數」= n_samples × 開盤檔 × 讓步曲線，
+    # 不是迴圈執行次數；一次向量化廣播就求完整個張量。舊版把 480 寫成魔法數
+    # 並稱其為 measured rollouts，容易讀成「執行了 960 萬次 rollout」。
+    from .engine import model as _model
+    _opens, _scheds = _model.strategy_grid()
+    tensor_positions = DEMO_SPEC["n_samples"] * len(_opens) * len(_scheds)
+    elapsed = sum(r["dt"] for r in trace)
     print("\n[Conclusion] Engine turns 'value of waiting' into an executable concession schedule.")
-    print(f"  Measured this run : {rollouts:,} rollouts in {sum(r['dt'] for r in trace):.2f}s "
-          f"on CPU (NumPy vectorized) — measured, not projected.")
+    print(f"  Tensor positions  : {tensor_positions:,} parameter combinations "
+          f"({DEMO_SPEC['n_samples']:,} samples x {len(_opens)} opens x {len(_scheds)} curves), "
+          f"evaluated by one vectorised pass per round")
+    print(f"  Measured this run : {len(trace)} rounds in {elapsed:.2f}s on CPU "
+          f"(NumPy vectorised) — wall-clock measured, the position count is arithmetic.")
     print("  GPU note          : no AMD GPU on this host; consult results/bench.json "
           "for the analytical roofline lower bound (working set ÷ 5300 GB/s), which is a "
           "physical bound, not a measured runtime.")
@@ -109,7 +126,20 @@ def run_self_play(matches=20, out_dir="results"):
     
     out_path = Path(out_dir) / "self_play_benchmark.md"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(f"# TradeFlow v4 Adversarial Self-Play Tournament Results\n\nGenerated: {time.strftime('%Y-%m-%d %H:%M:%S')}\nMatches per Archetype: {matches}\n\n{md_table}\n", encoding="utf-8")
+    # [誠實揭露] 這裡必須與 scripts/run_arena_benchmark.py 一樣，把資料級別、
+    # 實際 seed 與每類場次寫進 artefact。舊版本只寫一行 "Matches per Archetype"，
+    # 讓產出的表格看起來像實測結果，且覆寫掉腳本版本較完整的 header。
+    out_path.write_text(
+        "# TradeFlow v4 Adversarial Baseline Tournament Results\n\n"
+        f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"Matches per Archetype: {matches} (Total {matches * 5 * n_agents} simulated "
+        "matches across 5 archetypes; the simulator runs 5 archetypes)\n"
+        f"Candidate agents per archetype: {n_agents} | Seed: "
+        f"{getattr(arena, 'last_tournament_meta', {}).get('seed', 'default')}\n"
+        "Data class: C-level (parametric behavioural simulator; NOT live LLM API calls)\n\n"
+        f"{md_table}\n",
+        encoding="utf-8",
+    )
     print(f"\n[Saved benchmark report] -> {out_path}")
 
 

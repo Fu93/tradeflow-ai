@@ -271,6 +271,33 @@ def _extract_mold_fee(text: str) -> Optional[float]:
         return None
 
 
+def _latest_recommended_price(sess) -> Optional[float]:
+    """取得最近一輪引擎建議價（copilot 模式下唯一可靠的「核准對象」）。
+
+    `/round` 在 copilot 分支會把 `recommended_offer_price` 寫入該輪對手
+    turn 的 metadata（見 process_negotiation_round 的 annotate 呼叫）。
+    這裡只讀取已持久化的真實值；任何缺值/非數值/非有限值一律回 None，
+    由呼叫端決定 fallback，絕不自行推算。
+    """
+    if sess is None:
+        return None
+    for t in reversed(getattr(sess, "history", []) or []):
+        meta = getattr(t, "metadata", None) or {}
+        if not isinstance(meta, dict):
+            continue
+        raw = meta.get("recommended_offer_price")
+        if raw is None or isinstance(raw, bool):
+            continue
+        try:
+            val = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if val != val or val in (float("inf"), float("-inf")) or val <= 0:
+            continue
+        return val
+    return None
+
+
 # ---- 既有端點 (向後相容) ----
 
 class Spec(BaseModel):
@@ -868,6 +895,21 @@ class RoundActionRequest(BaseModel):
     def get_effective_offer_price(self) -> Optional[float]:
         return self.opponent_offer_price if self.opponent_offer_price is not None else self.supplier_offer
 
+    def has_evidence(self) -> bool:
+        """本輪是否帶有可分析的證據（供應商原文或報價）。
+
+        [REGRESSION] 所有欄位都是 Optional，因此 POST {} 原本會回 200：系統照樣
+        跑完整求解、回傳一個看起來很合理的建議價，並在 history 寫入一則
+        raw_text="" 的 opponent 輪次。呼叫端無法分辨「真的分析了供應商訊息」與
+        「什麼都沒送進去，拿到預設決策」。
+
+        檢查放在這裡（模型仍可單獨構造，例如只為驗證 mode 欄位的測試），
+        由路由在收到請求時拒絕零證據輪次（見 process_negotiation_round）。
+        """
+        return bool((self.get_effective_raw_text() or "").strip()) or (
+            self.get_effective_offer_price() is not None
+        )
+
 
 class ApproveActionRequest(BaseModel):
     # See RoundActionRequest: a misspelled field must fail loudly, not silently
@@ -1052,6 +1094,7 @@ async def classify_semantic_preview(body: SemanticClassifyRequest):
     stage1 = _Clf.classify_stage1_only(text)
 
     stage2 = None
+    stage2_error = None
     if body.enable_stage2:
         deep = await _Clf.classify_with_llm_async(text)
         if deep is not None:
@@ -1061,6 +1104,12 @@ async def classify_semantic_preview(body: SemanticClassifyRequest):
                 "tactical_rationale": deep.tactical_rationale,
                 "requires_escalation": deep.requires_escalation,
             }
+        else:
+            # [P0 REGRESSION] 舊版只回 stage2_available=false，呼叫端無法分辨
+            # 「模型說不需要深化」與「呼叫失敗／超時／輸出無法解析」。
+            stage2_error = getattr(_Clf, "last_llm_error", None) or (
+                "Stage-2 model unavailable or returned no parsable result; see server logs."
+            )
 
     return {
         "text": text,
@@ -1073,6 +1122,10 @@ async def classify_semantic_preview(body: SemanticClassifyRequest):
         },
         "stage2": stage2,
         "stage2_available": stage2 is not None,
+        # 明確區分「未請求」與「請求失敗」，並附上實測延遲（None = 未執行）。
+        "stage2_requested": bool(body.enable_stage2),
+        "stage2_error": stage2_error,
+        "stage2_latency_ms": getattr(_Clf, "last_llm_latency_ms", None) if body.enable_stage2 else None,
     }
 
 
@@ -1124,10 +1177,18 @@ def approve_session_decision(session_id: str, body: ApproveActionRequest):
         }
 
     # 2. 核准或覆寫
+    # [P0 REGRESSION] 舊版在未指定 custom_price 時用 `sess.latest_our_offer or target`。
+    # 但 copilot 模式**不會**寫入 buyer_agent 輪次，latest_our_offer 因此永遠是
+    # None（除非使用者先前跑過 autopilot）—— 於是「核准系統建議」實際上核准的是
+    # target_price，而不是畫面/話術上的建議價。實測：引擎建議 ¥13.02，按 approve
+    # 後送出的卻是 ¥12.00；人類以為自己核准了 AI 的建議，實際批准的是一個不同數字。
+    # 現在優先用 /round 寫回最近一則對手輪次 metadata 的 recommended_offer_price，
+    # 其次才退回 latest_our_offer / target_price。
     final_price = body.custom_price
     if final_price is None:
-        # 若未指定 custom_price，從上一輪推薦或目標價推算
-        final_price = sess.latest_our_offer or sess.spec.target_price
+        final_price = _latest_recommended_price(sess)
+        if final_price is None:
+            final_price = sess.latest_our_offer or sess.spec.target_price
 
     # 護欄校驗：不得突破天花板價
     if final_price > sess.spec.ceiling_price:
@@ -1140,16 +1201,40 @@ def approve_session_decision(session_id: str, body: ApproveActionRequest):
     if not final_reply_text:
         final_reply_text = f"經我方核算，確定意向合作單價為 ¥{final_price:.2f}，現款現結走官方系統，請確認排單。"
 
+    # 沿用最近一輪的**實測**遙測值，而不是寫入 p_break=0.0。
+    # [P0 REGRESSION] 舊版人工核准輪固定 p_break=0.0，於是：
+    #   * SSE 最後一輪的 last_p_break=0.0 → 儀表板顯示「0.0% 破局風險 / SAFE」；
+    #   * 之後的手機主管卡沿用最後一輪 → 顯示 0.0% 風險與 N/A 信心；
+    #   * 真實的最後一輪風險（例如 0.5%–2%）被這筆人工紀錄覆蓋。
+    # 人工核准不會讓風險變成零；它只是把上一輪的風險帶到決策點。因此改為
+    # 沿用最近一輪有值的 p_break / posterior / 遙測欄位，並在 metadata 標明
+    # 這些數字是 carried-over（非重新計算）。
+    _prev = None
+    for _t in reversed(sess.history):
+        if _t.p_break is not None or _t.posterior_mean is not None:
+            _prev = _t
+            break
+    _prev_meta = dict(getattr(_prev, "metadata", None) or {}) if _prev is not None else {}
     turn_our = NegotiationTurn(
         round_index=sess.current_round,
         sender="buyer_human_approved",
         raw_text=final_reply_text,
         parsed_price=final_price,
-        p_break=0.0,
+        p_break=(_prev.p_break if _prev is not None else None),
+        posterior_mean=(_prev.posterior_mean if _prev is not None else None),
+        posterior_std=(_prev.posterior_std if _prev is not None else None),
         metadata={
             "approved_by": "human_buyer",
             "action": body.action,
             "rationale": body.tactical_rationale or "Human buyer authorized decision",
+            "recommended_offer_price": _latest_recommended_price(sess),
+            "metrics_carried_over_from": (
+                f"round {_prev.round_index} ({_prev.sender})" if _prev is not None else None
+            ),
+            # 主管卡會讀這三個鍵；沿用上一輪真實值，避免核准後卡片變成 0.0/N/A。
+            "bayesian_confidence": _prev_meta.get("bayesian_confidence"),
+            "expected_margin": _prev_meta.get("expected_margin"),
+            "estimated_floor_price": _prev_meta.get("estimated_floor_price"),
         },
     )
 
@@ -1200,6 +1285,17 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     # 由 URL 路徑自由指定 —— 攻擊者只需一個 URL 就能憑空灌入會話並觸發引擎運算。
     # 路徑參數必須先過同樣的白名單（否則拒絕），杜絕路徑穿越檔案寫入。
     _validate_session_id_path(session_id)
+    # [REGRESSION] 零證據輪次必須在邊界被拒絕（見 RoundActionRequest.has_evidence）。
+    # 否則引擎會對「沒有任何供應商輸入」的請求產生一份完整推薦並寫入歷史。
+    if not action.has_evidence():
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "A negotiation round requires non-empty opponent_raw_text/supplier_text "
+                "or an opponent_offer_price/supplier_offer; refusing to produce a decision "
+                "from zero evidence."
+            ),
+        )
     sess = session_mgr.get_session(session_id)
     if not sess:
         default_spec = SessionSpec(
@@ -1229,7 +1325,10 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             "circuit_tripped": False,
             "pending_human_approval": False,
             "trip_reason": f"Session already concluded with state {sess.state.value}",
-            "reply_text": f"會話已於先前輪次結案或終止 ({sess.state.value})。",
+            "reply_text": (
+                f"This session was already concluded in an earlier round ({sess.state.value}); "
+                "no further rounds were processed."
+            ),
         }
 
     current_round = action.round_index or (sess.current_round + 1)
@@ -1771,6 +1870,33 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                 session_id,
                 AutopilotState.AWAITING_HUMAN_DECISION,
                 reason="Copilot decision radar prepared; awaiting human buyer review and authorization.",
+            )
+        # [P0 REGRESSION] copilot 模式不寫 buyer_agent 輪次，因此「引擎建議價」
+        # 原本完全沒有被持久化；/approve 只能退回 target_price（見 approve 端點
+        # 的說明）。這裡把本輪真正算出的建議價寫回剛追加的對手輪 metadata，
+        # 讓後續 /approve、SSE 與決策面板都能讀到同一個數字。
+        try:
+            session_mgr.annotate_last_turn(
+                session_id,
+                {
+                    "recommended_offer_price": float(auth_price),
+                    "recommended_tactical_mode": getattr(t_mode, "value", str(t_mode)),
+                    # [UI AUDIT FIX — 2026-10-17] copilot 模式不寫 buyer_agent 輪次，
+                    # 生成話術只存在於 /round 的 HTTP 回應裡。使用者一重新整理，
+                    # 儀表板「Latest Generated Reply (human sends manually)」就變成
+                    # 「—」，而這段話正是要人工貼回聊天室的內容。一併持久化。
+                    "generated_reply": auto_reply_text,
+                },
+            )
+            # 回傳最新快照（含剛才寫入的 metadata）。
+            refreshed = session_mgr.get_session(session_id)
+            if refreshed is not None:
+                sess = refreshed
+        except Exception:
+            logger.warning(
+                "Could not persist recommended_offer_price for session %s; "
+                "/approve will fall back to the last known offer.",
+                session_id, exc_info=True,
             )
         return {
             "session": sess,

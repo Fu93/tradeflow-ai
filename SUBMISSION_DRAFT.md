@@ -17,7 +17,7 @@
 | **Track 1** | Reinvent Commerce |
 | **Track 2** | Evolus Business Agents on AMD |
 | **Public GitHub URL** | https://github.com/Fu93/tradeflow-ai |
-| **Demo Video URL** | *（待填入：3–5 分鐘旁白版 Demo 錄影上傳後的 Loom / YouTube 連結。目前 repo 內的 `results/demo_video.mp4` 僅約 15 秒無聲，尚未符合提交要求 —— 錄影腳本見 `DEMO_SCRIPT.md` 與 `DEMO_VIDEO_DIRECTOR_SCRIPT.md`。）* |
+| **Demo Video URL** | *TODO: paste the Loom / YouTube link to the 3–5 minute narrated demo once it is uploaded. The `results/demo_video.mp4` currently in the repo is a ~15-second silent clip and does not meet the submission requirement — see `DEMO_SCRIPT.md` and `DEMO_VIDEO_DIRECTOR_SCRIPT.md` for the shot list.* |
 | **Cover Image** | `results/cover_1280x720.png` (Included in repo, 1280x720 16:9 compliant) |
 | **Tags / Technologies** | `AMD`, `ROCm`, `Evolus`, `vLLM`, `Game-Theory`, `Expectimax`, `AST-Guardrails`, `Bayesian`, `B2B-Commerce`, `Cross-Border-Trade`, `1688`, `AI-Native-Company` |
 
@@ -31,7 +31,7 @@ Cross-border B2B procurement is not a friendly chat—it is an asymmetric, multi
 **Our thesis: the company itself is the product.** TradeFlow is built and operated as an **AI-native trading company of one** — a single operator running cross-border sourcing end-to-end, where the supplier-facing work is performed by an agent stack rather than a hired team. We are not selling a tool to procurement departments; we are demonstrating that one person plus an agent stack can run a process that traditionally requires a sourcing team or a 7%-commission intermediary.
 
 The process we automate is one a real company runs every day. Today, cross-border sellers sourcing on 1688 or Alibaba face two painful traps:
-1. **The Language & Sourcing Penalty**: Foreign buyers are routinely quoted a 20%+ "foreigner markup", while missing coastal Chinese factory jargon like hidden mold tooling charges (模具費) and bait-and-switch raw material downgrades.
+1. **The Language & Sourcing Penalty**: Foreign buyers are routinely quoted a 20%+ "foreigner markup", while missing coastal Chinese factory jargon like hidden mold tooling charges (the "mould fee" a factory keeps off the quote) and bait-and-switch raw material downgrades.
 2. **The Corrupt Middleman Dilemma**: Sourcing agents charge 7%+ commissions while pocketing secret factory kickbacks and exposing buyers to 80% unrecoverable deposit traps.
 
 **Why Not Just Use a Standard LLM Chatbot?**  
@@ -110,7 +110,7 @@ pip install -r requirements.txt
 # Run complete 6-pillar verification test suite
 python verify_all.py
 
-# Run unit and integration tests (332 tests + 68 subtests, all green)
+# Run unit and integration tests (376 tests + 98 subtests, all green)
 python -m pytest tests -q
 
 # Launch the Web Portal Command Center

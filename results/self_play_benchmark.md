@@ -1,14 +1,14 @@
 # TradeFlow v4 Adversarial Baseline Tournament Results
 
-Generated: 2026-10-16 04:09:27
+Generated: 2026-10-17 21:54:46
 Matches per Archetype: 20 (Total 100 match simulations across 5 archetypes)
 Opponent belief samples per solve: 1000 | Seed: 42
 Benchmark Methodology: NegotiationArena (ICLR 2024), AgenticPay & Cattle Trade Evaluation Protocol (Testing Constraint Adherence, Savings & Deal Rate)
 Data class: C-level (parametric behavioural simulator; NOT live LLM API calls)
 
-每對手場次 (n_matches_per_adversary): 20 · seed: 42
+Matches per archetype (n_matches_per_adversary): 20 · seed: 42
 
-| 對手類型 (Opponent Archetype) | 策略代理 (Agent) | N | 談判勝率 (Deal %) | 平均節省率 (Savings %) | 破局率 (Breakdown %) | 預算違規率 (Violation %) | 平均輪數 (Rounds) |
+| Opponent archetype | Agent | N | Deal % | Savings % | Breakdown % | Violation % | Rounds |
 |---|---|---|---|---|---|---|---|
 | **Hard-Bargainer** | **TradeFlow Engine** | 20 | **100.0%** | **8.8%** | **0.0%** | **0.0%** | 4.0 |
 |  | Panic-Heuristic Buyer Proxy (parametric, not an LLM) | 20 | 100.0% | 5.3% | 0.0% | 20.0% | 2.8 |

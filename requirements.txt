@@ -21,6 +21,13 @@ python-dotenv>=1.0
 # C++ build and would break the zero-friction quickstart.
 regex>=2024.0.0
 
+# Form parsing for the Twilio/WhatsApp webhook branch of
+# POST /webhook/mobile-command (`await request.form()`). FastAPI raises at
+# request time without it; it is a runtime dependency, not a dev one. Found by
+# the 2026-10-17 audit: the local venv happened to have it, requirements did
+# not, so a clean install / Docker image could not parse form webhooks.
+python-multipart>=0.0.9
+
 # --- Development / CI ---
 # Only needed to run the test suite; the application itself does not import them.
 pytest>=8.0

@@ -817,27 +817,83 @@ class TestCommandDispatchNoFalseSuccess(unittest.TestCase):
 
 
 class TestClipboardFailureHandling(unittest.TestCase):
+    """H5 — a failed clipboard write must never look like a success.
+
+    [2026-10-17] These checks used to grep for the literal labels
+    "已複製！" / "複製失敗，請手動選取". Two problems: the UI is now English
+    (the operator-facing text, unlike the supplier-facing card bodies), and the
+    success check matched an English *comment* that still mentioned the old
+    label — so it passed even after the handler changed. The assertions below
+    are structural instead: they extract the button handler, split it at the
+    catch, and require the two paths to render different labels.
+    """
+
     def setUp(self):
         with open(CONTENT_JS, encoding="utf-8") as fh:
             self.content = fh.read()
+        self.handler = self._extract_copy_handler()
+
+    def _extract_copy_handler(self) -> str:
+        anchor = 'deck.querySelectorAll(".tf-copy-btn")'
+        start = self.content.index(anchor)
+        end = self.content.index("\n    }\n", start)
+        return self.content[start:end]
+
+    def _split_try_catch(self):
+        handler = self.handler
+        try_idx = handler.index("try {")
+        catch_idx = handler.index("} catch")
+        self.assertLess(try_idx, catch_idx, "clipboard handler has no try/catch")
+        return handler[try_idx:catch_idx], handler[catch_idx:]
 
     def test_clipboard_write_is_awaited_and_catched(self):
         self.assertIn("navigator.clipboard.writeText(text)", self.content)
-        self.assertRegex(
-            self.content,
-            r"await\s+navigator\.clipboard\.writeText",
+        self.assertIn(
+            "await navigator.clipboard.writeText",
+            self.handler,
             "the clipboard promise must be awaited (H5)",
         )
-        self.assertIn("catch (err)", self.content)
+        self.assertIn("catch (err)", self.handler)
 
-    def test_success_tick_is_inside_the_try_block(self):
-        """The '已複製！' tick must not be reachable from the failure path."""
-        tick = self.content.index("已複製！")
-        catch = self.content.index("Clipboard write failed")
-        self.assertLess(tick, catch, "the success tick is printed after the failure handler")
+    def test_success_label_is_only_reachable_from_the_try_block(self):
+        """The success label must live in the try block only, never in catch."""
+        import re
+
+        try_body, catch_body = self._split_try_catch()
+        succeeds = re.findall(r"btn\.innerHTML\s*=\s*`([^`]*)`", try_body)
+        self.assertTrue(succeeds, "the success path no longer re-labels the button")
+        success_label = next(
+            (s for s in succeeds if "TF_SVG.check" in s),
+            None,
+        )
+        self.assertIsNotNone(
+            success_label, "the success path must set a tick label, not just any label"
+        )
+        self.assertNotIn(
+            success_label,
+            catch_body,
+            "the failure path can reach the success label",
+        )
 
     def test_failure_path_shows_a_visible_non_success_state(self):
-        self.assertIn("複製失敗，請手動選取", self.content)
+        import re
+
+        try_body, catch_body = self._split_try_catch()
+        failures = re.findall(r"btn\.innerHTML\s*=\s*`([^`]*)`", catch_body)
+        self.assertTrue(
+            failures,
+            "the clipboard failure path must visibly change the button, not stay silent",
+        )
+        try_labels = re.findall(r"btn\.innerHTML\s*=\s*`([^`]*)`", try_body)
+        self.assertFalse(
+            set(failures) & set(try_labels),
+            f"the failure path reuses a success label: {failures}",
+        )
+        self.assertIn(
+            "console.warn",
+            catch_body,
+            "a swallowed clipboard failure would hide the operator's only cue",
+        )
 
     def test_manifest_declares_clipboardwrite(self):
         import json

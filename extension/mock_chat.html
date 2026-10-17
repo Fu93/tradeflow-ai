@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <!-- inline favicon：避免瀏覽器自動探測 /favicon.ico 產生 404，讓 demo 時 Console 乾淨 -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>⚡</text></svg>">
-  <title>TradeFlow AI — 1688 / 阿里巴巴 模擬談判測試沙盒</title>
+  <title>TradeFlow AI — 1688 / Alibaba negotiation sandbox (simulated)</title>
   <style>
     body {
       background: #0b0f19;
@@ -121,17 +121,17 @@
 <body>
   <div class="chat-container">
     <div style="background:#b45309; color:#fff; font-size:11px; padding:5px 12px; text-align:center;">
-      模擬測試資料（非真實供應商 / 非真實報價）— Mock Sandbox，僅供擴充元件開發測試
+      SIMULATED DATA — not a real supplier, not a real quote. Mock sandbox for extension testing only.
     </div>
     <div class="chat-header">
       <div>
-        <div class="supplier-name">浙江頂尖雨具製造實業有限公司 (1688 認證金牌廠商) —【假設性測試對象】</div>
-        <div class="supplier-status">● 線上洽談中 (MOQ 10,000 件)</div>
+        <div class="supplier-name">浙江頂尖雨具製造實業有限公司 — hypothetical test counterparty</div>
+        <div class="supplier-status">● online (MOQ 10,000 units)</div>
       </div>
       <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-        <button class="sim-btn" id="btn-sim-quote">模擬常規降價</button>
-        <button class="sim-btn" id="btn-sim-stagnant" style="background: #0284c7; border-color: #38bdf8;">模擬單價寸步不讓 (觸發多維置換)</button>
-        <button class="sim-btn" id="btn-sim-captcha" style="background: #e11d48; border-color: #f43f5e;">模擬阿里風控滑塊 (合規門禁)</button>
+        <button class="sim-btn" id="btn-sim-quote">Simulate a normal concession</button>
+        <button class="sim-btn" id="btn-sim-stagnant" style="background: #0284c7; border-color: #38bdf8;">Simulate a price hold (triggers terms swap)</button>
+        <button class="sim-btn" id="btn-sim-captcha" style="background: #e11d48; border-color: #f43f5e;">Simulate the risk-check slider (compliance gate)</button>
       </div>
     </div>
 
@@ -158,8 +158,8 @@
       text-align: center;
       width: 340px;
     ">
-      <div style="color: #f43f5e; font-weight: 700; margin-bottom: 8px; font-size: 14px;">[1688 安全驗證中心]</div>
-      <div style="font-size: 12px; color: #94a3b8; margin-bottom: 16px;">檢測到環境異常，請向右滑動滑塊以完成驗證</div>
+      <div style="color: #f43f5e; font-weight: 700; margin-bottom: 8px; font-size: 14px;">[1688 risk-check modal — simulated]</div>
+      <div style="font-size: 12px; color: #94a3b8; margin-bottom: 16px;">Slide right to complete the simulated check</div>
       <div id="nc_1_n1z" style="
         background: #0f172a;
         border: 1px solid #475569;
@@ -173,14 +173,14 @@
         color: #64748b;
         cursor: pointer;
       ">
-        點擊此處完成人工驗證滑動
+        Click to complete the simulated slide
       </div>
     </div>
 
     <!-- Chat Input Area -->
     <div class="chat-input-area">
-      <textarea id="chatInput" placeholder="輸入談判訊息..."></textarea>
-      <button class="send-btn" id="sendBtn">發送</button>
+      <textarea id="chatInput" placeholder="Type a message to the supplier..."></textarea>
+      <button class="send-btn" id="sendBtn">Send</button>
     </div>
   </div>
 
@@ -215,13 +215,13 @@
     });
 
     sliderBox.addEventListener("click", () => {
-      // 模擬人類滑動成功
-      sliderBox.innerText = "[驗證通過] 真人滑動成功";
+      // Simulate a human completing the slider (no real captcha is solved).
+      sliderBox.innerText = "[checked] simulated pass";
       sliderBox.style.background = "#065f46";
       sliderBox.style.color = "#34d399";
       setTimeout(() => {
         captchaModal.style.display = "none";
-        sliderBox.innerText = "點擊此處完成人工驗證滑動";
+        sliderBox.innerText = "Click to complete the simulated slide";
         sliderBox.style.background = "#0f172a";
         sliderBox.style.color = "#64748b";
       }, 700);
@@ -245,7 +245,7 @@
       b.innerHTML = `老闆您好，經我們工廠核算原材料成本，最新讓步報價單價為 <strong>¥${q.toFixed(2)}</strong> 元/件，請審閱。`;
       box.appendChild(b);
       box.scrollTop = box.scrollHeight;
-      simBtn.innerText = `模擬報價 ¥${(q - 0.5 > 12.0 ? q - 0.5 : 12.2).toFixed(2)}`;
+      simBtn.innerText = `Simulate quote ¥${(q - 0.5 > 12.0 ? q - 0.5 : 12.2).toFixed(2)}`;
     });
   </script>
 </body>

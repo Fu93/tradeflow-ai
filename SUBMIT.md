@@ -10,11 +10,11 @@
 - [x] README runs with one command (`python -m src.app.main`, then http://localhost:8000)
 - [x] Dockerfile + docker-compose.yml (containerized)
 - [x] No secrets committed (`.env` in `.gitignore`; only `.env.example`) — verified via `git grep`
-- [x] `tests/` green — **332 tests + 68 subtests passing** (`python -m pytest tests -q`)
+- [x] `tests/` green — **376 tests + 98 subtests passing** (`python -m pytest tests -q`)
 
 ## Engine (decision core)
 - [x] Bayesian belief update + vectorized Expectimax (`src/engine/`)
-- [x] Robustness: gain vs fixed baseline, scenario sensitivity **and misbelief test** (`robustness.py`, `results/robustness.png`; see LIMITATIONS §十三)
+- [x] Robustness: gain vs fixed baseline, scenario sensitivity **and misbelief test** (`robustness.py`, `results/robustness.png`; see LIMITATIONS §13)
 - [x] Benchmark: CPU measured + MI300X **analytical roofline projection** (`benchmark.py`, `results/benchmark.png`)
 - [ ] **MI300X real measurement** — replaces projection if an AMD Developer Cloud instance is obtained
       (note: the $100 credit is NOT required to participate; tokenfactory access is sufficient for the model layer)

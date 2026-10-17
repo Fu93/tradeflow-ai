@@ -78,7 +78,7 @@ async def dashboard():
 # SSE live session feed
 # ---------------------------------------------------------------------------
 
-async def _session_event_generator(request: Request, max_seconds: float = 300.0):
+async def _session_event_generator(request: Request, max_seconds: float | None = None):
     """Push session state snapshots every 1 second via Server-Sent Events.
 
     [REGRESSION] This loop used to wrap the whole collection step in
@@ -100,6 +100,16 @@ async def _session_event_generator(request: Request, max_seconds: float = 300.0)
     import src.app.main as _main  # type: ignore
     mgr = _main.session_mgr
 
+    # [P1 AUDIT FIX — 2026-10-17] 生命週期上限原本硬寫 300 秒。Starlette 1.7 的
+    # TestClient 會把整個 streaming response 緩衝到串流「結束」才回傳，因此任何
+    # 對 SSE 端點的 TestClient 測試都會靜默等待 300 秒（看起來像當機，且整套
+    # 測試因此多花 ~10 分鐘）。改為可用環境變數設定，預設值不變；測試可調成
+    # 1 秒以快速驗證首幀語義。
+    if max_seconds is None:
+        try:
+            max_seconds = float(os.getenv("TRADEFLOW_SSE_MAX_SECONDS", "300"))
+        except ValueError:
+            max_seconds = 300.0
     started = time.monotonic()
     try:
         while True:

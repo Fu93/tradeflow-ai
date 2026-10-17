@@ -18,12 +18,12 @@
   // 1. Clean Inline SVG Icons (Zero Emoji Architecture)
   // ---------------------------------------------------------------------------
   const TF_SVG = {
-    radar: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:5px; display:inline-block;"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/><path d="m4.93 4.93 4.24 4.24"/><circle cx="12" cy="12" r="2"/></svg>`,
-    cards: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:5px; display:inline-block;"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
+    radar: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2e4f63" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:5px; display:inline-block;"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/><path d="m4.93 4.93 4.24 4.24"/><circle cx="12" cy="12" r="2"/></svg>`,
+    cards: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8b968d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:5px; display:inline-block;"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
     edit: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px; margin-right:4px; display:inline-block;"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`,
     copy: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px; margin-right:4px; display:inline-block;"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>`,
-    check: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px; margin-right:4px; display:inline-block;"><polyline points="20 6 9 17 4 12"/></svg>`,
-    shield: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:4px; display:inline-block;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+    check: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#46664c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px; margin-right:4px; display:inline-block;"><polyline points="20 6 9 17 4 12"/></svg>`,
+    shield: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8d641b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:4px; display:inline-block;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
   };
 
   // ---------------------------------------------------------------------------
@@ -229,7 +229,10 @@
   // H2 (F3): counterOffer is rendered with toFixed() and must therefore be a
   // real number. Previously it was interpolated raw, so a backend string (or an
   // object) either rendered as "[object Object]" or threw inside .toFixed().
+  // [P0 REGRESSION — 2026-10-17 實機稽查] Number(null) === 0，舊版把缺值渲染成
+  // ¥0.00 / 0.0%；null / undefined / 空字串一律視為缺值。
   function tfNum(value, fallback) {
+    if (value === null || value === undefined || value === "") return fallback;
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
   }
@@ -313,10 +316,10 @@
           bottom: 24px;
           right: 24px;
           z-index: 2147483647; /* 最大 32-bit 安全層次 */
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-          font-size: 13px;
+          font-family: "Segoe UI", system-ui, -apple-system, "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+          font-size: 12px;
           line-height: 1.5;
-          color-scheme: dark;
+          color-scheme: light;
           pointer-events: auto;
           user-select: none;
         }
@@ -327,110 +330,196 @@
           padding: 0;
         }
 
+        /* A paper file tab, not a neon widget: light surface, one rule of
+           status colour on the left edge, no glow. */
         .tf-hud-pill {
-          background: #0f172a;
-          color: #f8fafc;
-          border: 1px solid #334155;
-          border-radius: 12px;
-          padding: 12px 18px;
-          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 0 15px rgba(16, 185, 129, 0.2);
+          background: #f2f2ec;
+          color: #1b2622;
+          border: 1px solid #9ba79c;
+          border-left: 4px solid #46664c; /* updateStatus() sets borderColor inline */
+          border-radius: 2px;
+          padding: 9px 12px 9px 11px;
+          box-shadow: 0 8px 20px rgba(27, 38, 34, 0.18);
           display: flex;
           align-items: center;
-          gap: 12px;
-          transition: border-color 0.3s ease, box-shadow 0.3s ease;
+          gap: 10px;
         }
 
         .tf-dot {
-          width: 10px;
-          height: 10px;
+          width: 6px;
+          height: 6px;
           border-radius: 50%;
-          background: var(--tf-dot-color, #10b981);
-          box-shadow: 0 0 8px var(--tf-dot-color, #10b981);
-          animation: tf-pulse 2s infinite ease-in-out;
-        }
-
-        @keyframes tf-pulse {
-          0% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.35; transform: scale(0.85); }
-          100% { opacity: 1; transform: scale(1); }
+          background: var(--tf-dot-color, #46664c);
+          flex: 0 0 auto;
         }
 
         .tf-title {
-          font-weight: 700;
+          font-family: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", sans-serif;
+          font-size: 13px;
+          font-weight: 600;
+          letter-spacing: 0.01em;
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 7px;
         }
 
         .tf-badge {
-          font-size: 11px;
-          padding: 2px 6px;
-          border-radius: 4px;
+          font-size: 9px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          padding: 1px 5px;
+          border: 1px solid currentColor;
+          border-radius: 0;
           font-weight: 600;
         }
 
         .tf-subtext {
-          color: #94a3b8;
-          font-size: 11px;
-          margin-top: 2px;
+          color: #55645c;
+          font-size: 10px;
+          margin-top: 1px;
         }
 
         .tf-btn {
-          border-radius: 6px;
+          border-radius: 0;
           cursor: pointer;
-          font-size: 11px;
+          font-family: "Segoe UI", system-ui, sans-serif;
+          font-size: 10px;
           font-weight: 600;
-          padding: 6px 10px;
-          border: 1px solid transparent;
-          transition: all 0.2s;
+          padding: 5px 9px;
+          border: 1px solid #9ba79c;
+          background: transparent;
+          color: #1b2622;
           display: inline-flex;
           align-items: center;
           gap: 4px;
+          white-space: nowrap;
         }
 
         .tf-btn:active {
-          transform: scale(0.96);
+          transform: translateY(1px);
         }
 
         .tf-btn-primary {
-          background: #0369a1;
-          border-color: #38bdf8;
-          color: #f1f5f9;
+          background: #2e4f63;
+          border-color: #2e4f63;
+          color: #f2f2ec;
         }
 
-        .tf-btn-secondary {
-          background: #1e293b;
-          border-color: #475569;
-          color: #f1f5f9;
+        .tf-btn-secondary:hover,
+        .tf-btn-primary:hover {
+          filter: brightness(1.08);
         }
 
-        /* Decision Deck Card Overlay */
+        /* Decision deck: the same sheet the dashboard uses. */
         .tf-deck-container {
           position: fixed;
-          bottom: 84px;
+          bottom: 74px;
           right: 24px;
-          width: 380px;
-          background: #0f172a;
-          border: 1px solid #334155;
-          border-radius: 12px;
-          padding: 14px;
-          box-shadow: 0 12px 30px rgba(0, 0, 0, 0.7);
-          color: #f8fafc;
+          width: 392px;
+          max-height: 72vh;
+          overflow-y: auto;
+          background: #f2f2ec;
+          border: 1px solid #9ba79c;
+          border-top: 3px solid #a33a2a;
+          border-radius: 0;
+          padding: 12px 14px 14px;
+          box-shadow: 0 12px 28px rgba(27, 38, 34, 0.22);
+          color: #1b2622;
           display: none;
         }
 
-        .tf-card {
-          background: #1e293b;
-          border: 1px solid #334155;
-          border-radius: 6px;
-          padding: 8px;
+        .tf-deck-head {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 10px;
+          padding-bottom: 8px;
+          border-bottom: 2px solid #1b2622;
+          margin-bottom: 10px;
+        }
+
+        .tf-deck-title {
+          font-family: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", sans-serif;
+          font-size: 13px;
+          font-weight: 600;
+          display: inline-flex;
+          align-items: center;
+        }
+
+        .tf-deck-meta {
+          font-size: 9px;
+          letter-spacing: 0.06em;
+          color: #8b968d;
+          border: 1px solid #c2c8bd;
+          padding: 1px 5px;
+          white-space: nowrap;
+        }
+
+        .tf-deal-row {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+          padding: 8px 0 10px;
+          border-bottom: 1px dotted #9ba79c;
+          margin-bottom: 10px;
+        }
+
+        .tf-deal-label {
+          display: block;
+          font-size: 10px;
+          color: #8b968d;
+        }
+
+        .tf-deal-figure {
+          font-family: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", sans-serif;
+          font-size: 18px;
+          font-variant-numeric: tabular-nums;
+        }
+
+        .tf-deal-ask { color: #a33a2a; }
+        .tf-deal-counter { color: #2e4f63; }
+
+        .tf-deck-note {
+          font-size: 10px;
+          color: #55645c;
           margin-bottom: 8px;
+          display: inline-flex;
+          align-items: center;
+        }
+
+        .tf-card {
+          background: transparent;
+          border: 0;
+          border-bottom: 1px dotted #c2c8bd;
+          border-radius: 0;
+          padding: 0 0 9px;
+          margin-bottom: 9px;
         }
 
         .tf-card:last-child {
           margin-bottom: 0;
+          border-bottom: 0;
+          padding-bottom: 0;
         }
-      `;
+
+        .tf-card-title {
+          font-size: 11px;
+          font-weight: 600;
+          margin-bottom: 3px;
+          color: #2e4f63;
+        }
+
+        .tf-card-body {
+          font-size: 11px;
+          line-height: 1.65;
+          color: #55645c;
+          margin-bottom: 6px;
+        }
+
+        .tf-card-body + div .tf-btn {
+          font-size: 10px;
+        }
+`;
     }
 
     setupEventBarrier() {
@@ -507,6 +596,9 @@
     }
 
     updateStatus(statusText, color, subtext) {
+      // Legacy state colours are mapped onto the dossier palette here, so
+      // every call site keeps its meaning (safe / caution / trip / solving).
+      color = TF_INK[color] || color;
       this._state.statusText = statusText;
       this._state.statusColor = color;
       if (subtext) this._state.subText = subtext;
@@ -552,37 +644,43 @@
 
       deck.style.display = "block";
       deck.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid #1e293b; padding-bottom: 8px; margin-bottom: 10px;">
-          <span style="font-weight:700; color:#38bdf8; display:inline-flex; align-items:center;">${TF_SVG.radar}採購決策副駕駛 (Copilot Decision Deck)</span>
-          <span style="font-size:10px; background:#1e293b; color:#94a3b8; padding:2px 6px; border-radius:4px;">WIN PROB: ${winProb == null ? "—" : winProb + "%"}</span>
+        <div class="tf-deck-head">
+          <span class="tf-deck-title">${TF_SVG.radar}Procurement Copilot</span>
+          <span class="tf-deck-meta">WIN PROB ${winProb == null ? "—" : winProb + "%"}</span>
         </div>
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; background: #1e293b; padding: 8px; border-radius: 8px;">
-          <div>供應商報價: <b style="color:#f59e0b;">¥${tfEsc(tfNum(offer, 0).toFixed(2))}</b></div>
-          <div>建議還盤價: <b style="color:#10b981;">¥${counterSafe}</b></div>
+        <div class="tf-deal-row">
+          <div>
+            <span class="tf-deal-label">Supplier quote</span>
+            <span class="tf-deal-figure tf-deal-ask">¥${tfEsc(tfNum(offer, 0).toFixed(2))}</span>
+          </div>
+          <div>
+            <span class="tf-deal-label">Engine counter</span>
+            <span class="tf-deal-figure tf-deal-counter">¥${counterSafe}</span>
+          </div>
         </div>
-        <div style="font-weight:600; color:#94a3b8; margin-bottom:6px; display:inline-flex; align-items:center;">${TF_SVG.cards}3 條商務反擊卡 (複製後請自行貼上發送)：</div>
+        <div class="tf-deck-note">${TF_SVG.cards}Three reply scripts, written in Chinese for the supplier — copy one and paste it into the chat yourself</div>
 
         <div class="tf-card">
-          <div style="font-weight:600; color:#38bdf8; margin-bottom:4px;">1. 採購預算核定施壓 (推薦)</div>
-          <div style="color:#cbd5e1; font-size:11px; margin-bottom:6px; line-height:1.4;">${card1}</div>
-          <div style="display:flex; gap:6px;">
-            <button class="tf-btn tf-btn-primary tf-copy-btn" data-text="${encodeURIComponent(card1)}">${TF_SVG.copy}複製話術</button>
+          <div class="tf-card-title">1. Budget-authority pressure (recommended first)</div>
+          <div class="tf-card-body">${card1}</div>
+          <div>
+            <button class="tf-btn tf-btn-primary tf-copy-btn" data-text="${encodeURIComponent(card1)}">${TF_SVG.copy}Copy script</button>
           </div>
         </div>
 
         <div class="tf-card">
-          <div style="font-weight:600; color:#06b6d4; margin-bottom:4px;">2. 條款置換 (定金換交期)</div>
-          <div style="color:#cbd5e1; font-size:11px; margin-bottom:6px; line-height:1.4;">${card2}</div>
-          <div style="display:flex; gap:6px;">
-            <button class="tf-btn tf-btn-primary tf-copy-btn" data-text="${encodeURIComponent(card2)}">${TF_SVG.copy}複製話術</button>
+          <div class="tf-card-title">2. Terms swap: deposit for lead time</div>
+          <div class="tf-card-body">${card2}</div>
+          <div>
+            <button class="tf-btn tf-btn-primary tf-copy-btn" data-text="${encodeURIComponent(card2)}">${TF_SVG.copy}Copy script</button>
           </div>
         </div>
 
         <div class="tf-card">
-          <div style="font-weight:600; color:#f59e0b; margin-bottom:4px;">3. 備選工廠威懾</div>
-          <div style="color:#cbd5e1; font-size:11px; margin-bottom:6px; line-height:1.4;">${card3}</div>
-          <div style="display:flex; gap:6px;">
-            <button class="tf-btn tf-btn-primary tf-copy-btn" data-text="${encodeURIComponent(card3)}">${TF_SVG.copy}複製話術</button>
+          <div class="tf-card-title">3. Alternative-supplier leverage</div>
+          <div class="tf-card-body">${card3}</div>
+          <div>
+            <button class="tf-btn tf-btn-primary tf-copy-btn" data-text="${encodeURIComponent(card3)}">${TF_SVG.copy}Copy script</button>
           </div>
         </div>
       `;
@@ -594,21 +692,21 @@
         btn.addEventListener("click", async () => {
           const text = decodeURIComponent(btn.getAttribute("data-text") || "");
           const restore = () => {
-            btn.innerHTML = `${TF_SVG.copy}複製話術`;
+            btn.innerHTML = `${TF_SVG.copy}Copy script`;
             btn.style.borderColor = "";
           };
           try {
             await navigator.clipboard.writeText(text);
             if (onCopy) onCopy(text);
-            btn.innerHTML = `${TF_SVG.check}已複製！`;
-            btn.style.borderColor = "#10b981";
+            btn.innerHTML = `${TF_SVG.check}Copied`;
+            btn.style.borderColor = "#46664c";
             setTimeout(restore, 2000);
           } catch (err) {
             // Do NOT pretend the copy worked. Tell the operator to copy manually
             // and keep the failure visible (no auto-reset) so it cannot be missed.
             console.warn("[TradeFlow Copilot] Clipboard write failed:", err);
-            btn.innerHTML = `${TF_SVG.copy}複製失敗，請手動選取`;
-            btn.style.borderColor = "#f59e0b";
+            btn.innerHTML = `${TF_SVG.copy}Copy failed — select manually`;
+            btn.style.borderColor = "#8d641b";
             // Fallback: expose the raw card text so the operator can select it
             // manually (the whole design assumes a human sends the message).
             btn.title = text;
@@ -621,6 +719,16 @@
   // 建立 HUD 物件：不用 customElements（isolated world 中為 null，見上方 P0 說明）。
   // TradeFlowOverlayHost 只是普通的 JS 類別（不再 extends HTMLElement），
   // 它在自己的 constructor 內建立一個帶 open shadow root 的容器 <div>。
+  const TF_INK = {
+    "#10b981": "#46664c", // safe / active
+    "#f59e0b": "#8d641b", // caution / paused
+    "#f43f5e": "#a33a2a", // tripped
+    "#38bdf8": "#2e4f63", // engine working
+    "#06b6d4": "#2e4f63",
+    "#a855f7": "#7d2a1e", // simulator mode
+    "#94a3b8": "#8b968d", // idle
+  };
+
   const OVERLAY_TAG = "tradeflow-overlay";
 
   // ---------------------------------------------------------------------------
@@ -911,7 +1019,9 @@
     if (!offer) return;
 
     console.log(`[TradeFlow Copilot] Detected quote ¥${offer} in session ${sessionContext.sessionId}`);
-    overlayEl.updateStatus("ENGINE SOLVING...", "#38bdf8", `Processing quote ¥${offer} via Bayesian MCTS`);
+    // [誠實揭露] 決策核心是向量化 Expectimax（+ Bayesian v2 信念更新），
+    // 不是 MCTS。舊字串 "Bayesian MCTS" 是錯誤的演算法宣稱，demo 時會被看見。
+    overlayEl.updateStatus("ENGINE SOLVING...", "#38bdf8", `Processing quote ¥${offer} via Expectimax + Bayesian v2`);
 
     // 3. Dispatch to background via Port
     // V1 (F6) CONFIRMED: neither content.js nor background.js ever sent a `mode`

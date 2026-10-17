@@ -164,7 +164,7 @@ a single case are not percentages. "Production ready" is not supported by a smok
 
 **Status**: **FIXED.** Wording now states what was actually exercised
 ("single hand-crafted illegal-deposit case intercepted", "verified on this sample"),
-and the verdict clarifies this is a smoke check with the `tests/` regression suite (332 tests + 68 subtests) covering the rest.
+and the verdict clarifies this is a smoke check with the `tests/` regression suite (370 tests + 98 subtests) covering the rest.
 
 ---
 
@@ -323,7 +323,7 @@ After the fixes above:
 
 | Check | Command | Expected |
 |---|---|---|
-| Full regression | `python -m pytest tests -q` | 332 passed + 68 subtests |
+| Full regression | `python -m pytest tests -q` | 370 passed + 98 subtests |
 | Smoke pillars | `python verify_all.py` | 6 pillars, wording qualified |
 | Live E2E | `python verify_live.py` | 7 PASS |
 | No hardcoded quote array | `git grep -n "DEFAULT_BENCHMARK_ROUNDS_QUOTES"` | none |

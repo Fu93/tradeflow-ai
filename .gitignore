@@ -35,3 +35,17 @@ _s4.py
 # the measured evidence cited by README / PITCH / LIMITATIONS (bench.json,
 # real_llm_benchmark_100.json, real_stress_test_log.json, the figures). Regenerate
 # with `python -m src.cli --figures` and the scripts in `scripts/`.
+
+# ---- Scratch / local debug (continued) ----
+# Root-level one-off repro scripts from the audit rounds; kept locally, not shared.
+_dbg_*.py
+_sweep_control.py
+_verify_findings.py
+.freebuff/
+
+# Audit working files: back up a session DB before destructive checks, and the
+# raw screenshots/logs the evidence scripts print. All regenerable, none needed
+# to reproduce a finding (the scripts in debug_findings/ regenerate them).
+debug_findings/_sessions_backup/
+debug_findings/**/*.log
+debug_findings/**/*.png

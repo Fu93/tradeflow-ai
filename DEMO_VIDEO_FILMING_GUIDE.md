@@ -119,7 +119,7 @@ frame `disc.png` already discloses this correctly — keep that discipline.
 | 0:50–1:50 | **Moment A** — guardrail refuses an 85% deposit demand, live | Technology |
 | 1:50–2:25 | **Moment B** — belief update across 2 real rounds | Technology |
 | 2:25–2:45 | **Moment C** — Run Auction, 4 tactics, 28.8M tensor grid cells | Technology |
-| 2:45–3:00 | Honest boundaries + repo URL + 332 tests green | Presentation |
+| 2:45–3:00 | Honest boundaries + repo URL + 376 tests green | Presentation |
 
 Record with **audio narration**. A silent screen recording reads as unfinished.
 
@@ -133,7 +133,7 @@ show. Two concrete mismatches I verified:
 1. It specifies a **1080p, 3:30** video. The generated artifact is 1280×720 and
    19s. The generator (`scripts/make_demo_video.py`) is a matplotlib slideshow —
    it cannot produce the live-browser footage the script describes.
-2. Shot 2 says "後驗底價在 **2ms** 內完成貝氏更新". Measured reality: a full
+2. Shot 2 claims "the posterior reserve is updated within **2ms**". Measured reality: a full
    round over HTTP took **2.54s** (solver is the bulk; Stage-1 classify is ~1ms).
    The script conflates Stage-1 classification latency with the whole round.
    Use ~2s, or say "Stage-1 classification in ~1ms" specifically.
@@ -148,7 +148,7 @@ Fix the script or film to reality — do not read the 2ms line over a 2.5s wait.
 - [ ] `python -m src.app.main` running; `http://localhost:8000` returns 200
 - [ ] Use **`opponent_raw_text` / `opponent_offer_price`** for API calls —
       misspelled fields now return HTTP 422 (was silently ignored before today's fix)
-- [ ] `python -m pytest tests -q` → expect **327 passed + 68 subtests** (say this number)
+- [ ] `python -m pytest tests -q` → expect **376 passed + 98 subtests** (say this number)
 - [ ] Narration audio recorded and verified on the exported file
 - [ ] Re-check: `ffprobe results/demo_video.mp4` must show **both** a video and an
       audio stream, duration ≥ 180s

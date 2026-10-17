@@ -44,7 +44,13 @@ function tfEsc(value) {
 
 // Numeric coercion for values that reach .toFixed(): a string sent by the
 // backend would throw a TypeError instead of rendering, so coerce first.
+//
+// [P0 REGRESSION — 2026-10-17 實機稽查] `Number(null)` 與 `Number("")` 都是 0，
+// 因此舊版把「後端沒有這個值」渲染成 0：latest_our_offer=null 顯示 ¥0.00、
+// last_p_break=null 顯示 0.0% / SAFE。這正是「看起來有數據、其實沒有」的
+// 假數據來源。null / undefined / 空字串一律視為缺值，回傳 fallback。
 function tfNum(value, fallback) {
+  if (value === null || value === undefined || value === "") return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
@@ -79,24 +85,26 @@ function initBeliefChart() {
       labels: ["Prior"],
       datasets: [
         {
-          label: "Posterior Mean (¥)",
-          data: [12.96],
-          borderColor: "#06b6d4",
-          backgroundColor: "rgba(6, 182, 212, 0.15)",
-          borderWidth: 2,
-          pointRadius: 4,
-          pointBackgroundColor: "#06b6d4",
+          label: "Posterior mean (¥)",
+          // Empty until a real posterior arrives: the old hardcoded 12.96 drew
+          // a data point for a session that had never been measured.
+          data: [],
+          borderColor: "#2e4f63",
+          backgroundColor: "rgba(46, 79, 99, 0.10)",
+          borderWidth: 1.5,
+          pointRadius: 3,
+          pointBackgroundColor: "#2e4f63",
           tension: 0.25,
           fill: true,
         },
         {
-          label: "Breakdown Risk (%)",
+          label: "Breakdown risk (%)",
           data: [null],
-          borderColor: "#ef4444",
+          borderColor: "#a33a2a",
           borderWidth: 1.5,
           borderDash: [4, 4],
           pointRadius: 3,
-          pointBackgroundColor: "#ef4444",
+          pointBackgroundColor: "#a33a2a",
           yAxisID: "yRisk",
         }
       ]
@@ -104,31 +112,36 @@ function initBeliefChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
       plugins: {
         legend: {
           labels: {
-            color: "#8899ac",
-            font: { size: 10, family: "monospace" }
+            color: "#55645c",
+            boxWidth: 14,
+            font: { size: 11, family: "Segoe UI, system-ui, sans-serif" }
           }
         }
       },
       scales: {
         x: {
-          ticks: { color: "#8899ac", font: { size: 10 } },
-          grid: { color: "#212c42" }
+          ticks: { color: "#8b968d", font: { size: 11 } },
+          grid: { color: "#c2c8bd" },
+          border: { color: "#9ba79c" }
         },
         y: {
-          ticks: { color: "#8899ac", font: { size: 10 } },
-          grid: { color: "#212c42" },
-          title: { display: true, text: "Price (¥)", color: "#8899ac", font: { size: 10 } }
+          ticks: { color: "#8b968d", font: { size: 11 } },
+          grid: { color: "#d3d7cd" },
+          border: { color: "#9ba79c" },
+          title: { display: true, text: "Price (¥)", color: "#8b968d", font: { size: 11 } }
         },
         yRisk: {
           position: "right",
           min: 0,
           max: 100,
-          ticks: { color: "#ef4444", font: { size: 9 } },
+          ticks: { color: "#a33a2a", font: { size: 10 } },
           grid: { display: false },
-          title: { display: true, text: "Risk %", color: "#ef4444", font: { size: 10 } }
+          border: { color: "#c2c8bd" },
+          title: { display: true, text: "Risk %", color: "#a33a2a", font: { size: 11 } }
         }
       }
     }
@@ -145,13 +158,13 @@ function initSSE() {
   const evtSource = new EventSource("/api/v1/stream/session");
 
   evtSource.onopen = () => {
-    statusDot.className = "status-dot active";
-    statusLabel.textContent = "CONNECTED (1s SSE)";
+    statusDot.className = "feed-dot active";
+    statusLabel.textContent = "Connected · live";
   };
 
   evtSource.onerror = () => {
-    statusDot.className = "status-dot";
-    statusLabel.textContent = "DISCONNECTED";
+    statusDot.className = "feed-dot";
+    statusLabel.textContent = "Disconnected";
   };
 
   evtSource.onmessage = (e) => {
@@ -195,9 +208,9 @@ function renderSessions(sessions) {
         <span class="session-item-id">${tfEsc(s.session_id)}</span>
         <span class="session-badge ${tfEsc(stateClass)}">${tfEsc(s.state)}</span>
       </div>
-      <div class="session-item-row" style="margin-top: 4px; color: #8899ac; font-size: 11px;">
-        <span>${tfEsc(s.product)} (Target: ¥${tfEsc(s.target)})</span>
-        <span>Rounds: ${tfEsc(s.rounds)}</span>
+      <div class="session-item-row session-item-sub">
+        <span>${tfEsc(s.product)} (target ¥${tfEsc(s.target)})</span>
+        <span>${tfEsc(s.rounds)} rounds</span>
       </div>
     `;
     listEl.appendChild(item);
@@ -208,27 +221,44 @@ function selectSession(s) {
   currentSessionId = s.session_id;
   document.getElementById("cmdSessionId").value = s.session_id;
   document.getElementById("sessionLabel").textContent = s.session_id;
+  const titleEl = document.getElementById("dealTitle");
+  if (titleEl) {
+    titleEl.textContent = s.product ? String(s.product) : s.session_id;
+  }
 
-  // Update Circuit Breaker view
-  const pBreak = s.last_p_break != null ? (tfNum(s.last_p_break, 0) * 100).toFixed(1) : "0.0";
-  document.getElementById("cbPct").textContent = `${pBreak}%`;
-  document.getElementById("pBreak").textContent = `${pBreak}%`;
+  // Update Circuit Breaker view.
+  // [P0 REGRESSION — 2026-10-17 實機稽查] 舊版在 last_p_break 缺失時把畫面填成
+  // "0.0%"（並落入 SAFE 分支），等於對一個從未量測過的會話宣佈「零破局風險」。
+  // 現在缺值一律顯示 "—"，且不得被標示為 SAFE。
+  const riskKnown = s.last_p_break !== null && s.last_p_break !== undefined &&
+    Number.isFinite(Number(s.last_p_break));
+  const cbRisk = riskKnown ? Number(s.last_p_break) : null;
+  const pBreak = riskKnown ? (cbRisk * 100).toFixed(1) : null;
+  document.getElementById("cbPct").textContent = pBreak === null ? "—" : `${pBreak}%`;
+  document.getElementById("pBreak").textContent = pBreak === null ? "—" : `${pBreak}%`;
 
   const badge = document.getElementById("cbBadge");
   const ring = document.getElementById("cbRing");
+  // The risk scale is a ruled strip whose marker lives at --risk (0-100).
+  if (ring) {
+    ring.style.setProperty("--risk", cbRisk === null ? "0" : String(Math.max(0, Math.min(100, cbRisk * 100))));
+  }
 
-  const cbRisk = tfNum(s.last_p_break, 0);
   if (s.state === "AWAITING_HUMAN_DECISION") {
     badge.className = "cb-badge cb-warn";
     badge.textContent = "AWAITING HUMAN DECISION";
     ring.className = "cb-ring";
-  } else if (cbRisk >= 0.15) {
+  } else if (cbRisk !== null && cbRisk >= 0.15) {
     badge.className = "cb-badge cb-tripped";
     badge.textContent = "CIRCUIT TRIPPED (ESCALATED)";
     ring.className = "cb-ring tripped";
-  } else if (cbRisk >= 0.08) {
+  } else if (cbRisk !== null && cbRisk >= 0.08) {
     badge.className = "cb-badge cb-warn";
     badge.textContent = "CAUTION HIGH RISK";
+    ring.className = "cb-ring";
+  } else if (cbRisk === null) {
+    badge.className = "cb-badge";
+    badge.textContent = "RISK NOT YET MEASURED";
     ring.className = "cb-ring";
   } else if (s.state === "COPILOT_MONITORING") {
     badge.className = "cb-badge cb-safe";
@@ -325,6 +355,7 @@ async function fetchSessionDetails(sid) {
     const data = await res.json();
     const sessObj = data.session || data;
     if (sessObj && (sessObj.history || sessObj.turns)) {
+      renderPriceLadder(sessObj);
       updateBeliefChartWithTurns(sessObj);
       renderEngineDecision(sessObj);
     }
@@ -342,16 +373,133 @@ async function fetchSessionDetails(sid) {
 //   - 破局風險    → turn.p_break（真實值）
 //   - 生成話術    → turn.raw_text 中 sender 為 buyer_agent / buyer_human_approved 者
 // 缺值一律顯示 "—"（絕不捏造）。
+// [UI REDESIGN] The price ladder is the dashboard's hero: it answers the one
+// question a buyer asks first — how much room is left between the supplier's
+// ask and the walk-away ceiling. Every value comes from the session snapshot;
+// anything missing renders "—" and hides its marker rather than guessing.
+function renderPriceLadder(session) {
+  const setText = (id, txt) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = txt;
+  };
+  const spec = session.spec || {};
+  const target = tfNum(spec.target_price, null);
+  const ceiling = tfNum(spec.ceiling_price, null);
+
+  setText("ladderTarget", target === null ? "—" : `¥${target.toFixed(2)}`);
+  setText("ladderCeiling", ceiling === null ? "—" : `¥${ceiling.toFixed(2)}`);
+
+  const turns = session.history || session.turns || [];
+  const lastOpp = [...turns].reverse().find((t) => t.sender === "opponent");
+  let ask = tfNum(session.latest_opponent_offer, null);
+  if (ask === null && lastOpp) ask = tfNum(lastOpp.parsed_price, null);
+
+  let counter = tfNum(session.latest_our_offer, null);
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const v = tfNum((turns[i].metadata || {}).recommended_offer_price, null);
+    if (v !== null) { counter = v; break; }
+  }
+
+  const span = (target !== null && ceiling !== null) ? ceiling - target : null;
+  const place = (value) => {
+    // Ceiling sits at the top of the track, target at the bottom.
+    const pct = ((ceiling - value) / span) * 100;
+    return Math.max(0, Math.min(100, pct));
+  };
+
+  const askMarker = document.getElementById("ladderAskMarker");
+  const counterMarker = document.getElementById("ladderCounterMarker");
+  const hintEl = document.getElementById("ladderHint");
+  const noteEl = document.getElementById("ladderNote");
+  const plottable = span !== null && span > 0;
+  const hasQuote = plottable && (ask !== null || counter !== null);
+  if (hintEl) hintEl.hidden = hasQuote;
+  const ladderEl = document.getElementById("ladder");
+  if (ladderEl) ladderEl.classList.toggle("is-empty", !hasQuote);
+
+  if (plottable && ask !== null) {
+    askMarker.style.top = `calc(${place(ask)}% - 8px)`;
+    askMarker.hidden = false;
+    setText("ladderAskValue", `¥${ask.toFixed(2)}`);
+  } else {
+    askMarker.hidden = true;
+    setText("ladderAskValue", "—");
+  }
+
+  if (plottable && counter !== null) {
+    // When the counter sits on (or nearly on) the ask, both tags would overlap;
+    // nudge only the label down so each number stays readable.
+    let topPct = place(counter);
+    if (ask !== null && Math.abs(place(ask) - topPct) < 9) {
+      topPct = Math.min(100, topPct + 9);
+    }
+    counterMarker.style.top = `calc(${topPct}% - 8px)`;
+    counterMarker.hidden = false;
+    setText("ladderCounterValue", `¥${counter.toFixed(2)}`);
+  } else {
+    counterMarker.hidden = true;
+    setText("ladderCounterValue", "—");
+  }
+
+  const round = tfNum(session.current_round, null);
+  if (noteEl) {
+    noteEl.textContent = !plottable
+      ? "Select a deal to plot the quote"
+      : (round === null ? "Quote against your authorised range" : `Round ${round}, quote against your authorised range`);
+  }
+
+  // Quarter ticks make the axis readable between the two end labels.
+  const ticksEl = document.getElementById("ladderTicks");
+  if (ticksEl) {
+    ticksEl.innerHTML = "";
+    if (plottable) {
+      // Round money steps, not quarter fractions: a price axis reads in ¥1 or
+      // ¥0.50 increments, and the labels stay stable as the range changes.
+      const step = span <= 1 ? 0.1 : span <= 4 ? 0.5 : span <= 12 ? 1 : span <= 60 ? 5 : 25;
+      for (let v = Math.ceil(target / step) * step; v < ceiling; v += step) {
+        const frac = (ceiling - v) / span;
+        // Keep clear of the two end labels (ceiling at 0, target at 1).
+        if (v <= target || frac < 0.06 || frac > 0.94) continue;
+        const row = document.createElement("div");
+        row.className = "track-tick";
+        row.style.top = `${frac * 100}%`;
+        const label = document.createElement("span");
+        label.textContent = `¥${Number.isInteger(v) ? v : v.toFixed(2)}`;
+        row.appendChild(label);
+        ticksEl.appendChild(row);
+      }
+    }
+  }
+
+  setText(
+    "ladderRoom",
+    ask === null || ceiling === null ? "—" : `¥${(ceiling - ask).toFixed(2)}`
+  );
+  setText(
+    "ladderPremium",
+    ask === null || target === null || target <= 0
+      ? "—"
+      : `+¥${(ask - target).toFixed(2)} (${(((ask - target) / target) * 100).toFixed(0)}%)`
+  );
+}
+
 function renderEngineDecision(session) {
   const el = (id) => document.getElementById(id);
   if (!el("decisionIntent")) return; // 面板不存在時安全退出
 
   const turns = session.history || session.turns || [];
-  const last = turns.length ? turns[turns.length - 1] : null;
-
-  el("decisionRound").textContent = turns.length
-    ? `Round ${tfEsc(turns.length)} / ${tfEsc((session.spec || {}).max_rounds ?? "—")}`
-    : "—";
+  const maxRounds = tfNum((session.spec || {}).max_rounds, null);
+  // [P0 REGRESSION — 2026-10-17 稽核] 舊版用 `history.length` 當回合數，而
+  // 人工核准/交涉紀錄也會進 history，於是畫面出現「Round 6 / 5」。現在改用
+  // 引擎自己的 current_round（真實對手輪次），超過上限時明確標示。
+  const curRound = tfNum(session.current_round, null);
+  if (curRound === null) {
+    el("decisionRound").textContent = "—";
+  } else if (maxRounds !== null && curRound > maxRounds) {
+    el("decisionRound").textContent = `${curRound} rounds (limit ${maxRounds})`;
+  } else {
+    el("decisionRound").textContent = `Round ${curRound} / ${maxRounds === null ? "—" : maxRounds}`;
+  }
 
   // 供應商意圖：歷史輪次不持久化 intent，改顯示最後一則對手原文（截斷）
   const lastOpp = [...turns].reverse().find((t) => t.sender === "opponent");
@@ -363,28 +511,84 @@ function renderEngineDecision(session) {
     el("decisionIntent").textContent = "—";
   }
 
-  // 建議還價：顯示我方最後一次出價（真實持久化值）
-  const ours = tfNum(session.latest_our_offer, null);
-  el("decisionCounter").textContent = ours == null ? "—" : `¥${ours.toFixed(2)}`;
+  // 建議還價：優先顯示引擎最近一次建議（copilot 模式持久化在對手輪的
+  // metadata.recommended_offer_price），其次才是已核准/已送出的最後報價。
+  // 舊版只讀 latest_our_offer，在 copilot 模式下永遠是 null → "—"，評審在
+  // 決策面板上看不到引擎到底建議多少。缺值一律 "—"，絕不填 0。
+  let recommended = null;
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const meta = turns[i].metadata || {};
+    const v = tfNum(meta.recommended_offer_price, null);
+    if (v !== null) { recommended = v; break; }
+  }
+  const shownOffer = recommended !== null ? recommended : tfNum(session.latest_our_offer, null);
+  el("decisionCounter").textContent = shownOffer === null ? "—" : `¥${shownOffer.toFixed(2)}`;
 
-  // 破局風險：取最後一輪真實 p_break
-  const risk = last ? tfNum(last.p_break, null) : null;
-  el("decisionRisk").textContent = risk == null ? "—" : `${(risk * 100).toFixed(1)}%`;
-  el("decisionRisk").style.color = risk == null ? "" : (risk >= 0.15 ? "#f43f5e" : "#10b981");
+  // 破局風險：取最近一輪**有量測值**的 p_break。人工核准輪沿用上一輪的實測值，
+  // 但舊資料可能有 p_break=null；一律往回找到第一個真實值，找不到就 "—"。
+  let risk = null;
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const v = tfNum(turns[i].p_break, null);
+    if (v !== null) { risk = v; break; }
+  }
+  el("decisionRisk").textContent = risk === null ? "—" : `${(risk * 100).toFixed(1)}%`;
+  el("decisionRisk").style.color = risk === null ? "" : (risk >= 0.15 ? "#f43f5e" : "#10b981");
 
-  // 最新生成話術：找最後一則我方（AI 或人工核准）的發言
+  // 最新生成話術：先找最後一則我方（AI 或人工核准）的發言；copilot 模式不會
+  // 產生我方輪次，話術存在對手輪 metadata.generated_reply（後端持久化），
+  // 否則重新整理頁面後這段「要人工貼回去」的話就消失成 "—"。
   const lastOurs = [...turns].reverse().find(
     (t) => t.sender === "buyer_agent" || t.sender === "buyer_human_approved"
   );
-  el("decisionReply").textContent =
-    lastOurs && lastOurs.raw_text ? String(lastOurs.raw_text) : "—";
+  let replyText = lastOurs && lastOurs.raw_text ? String(lastOurs.raw_text) : null;
+  if (!replyText) {
+    for (let i = turns.length - 1; i >= 0; i -= 1) {
+      const meta = turns[i].metadata || {};
+      if (typeof meta.generated_reply === "string" && meta.generated_reply.trim()) {
+        replyText = meta.generated_reply;
+        break;
+      }
+    }
+  }
+  el("decisionReply").textContent = replyText || "—";
+}
+
+// The draft is meant to be pasted into the supplier chat by a human. Until now
+// the dashboard only displayed it, so the operator had to select text by hand.
+function copyDraftReply() {
+  const btn = document.getElementById("copyReplyBtn");
+  const node = document.getElementById("decisionReply");
+  const text = node ? node.textContent.trim() : "";
+  const say = (label) => {
+    if (!btn) return;
+    const original = "Copy draft";
+    btn.textContent = label;
+    setTimeout(() => { btn.textContent = original; }, 1800);
+  };
+
+  if (!text || text === "—") {
+    say("Nothing to copy");
+    return;
+  }
+  if (!navigator.clipboard || !navigator.clipboard.writeText) {
+    say("Select the text and copy");
+    return;
+  }
+  navigator.clipboard.writeText(text).then(
+    () => say("Copied"),
+    () => say("Clipboard blocked")
+  );
 }
 
 function updateBeliefChartWithTurns(session) {
   if (!beliefChart) return;
   const labels = ["Prior"];
-  const target = session.spec ? session.spec.target_price : 12.0;
-  const postData = [1.08 * target];
+  const target = session.spec ? tfNum(session.spec.target_price, null) : null;
+  // [P0 REGRESSION — 2026-10-17 稽查] 舊版先驗點硬編成 `1.08 * target`，即使
+  // 會話的 prior_reserve_mean 不是 1.08（例如 1.20 的 CNC/電池情境）也照畫；
+  // 這是拿預設常數冒充該會話的先驗。改讀 spec.prior_reserve_mean。
+  const priorMean = session.spec ? tfNum(session.spec.prior_reserve_mean, null) : null;
+  const postData = [priorMean !== null && target !== null ? priorMean * target : null];
   // [修正] 舊版把 Prior 的 Breakdown Risk 硬編成 5.0%，但後端從未提供任何
   // prior 破裂風險 —— 這是捏造數字。改為 null（未知），由後端/第一輪資料帶入。
   const riskData = [null];
@@ -392,14 +596,27 @@ function updateBeliefChartWithTurns(session) {
   const turns = session.history || session.turns || [];
   turns.forEach((t, idx) => {
     labels.push(`R${t.round_index}`);
-    postData.push(t.posterior_mean ? t.posterior_mean * target : target);
-    riskData.push(t.p_break ? t.p_break * 100 : 0);
+    // 缺值一律 null（圖上斷點）；不得以 0 冒充「零風險/零後驗」。
+    const pm = tfNum(t.posterior_mean, null);
+    postData.push(pm !== null && target !== null ? pm * target : null);
+    const pb = tfNum(t.p_break, null);
+    riskData.push(pb === null ? null : pb * 100);
   });
 
   beliefChart.data.labels = labels;
   beliefChart.data.datasets[0].data = postData;
   beliefChart.data.datasets[1].data = riskData;
   beliefChart.update();
+  setBeliefChartEmpty(turns.length === 0);
+}
+
+// An empty Chart.js canvas renders a 0–1.0 axis, which looks like a broken
+// measurement. Cover it with a sentence until there is something to plot.
+function setBeliefChartEmpty(isEmpty) {
+  const empty = document.getElementById("beliefEmpty");
+  const canvas = document.getElementById("beliefChart");
+  if (empty) empty.hidden = !isEmpty;
+  if (canvas) canvas.style.visibility = isEmpty ? "hidden" : "visible";
 }
 
 // Category presets. Each entry carries the FULL mandate, not just display
@@ -408,13 +625,17 @@ function updateBeliefChartWithTurns(session) {
 // original umbrella spec. The values below are now POSTed to
 // /api/v1/sessions so the displayed mandate and the enforced mandate agree.
 const CATEGORY_PRESETS = {
+  // [P0 REGRESSION — 2026-10-17 稽核] 舊版在 tooling 欄位顯示寫死的金額
+  // （¥3,000 / ¥8,000 / ¥15,000），但這筆金額從未被送出、也從未由供應商報出，
+  // 是純展示層的捏造數字（後端早已移除同一個 3000.0 硬編值）。
+  // 政策文字只描述我方立場；金額一律由實際對話/會話決定。
   umbrella: {
     name: "Custom Carbon Auto Umbrella",
     target: 12.0,
     ceiling: 16.2,
     lead: "12 - 35 Days",
     deposit: "30% - 50%",
-    tooling: "Exemption Demanded (¥3,000)",
+    tooling: "Exemption Demanded (amount only if the supplier quotes one)",
     moq: 5000
   },
   cnc_case: {
@@ -423,7 +644,7 @@ const CATEGORY_PRESETS = {
     ceiling: 36.5,
     lead: "15 - 40 Days",
     deposit: "25% - 45%",
-    tooling: "Tooling Waived (¥8,000)",
+    tooling: "Tooling waiver requested (no amount assumed)",
     moq: 2000
   },
   battery: {
@@ -432,7 +653,7 @@ const CATEGORY_PRESETS = {
     ceiling: 240.0,
     lead: "20 - 45 Days",
     deposit: "30% - 60%",
-    tooling: "Certification Waived (¥15,000)",
+    tooling: "Certification cost: to be quoted, not assumed",
     moq: 500
   }
 };
@@ -633,8 +854,9 @@ async function runMultiAuction() {
 
     summaryEl.innerHTML = `
       <strong>Winner:</strong> ${tfEsc(data.winning_supplier)} @ ¥${tfNum(data.winning_price, 0).toFixed(2)}<br/>
-      <strong>Savings:</strong> ¥${tfNum(data.total_savings_cny, 0).toLocaleString()} (${(tfNum(data.total_savings_pct, 0) * 100).toFixed(1)}%)<br/>
-      <strong>Rollouts:</strong> ${tfNum(data.total_rollouts, 0).toLocaleString()} | Compute: ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)})
+      <strong>Savings vs walk-away ceiling</strong> (¥${tfNum(data.walk_away_ceiling, 0).toFixed(2)}): ¥${tfNum(data.total_savings_cny, 0).toLocaleString()} (${(tfNum(data.total_savings_pct, 0) * 100).toFixed(1)}%)<br/>
+      <strong>Savings vs first quote</strong> (¥${tfNum(data.first_round_best_quote, 0).toFixed(2)}): ¥${tfNum(data.savings_vs_first_quote_cny, 0).toLocaleString()} (${(tfNum(data.savings_vs_first_quote_pct, 0) * 100).toFixed(1)}%)<br/>
+      <strong>Tensor grid cells:</strong> ${tfNum(data.total_rollouts, 0).toLocaleString()} (parameterised K×S×N_open×N_sched, not measured iterations) | Compute: ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)})
     `;
     summaryEl.classList.remove("hidden");
 
