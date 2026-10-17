@@ -103,6 +103,9 @@ jobs:
       - name: Verify documentation links resolve
         run: python scripts/check_doc_links.py
 
+      - name: Check documented numbers against source files
+        run: python scripts/check_claims.py
+
       # Run the guard tests explicitly so a regression in a security/integrity
       # gate is visible as a named CI step rather than buried in the suite.
       - name: Run security and integrity guard tests

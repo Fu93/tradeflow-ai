@@ -853,6 +853,7 @@ async function runMultiAuction() {
     });
 
     summaryEl.innerHTML = `
+      <strong>Simulated suppliers</strong> (parameterised archetypes, not live factory quotes).<br/>
       <strong>Winner:</strong> ${tfEsc(data.winning_supplier)} @ ¥${tfNum(data.winning_price, 0).toFixed(2)}<br/>
       <strong>Savings vs walk-away ceiling</strong> (¥${tfNum(data.walk_away_ceiling, 0).toFixed(2)}): ¥${tfNum(data.total_savings_cny, 0).toLocaleString()} (${(tfNum(data.total_savings_pct, 0) * 100).toFixed(1)}%)<br/>
       <strong>Savings vs first quote</strong> (¥${tfNum(data.first_round_best_quote, 0).toFixed(2)}): ¥${tfNum(data.savings_vs_first_quote_cny, 0).toLocaleString()} (${(tfNum(data.savings_vs_first_quote_pct, 0) * 100).toFixed(1)}%)<br/>

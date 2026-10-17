@@ -16,11 +16,10 @@
    若將 S 提升至 50,000，每輪為 24M；最大策略網格 (n_open=40, n_sched=12) 搭配
    S=50,000 時為 96M rollouts，但**示範路徑並未使用該網格**，故對外引用實測值。
 
-[硬體誠實揭露] 舊版此處寫「支援 AMD ROCm/CuPy 顯存加速」。本專案**從未在
-AMD 硬體上執行過**（開發機為 Intel Core Ultra 7 355，無獨立 GPU、無 ROCm）。
-此層的 `_get_xp(use_gpu=True)` 之「CuPy/ROCm 分支」是**未經實際驗證的**
-潛在路徑；實際執行一律回落至 NumPy CPU。對外所有效能數字皆為 CPU 實測，
-MI300X 的唯一量化是 benchmark.py 的 roofline 資料搬運下界。
+[硬體誠實揭露] `results/bench.json` 的 `is_gpu_active` 為 false，
+`hardware_detected` 是 CPU。本儲存庫沒有 AMD GPU 實測。
+`_get_xp(use_gpu=True)` 在 CuPy 不存在時回落 NumPy，不會把 CPU 計時說成 GPU。
+MI300X 的唯一量化是 benchmark.py 的 roofline 資料搬運下界（見 bench.json）。
 """
 from __future__ import annotations
 import time
@@ -271,7 +270,24 @@ class MultiSupplierSolver:
         p_break_array = []
         exp_margin_array = []
 
+        # The strategy grid is built up to YOUR_CEILING, which can sit above a
+        # tighter session ceiling. Openings outside the mandate are not candidates.
+        # If none of the grid is legal, the only authorized offer is the ceiling
+        # itself (no concession schedule), and the round is reported as broken.
+        legal_open = np.asarray(opens, dtype=np.float64) <= (
+            float(self.walk_away_ceiling) + 1e-9
+        )
+        if np.any(legal_open):
+            scores_np = np.array(scores_np, dtype=np.float64, copy=True)
+            scores_np[:, ~legal_open, :] = -np.inf
+
         for i in range(k):
+            if not np.any(legal_open):
+                best_offers.append(float(self.walk_away_ceiling))
+                best_sched_curves.append([0.0] * int(np.asarray(scheds).shape[1]))
+                p_break_array.append(1.0)
+                exp_margin_array.append(0.0)
+                continue
             flat_idx = int(np.argmax(scores_np[i]))
             i_open, i_sched = divmod(flat_idx, n_sched)
             best_offers.append(float(opens[i_open]))
@@ -307,7 +323,9 @@ class MultiSupplierSolver:
             "exp_margin_array": exp_margin_array,
             "tactics": tactics,
             "effective_ceilings": [float(x) for x in effective_ceilings],
-            "circuit_tripped": any(p >= 0.15 for p in p_break_array),
+            "circuit_tripped": any(
+                model.breakdown_circuit_tripped(p) for p in p_break_array
+            ),
         }
 
 

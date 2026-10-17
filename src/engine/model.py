@@ -7,8 +7,18 @@ from __future__ import annotations
 import numpy as np
 
 # 你的 walk-away 上限（規格目標價 ¥12 的 1.35 倍）。實際金額在 demo 層乘上。
+# 這是策略網格的歸一化上界，不是某次實測。
 YOUR_CEILING = 1.35
 ROUNDS = 5
+
+# 破局機率達到此值就熔斷，交給人。啟發式安全門檻，不是擬合出來的臨界值。
+# main.py、multi_solver.py、proposal.py 與擴充套件的顯示門檻都對這一個數。
+BREAKDOWN_TRIP_THRESHOLD = 0.15
+
+
+def breakdown_circuit_tripped(p_break: float) -> bool:
+    """True when a breakdown probability reaches the shared safety threshold."""
+    return float(p_break) >= BREAKDOWN_TRIP_THRESHOLD
 
 # 對手類型：[reserve 底價乘數, urgency 急單度, bluff 詐唬機率, conc_rate 每輪讓步傾向]
 OPP_TYPES = np.array(

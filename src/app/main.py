@@ -36,7 +36,7 @@ except Exception as _dotenv_err:  # pragma: no cover - 缺套件時不應讓 API
     )
 
 from ..engine.backend import describe_solver_backend, resolve_use_gpu
-from ..engine.llm_config import evolus_credentials, llm_status
+from ..engine.llm_config import llm_status
 from ..engine import (
     solve,
     recommend,
@@ -1468,7 +1468,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                 "mold_fee": getattr(inbound_classification, "demanded_mold_fee", None),
                 "moq": offered_moq,
                 "lead_days": action.offered_lead_days,
-                "deposit_pct": None,
+                "deposit_pct": action.deposit_pct,
             },
             "bayesian_confidence": float(bayesian_confidence),
             "expected_margin": float(rec.get("expected_margin_price", 0.0)),
@@ -1488,8 +1488,11 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     trip_reason = None
     if inbound_classification.requires_escalation:
         trip_reason = f"Security escalation: {inbound_classification.primary_intent.value} ({inbound_classification.tactical_rationale})"
-    elif p_break >= 0.15:
-        trip_reason = f"Breakdown risk {p_break:.1%} exceeds 15% safety limit."
+    elif model.breakdown_circuit_tripped(p_break):
+        trip_reason = (
+            f"Breakdown risk {p_break:.1%} exceeds "
+            f"{model.BREAKDOWN_TRIP_THRESHOLD:.0%} safety limit."
+        )
     elif opp_price and opp_price > ceiling_price:
         trip_reason = f"Opponent offer ¥{opp_price:.2f} breaches ceiling ¥{ceiling_price:.2f}."
     elif raw_recommended_price > ceiling_price:
@@ -1497,6 +1500,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
 
     if trip_reason:
         # 觸發熔斷！構建結構化策略對象並派發高階英文決策卡
+        from ..engine.logrolling import CorporateMandate
         trip_action_obj = TacticalActionObject(
             schema_version=CURRENT_SCHEMA_VERSION,
             source_round_id=f"{session_id}_R{current_round}_{sess.spec.supplier_id}",
@@ -1509,10 +1513,26 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             posterior_reserve_std=post_std,
             bayesian_confidence=bayesian_confidence,
             estimated_floor_price=floor_price_est,
-            tactical_mode=TacticalModeEnum.FIRM_HOLD if p_break < 0.15 else TacticalModeEnum.WALK_AWAY,
+            tactical_mode=(
+                TacticalModeEnum.FIRM_HOLD
+                if not model.breakdown_circuit_tripped(p_break)
+                else TacticalModeEnum.WALK_AWAY
+            ),
             product_name=sess.spec.product_name,
-            lead_days=action.offered_lead_days or 25,
-            deposit_pct=action.deposit_pct or 0.30,
+            # Buyer-side planning defaults from CorporateMandate. A missing
+            # observation stays missing in session metadata; these fields describe
+            # OUR proposal and the card labels them as such. `or 25` would also
+            # treat a numeric 0 as missing.
+            lead_days=(
+                action.offered_lead_days
+                if action.offered_lead_days is not None
+                else int(CorporateMandate.model_fields["baseline_lead_days"].default)
+            ),
+            deposit_pct=(
+                action.deposit_pct
+                if action.deposit_pct is not None
+                else float(CorporateMandate.model_fields["baseline_deposit_pct"].default)
+            ),
             moq=offered_moq or sess.spec.moq,
             counterpart_intent=inbound_classification.primary_intent,
             counterpart_offered_price=opp_price,
@@ -1585,10 +1605,13 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             pass
     if not mandate_obj:
         b_moq = sess.spec.moq
+        # Buyer planning baseline. Do not copy the supplier's quoted lead into
+        # this field: a quoted lead of 10 fails CorporateMandate validation
+        # (min desired lead is 12) and used to 500 the round. The supplier's
+        # observed lead is applied later, only on SupplierCurrentOffer.
         mandate_obj = CorporateMandate(
             target_price=target_price,
             walk_away_ceiling=ceiling_price,
-            baseline_lead_days=action.offered_lead_days or 25,
             baseline_moq=b_moq,
             max_allowed_moq=max(1200, int(b_moq * 2)),
         )
@@ -1707,7 +1730,11 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         t_mode = (
             TacticalModeEnum.LEAN_IN
             if p_break < 0.08
-            else (TacticalModeEnum.CROSS_ANCHOR if p_break < 0.15 else TacticalModeEnum.SIDELINE)
+            else (
+                TacticalModeEnum.CROSS_ANCHOR
+                if not model.breakdown_circuit_tripped(p_break)
+                else TacticalModeEnum.SIDELINE
+            )
         )
         auth_price = recommended_offer_price
         # [假資料修正 §5.8] 與上方 supp_offer_obj 同一原則：這裡的 lead_days /
@@ -1956,6 +1983,10 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                 "Could not park autopilot deal candidate for session %s at "
                 "AWAITING_HUMAN_DECISION: %s", session_id, _st_err,
             )
+        # Operator alert only. The text tells the buyer the contract is not sent.
+        # Do not call Evolus (or any other outbound drafter) here: this branch
+        # runs before /approve, and a model call that produces reply text is not
+        # a human send.
         notifier.notify_deal_closed(
             session_id=session_id,
             product=sess.spec.product_name,
@@ -1963,25 +1994,6 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             savings_pct=(ceiling_price - opp_price) / ceiling_price,
             rounds=current_round,
         )
-        # [REGRESSION] 舊版 `except Exception: pass` 會靜默吞掉長達 60 秒的
-        # Evolus 外呼失敗，讓已成交的會話從未被公告。現在記錄例外。
-        if evolus_credentials():
-            try:
-                from ..evolus.client import EvolusClient
-                evolus_c = EvolusClient()
-                deal_summary = (
-                    f"Procurement Deal Closed: {sess.spec.product_name} at ¥{opp_price:.2f} "
-                    f"(Target: ¥{target_price:.2f}, MOQ: {sess.spec.moq}). "
-                    f"Completed in {current_round} rounds with total savings of "
-                    f"{((ceiling_price - opp_price) / ceiling_price):.1%}."
-                )
-                evolus_c.run_email_tool(notes=deal_summary, tone="professional")
-            except Exception as _ev_err:
-                logger.warning(
-                    "Deal-closed Evolus email notification failed for session %s: %s "
-                    "(the deal candidate is still reported in the response)",
-                    session_id, _ev_err,
-                )
 
     # [假資料修正 §5.7] 我方輪次同樣帶上本輪真實遙測值，讓「最近一輪」無論
     # 取自對手輪或我方輪，主管卡還原出的都是同一組數字（同一 session 不因

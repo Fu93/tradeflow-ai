@@ -59,7 +59,11 @@ def build_proposal(spec: dict, observed_offer: float | None = None):
         offers.append(min(cur, ceiling_mult))
     offers_px = [round(o * tp, 2) for o in offers]
 
-    risk = "APPROVE" if rec["breakdown_prob"] < 0.15 else "HUMAN_REVIEW"
+    risk = (
+        "APPROVE"
+        if rec["breakdown_prob"] < model.BREAKDOWN_TRIP_THRESHOLD
+        else "HUMAN_REVIEW"
+    )
     text = (
         f"Recommended opening ¥{offers_px[0]:.2f} (target ¥{tp:.2f}, walk-away ceiling "
         f"¥{ceiling_mult*tp:.2f}). Concede {curve[0]*100:.0f}% per round per the schedule. "

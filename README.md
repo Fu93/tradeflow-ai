@@ -56,7 +56,7 @@ The solver updates a reserve-price belief and searches opening prices and conces
 
 What is actually wired:
 
-1. **Language endpoint.** Stage-2 intent classification can call an OpenAI-compatible API. `.env.example` points `VLLM_BASE_URL` at the AMD tokenfactory base `https://developer.amd.com.cn/radeon/api/v1`. A committed measurement is [results/real_llm_benchmark_100.json](results/real_llm_benchmark_100.json) (2026-10-15, model `Qwen3.8-Flash-Next`, 348 calls, average latency 16.81 s, cost about $0.108). That file is a past run, not a promise that the endpoint is up today.
+1. **Language endpoint.** Stage-2 intent classification can call an OpenAI-compatible API. `.env.example` points `VLLM_BASE_URL` at the AMD tokenfactory base `https://developer.amd.com.cn/radeon/api/v1`. A committed measurement is [results/real_llm_benchmark_100.json](results/real_llm_benchmark_100.json) (2026-10-15, model `Qwen3.8-Flash-Next`, 348 calls, average latency 16.81 s, cost $0.108444). That file is a past run, not a promise that the endpoint is up today.
 2. **Check it yourself.** `python scripts/verify_amd_endpoint.py` writes `results/amd_endpoint_evidence.json`. With no key it records `skipped_no_credentials` and exits 0. That skip is not a successful check. Add `--chat` only when you are willing to spend tokens. The key is not written to the file.
 3. **Solver backend, selectable.** `TRADEFLOW_SOLVER_BACKEND=numpy` (default) or `cupy` / `rocm` / `auto`. `cupy` requests CuPy and falls back to NumPy if the import fails. Explicit `use_gpu=True/False` still overrides the environment. Code: `src/engine/backend.py`, `src/engine/solver.py`.
 4. **GPU-box benchmark.** On a machine with ROCm and CuPy:
@@ -65,16 +65,18 @@ What is actually wired:
    TRADEFLOW_SOLVER_BACKEND=cupy python scripts/benchmark_amd_gpu.py
    ```
 
-   The same command runs on CPU. `ran_on_amd_gpu` is true only when CuPy sees a device name that looks like AMD. The MI300X HBM3 number in the output is an **estimate**: host working set divided by AMD's published 5.3 TB/s peak. It is not a runtime and not a speedup.
+   The same command runs on CPU. `ran_on_amd_gpu` is true only when CuPy sees a device name that looks like AMD. The MI300X HBM3 number in the output is the roofline constant in results/bench.json (5300 GB/s, 5.3 TB/s), not a measured runtime.
 
-What this repository does **not** contain: a measured MI300X or other AMD GPU solve. [results/bench.json](results/bench.json) has `is_gpu_active: false`. Its `mi300x_transfer_lower_bound_seconds` values are the same kind of estimate. The development machine recorded for those figures is an Intel Core Ultra 7 355. [docs/deploy.md](docs/deploy.md) is a runbook for a future GPU box, not a log of a run that happened.
+What this repository does **not** contain: a measured MI300X or other AMD GPU solve. [results/bench.json](results/bench.json) has `is_gpu_active: false`. Its `mi300x_transfer_lower_bound_seconds` values use that same roofline constant, not a measured runtime. The bench file does not name a CPU model. [docs/deploy.md](docs/deploy.md) is a runbook for a future GPU box, not a log of a run that happened.
 
 ## Honest limits
 
 - No closed-loop purchase. Supplier lines in the stress transcript are a script.
-- Synthetic self-play ([results/self_play_benchmark.md](results/self_play_benchmark.md), 20 matches × 5 archetypes, seed 42) is a parameterised simulator. Engine savings in that table run from **8.8% to 20.0%**. Against the Hard-Bargainer the engine's 8.8% is behind the fixed 5%-per-round baseline's 9.2%.
+- Synthetic self-play ([results/self_play_benchmark.md](results/self_play_benchmark.md), 20 matches × 5 archetypes, seed 42) is a parameterised simulator. Engine savings in that table run from **8.8% to 20.0%**. Against the Hard-Bargainer the engine's 8.8% is behind the fixed 5%-per-round baseline's 9.2%. Seed 42 reproduces that table; it is not a variance estimate.
+- The real-model log above is a different experiment. Against a Bluffing Hardliner the recorded deal rate is 61.11%, with 0 budget violations in 94 completed matches.
 - Held-out accuracy of the on-device intent model on the synthetic set is **63.08%** (195 of 500 held out). An older 92% figure was a training-set score.
-- Stage-2 is off the request path by default because the recorded AMD calls take tens of seconds.
+- Stage-2 is off the request path by default because the recorded AMD calls average 16.81 s.
+- What was checked, and what was not: [docs/VERIFICATION.md](docs/VERIFICATION.md). `python scripts/check_claims.py` fails if a number in this file or in SUBMISSION.md drifts from its source.
 - The Evolus client is an optional email-draft adapter. The Evolus workflow was not created. This submission is not a second hackathon track.
 
 Submission copy, a 3–5 minute demo script, and a slide outline: [SUBMISSION.md](SUBMISSION.md).
