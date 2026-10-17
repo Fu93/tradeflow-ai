@@ -711,7 +711,16 @@ class TacticalActionObject(BaseModel):
         default=VendorTacticEnum.NORMAL_COUNTER_OFFER, description="辨識出之對手套路"
     )
     counterpart_offered_price: Optional[float] = Field(default=None, description="對手當前報價")
-    competing_lead_price: Optional[float] = Field(default=None, description="備選供應商錨定價")
+    competing_lead_price: Optional[float] = Field(
+        default=None,
+        description=(
+            "備選供應商錨定價。僅在使用者/呼叫端明確提供有憑據的比價來源時填值；"
+            "不得由 target_price / walk_away_ceiling / 對手報價等內部價格公式推算，"
+            "否則渲染器會以「合格樣品已給到 ¥X」的既成事實語氣對外送出一個"
+            "不存在的報價。未提供真實比價來源時保持 None，走「同規格同行報價」"
+            "的不帶金額話術。"
+        ),
+    )
     urgency_signal: str = Field(default="routine", description="緊迫度訊號")
     is_mixed_signal: bool = Field(default=False, description="是否為混合信號 (含報價且含試探/抱怨)")
     mixed_signal_note: Optional[str] = Field(default=None, description="混合信號摘要說明")
@@ -1156,13 +1165,21 @@ class EnglishExecutiveRenderer:
         """生成高管執行指令後的確認卡片 (Confirmation Card)。"""
         cls._check_schema_version(obj)
         floor_str = f"¥{obj.estimated_floor_price:.2f}" if obj.estimated_floor_price else "N/A"
+        # [假資料修正] lead_days / deposit_pct 是「我方條款」，不是對方報出的條件。
+        # 對方從未提交期或定金時，這兩個欄位只是模型預設／我方規劃值。舊版把它
+        # 們與已確定的 Settled Price 並列為 "Package Terms"，讓主管以為這些數字
+        # 都已經對方確認過。現在明確標示為「我方提案條款」，未經對方確認。
+        package_terms = (
+            f"• Package Terms (OUR proposal, not counterpart-confirmed): "
+            f"Lead Time: {obj.lead_days}d | Deposit: {obj.deposit_pct*100:.0f}% | MOQ: {obj.moq}"
+        )
         card = (
             f"=== [TradeFlow Action Execution Confirmation] ===\n"
             f"• Source Round ID: {obj.source_round_id or 'N/A'}\n"
             f"• Executed Directive: {command_executed}\n"
             f"• Target Product: {obj.product_name}\n"
             f"• Settled Authorized Price: ¥{obj.authorized_price:.2f}\n"
-            f"• Package Terms: Lead Time: {obj.lead_days}d | Deposit: {obj.deposit_pct*100:.0f}% | MOQ: {obj.moq}\n"
+            f"{package_terms}\n"
             f"• Bayesian Anchor: Floor: {floor_str} (Confidence: {obj.bayesian_confidence:.1%})\n"
             f"• Risk Telemetry: Breakdown Risk: {obj.breakdown_risk:.1%}\n"
             f"• Counterparty Action: Injected native Chinese procurement response to supplier chat"
@@ -1571,7 +1588,12 @@ class BilingualTacticalBridge:
         supplier_intent: Optional[VendorTacticEnum] = None,
         supplier_contact_name: str = "老闆",
     ) -> str:
-        """根據戰術類型、意圖反擊槓桿與鎖死價格生成地道國產採購話術。"""
+        """根據戰術類型、意圖反擊槓桿與鎖死價格生成地道國產採購話術。
+
+        注意：`competing_lead_price` 僅在使用者傳入**真實比價來源**時才會
+        渲染成金額；預設 None，話術走「同規格同行報價」的不帶金額表述。
+        本方法絕不自行由 `authorized_price` 等內部價格反推該數字。
+        """
         t_mode = (
             TacticalModeEnum(tactic)
             if tactic in TacticalModeEnum.__members__

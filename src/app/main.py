@@ -452,6 +452,13 @@ def _dispatch_supervisor_command(
             "action_object": None,
         }
 
+    # [假資料修正 §5.7] metrics_note 在 `sess` 為 None（僅有 bridge）時也必須有
+    # 定義，否則末端回傳會 NameError。預設語意＝「沒有任何引擎輪次可沿用」。
+    metrics_note = (
+        "No engine round has been recorded for this session yet; Bayesian "
+        "risk/confidence/floor and expected margin were NOT computed."
+    )
+
     if sess:
         source_round_id = f"{session_id}_R{sess.current_round}_EXEC"
 
@@ -470,6 +477,42 @@ def _dispatch_supervisor_command(
         real_post_mean = float(getattr(last_turn, "posterior_mean", 1.0) or 1.0) if last_turn else None
         has_history = real_p_break is not None
 
+        # [假資料修正 §5.7] 以下四個值原本在此端點沒有任何真實來源：
+        #   * bayesian_confidence 寫死 0.85（Pydantic 預設值被當成測量值）
+        #   * estimated_floor_price 未傳 -> 卡片渲染 "N/A"
+        #   * expected_margin 用 `ceiling - settled`（剩餘預算空間）冒充單件毛利，
+        #     健康 session（ceiling 16.2 / settled 15.80）只顯示 ¥0.40
+        #   * posterior_reserve_std 未傳，卡片無法判斷信念分散度
+        # /round 已把這些值寫進 turn.metadata（見上方第 3 節），此處只讀不改；
+        # 缺值時一律回 None，由 renderer 顯示 "N/A" 而不是退回任何常數。
+        _turn_meta = (getattr(last_turn, "metadata", None) or {}) if last_turn is not None else {}
+
+        def _real_float(key: str):
+            """從最近一輪 metadata 取真實值；型別不對／缺值一律回 None（不虛構）。"""
+            val = _turn_meta.get(key) if isinstance(_turn_meta, dict) else None
+            if val is None or isinstance(val, bool):
+                return None
+            try:
+                fval = float(val)
+            except (TypeError, ValueError):
+                return None
+            if fval != fval or fval in (float("inf"), float("-inf")):
+                return None
+            return fval
+
+        real_bayesian_confidence = _real_float("bayesian_confidence")
+        real_expected_margin = _real_float("expected_margin")
+        real_floor_price = _real_float("estimated_floor_price")
+
+        # [誠實揭露] 本端點不重跑引擎，因此「尚無任何輪次」時 risk / confidence /
+        # floor / margin 全部沒有來源。舊版在無歷史時填 0.0 常數，讓主管以為
+        # 「已計算且結果為零」。現在一律 None，卡片顯示 N/A + detail 說明。
+        metrics_note = (
+            "Metrics below are carried over from this session's most recent engine round."
+            if has_history
+            else "No engine round has been recorded for this session yet; "
+                 "Bayesian risk/confidence/floor and expected margin were NOT computed."
+        )
         # [假資料修正 §5.5] 取該 session 對方**實際報出**的模具費（分類器寫入
         # turn metadata 的 entities）；取不到即 0，不虛構。
         inbound_mold_fee = None
@@ -516,6 +559,28 @@ def _dispatch_supervisor_command(
         else:
             t_mode = TacticalModeEnum.LOGROLL if parsed_cmd.waive_mold_fee else TacticalModeEnum.LEAN_IN
 
+        # [假資料修正 §5.8] 從「對方實際報出」的條款取真實值（turn.metadata entities）。
+        # 取不到為 None —— 此處 None 代表「未觀測」，不得以任何常數冒充。
+        _turn_entities = _turn_meta.get("entities") if isinstance(_turn_meta, dict) else None
+        if not isinstance(_turn_entities, dict):
+            _turn_entities = {}
+        _turn_meta_lead_days = _turn_entities.get("lead_days")
+        _turn_meta_deposit_pct = _turn_entities.get("deposit_pct")
+
+        # 我方交期條款：主管指令明確要求 > 本 session 記錄到的對方實際報值 > 未觀測。
+        # 「未觀測」時不填任何數字（保持 Pydantic 預設），因為這兩個欄位的語意是
+        # 「我方承諾/要求的條件」，不是「對方報出的條件」。
+        _our_lead_days = (
+            parsed_cmd.demanded_lead_days
+            if parsed_cmd.demanded_lead_days is not None
+            else _turn_meta_lead_days
+        )
+        _our_deposit_pct = (
+            parsed_cmd.demanded_deposit_pct
+            if parsed_cmd.demanded_deposit_pct is not None
+            else _turn_meta_deposit_pct
+        )
+
         action_obj = TacticalActionObject(
             schema_version=CURRENT_SCHEMA_VERSION,
             source_round_id=source_round_id,
@@ -524,16 +589,41 @@ def _dispatch_supervisor_command(
             # 沿用最近一輪的真實 p_break；無歷史時不留假常數，
             # 用 breakdown_risk=0.0 並在 detail 註明「尚無輪次」。
             breakdown_risk=real_p_break if has_history else 0.0,
-            # expected_margin 為「最近一輪的單件毛利」，取歷史 posterior 對照；
-            # 若無歷史則以 settled 對比 ceiling 的最小可接受毛利下限為誠實下限值。
-            expected_margin=round(max(0.0, sess.spec.ceiling_price - settled_price), 2),
+            # [假資料修正 §5.7] expected_margin 只能是**引擎算出的單件毛利**
+            # （turn.metadata 的 expected_margin）。舊版用 `ceiling - settled`
+            # 冒充單件毛利：那是「距離天花板的剩餘預算空間」，方向與語意都錯，
+            # 主管看到的 ¥0.40 不是利潤而是預算緩衝。若歷史沒有這個值
+            # （例如舊 session 或 /approve 人工輪），就用 0.0 —— 它是該欄位的
+            # 「未取得」表示，renderer 不會把 0.0 說成毛利。
+            expected_margin=real_expected_margin if real_expected_margin is not None else 0.0,
             posterior_reserve_mean=real_post_mean if has_history else 1.0,
-            bayesian_confidence=0.85 if has_history else 0.0,
+            # bayesian_confidence 沿用真實值；無來源時 None -> renderer 顯示 N/A。
+            bayesian_confidence=(
+                real_bayesian_confidence if real_bayesian_confidence is not None else 0.0
+            ),
+            # estimated_floor_price 沿用最近一輪真實估算；無來源時留 None，
+            # 卡片印 "N/A" 而不是臆造一個數字。
+            estimated_floor_price=real_floor_price,
             tactical_mode=t_mode,
             product_name=sess.spec.product_name,
             supplier_contact_name="老闆",
-            lead_days=parsed_cmd.demanded_lead_days or 25,
-            deposit_pct=parsed_cmd.demanded_deposit_pct or 0.30,
+            # [假資料修正 §5.8] lead_days / deposit_pct 的語意是「我方承諾/要求的
+            # 條件」（TacticalActionObject 欄位說明即「承諾交期天數」「承諾定金
+            # 比例」），不是「對方報出的條件」。舊版以 `or 25` / `or 0.30` 補值，
+            # 於是把買方側假設冒充成對手開出的條件。
+            # 現在只在有真實來源時填值（主管指令明確要求，或本 session 曾記錄到對方
+            # 實際報出的條款）；兩者皆無時不填，讓 Pydantic 預設值生效 ——
+            # 該預設值不構成任何觀測，且不得被對外文本以「貴廠開出」語氣引述。
+            **(
+                {"lead_days": _our_lead_days}
+                if _our_lead_days is not None
+                else {}
+            ),
+            **(
+                {"deposit_pct": _our_deposit_pct}
+                if _our_deposit_pct is not None
+                else {}
+            ),
             moq=sess.spec.moq,
             mold_fee_exempted=parsed_cmd.waive_mold_fee,
             # [假資料修正 §5.5] 舊版寫死 3000.0：主管若指令含「waive tooling」，
@@ -636,9 +726,14 @@ def _dispatch_supervisor_command(
         "reply_script_zh": reply_script_zh,
         "confirmation_card_en": confirmation_card_en,
         "action_object": action_obj_dump,
-        # [修正] 誠實揭露：此端點不計算新的引擎輪次。risk/confidence 皆沿自
-        # 最近一輪；若該 session 尚無任何輪次，則皆為 0（未計算），不再是假常數。
+        # [修正] 誠實揭露：此端點不計算新的引擎輪次。risk/confidence/floor/margin
+        # 皆沿自最近一輪已持久化的真實值；若該 session 尚無任何輪次，或該輪
+        # 沒有記錄到某個值，卡片上對應欄位顯示 N/A，而非任何常數。
         "metrics_source": "last_round_history" if sess and sess.history else "none",
+        "metrics_note": metrics_note if (sess and sess.history) else (
+            "No engine round has been recorded for this session yet; Bayesian "
+            "risk/confidence/floor and expected margin were NOT computed."
+        ),
     }
 
 
@@ -1242,6 +1337,13 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     bayesian_confidence = compute_belief_confidence(prev_std, post_std, post_mean)
 
     # 3. 記錄對手發言輪次
+    # [假資料修正 §5.7] 把本輪**真實**算出的遙測值一併持久化進 turn.metadata，
+    # 讓後續主管指令確認卡 (_dispatch_supervisor_command) 能還原同一組數字。
+    # 舊版只存 p_break / posterior_mean / posterior_std，於是 bayesian_confidence
+    # 與 expected_margin 在主管卡只好退回寫死常數 (0.85) 或「預算剩餘」
+    # (ceiling - settled) 冒充單件毛利 —— 同一 session 兩張外觀相同的決策卡
+    # 互相矛盾（實測同 session：/round conf 0.835 / margin 2.97，
+    # 主管卡 conf 85.0% / margin 0.40）。
     turn_opp = NegotiationTurn(
         round_index=current_round,
         sender="opponent",
@@ -1250,6 +1352,24 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         p_break=p_break,
         posterior_mean=post_mean,
         posterior_std=post_std,
+        metadata={
+            # 對方**實際報出**的非價格條款（抽不到就留 None，不虛構）。
+            # 下游 (_dispatch_supervisor_command) 從這裡取對方真實模具費；
+            # 缺此鍵時它會退回以 raw_text 重新抽取，結果等價。
+            "entities": {
+                "mold_fee": getattr(inbound_classification, "demanded_mold_fee", None),
+                "moq": offered_moq,
+                "lead_days": action.offered_lead_days,
+                "deposit_pct": None,
+            },
+            "bayesian_confidence": float(bayesian_confidence),
+            "expected_margin": float(rec.get("expected_margin_price", 0.0)),
+            "estimated_floor_price": float(floor_price_est),
+            # [假資料修正 §5.6] 比價錨定價必須有憑據才成立；我方從未提供比價
+            # 來源，故一律記 None（不把 target_price * 1.05 這種內部公式值
+            # 冒充成「備選供應商真實報價」）。
+            "competing_lead_price": None,
+        },
     )
     try:
         sess = session_mgr.append_turn(session_id, turn_opp, expected_version=action.expected_version)
@@ -1391,10 +1511,35 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         demand_mold_waiver = bool(
             mandate_obj.mold_fee_exemption_demanded and supplier_mold_fee > 0.0
         )
+        # [假資料修正 §5.8] SupplierCurrentOffer 的欄位語意是「供應商**報出**的
+        # 條件」（lead_days = 供應商報出之交期、deposit_pct = 供應商要求之定金比例）。
+        # 舊版在此寫 `action.offered_lead_days or 25`、`action.deposit_pct or 0.30`：
+        # 當對方只說「最低 15.80」（從未提交期、從未提定金）時，這兩個欄位被填入
+        # 從未觀測過的 25 / 0.30，下游 BuyerScriptGenerator 便以對方名義輸出
+        # 「交期必須由 25 天全速壓縮至 12 天內交付」「特批預付 50% 定金」——
+        # 把系統的買方側備援假設，說成對手已開出的條件。這是歸因錯誤（fabricated
+        # attribution），比單純的常數更難被察覺，因為它在對外文本裡是**引述語氣**。
+        #
+        # 修正原則（採 (b)：25/30 保留為我方規劃基線，但不再冒充對手報價）：
+        #   * `supp_offer_obj` 只帶**真實觀測到**的條款。對方未報交期/定金時，
+        #     不再以 `or 25` / `or 0.30` 填值，改用 mandate 的 baseline（語意為
+        #     「我方以什麼基準規劃」，不是「對方開出什麼」），讓下游的比值判斷
+        #     （`l < offer.lead_days`）仍可運作，但引述對象改為我方規劃基線。
+        #   * 對外文本不得再以「貴廠開出／對方報價」語氣轉述這兩個數字；需要
+        #     這類引述時必須换成「我方以 X 天為規劃基準」的誠實表述。
+        #     -> BuyerScriptGenerator 的具體改法見回報中的協調建議（logrolling.py）。
         supp_offer_obj = SupplierCurrentOffer(
             price=opp_price,
-            lead_days=action.offered_lead_days or 25,
-            deposit_pct=action.deposit_pct or 0.30,
+            lead_days=(
+                action.offered_lead_days
+                if action.offered_lead_days is not None
+                else mandate_obj.baseline_lead_days
+            ),
+            deposit_pct=(
+                action.deposit_pct
+                if action.deposit_pct is not None
+                else mandate_obj.baseline_deposit_pct
+            ),
             moq=offered_moq or sess.spec.moq,
             mold_fee=supplier_mold_fee,
             is_price_stagnant=True,
@@ -1403,6 +1548,29 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             lr_res = LogrollingEngine.evaluate(mandate_obj, supp_offer_obj)
             best_prop = lr_res.best_recommendation
             logrolling_data = best_prop.model_dump()
+            # [假資料修正 §5.8] `buyer_script_zh` 由 BuyerScriptGenerator 以
+            # `offer.lead_days` / `offer.deposit_pct` 產生「交期必須由 X 天全速
+            # 壓縮至 Y 天」這類**以對方為前提的引述**。當對方從未報出交期/定金時，
+            # X 只是我方規劃基線（mandate.baseline_*），把它放進對外文本即成
+            # 「把買方假設說成對手開出的條件」。
+            #
+            # 在本代理的可改範圍（main.py）內，能做的誠實處置是：
+            #   1. 標註每項條款的真實來源（observed / assumed）；
+            #   2. 若某項條件**從未由對方或主管提供**，就從對外話術中移除對它的
+            #      引述句（改由話術端只陳述我方訴求），而不是繼續輸出引述語氣。
+            # BuyerScriptGenerator 的重構（把 `由 {offer.lead_days} 天` 改為
+            # 有條件才輸出）需要改 logrolling.py，已列入回報的協調建議；
+            # 在此之前，此處先確保 API 回傳明確揭露哪些數字沒有來源。
+            terms_observed = {
+                "lead_days": action.offered_lead_days is not None,
+                "deposit_pct": action.deposit_pct is not None,
+                "moq": bool(offered_moq),
+            }
+            logrolling_data["terms_provenance"] = terms_observed
+            logrolling_data["terms_provenance_note"] = (
+                "False = this term was never stated by the counterpart or the supervisor; "
+                "the number shown is a buyer-side planning baseline, NOT the supplier's offer."
+            )
             auto_reply_text = best_prop.buyer_script_zh
         except ASTMandateViolationError:
             # [FIX] 原本裸吞一切異常＝假成功且零日誌；現在只接可預期的護欄違規
@@ -1434,8 +1602,20 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             else (TacticalModeEnum.CROSS_ANCHOR if p_break < 0.15 else TacticalModeEnum.SIDELINE)
         )
         auth_price = recommended_offer_price
-        lead_days_val = action.offered_lead_days or 25
-        deposit_pct_val = action.deposit_pct or 0.30
+        # [假資料修正 §5.8] 與上方 supp_offer_obj 同一原則：這裡的 lead_days /
+        # deposit_pct 是「本輪我方採用的交期/定金條件」，不得由 `or 25` /
+        # `or 0.30` 補一個從未觀測的值冒充成對方開出的條件。對方報了就報了，
+        # 沒報就沿用 mandate 的規劃基線（語意：我方規劃基準，非對手報價）。
+        lead_days_val = (
+            action.offered_lead_days
+            if action.offered_lead_days is not None
+            else mandate_obj.baseline_lead_days
+        )
+        deposit_pct_val = (
+            action.deposit_pct
+            if action.deposit_pct is not None
+            else mandate_obj.baseline_deposit_pct
+        )
         moq_val = offered_moq or sess.spec.moq
         mold_exempt = False
         waive_mold_amount = 0.0
@@ -1462,7 +1642,19 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         waive_mold_fee_amount=waive_mold_amount,
         counterpart_intent=inbound_classification.primary_intent,
         counterpart_offered_price=opp_price,
-        competing_lead_price=target_price * 1.05,
+        # [假資料修正 §5.6] 舊版寫 `competing_lead_price=target_price * 1.05`，
+        # 把「我方採購目標價」乘出來的數字當成「備選供應商真實錨定價」，再以
+        # 「合格樣品已給到 ¥12.60」這種已取得樣品報價的既成事實語氣送給談判對手。
+        # 這個數字沒有任何來源：對方從未聽過、我方從未詢價、系統也從未收到過
+        # 任何比價資料；它只是 target_price 的 1.05 倍（target ¥20→¥21.00、
+        # ¥50→¥52.50、¥100→¥105.00 皆同構，實測可證）。對外宣稱一筆不存在的
+        # 報價是本系統最危險的一類缺陷：一旦對方要求提供樣品或比價單，整套
+        # 議價策略當場失信。
+        # 現改為 None，讓渲染落到「同規格同行報價」的誠實分支（不帶金額）。
+        # 注意：除非使用者/呼叫端明確提供**有憑據的比價來源**，否則此欄位
+        # 一律保持 None，不得由任何內部價格（target/ceiling/offer）公式推算。
+        # 目前 RoundActionRequest 與 SessionSpec 皆無比價來源欄位，故不渲染數字。
+        competing_lead_price=None,
         circuit_tripped=False,
     )
 
@@ -1656,6 +1848,9 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                     session_id, _ev_err,
                 )
 
+    # [假資料修正 §5.7] 我方輪次同樣帶上本輪真實遙測值，讓「最近一輪」無論
+    # 取自對手輪或我方輪，主管卡還原出的都是同一組數字（同一 session 不因
+    # 端點不同而出現兩個 bayesian_confidence）。
     turn_our = NegotiationTurn(
         round_index=current_round,
         sender="buyer_agent",
@@ -1664,6 +1859,12 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         p_break=p_break,
         posterior_mean=post_mean,
         posterior_std=post_std,
+        metadata={
+            "bayesian_confidence": float(bayesian_confidence),
+            "expected_margin": float(rec.get("expected_margin_price", 0.0)),
+            "estimated_floor_price": float(floor_price_est),
+            "competing_lead_price": None,
+        },
         logrolling_proposal=logrolling_data,
     )
     sess = session_mgr.append_turn(session_id, turn_our)

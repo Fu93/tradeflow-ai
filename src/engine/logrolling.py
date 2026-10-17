@@ -264,7 +264,15 @@ class BuyerScriptGenerator:
         demand_parts = []
         if l < offer.lead_days:
             demand_parts.append(f"交期必須由 {offer.lead_days} 天全速壓縮至 {l} 天內交付")
-        if mold_exempt:
+        # [P1 誠實性守門] 模具費減免主張必須同時滿足兩個前提：
+        #   (1) mandate 授權要求免除模具費（`mold_fee_exemption_demanded`）；
+        #   (2) 對方**真的開過**模具費（`offer.mold_fee > 0`）。
+        # 舊版只看 `mold_exempt`，因此在對方從未報出模具費時仍對外宣稱
+        # 「模具費由貴廠全額減免」—— 一筆對方從未開過價的錢。
+        mold_waiver_grounded = bool(
+            mold_exempt and mandate.mold_fee_exemption_demanded and offer.mold_fee > 0.0
+        )
+        if mold_waiver_grounded:
             demand_parts.append(f"本期首批模具/打樣費 ¥{offer.mold_fee:.0f} 由貴廠全額減免")
         if p < offer.price:
             demand_parts.append(f"單價按批量折讓落定在 ¥{p:.2f}")
@@ -283,9 +291,13 @@ class BuyerScriptGenerator:
         en_script = (
             f"Dear Partner, regarding your quotation at ¥{p:.2f}/unit: To accommodate your cost constraints, "
             f"our treasury has approved an immediate {d_pct}% cash deposit today to secure raw materials and reserve capacity. "
-            f"In return for this cashflow concession, production lead time must be expedited to {l} days, "
-            f"and the tooling fee of ¥{offer.mold_fee:.0f} must be fully waived for this batch. "
-            f"This represents our executive mandate for today's PO sign-off. Please confirm so we can release the payment immediately."
+            f"In return for this cashflow concession, production lead time must be expedited to {l} days. "
+            + (
+                f"The tooling fee of ¥{offer.mold_fee:.0f} must also be fully waived for this batch. "
+                if mold_waiver_grounded
+                else ""
+            )
+            + f"This represents our executive mandate for today's PO sign-off. Please confirm so we can release the payment immediately."
         )
 
         return zh_script, en_script
@@ -327,6 +339,24 @@ class LogrollingEngine:
         if proposal.proposed_moq > mandate.max_allowed_moq:
             return False
         if proposal.supplier_surplus_estimate < 0.0:
+            return False
+        # [P1 誠實性守門] 第二道防線：即使未來有人新增候選時忘記加上面的
+        # 「`mandate.mold_fee_exemption_demanded`」守門，這裡也必須拒絕任何
+        # 「宣稱免除模具費、但 mandate 並未授權該主張」的提案。
+        #
+        # 沒有這道防線的實測後果（策略 4 舊版）：`mold_fee_exemption_demanded=False`
+        # 且對方 `mold_fee=0.0` 時，候選仍掛 `mold_exempt=True`，並以
+        # `mandate.estimated_mold_fee`（預設 3000、LIMITATIONS §十三自述為未校準
+        # 選定值）乘上一筆不存在的減免，把虛構收益灌進 `buyer_surplus_value`
+        # 贏得排名；話術同時對外承諾「模具費由貴廠全額減免」。
+        if proposal.mold_fee_exempted and not mandate.mold_fee_exemption_demanded:
+            return False
+        # 話術與決策必須一致：掛了 PRICE_FOR_TOOLING 就必須真的免除模具費。
+        # 否則等於「聲稱換了模具費卻沒換」，是另一種不誠實的置換。
+        if (
+            TradeoffType.PRICE_FOR_TOOLING in proposal.tradeoff_types_used
+            and not proposal.mold_fee_exempted
+        ):
             return False
         return True
 
@@ -415,10 +445,19 @@ class LogrollingEngine:
                 ))
 
         # 條款置換策略 4: 全維度複合黃金置換 (Triple Logrolling Synergy)
+        # [P1 誠實性守門] 舊版此處**沒有**檢查 `mandate.mold_fee_exemption_demanded`
+        # 就硬掛 `mold_exempt=True`（策略 2 有檢查）。於是當對方從未報出模具費
+        # （main.py 已據此把該旗標設為 False）時，引擎仍產生「模具費全額減免」
+        # 提案，並以 `mandate.estimated_mold_fee`（預設 3000、未校準的選定值）
+        # 乘上一筆不存在的減免，算出虛構收益贏得排名（實測贏家買方剩餘
+        # 4824.59，第二名僅 1247.53），其話術更直接對外承諾「由貴廠全額減免」。
+        # 現補上與策略 2 完全相同的守門：mandate 未要求免除模具費，就不產生
+        # 任何宣稱模具全免的候選。
         if (
             TradeoffType.DEPOSIT_FOR_LEADTIME in mandate.allowed_tradeoffs
             and TradeoffType.VOLUME_FOR_PRICE in mandate.allowed_tradeoffs
             and TradeoffType.PRICE_FOR_TOOLING in mandate.allowed_tradeoffs
+            and mandate.mold_fee_exemption_demanded
         ):
             _register(cls._create_proposal(
                 name="全維度超級置換 (Triple Logrolling: Deposit + Volume + Tooling)",
@@ -524,7 +563,17 @@ class LogrollingEngine:
         price_surplus = (mandate.walk_away_ceiling - p) * required_qty
 
         lead_surplus = mandate.lead_day_shadow_value * max(0, mandate.baseline_lead_days - l) * required_qty
-        mold_surplus = mandate.estimated_mold_fee if mold_exempt else 0.0
+        # [P1 誠實性守門] 模具費減免只有在「mandate 授權該主張」時才計入買方收益。
+        # 舊版只看 `mold_exempt` 參數本身，等於把 `mandate.estimated_mold_fee`
+        # （預設 3000、LIMITATIONS §十三自述為未校準選定值）當成已實現的收益；
+        # 一旦候選忘記檢查 `mold_fee_exemption_demanded`，這筆虛構收益就會
+        # 主導排名。現改為以 mandate 的授權旗標為前提。
+        # 另外對方若從未報出模具費（`offer.mold_fee <= 0`），也沒有「減免」可言。
+        mold_surplus = (
+            mandate.estimated_mold_fee
+            if (mold_exempt and mandate.mold_fee_exemption_demanded and offer.mold_fee > 0.0)
+            else 0.0
+        )
 
         extra_deposit_pct = max(0.0, d - mandate.baseline_deposit_pct)
         buyer_deposit_cost = p * q * extra_deposit_pct * mandate.buyer_capital_cost_rate * (l / 365.0)
@@ -546,7 +595,13 @@ class LogrollingEngine:
             * (max(0, mandate.baseline_lead_days - l) ** mandate.supplier_rush_cost_exponent)
             * q
         )
-        supplier_mold_cost = (mandate.estimated_mold_fee * 0.5) if mold_exempt else 0.0
+        # 與買方模具收益同步：只有在 mandate 授權、且對方真的開過模具費時，
+        # 供應商端才承擔對應的模具成本。否則又是一筆單方面的虛構數字。
+        supplier_mold_cost = (
+            (mandate.estimated_mold_fee * 0.5)
+            if (mold_exempt and mandate.mold_fee_exemption_demanded and offer.mold_fee > 0.0)
+            else 0.0
+        )
 
         supplier_total_surplus = supplier_profit + supplier_cash_gain - supplier_rush_cost - supplier_mold_cost
 
