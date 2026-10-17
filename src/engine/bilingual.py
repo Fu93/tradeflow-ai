@@ -360,30 +360,19 @@ class InboundIntentClassifier:
         import os
         import json
 
-        # 憑證必須與端點配對，不可跨端點混用（否則會以 A 端點的 key 打 B 端點而 401）。
-        # 優先使用 VLLM_*（AMD tokenfactory / 自架 vLLM）；僅在未配置時才退回 Evolus。
-        # 同時視 __FILL_ME__ 等佔位符為「未配置」，避免佔位符遮蔽真實可用的金鑰。
-        def _real(v: str | None) -> str | None:
-            if not v:
-                return None
-            s = v.strip()
-            if not s or s.startswith("__FILL") or s.lower() in ("none", "null", "changeme"):
-                return None
-            return s
+        # 憑證必須與端點配對。VLLM_*（AMD tokenfactory / 自架 vLLM）優先；
+        # Evolus 金鑰只打 evolus.ai。__FILL_ME__ 視為未配置，避免離線 demo 外呼。
+        from .llm_config import resolve_chat_endpoint
 
         cls.last_llm_error = None
         cls.last_llm_latency_ms = None
         _t0 = None
 
-        base_url = _real(os.getenv("VLLM_BASE_URL")) or "https://api.evolus.ai/v1"
-        if _real(os.getenv("VLLM_API_KEY")):
-            api_key = os.getenv("VLLM_API_KEY")
-        elif "evolus.ai" in base_url:
-            api_key = _real(os.getenv("EVOLUS_API_KEY"))
-        else:
-            api_key = _real(os.getenv("EVOLUS_API_KEY")) or _real(os.getenv("VLLM_API_KEY"))
-        if not _real(api_key):
+        endpoint = resolve_chat_endpoint()
+        if endpoint is None:
             return None
+        base_url = endpoint["base_url"]
+        api_key = endpoint["api_key"]
 
         prompt = (
             "你是 B2B 採購風控分析器。分析下列中國工廠業務員的訊息，只輸出嚴格 JSON，不要任何說明文字。\n"
@@ -410,7 +399,7 @@ class InboundIntentClassifier:
             # 實際上是每次都被客戶端自己切斷。現在 timeout 可配置（預設 90 秒），
             # 且失敗原因會記錄並可經 last_llm_error 回報。
             payload = {
-                "model": os.getenv("VLLM_MODEL", "Qwen3.8-Flash-Next"),
+                "model": endpoint["model"],
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.0,
                 "max_tokens": int(os.getenv("VLLM_MAX_TOKENS", "500")),
@@ -496,9 +485,10 @@ class InboundIntentClassifier:
         - Stage 1: 微秒級確定性正則階梯 (Deterministic Regex Ladder)
         - Stage 2: 複雜語意與長文本語意 LLM 意圖推理 (Semantic LLM Fallback)
 
-        [PERFORMANCE] Stage-2 為同步網路呼叫，實測在 AMD tokenfactory 上需 2–13 秒。
-        對於延遲敏感的呼叫端（例如同步 HTTP 請求），應改用
-        `classify_stage1_only()` 取得即時結果，再以 `classify_with_llm()` 非同步補強。
+        [PERFORMANCE] Stage-2 是同步網路呼叫。已記錄的 AMD tokenfactory 延遲
+        在十秒級（見 results/real_llm_benchmark_100.json 的 llm_avg_latency_s，
+        以及後來 15–45 秒的複測筆記），不適合放在同步 HTTP 路徑上。請改用
+        `classify_stage1_only()`，需要時再以 `classify_with_llm()` 非同步補強。
         """
         return cls._classify_impl(raw_text, enable_llm_fallback=enable_llm_fallback)
 
@@ -1302,13 +1292,15 @@ class CrossLingualSanityChecker:
                 "critique": "Detected stiff translation syntax or foreign buyer leak words.",
             }
 
-        # Stage 2 LLM 對抗性語意審計 (若配置金鑰且啟用)
+        # Stage 2 LLM 對抗性語意審計。佔位符金鑰不外呼；金鑰與主機必須配對。
         import os
-        api_key = os.getenv("EVOLUS_API_KEY") or os.getenv("VLLM_API_KEY")
-        if enable_llm and api_key:
+        from .llm_config import resolve_chat_endpoint
+        endpoint = resolve_chat_endpoint(default_model="Qwen/Qwen2.5-14B-Instruct") if enable_llm else None
+        if endpoint is not None:
             import json
             import requests
-            base_url = os.getenv("VLLM_BASE_URL", "https://api.evolus.ai/v1")
+            base_url = endpoint["base_url"]
+            api_key = endpoint["api_key"]
             prompt = (
                 "You are an experienced, shrewd factory sales manager in Ningbo/Shenzhen. "
                 "Analyze the following procurement reply to determine if it sounds like an authentic domestic Chinese buyer "
@@ -1321,12 +1313,17 @@ class CrossLingualSanityChecker:
                 headers = {"Content-Type": "application/json"}
                 headers["Authorization"] = f"Bearer {api_key}"
                 payload = {
-                    "model": os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-14B-Instruct"),
+                    "model": endpoint["model"],
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.0,
                     "max_tokens": 120,
                 }
-                resp = requests.post(f"{base_url}/chat/completions", headers=headers, json=payload, timeout=2.5)
+                resp = requests.post(
+                    f"{base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=float(os.getenv("VLLM_TIMEOUT_SECONDS", "90")),
+                )
                 if resp.status_code == 200:
                     content = resp.json()["choices"][0]["message"]["content"]
                     m = re.search(r"\{.*\}", content, re.DOTALL)
@@ -1340,8 +1337,11 @@ class CrossLingualSanityChecker:
                             "audit_mode": "llm_adversarial",
                             "critique": data.get("critique", "LLM validated authentic buyer phrasing"),
                         }
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "Semantic-nativeness LLM audit failed (%s); using the static result.",
+                    type(exc).__name__,
+                )
 
         return {
             "is_native": True,

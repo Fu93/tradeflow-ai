@@ -27,6 +27,7 @@ import time
 from typing import Optional, List, Dict, Any, Tuple
 import numpy as np
 from . import model
+from .backend import resolve_use_gpu
 from .solver import anchoring_multiplier
 
 
@@ -54,14 +55,14 @@ class MultiSupplierSolver:
         n_opp_samples: int = 50_000,
         n_open: int = 40,
         n_sched: int = 12,
-        use_gpu: bool = False,
+        use_gpu: bool | None = None,
         walk_away_ceiling: float = 1.35,
         rounds: int = model.ROUNDS,
     ):
         self.n_opp_samples = n_opp_samples
         self.n_open = n_open
         self.n_sched = n_sched
-        self.use_gpu = use_gpu
+        self.use_gpu = resolve_use_gpu(use_gpu)
         self.walk_away_ceiling = walk_away_ceiling
         self.rounds = rounds
 
@@ -330,7 +331,7 @@ class MultiAuctionSession:
         n_samples: int = 20000,
         n_open: int = 20,
         n_sched: int = 6,
-        use_gpu: bool = False,
+        use_gpu: bool | None = None,
     ):
         if suppliers is None:
             suppliers = [
@@ -345,7 +346,7 @@ class MultiAuctionSession:
         self.walk_away_ceiling = float(walk_away_ceiling)
         self.moq = int(moq)
         self.n_samples = int(n_samples)
-        self.use_gpu = use_gpu
+        self.use_gpu = resolve_use_gpu(use_gpu)
 
         self.solver = MultiSupplierSolver(
             n_opp_samples=n_samples,
@@ -532,7 +533,7 @@ def simulate_reverse_auction(
     walk_away_ceiling: float = 16.2,
     moq: int = 10000,
     n_samples: int = 20000,
-    use_gpu: bool = False,
+    use_gpu: bool | None = None,
     suppliers: Optional[List[Dict[str, str]]] = None,
     rounds_quotes: Optional[List[List[float]]] = None,
     n_rounds: int = 3,

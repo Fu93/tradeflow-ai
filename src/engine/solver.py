@@ -1,19 +1,16 @@
-"""TradeFlow 引擎 — 向量化求解器（貝氏 + 批量 MCTS / expectimax）。
+"""TradeFlow 引擎 — 向量化求解器（貝氏 + 批量 expectimax）。
 
-設計：所有運算走 numpy（CPU）。若要上 MI300X，只需把陣列換成 cupy/torch
-（陣列型別抽在 _xp()），其餘邏輯不變；對手樣本 × 策略族全部批量計算。
+設計：陣列運算走 `_xp()`。預設是 NumPy（CPU）。`TRADEFLOW_SOLVER_BACKEND=cupy`
+（或顯式 `use_gpu=True`）會改試 CuPy；CuPy 不在時仍回 NumPy，不會假裝跑過 GPU。
 
-每輪談判要「供應商回價 → 更新信念 → 在對手樣本×策略族上重解」，
-這就是需要 GPU 的工作：960 萬次 rollout 在 CPU 約 1 秒、純 loop 約 46 秒。
-
-[誠實揭露] 舊版此處寫「MI300X 批量預期 ~0.4 秒」。本專案**未在任何 AMD
-硬體上執行過**（開發機為 Intel Core Ultra 7 355，無獨立 GPU），因此
-0.4 秒不是實測值、也不是可信的效能預測；實際「上 GPU」後的執行時間仍是
-未知數。MI300X 的唯一量化指標見 benchmark.py 的 roofline 資料搬運下界。
+本儲存庫沒有 AMD GPU 實測。延遲以 `results/bench.json` 的 CPU 牆鐘為準。
+`src/engine/benchmark.py` 裡的 MI300X 數字是工作集 ÷ 公開 HBM3 峰值頻寬的
+資料搬運下界，不是執行時間。
 """
 from __future__ import annotations
 import numpy as np
 from . import model
+from .backend import resolve_use_gpu
 
 # ============================================================================
 # [誠實揭露] 對抗式開盤錨定反應係數 (Adversarial Anchoring Reaction)
@@ -94,7 +91,7 @@ def solve(
     n_opp_samples: int = 20_000,
     opens=None,
     scheds=None,
-    use_gpu: bool = False,
+    use_gpu: bool | None = None,
     rng: np.random.Generator | None = None,
     prior_mix=None,
     lambda_break: float = 1.0,
@@ -115,6 +112,7 @@ def solve(
     非支配前沿（`_pareto_frontier_indices`，其大小以 `pareto_frontier_size`
     回報）。`best` 索引與回傳鍵皆不變，僅新增 `pareto_frontier_size`。
     """
+    use_gpu = resolve_use_gpu(use_gpu)
     xp = _xp(use_gpu)
     if rng is None:
         rng = np.random.default_rng(20261013)

@@ -34,7 +34,7 @@ def run_demo():
     trace = []
     for round_i in range(model.ROUNDS):
         t0 = time.perf_counter()
-        res = solve(n_opp_samples=DEMO_SPEC["n_samples"], use_gpu=False,
+        res = solve(n_opp_samples=DEMO_SPEC["n_samples"],
                     lambda_break=DEMO_SPEC["lambda_break"],
                     reserve_mean=post_mean, reserve_std=post_std)
         dt = time.perf_counter() - t0

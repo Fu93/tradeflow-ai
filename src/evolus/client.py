@@ -18,8 +18,23 @@ CHAT = f"{BASE}/v1"
 
 class EvolusClient:
     def __init__(self, api_key=None, app_id=None):
-        self.api_key = api_key or os.environ["EVOLUS_API_KEY"]
-        self.app_id = app_id or os.environ["EVOLUS_APP_ID"]
+        from ..engine.llm_config import real_secret
+
+        # Explicit test doubles ("k", "a") are accepted. Placeholders such as
+        # __FILL_ME__ and a missing env var raise before any network call, so
+        # the offline demo does not wait on a 60s Evolus timeout.
+        if api_key is None:
+            key = real_secret(os.environ.get("EVOLUS_API_KEY"))
+        else:
+            key = real_secret(str(api_key))
+        if app_id is None:
+            app = real_secret(os.environ.get("EVOLUS_APP_ID"))
+        else:
+            app = real_secret(str(app_id))
+        if not key or not app:
+            raise RuntimeError("Evolus credentials are not configured")
+        self.api_key = key
+        self.app_id = app
         self.rest_h = {"X-ApiKey": self.api_key, "X-Application-Id": self.app_id}
         self.chat_h = {"Authorization": f"Bearer {self.api_key}"}
 

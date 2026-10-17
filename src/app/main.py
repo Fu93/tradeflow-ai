@@ -35,6 +35,8 @@ except Exception as _dotenv_err:  # pragma: no cover - 缺套件時不應讓 API
         "Install it via `pip install -r requirements.txt`.", _dotenv_err,
     )
 
+from ..engine.backend import describe_solver_backend, resolve_use_gpu
+from ..engine.llm_config import evolus_credentials, llm_status
 from ..engine import (
     solve,
     recommend,
@@ -106,15 +108,16 @@ _SOLVE_CACHE_MAX = 128
 _SOLVE_CACHE: "OrderedDict[tuple, Any]" = OrderedDict()
 
 
-def _solve_round_cached(n_opp_samples: int, use_gpu: bool, reserve_mean: float, reserve_std: float):
-    key = (int(n_opp_samples), bool(use_gpu), float(reserve_mean), float(reserve_std))
+def _solve_round_cached(n_opp_samples: int, use_gpu: bool | None, reserve_mean: float, reserve_std: float):
+    resolved = resolve_use_gpu(use_gpu)
+    key = (int(n_opp_samples), bool(resolved), float(reserve_mean), float(reserve_std))
     cached = _SOLVE_CACHE.get(key)
     if cached is not None:
         _SOLVE_CACHE.move_to_end(key)
         return cached
     result = solve(
         n_opp_samples=n_opp_samples,
-        use_gpu=use_gpu,
+        use_gpu=resolved,
         reserve_mean=reserve_mean,
         reserve_std=reserve_std,
     )
@@ -316,7 +319,14 @@ class Spec(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "0.4.0"}
+    language = llm_status()
+    return {
+        "status": "ok",
+        "version": "0.4.0",
+        "solver": describe_solver_backend(),
+        "llm": language,
+        "offline_demo": language["offline_demo"],
+    }
 
 
 @app.post("/negotiate")
@@ -327,7 +337,6 @@ def negotiate(spec: Spec):
     try:
         res = solve(
             n_opp_samples=spec.n_samples,
-            use_gpu=False,
             lambda_break=spec.lambda_break,
             reserve_mean=post_mean,
             reserve_std=post_std,
@@ -1399,7 +1408,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     # 3. 跑引擎重解（[PERF] 有界快取：同輸入直接命中，輪間不再重解 20K 樣本）
     solve_res = _solve_round_cached(
         sess.spec.max_rounds * 4000,
-        False,
+        None,
         post_mean,
         post_std,
     )
@@ -1956,7 +1965,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         )
         # [REGRESSION] 舊版 `except Exception: pass` 會靜默吞掉長達 60 秒的
         # Evolus 外呼失敗，讓已成交的會話從未被公告。現在記錄例外。
-        if os.getenv("EVOLUS_API_KEY") and os.getenv("EVOLUS_APP_ID"):
+        if evolus_credentials():
             try:
                 from ..evolus.client import EvolusClient
                 evolus_c = EvolusClient()
@@ -2145,5 +2154,7 @@ _assert_api_v1_auth_coverage()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Render and other hosts inject PORT. Local compose and the README use 8000.
+    _port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=_port)
 
