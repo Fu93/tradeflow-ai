@@ -371,6 +371,26 @@ class SessionManager:
                 f"Persistence invariant violated: session '{session_id}' vanished after a "
                 "successful turn append."
             )
+
+        # [P0 FIX — Dashboard Decision panel requires these fields] 
+        # GET /api/v1/sessions returns NegotiationSession with latest_*_offer.
+        # But append_turn never touched those — they stayed None for every round.
+        # So the dashboard's "Engine Decision" panel has nothing to show after refresh.
+        # Fix: persist last offer from each side based on the turn sender.
+        new_latest_opp = turn.parsed_price if turn.sender == "opponent" else updated_session.latest_opponent_offer
+        new_latest_our = (
+            (turn.parsed_price if turn.sender.startswith("buyer") else None)
+            if updated_session.latest_our_offer is None
+            else updated_session.latest_our_offer
+        )
+        if new_latest_opp != updated_session.latest_opponent_offer or new_latest_our != updated_session.latest_our_offer:
+            updated_session = updated_session.model_copy(update={
+                "latest_opponent_offer": new_latest_opp,
+                "latest_our_offer": new_latest_our,
+            })
+            self._atomic_write_json(updated_session)
+            return updated_session
+
         self._atomic_write_json(updated_session)
         return updated_session
 

@@ -2,6 +2,8 @@
 
 let beliefChart = null;
 let currentSessionId = "";
+// 上一次已渲染的「選取會話」快照簽章，用來避免 SSE 每秒重繪造成閃爍。
+let _lastSelectedSig = "";
 
 // ---------------------------------------------------------------------------
 // Security helpers: outbound auth + HTML escaping
@@ -155,7 +157,8 @@ function initSSE() {
   evtSource.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
-      renderSessions(data.sessions || []);
+      // [P0] 除了更新清單，也要讓「已選取會話」的詳情跟著串流走（見 onSseSessions）。
+      onSseSessions(data.sessions || []);
     } catch (err) {
       console.error("SSE parse error:", err);
     }
@@ -238,12 +241,40 @@ function selectSession(s) {
   }
 
   if (s.last_posterior != null) {
-    document.getElementById("postMean").textContent = `¥${tfNum(s.last_posterior, 0).toFixed(2)}`;
+    // [P1 REGRESSION — 瀏覽器實測發現] last_posterior 是**歸一化**的後驗底價乘數
+    // （≈1.08–1.18，1.0 = 目標價），不是價格。舊版直接 `¥${v.toFixed(2)}` 渲染成
+    // 「¥1.14」，而同一個面板的折線圖畫的是已乘上目標價的 13.74 —— 面板與自己的
+    // 圖表相差一個數量級（目標價 ¥12.00 的會話顯示 ¥1.14）。
+    // 現改為乘上 session 的 target（SSE payload 已帶此欄位）再顯示。
+    const targetPx = tfNum(s.target, 0);
+    const meanPx = targetPx > 0 ? tfNum(s.last_posterior, 0) * targetPx : null;
+    document.getElementById("postMean").textContent =
+      meanPx == null ? "--" : `¥${meanPx.toFixed(2)}`;
+  } else {
+    document.getElementById("postMean").textContent = "--";
   }
   document.getElementById("roundCount").textContent = s.rounds;
 
   // Re-fetch rounds history to update chart
   fetchSessionDetails(s.session_id);
+}
+
+// [P0 REGRESSION — 瀏覽器實測發現] SSE 每秒推播只呼叫 renderSessions() 更新左側
+// 清單；而熔斷環、後驗均值、折線圖這些「詳情」只在**使用者點擊**時才更新
+// （selectSession 由 item.onclick 呼叫）。因此當有人在頁面開著時透過 API / CLI
+// 跑一輪談判，畫面看起來像凍結：清單的 Rounds 變了，但右側數字與圖表完全不動。
+// 這直接打穿了 demo 的「即時串流」敘事。
+// 現補上：若目前有選取中的會話，且該會話的快照有變化（回合數或風險值改變），
+// 就重新渲染詳情並重抓歷史。只做「有變化才更新」，避免每秒重繪造成閃爍。
+function onSseSessions(sessions) {
+  renderSessions(sessions);
+  if (!currentSessionId) return;
+  const sel = sessions.find((x) => x.session_id === currentSessionId);
+  if (!sel) return;
+  const sig = `${sel.rounds}|${sel.last_p_break}|${sel.last_posterior}|${sel.state}`;
+  if (sig === _lastSelectedSig) return;
+  _lastSelectedSig = sig;
+  selectSession(sel);
 }
 
 // V3: index.html:52 has onclick="refreshSessions()" but no such function was
@@ -295,10 +326,58 @@ async function fetchSessionDetails(sid) {
     const sessObj = data.session || data;
     if (sessObj && (sessObj.history || sessObj.turns)) {
       updateBeliefChartWithTurns(sessObj);
+      renderEngineDecision(sessObj);
     }
   } catch (err) {
     console.error("fetchSessionDetails error:", err);
   }
+}
+
+// [P0 新增] 把引擎的**實際決策**渲染到 Engine Decision 面板。
+// 資料來源全部取自本次 GET /api/v1/sessions/{id} 的 history[-1]：
+//   - 意圖        → turn.metadata.entities / turn.raw_text 無法反推，改由
+//                   turn.raw_text 顯示原文，意圖則來自 API 的最近回應（見下）
+//   - 建議還價    → 後端未把 recommendation 存進 history，故以
+//                   latest_our_offer（我方最後出價）與 latest_opponent_offer 呈現
+//   - 破局風險    → turn.p_break（真實值）
+//   - 生成話術    → turn.raw_text 中 sender 為 buyer_agent / buyer_human_approved 者
+// 缺值一律顯示 "—"（絕不捏造）。
+function renderEngineDecision(session) {
+  const el = (id) => document.getElementById(id);
+  if (!el("decisionIntent")) return; // 面板不存在時安全退出
+
+  const turns = session.history || session.turns || [];
+  const last = turns.length ? turns[turns.length - 1] : null;
+
+  el("decisionRound").textContent = turns.length
+    ? `Round ${tfEsc(turns.length)} / ${tfEsc((session.spec || {}).max_rounds ?? "—")}`
+    : "—";
+
+  // 供應商意圖：歷史輪次不持久化 intent，改顯示最後一則對手原文（截斷）
+  const lastOpp = [...turns].reverse().find((t) => t.sender === "opponent");
+  if (lastOpp && lastOpp.raw_text) {
+    const txt = String(lastOpp.raw_text);
+    el("decisionIntent").textContent = txt.length > 46 ? txt.slice(0, 46) + "…" : txt;
+    el("decisionIntent").title = txt;
+  } else {
+    el("decisionIntent").textContent = "—";
+  }
+
+  // 建議還價：顯示我方最後一次出價（真實持久化值）
+  const ours = tfNum(session.latest_our_offer, null);
+  el("decisionCounter").textContent = ours == null ? "—" : `¥${ours.toFixed(2)}`;
+
+  // 破局風險：取最後一輪真實 p_break
+  const risk = last ? tfNum(last.p_break, null) : null;
+  el("decisionRisk").textContent = risk == null ? "—" : `${(risk * 100).toFixed(1)}%`;
+  el("decisionRisk").style.color = risk == null ? "" : (risk >= 0.15 ? "#f43f5e" : "#10b981");
+
+  // 最新生成話術：找最後一則我方（AI 或人工核准）的發言
+  const lastOurs = [...turns].reverse().find(
+    (t) => t.sender === "buyer_agent" || t.sender === "buyer_human_approved"
+  );
+  el("decisionReply").textContent =
+    lastOurs && lastOurs.raw_text ? String(lastOurs.raw_text) : "—";
 }
 
 function updateBeliefChartWithTurns(session) {

@@ -1210,9 +1210,29 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         post_std,
     )
     rec = recommend(solve_res, target_price=target_price)
+    # [P0 REGRESSION — 引擎審計發現] 這裡原本把**已經更新過的後驗** (post_mean/post_std)
+    # 當成 `prior_reserve_mean/std` 傳進去，**同時又**傳 `observed_offer` ——
+    # proposal.build_proposal 內部 (proposal.py:17-18) 會再跑一次 bayes_update，
+    # 於是同一筆供應商報價被更新了兩次（history 一次、proposal 再一次），
+    # 而 bayesian_belief_state 又在下方更新第三次。
+    # 實測同一個 /round 回應裡出現三個不同的後驗均值：
+    #     history[-1].posterior_mean        = 1.0257  （正確：單次更新）
+    #     proposal.posterior_reserve_mean   = 1.016   （二次更新）
+    #     bayesian_belief_state.posterior_mean = 1.0157（三次更新）
+    # 且 breakdown_prob 同時是 0.0096 與 0.002（差 4.8 倍）、expected_margin 是
+    # 3.85 與 3.97 —— 同一題在同一個 JSON 裡給兩個答案，評審一比就穿幫。
+    # 現改為：把後驗當成先驗傳入，且**不再重複傳 observed_offer**。
+    # 另外補上 walk_away_ceiling，讓 proposal 的讓步上限與本會話的真實上限一致
+    # （proposal.py:27-31 缺此欄位時會退回 model.YOUR_CEILING=1.35 這個與
+    #  會話無關的常數倍率）。
     prop = proposal.build_proposal(
-        {"target_price": target_price, "prior_reserve_mean": post_mean, "prior_reserve_std": post_std},
-        observed_offer=(effective_opp_price / target_price) if effective_opp_price else None,
+        {
+            "target_price": target_price,
+            "prior_reserve_mean": post_mean,
+            "prior_reserve_std": post_std,
+            "walk_away_ceiling": ceiling_price,
+        },
+        observed_offer=None,
     )
 
     p_break = rec["breakdown_prob"]
@@ -1295,12 +1315,12 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             proposed_price=recommended_offer_price,
             action_object=trip_action_obj,
         )
-        # [FIX] 以累積後驗為先驗（原誤用 sess.spec 原始先驗，導致 deal_probability
-        # 每輪重置、與 posterior_reserve_mean 矛盾，輪次越深誤差越大）。
+        # [P0 FIX] post_mean/post_std 已包含本輪報價，不可再觀測一次
+        # （否則熔斷分支的後驗會與 history 不一致；見第 5.8 節的完整說明）。
         v2_belief = robust_bayes_update(
             prior_mean=post_mean,
             prior_std=post_std,
-            observed_offer=opp_price / target_price if opp_price else post_mean,
+            observed_offer=None,
             our_next_offer=recommended_offer_price / target_price if recommended_offer_price else None,
         )
         return {
@@ -1534,11 +1554,16 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     telemetry_eng = EnglishExecutiveRenderer.render_telemetry_summary(action_obj)
 
     # 5.8 v5 Should-Cost 與校準貝氏混合推斷增強
-    # [FIX] 以累積後驗為先驗（同上，避免 deal_probability 每輪重置）。
+    # [P0 REGRESSION — 引擎審計發現] 舊版寫 `observed_offer=opp_price/target_price`
+    # 再配 `prior_mean=post_mean`，但 post_mean/post_std **已經包含本輪這筆報價**
+    # （上面第 2 步的 bayes_update）。等於同一筆證據被更新第二次，使得
+    # bayesian_belief_state.posterior_mean (1.0157) 與會話 history 的
+    # posterior_mean (1.0257) 不一致 —— 同一輪兩個後驗。
+    # 現在改為：直接把本輪已算出的後驗傳入，不再重複觀測（observed_offer=None）。
     v2_belief = robust_bayes_update(
         prior_mean=post_mean,
         prior_std=post_std,
-        observed_offer=opp_price / target_price if opp_price else post_mean,
+        observed_offer=None,
         our_next_offer=auth_price / target_price if auth_price else None,
     )
     # 6. 分流：採購決策副駕駛 (Copilot) vs 全自主巡航 (Autopilot)

@@ -34,10 +34,11 @@
 
 ### 【第二幕：量化決策與地道行話】(0:35 - 1:25) — 展示核心算力與去外商溢價
 * **畫面**：
-  * [0:35 - 0:50] 切換至瀏覽器畫面 (http://localhost:8000 或 API 測試介面)。展示自動傘規格：目標價 ¥12.00，上限 ¥15.00，MOQ 1000 把。
+  * [0:35 - 0:50] 切換至瀏覽器畫面 (http://localhost:8000 或 API 測試介面)。展示自動傘規格：目標價 ¥12.00，上限 **¥16.20**，MOQ **5,000** 把（Web 門戶預設分類檔案的實際數值）。
   * [0:50 - 1:10] 點擊發送工廠 Round 1 報價：工廠開出 ¥14.80，聲稱「碰擊布和塗層原料暴漲30%」。
-  * [1:10 - 1:25] 畫面高亮：貝氏後驗更新＋求解核心在本機 CPU 向量化下即時完成（實測 20,000 對手樣本 × 480 曲線全網格 9.6M rollouts 約 **1.1s**；單輪規模之下毫秒級），TradeFlow 自動輸出地道行話：
-    > *「老闆，行情波動大家心裡有數，核算過BOM表材料佔比，¥13.12 出廠價給貴廠留足了利潤。能接我們今天鎖定排單，別為幾毛錢耽誤檔期。」*
+  * [1:10 - 1:25] 畫面高亮：貝氏後驗更新＋求解核心在本機 CPU 向量化下即時完成（實測 20,000 對手樣本 × 480 曲線全網格 9.6M rollout 位約 **1.68s** 冷啟動；連續輪次暖機後約 1.25s —— 見 `results/bench.json`），TradeFlow 自動輸出地道行話：
+    > *「老闆，行情波動大家心裡有數，核算過BOM表材料佔比，¥13.02 出廠價給貴廠留足了利潤。能接我們今天鎖定排單，別為幾毛錢耽誤檔期。」*
+    > （實測：預設目標價 ¥12.00、上限 ¥16.20、MOQ 5,000，首次報價 ¥14.80 → 引擎還價 **¥13.02**、破局風險 2.2%，意圖判定 `CRY_POVERTY_COST_HIKE`。錄影前請以實際畫面為準。）
 * **旁白 (Voiceover)**：
   > *"Watch this live: When the factory opens at 14.80 RMB crying poverty about raw material hikes, TradeFlow doesn't hallucinate. It updates its Bayesian belief on the supplier's reserve price and solves the optimal concession curve in real time — on this CPU, the full 9.6M-rollout grid solves in about a second, and the per-round decision is far faster. It's all math: the LLM is only ever asked to write the reply, never to decide a price.*  
   > *Instead of polite textbook English, our surface renderer speaks fluent coastal factory jargon — anchoring directly on raw BOM material ratios to strip away the foreign buyer markup instantly."*

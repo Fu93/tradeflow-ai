@@ -18,7 +18,12 @@ class BayesianBeliefState(BaseModel):
     clean_responsibility: float = Field(..., description="本次觀測屬於真實商務報價的後驗概率 w_t")
     credible_interval_95: Tuple[float, float] = Field(..., description="95% 貝氏置信區間 [Lower, Upper]")
     info_gain_bits: float = Field(..., description="香農信息增益 (Kullback-Leibler 散度，單位: bits)")
-    deal_probability: float = Field(..., description="在當前出價下對手接受的校準概率 P(Reserve <= Offer)")
+    # [P0 修正] 允許 None：當本輪沒有新報價可評估、且呼叫端也未提供 our_next_offer
+    # 時，成交概率是「未計算」而非 0。顯示層應渲染為 "—"，不可捏造數值。
+    deal_probability: Optional[float] = Field(
+        default=None,
+        description="在當前出價下對手接受的校準概率 P(Reserve <= Offer)；無法評估時為 None",
+    )
 
 
 class RobustBayesianInferenceEngine:
@@ -63,7 +68,7 @@ class RobustBayesianInferenceEngine:
         self,
         prior_mean: float,
         prior_std: float,
-        observed_offer: float,
+        observed_offer: Optional[float] = None,
         estimated_markup: float = 0.08,
         our_next_offer: Optional[float] = None,
     ) -> BayesianBeliefState:
@@ -72,10 +77,36 @@ class RobustBayesianInferenceEngine:
         Args:
             prior_mean: 先驗底價均值乘數 (如 1.08)
             prior_std: 先驗底價不確定性標準差 (如 0.10)
-            observed_offer: 觀測到的供應商報價乘數 (如 1.25)
+            observed_offer: 觀測到的供應商報價乘數 (如 1.25)。
+                **[P0 修正]** 可為 None —— 代表「本輪沒有新證據」。呼叫端若
+                已經自行把本輪報價更新進 prior_mean/prior_std（例如 /round
+                第 2 步的 bayes_update），就必須傳 None，否則同一筆證據會被
+                更新兩次，導致同一個回應裡出現兩個不同的後驗。None 時：
+                  - 不做似然更新，後驗 = 先驗；
+                  - 責任度 w_t 記為 1.0（無異常證據可判別）；
+                  - 信息增益為 0 bit；
+                  - 成交概率改用 our_next_offer 評估（若未提供則為 None）。
             estimated_markup: 預估供應商當前輪次的加成利潤率 m_t (如 0.08)
             our_next_offer: 我方擬出的下一輪出價乘數 (若提供則計算該出價下的成交概率)
         """
+        # [P0 修正] 無新證據：後驗 = 先驗，只計算依賴後驗的欄位。
+        if observed_offer is None:
+            z_95 = 1.95996
+            ci_lower = max(0.0, prior_mean - z_95 * prior_std)
+            ci_upper = prior_mean + z_95 * prior_std
+            deal_prob = (
+                self.normal_cdf(our_next_offer, prior_mean, prior_std)
+                if our_next_offer is not None else None
+            )
+            return BayesianBeliefState(
+                posterior_mean=round(prior_mean, 4),
+                posterior_std=round(prior_std, 4),
+                clean_responsibility=1.0,
+                credible_interval_95=(round(ci_lower, 4), round(ci_upper, 4)),
+                info_gain_bits=0.0,
+                deal_probability=None if deal_prob is None else round(deal_prob, 4),
+            )
+
         # 1. 計算真實要約假設下的邊際似然 (Marginal Likelihood for Genuine Offer)
         pred_mean = prior_mean + estimated_markup
         pred_var = (prior_std ** 2) + (self.obs_noise_std ** 2)
@@ -139,11 +170,14 @@ _default_engine = RobustBayesianInferenceEngine()
 def robust_bayes_update(
     prior_mean: float,
     prior_std: float,
-    observed_offer: float,
+    observed_offer: Optional[float] = None,
     estimated_markup: float = 0.08,
     our_next_offer: Optional[float] = None,
 ) -> BayesianBeliefState:
-    """提供全域便利用法執行高斯-均勻混合似然推斷。"""
+    """提供全域便利用法執行高斯-均勻混合似然推斷。
+
+    observed_offer=None 表示「本輪沒有新證據」——後驗等於傳入的先驗。
+    """
     return _default_engine.update(
         prior_mean=prior_mean,
         prior_std=prior_std,

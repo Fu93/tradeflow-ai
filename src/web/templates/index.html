@@ -17,10 +17,20 @@
        cross-origin script; without them a compromised CDN response would run
        arbitrary code in the operator's dashboard. Bump both together when
        upgrading Chart.js. -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
-          integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g"
-          crossorigin="anonymous"
-          referrerpolicy="no-referrer"></script>
+  <!-- [P1 離線韌性] Chart.js 原本只從 jsdelivr CDN 載入。評審現場 Wi-Fi 若不通或
+       阻擋 CDN，`typeof Chart === "undefined"` 會讓「即時貝氏更新折線圖」整塊空白
+       （app.js:68 有降級保護，不會崩頁，但 demo 旁白正要指的圖就不見了）。
+       現在改為**本地優先**：先載入 repo 內自帶的 chart.umd.min.js，失敗才回退 CDN。
+       本地檔與 CDN 版為同一份位元組（SHA-384 已核對相符：
+       sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g）。 -->
+  <!-- Chart.js: local-first so an offline venue still renders the belief chart,
+       with the pinned CDN as fallback. `integrity` pins the exact bytes (sha384)
+       and `crossorigin` is required for SRI to be enforced on a cross-origin
+       script; without them a compromised CDN response would run arbitrary code
+       in the operator's dashboard. Bump both together when upgrading Chart.js.
+       The local copy is byte-identical to this CDN file (SHA-384 verified). -->
+  <script src="/static/js/chart.umd.min.js" crossorigin="anonymous"
+          onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';s.integrity='sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g';s.crossOrigin='anonymous';document.head.appendChild(s);"></script>
 </head>
 <body>
   <!-- ===== HEADER ===== -->
@@ -56,6 +66,27 @@
           <div class="stat"><span class="stat-label">Posterior Mean</span><span class="stat-val" id="postMean">--</span></div>
           <div class="stat"><span class="stat-label">Break Probability</span><span class="stat-val" id="pBreak">--</span></div>
           <div class="stat"><span class="stat-label">Rounds</span><span class="stat-val" id="roundCount">0</span></div>
+        </div>
+      </section>
+
+      <!-- [P0 新增] Engine Decision：原本整個儀表板**沒有任何**位置顯示引擎的
+           核心輸出（意圖判定 / 建議還價 / 破局風險 / 生成話術）。評審在頁面上
+           點來點去都看不到產品真正算出來的東西，只能看到會話清單與圖表。
+           此面板由 GET /api/v1/sessions/{id} 的 history[-1] 與 action_object
+           填入；缺值一律顯示 "—"，不捏造。 -->
+      <section class="panel" id="decisionPanel">
+        <div class="panel-header">
+          <span class="panel-title">Engine Decision</span>
+          <span class="panel-badge" id="decisionRound">—</span>
+        </div>
+        <div class="belief-stats">
+          <div class="stat"><span class="stat-label">Supplier Intent</span><span class="stat-val" id="decisionIntent">—</span></div>
+          <div class="stat"><span class="stat-label">Recommended Counter</span><span class="stat-val" id="decisionCounter">—</span></div>
+          <div class="stat"><span class="stat-label">Breakdown Risk</span><span class="stat-val" id="decisionRisk">—</span></div>
+        </div>
+        <div class="decision-reply">
+          <div class="stat-label" style="margin-bottom:6px;">Latest Generated Reply (human sends manually)</div>
+          <div id="decisionReply" class="decision-reply-text">—</div>
         </div>
       </section>
 

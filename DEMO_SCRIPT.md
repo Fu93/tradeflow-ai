@@ -16,7 +16,8 @@
 ## Scene 1 — Wow #1: Belief update (0:12–1:05)
 > "We model the supplier as one of four archetypes with an unknown reserve price. We start with
 > a prior. Then we watch evidence arrive. Every supplier reply triggers a Bayesian update — and
-> the recommended opening move **moves with it**: from ¥12.30 in round one to ¥14.23 by round five.
+> the recommended opening move **moves with it**: 12.41, then 13.12, then back down to 12.51
+> as the supplier concedes, with the posterior mean going from 1.08 to 1.14 and settling near 1.10.
 > That's not the LLM guessing. That's the posterior."
 
 **Visual**: `results/belief_update.png` / demo_video frames 0–120.
@@ -33,16 +34,19 @@
 **Key line**: "The engine's batched rollouts run as one vectorized broadcast on CPU — not chat tokens."
 
 ## Scene 3 — Wow #3: Robustness (1:45–2:35)
-> "Here's the honest part. The opponent model is an assumption. So we tested what happens if we're
-> **wrong** — off by fifty percent on the supplier's reserve price. Under-estimating the supplier:
-> the recommendation still holds. Over-estimating: it degrades — robustness.py prints DEGRADES.
-> That asymmetry is why we deliberately estimate conservatively.
-> We also compared against how humans actually negotiate: fixing a flat concession every round.
-> Whatever the human baseline — three, five, ten, or fifteen percent — the engine breaks the deal
-> **less often**: six point seven percent versus twenty-eight point three, and earns about forty
-> cents (¥0.40) more per unit."
+> "Here's the honest part. The opponent model is an assumption, so we tested what happens when
+> we're **wrong**. The result is not flattering: our own report prints the word DEGRADES.
+> If we underestimate the supplier's reserve by half, the breakdown rate goes from six point seven
+> to eighty-eight percent. If we overestimate, margin turns negative and breakdown hits fifty percent.
+> Across fixed-concession human baselines of three, five and ten percent we do break fewer deals —
+> six point seven versus twenty-eight, twenty-eight and twenty-one — for about forty cents more per
+> unit. But at a fifteen-percent-per-round baseline, we lose on margin: zero point two four seven
+> against their zero point two five three, and their breakdown is worse at fourteen point five.
+> So the honest claim is narrow: **our edge is conditional on an accurate prior.** That's the risk
+> we're exposing, not hiding."
 
-**Visual**: `results/robustness.png` / demo_video frames 250+.
+**Visual**: `results/robustness.png` (the panel literally prints "DEGRADES under prior miss").
+**Key line**: "Our edge is conditional on the prior — at half the true reserve, breakdown is 88%."
 
 ## Scene 4 — Live agent (2:35–4:00)
 > "Let's meet our Evolus agent — the Supplier Negotiation Analyst — backed by a Personal Library

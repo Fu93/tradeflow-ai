@@ -230,9 +230,30 @@ body {
   color: var(--accent-cyan);
 }
 
-/* Session List */
+/* Engine Decision panel (P0 addition) */
+.decision-reply {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.decision-reply-text {
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-main);
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-height: 96px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* [P1] 選取的會話可能很多輪，清單高度過小會讓 demo 時看不全 */
 .session-list {
-  max-height: 240px;
+  max-height: 360px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
