@@ -29,16 +29,16 @@
     </div>
     <div style="font-size: 11px; margin-bottom: 8px;">
       <span style="color: var(--text-muted);">Session ID:</span>
-      <strong id="session-id-display" style="color: var(--accent-cyan);">live-session-001</strong>
+      <strong id="session-id-display" style="color: var(--accent-cyan);">--</strong>
     </div>
     <div class="metric-grid">
       <div class="metric-box">
         <div class="metric-label">Target Price</div>
-        <div class="metric-value" id="val-target-price">¥12.00</div>
+        <div class="metric-value" id="val-target-price">--</div>
       </div>
       <div class="metric-box">
         <div class="metric-label">Reserve Ceiling</div>
-        <div class="metric-value" id="val-reserve-ceiling" style="color: var(--accent-rose);">¥16.20</div>
+        <div class="metric-value" id="val-reserve-ceiling" style="color: var(--accent-rose);">--</div>
       </div>
     </div>
   </div>
@@ -47,22 +47,25 @@
   <div class="card">
     <div class="card-title">
       <span>Bayesian Opponent Belief</span>
-      <span style="color: var(--accent-emerald); font-size: 10px;">MI300X MCTS</span>
+      <!-- [誠實揭露] 此標籤原本寫「MI300X MCTS」。後端在示範路徑上實際以
+           NumPy CPU 執行（solve(use_gpu=False)），專案從未在任何 AMD 硬體上
+           實測過，因此標示 MI300X 屬不實硬體宣稱。改為描述實際演算法名稱。 -->
+      <span style="color: var(--accent-emerald); font-size: 10px;">Expectimax + Bayesian v2</span>
     </div>
     <div class="metric-grid">
       <div class="metric-box">
         <div class="metric-label">Posterior Mean (&mu;)</div>
-        <div class="metric-value" id="val-posterior-mean">1.080</div>
+        <div class="metric-value" id="val-posterior-mean">--</div>
       </div>
       <div class="metric-box">
         <div class="metric-label">Uncertainty (&sigma;)</div>
-        <div class="metric-value" id="val-posterior-std" style="color: var(--accent-amber);">0.095</div>
+        <div class="metric-value" id="val-posterior-std" style="color: var(--accent-amber);">--</div>
       </div>
     </div>
     <div style="margin-top: 12px;">
       <div style="display: flex; justify-content: space-between; font-size: 11px;">
         <span style="color: var(--text-muted);">Breakdown Probability</span>
-        <strong id="val-breakdown-risk" style="color: var(--accent-emerald);">4.8%</strong>
+        <strong id="val-breakdown-risk" style="color: var(--accent-emerald);">--</strong>
       </div>
       <div class="progress-bar-bg">
         <div id="progress-breakdown" class="progress-bar-fill"></div>
@@ -77,17 +80,11 @@
   <div class="card">
     <div class="card-title">
       <span>Live Round History</span>
-      <span id="round-counter" style="color: var(--accent-cyan); font-size: 11px;">Round 1 / 5</span>
+      <span id="round-counter" style="color: var(--accent-cyan); font-size: 11px;">Round — / —</span>
     </div>
     <div class="timeline" id="turns-timeline">
-      <div class="timeline-turn">
-        <div style="display: flex; justify-content: space-between;">
-          <strong>Round 1 (Opening)</strong>
-          <span style="color: var(--accent-emerald);">¥12.96 Proposed</span>
-        </div>
-        <div style="color: var(--text-muted); margin-top: 2px;">
-          Awaiting supplier quote via in-browser chat...
-        </div>
+      <div style="color: var(--text-muted); font-size: 11px; padding: 12px 0; text-align: center;">
+        Switch to a 1688 / Alibaba / WhatsApp tab to view live negotiation radar.
       </div>
     </div>
   </div>

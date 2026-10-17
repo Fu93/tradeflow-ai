@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "TradeFlow Copilot — Procurement Decision Deck",
   "version": "5.1.0",
+  "minimum_chrome_version": "114",
   "description": "Enterprise procurement decision copilot with calibrated Bayesian inference, terms TCO shadow cost analysis, and human-in-the-loop approval gates.",
   "permissions": [
     "sidePanel",

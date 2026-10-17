@@ -29,7 +29,13 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from ..app.main import require_api_key
+# [P0 REGRESSION] 這裡原本是 `from ..app.main import require_api_key`，與
+# main.py 檔尾的 `from ..web.routes_web import ...` 形成互相 import 的循環。
+# 以 `python -m src.app.main`（README 記載的啟動指令）執行時，main 的身分是
+# `__main__`，`src.app.main` 不在 sys.modules 中，routes_web 的這行匯入會觸發
+# 半初始化模組的重新載入並拋 ImportError，使服務完全無法啟動。
+# 現改為從不依賴 app/web 的 security 模組匯入，循環徹底切斷。
+from ..app.security import require_api_key
 
 logger = logging.getLogger("tradeflow.web")
 

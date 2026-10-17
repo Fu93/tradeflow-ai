@@ -17,7 +17,7 @@
 | **Track 1** | Reinvent Commerce |
 | **Track 2** | Evolus Business Agents on AMD |
 | **Public GitHub URL** | https://github.com/Fu93/tradeflow-ai |
-| **Demo Video URL** | *[Insert Loom / YouTube / Drive link from recorded demo_video.mp4]* |
+| **Demo Video URL** | *（待填入：3–5 分鐘旁白版 Demo 錄影上傳後的 Loom / YouTube 連結。目前 repo 內的 `results/demo_video.mp4` 僅約 15 秒無聲，尚未符合提交要求 —— 錄影腳本見 `DEMO_SCRIPT.md` 與 `DEMO_VIDEO_DIRECTOR_SCRIPT.md`。）* |
 | **Cover Image** | `results/cover_1280x720.png` (Included in repo, 1280x720 16:9 compliant) |
 | **Tags / Technologies** | `AMD`, `ROCm`, `Evolus`, `vLLM`, `Game-Theory`, `Expectimax`, `AST-Guardrails`, `Bayesian`, `B2B-Commerce`, `Cross-Border-Trade`, `1688`, `AI-Native-Company` |
 

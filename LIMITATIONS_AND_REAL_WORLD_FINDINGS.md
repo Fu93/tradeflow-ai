@@ -289,16 +289,17 @@ Panic-proxy 違規率。真實模型重跑於 2026-10-15 執行，當時引用�
 
   * 本文其餘章節與對外文件所稱的 **28.8M** 指的是**預設執行路徑**的張量位數
     （即評審在 Web UI 上實際按下按鈕時求值的參數組合數），**不是執行計數**；
-    延遲（實測約 1.1 秒/次 `solve()`）才是量測值。
+    延遲（預設 20K 樣本單次 `solve()` 實測約 **1.7 秒**；完整 HTTP 輪次約 **3.3 秒**；
+    見 §6.1 與 `results/bench.json`）才是量測值。
     > **「rollout」一詞的歧義（審計 §4.4 補記）**：若把內層 `self.rounds = 5` 的張量掃描
     > 也計入，3 輪拍賣的**單元更新次數**約為 28.8M × 5 = **144M**；對外公布的 28.8M
     > 只計「對手樣本 × 首輪檔位 × 讓步曲線」三維。文件與程式碼對「rollout」的定義
     > 因此不一致 —— 本表已明確標示所計的是**哪一種量**（張量位數），請勿混用。
     `results/bench.json` 的 `multi_supplier_auction.total_rollouts` 則為 72M，因基準測試使用 50,000 樣本。
   * 以預設路徑的 9.6M 矩陣（$4 \times 20000 \times 20 \times 6$）計算，單一 FP32 陣列工作集約 **38 MB**；
-    **但 `src/engine/benchmark.py:57-66` 已指出此 `n × 8 bytes` 估算低估實際配置量 9.1 倍**
-    （solve() 內部為 float64，且中間張量遠多於終值）：9.6M rollout 的 **tracemalloc 實測峰值為 665.9 MB**
-    （`results/bench.json:37`）。故 roofline 下界的分子應以實測值為準，而非 38 MB。
+    **但 `src/engine/benchmark.py:57-66` 已指出此 `n × 8 bytes` 估算低估實際配置量約 9.3 倍**
+    （solve() 內部為 float64，且中間張量遠多於終值）：9.6M rollout 的 **tracemalloc 實測峰值為 678.1 MB**
+    （`results/bench.json` 的 `single_supplier_grid` 中 20,000 樣本列）。故 roofline 下界的分子應以實測值為準，而非 38 MB。
     即使以理論上界的 96M 計算亦僅約 **384 MB**（同一低估公式）：
     $$\text{Memory Size} = 4 \times 50000 \times 40 \times 12 \times 4 \text{ bytes} \approx 384 \text{ MB}$$
   * **384 MB 顯存容量根本不需要 192GB**。任何聲稱「192GB 顯存才能裝下 10 家工廠博弈」的說法在硬體架構師面前都會被當場擊穿。
@@ -380,8 +381,8 @@ Panic-proxy 違規率。真實模型重跑於 2026-10-15 執行，當時引用�
     或改用非同步端點 `POST /api/v1/classify/semantic`（見 `tests/test_async_stage2.py`）。
 * **演示驗證**：若評審現場要求「關閉所有網路與 API Key」，TradeFlow 的**決策與風控功能**
   （報價計算、行話生成、狀態機、安全熔斷）依然 100% 正常運行 —— 因為那正是預設路徑。
-* **延遲的正確表述（重要）**：**不可**宣稱「端到端 <3ms」。實測完整 HTTP 輪次約 **2.2 秒**，
-  瓶頸是數值求解器的樣本量設定（`solve(n_opp_samples=20_000)` ≈ 1.1 秒），而非識別層。
+* **延遲的正確表述（重要）**：**不可**宣稱「端到端 <3ms」。實測完整 HTTP 輪次約 **3.3 秒**，
+  瓶頸是數值求解器的樣本量設定（`solve(n_opp_samples=20_000)` ≈ **1.7 秒**），而非識別層。
   亞毫秒級（0.6ms）僅適用於描述 **Stage-1 識別**這一環節。完整量測見 §6.1 與 §10.3。
 
 ---

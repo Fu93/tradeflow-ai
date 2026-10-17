@@ -119,7 +119,7 @@ frame `disc.png` already discloses this correctly — keep that discipline.
 | 0:50–1:50 | **Moment A** — guardrail refuses an 85% deposit demand, live | Technology |
 | 1:50–2:25 | **Moment B** — belief update across 2 real rounds | Technology |
 | 2:25–2:45 | **Moment C** — Run Auction, 4 tactics, 28.8M tensor grid cells | Technology |
-| 2:45–3:00 | Honest boundaries + repo URL + 326 tests green | Presentation |
+| 2:45–3:00 | Honest boundaries + repo URL + 332 tests green | Presentation |
 
 Record with **audio narration**. A silent screen recording reads as unfinished.
 

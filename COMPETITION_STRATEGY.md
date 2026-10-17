@@ -52,7 +52,7 @@
 - Evolus：要求 *"main agent must use an open model served on AMD infrastructure through your own vLLM endpoint on AMD Developer Cloud"* + ≥2 building blocks + 從 app 用 REST API 驅動。→ **這是我們的合規硬條件**（見 §5 修正）。
 
 **B. Business Value（要有「可量化」的數字）**
-- 我們已有：robustness 報告 = 引擎策略 vs 固定 5%/輪基準，**破局率 6.7% vs 28.4%**，**+¥1.95/unit**；行業錨點 5–10% 議價省幅、100 萬美元訂單省 5% = 5 萬美元。這組數字直接餵 Business Value。
+- 我們已有：robustness 報告 = 引擎策略 vs 固定 5%/輪基準，**破局率約 6–7% vs 約 28%**，**邊際增益約 +¥0.40/unit**（以目標價 ¥12 計；實際值隨取樣波動，請以 `results/robustness.png` 與 `LIMITATIONS §十三.5` 的當次輸出為準）；行業錨點 5–10% 議價省幅、100 萬美元訂單省 5% = 5 萬美元。這組數字直接餵 Business Value。
 
 **C. Originality（沒人這樣自動化的過程）**
 - 採購議價用**貝氏博弈 + 向量化 MCTS** 當決策核心、LLM 只當語言層 → 直接命中主賽事 brief 的 *"explain how the prediction was calculated. Do not use a language model as the only forecasting method"*。且 procurement negotiation 極少被這樣做成可解釋引擎 + 信念視覺化。
@@ -128,7 +128,7 @@ Fireworks 是**託管 API**（非 AMD Developer Cloud、非你自己的 vLLM end
 ## 7. 我們的獨特賣點（pitch 一句話）
 
 > 「別人用 LLM 當議價黑箱；TradeFlow 用貝氏博弈 + 向量化期望最大化（Expectimax）算出可解釋的
-> 最優讓步策略，LLM 只負責寫信。破局率從 28% 降到 7%，每單多賺約 ¥1.95；
+> 最優讓步策略，LLM 只負責寫信。破局率從約 28% 降到約 7%，邊際增益約 +¥0.40/件；
 > 而我們在 AMD tokenfactory 上跑了 100 場真實對抗基準（348 次推理）來驗證 AI 對手的真實失效模式。」
 
 > [!WARNING]
