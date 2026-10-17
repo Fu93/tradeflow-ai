@@ -29,6 +29,12 @@ jobs:
           python -m pip install --quiet actionlint-py
           actionlint .github/workflows/*.yml
 
+      # tests/test_dashboard_prior_chart.py renders the real dashboard in
+      # Chromium. Without the binary those 3 assertions fail with "Executable
+      # doesn't exist" — CI has to install the browser, not skip the tests.
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium
+
       # Previously this job ran only 4 test files directly (test_engine,
       # test_evolus, test_benchmark, test_api), so 97 of 101 tests never ran in
       # CI and a regression anywhere else could not be detected.
