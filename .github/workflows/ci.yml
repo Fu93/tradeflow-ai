@@ -107,3 +107,27 @@ jobs:
       # and the copilot generated reply vanishing on reload.
       - name: Run 2026-10-17 audit regression tests
         run: python -m pytest tests/test_audit_2026_10_17_fixes.py -q
+
+  # The extension had never been executed in CI: tests/test_extension_e2e.py
+  # imported playwright at module scope, so `pytest tests` died with a
+  # collection error (exit 2) and ZERO tests ran on the first push after the
+  # workflow itself was fixed. The suite now collects without a browser, and
+  # this job runs the real thing — unpacked MV3 extension in headed Chromium
+  # (xvfb), driving the actual backend and mock supplier page.
+  extension-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Extension end-to-end (real Chromium, headed via xvfb)
+        run: xvfb-run -a python tests/test_extension_e2e.py

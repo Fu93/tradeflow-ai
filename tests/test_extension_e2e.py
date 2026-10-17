@@ -27,7 +27,14 @@ import threading
 import time
 import traceback
 
-from playwright.sync_api import sync_playwright
+# Playwright is only needed to RUN this script (`python tests/test_extension_e2e.py`,
+# see the `extension-e2e` CI job). It must not be a hard import: pytest collects
+# this module during `python -m pytest tests`, and a missing browser package made
+# the entire suite die with a collection error (exit 2) before a single test ran.
+try:
+    from playwright.sync_api import sync_playwright
+except ModuleNotFoundError:  # pragma: no cover - plain install without browsers
+    sync_playwright = None
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXT_DIR = os.path.join(REPO, "extension")
@@ -90,6 +97,12 @@ def main() -> int:
     print("=" * 78)
     print("TradeFlow extension -- REAL browser E2E (Playwright + Chromium)")
     print("=" * 78)
+
+    if sync_playwright is None:
+        print("\nFATAL: playwright is not installed, so this E2E cannot run.")
+        print("       python -m pip install playwright")
+        print("       python -m playwright install --with-deps chromium")
+        return 1
 
     backend = sandbox = None
     user_data = tempfile.mkdtemp(prefix="tf_ext_profile_")
