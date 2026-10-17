@@ -35,6 +35,10 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+  /* [P2] 側邊欄（約 400px 寬）下，標題與狀態膠囊會互相擠壓，導致
+     "Copilot Decision Deck" 被截斷成 "...Dec k"。允許換行並讓文字可收縮。 */
+  flex-wrap: wrap;
   margin-bottom: 16px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border-color);
@@ -44,6 +48,12 @@ header {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0; /* 讓子元素可縮小，避免 overflow 被裁切 */
+  flex: 1 1 auto;
+}
+
+.logo-group > div {
+  min-width: 0;
 }
 
 .logo-badge {
@@ -54,12 +64,16 @@ header {
   border-radius: 6px;
   font-size: 11px;
   letter-spacing: 0.5px;
+  flex: 0 0 auto;
 }
 
 .title {
   font-size: 15px;
   font-weight: 700;
   color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .version {

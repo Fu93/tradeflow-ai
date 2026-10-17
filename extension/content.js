@@ -252,12 +252,35 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 6. Web Component: <tradeflow-overlay> (Open Shadow DOM & Event Barrier)
+  // 6. Overlay Host: open Shadow DOM on a PLAIN element (see P0 note above)
+  //
+  // [P0 REGRESSION — 首次實際執行測試時發現] 舊版用
+  // `customElements.define("tradeflow-overlay", TradeFlowOverlay)` 註冊自訂元素。
+  // 在 **Manifest V3 的 isolated world** 中，`customElements` 實際是 **null**
+  // （量測：`typeof customElements === "object"` 但值為 null —— 即 JS 惡名昭彰的
+  // `typeof null === "object"`）。於是 `customElements.define(...)` 在 content
+  // script 頂層立即拋
+  //     TypeError: Cannot read properties of null (reading 'define')
+  // 而整支 content script 就此中斷：HUD 不注入、決策卡不渲染、驗證碼哨兵不作用
+  // —— 也就是「擴充完全沒有作用」。
+  //
+  // 這個 bug 為何能長期逃過審查：所有既有測試都只**閱讀 JavaScript 原始碼字串**
+  // （grep assertIn），從來沒有在真實 Chromium 裡載入過擴充；而靜態閱讀時
+  // `customElements.define(...)` 看起來完全正常。
+  //
+  // 修法：不再使用 customElements。改為建立一個普通 <div> 並 `attachShadow`
+  // （open），把原本的 render/bind/updateStatus/renderDecisionDeck 邏輯掛到該
+  // 實例上。Shadow DOM 隔離性、事件屏障、決策卡 DOM 全部保持不變，且完全不需要
+  // 跨 world 注入 <script>（那會被頁面 CSP 阻擋）。
   // ---------------------------------------------------------------------------
-  class TradeFlowOverlay extends HTMLElement {
+  class TradeFlowOverlayHost {
     constructor() {
-      super();
-      this.attachShadow({ mode: "open" });
+      // 普通 DOM 容器（不再靠 customElements 升級）。host 元素即頁面上的 HUD 根節點。
+      this.el = document.createElement("div");
+      this.el.className = "tradeflow-overlay";
+      this.el.setAttribute("data-tradeflow", "overlay");
+      // opened shadow root：隔離頁面 CSS（等同舊版 :host { all: initial } 的效果）
+      this.shadowRoot = this.el.attachShadow({ mode: "open" });
       this._state = {
         active: true,
         mode: "copilot", // "copilot" (default safe assistant) | "autopilot_simulator"
@@ -273,7 +296,10 @@
       };
     }
 
-    connectedCallback() {
+    // 舊版是 custom element 的 connectedCallback()（由瀏覽器在元素插入 DOM 時自動
+    // 呼叫）。改為普通元素後沒有這個生命週期，因此改成顯式 mount()，由
+    // initOverlay() 在 appendChild 之後立即呼叫 —— 順序與舊版語義等價。
+    mount() {
       this.render();
       this.bindEvents();
       this.setupEventBarrier();
@@ -592,7 +618,10 @@
     }
   }
 
-  customElements.define("tradeflow-overlay", TradeFlowOverlay);
+  // 建立 HUD 物件：不用 customElements（isolated world 中為 null，見上方 P0 說明）。
+  // TradeFlowOverlayHost 只是普通的 JS 類別（不再 extends HTMLElement），
+  // 它在自己的 constructor 內建立一個帶 open shadow root 的容器 <div>。
+  const OVERLAY_TAG = "tradeflow-overlay";
 
   // ---------------------------------------------------------------------------
   // 7. Resilient Port Client (Exponential Backoff + Jitter)
@@ -822,10 +851,14 @@
   let captchaPaused = false;
 
   function initOverlay() {
-    if (document.querySelector("tradeflow-overlay")) return;
-    overlayEl = document.createElement("tradeflow-overlay");
+    // 重複注入防護：HUD 以 data-tradeflow 屬性標記（不再依賴自訂標籤名）。
+    if (document.querySelector('[data-tradeflow="overlay"]')) return;
+    overlayEl = new TradeFlowOverlayHost();
     overlayEl._state.sessionId = sessionContext.sessionId;
-    document.body.appendChild(overlayEl);
+    // 先 mount()（render + bind + event barrier）再插入文件，避免任何
+    // 依賴 layout 的綁定在未插入狀態下執行。
+    overlayEl.mount();
+    document.body.appendChild(overlayEl.el);
   }
 
   async function handleInboundQuote(rawText) {

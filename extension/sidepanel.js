@@ -64,6 +64,8 @@ const btnRefresh = document.getElementById("btn-refresh");
 let currentTabId = null;
 let currentSessionId = null;
 let sidepanelPort = null;
+// [P1] 一旦用真實引擎/後端資料渲染過，就不再被空推播打回 STANDBY 待命視圖。
+let hasRenderedLiveData = false;
 
 // Establish persistent Port to Background Worker
 async function initPortConnection() {
@@ -135,7 +137,16 @@ async function syncWithActiveTab() {
 // Render session data or dormant standby view
 function handleSessionPush(sessionMeta) {
   if (!sessionMeta || !sessionMeta.sessionId) {
-    renderDormantView();
+    // [P1 REGRESSION — 實機測試發現] 舊版對任何「無 sessionId」的推播都無條件
+    // 呼叫 renderDormantView()，把面板清成 STANDBY / 全 "--"。
+    // 但 service worker 會把 REGISTER_SESSION 的結果以 `{ sessionMeta }`（無
+    // sessionId）回推，SYNC_ACTIVE_TAB 在尚未綁定時也會推 `session: null`。
+    // 結果是：面板剛用真實引擎資料渲染完，立刻被下一個空推播覆寫成 STANDBY ——
+    // 看起來像「面板永遠抓不到資料」。
+    // 現在只有在「從未成功渲染過真實資料」時才進入待命視圖。
+    if (!hasRenderedLiveData) {
+      renderDormantView();
+    }
     return;
   }
 
@@ -216,6 +227,7 @@ function renderStandbyView(sessionId) {
 
 function renderEngineData(data) {
   if (!data) return;
+  hasRenderedLiveData = true;
 
   const session = data.session || {};
   const turn = data.turn || {};
@@ -246,7 +258,21 @@ function renderEngineData(data) {
   const postStd = tfNum(belief.posterior_std, null);
   valPosteriorStd.innerText = postStd === null ? "--" : postStd.toFixed(3);
 
-  const risk = tfNum(turn?.p_break ?? turn?.breakdown_risk, null);
+  // [P1 REGRESSION — 實機測試發現] 舊版只讀 `turn?.p_break ?? turn?.breakdown_risk`。
+  // 但 **copilot 模式的後端回應中 `turn` 恆為 null**（實測：turn=None，
+  // 而真實風險值存在 `action_object.breakdown_risk = 0.0215`）。因此側邊欄的
+  // 破局風險永遠顯示 "--"，連帶 timeline 的 Risk 欄也是空的 —— 面板看起來像壞掉。
+  // 正確契約（已對照 /api/v1/sessions/{id}/round 實測回應）：
+  //   風險 → action_object.breakdown_risk，其次 turn.p_break，最後歷史末輪 p_break。
+  // 全數缺失時仍顯示 "--"（不捏造）。
+  const action = data.action_object || {};
+  const lastHistTurn = Array.isArray(session.history) && session.history.length
+    ? session.history[session.history.length - 1]
+    : null;
+  const risk = tfNum(
+    action.breakdown_risk ?? turn?.p_break ?? turn?.breakdown_risk ?? lastHistTurn?.p_break,
+    null,
+  );
   if (risk === null) {
     valBreakdownRisk.innerText = "--";
     progressBreakdown.style.width = "0%";
@@ -261,10 +287,18 @@ function renderEngineData(data) {
   // escaped with tfEsc() and the numeric fields are coerced with tfNum().
   // P0-2/P1-2 契約修正：autopilot turn 欄位為 round_index/parsed_price；風險在
   // action_object.breakdown_risk 或 turn.p_break；缺值一律 "--"，不捏造。
-  const action = data.action_object || {};
+  // [P2] 輪數顯示：後端 current_round 會隨每則供應商訊息遞增，可能超過
+  // max_rounds（實測 current_round=9 / max_rounds=5）。直接顯示 "Round 9 / 5"
+  // 會讓評審以為狀態機壞了，因此超過上限時改為明確標示總回合數。
   const maxRounds = tfNum(spec.max_rounds, null);
   const roundNo = tfNum(turn?.round_index ?? session.current_round, null);
-  roundCounter.innerText = `Round ${roundNo === null ? "—" : roundNo} / ${maxRounds === null ? "—" : maxRounds}`;
+  if (roundNo === null) {
+    roundCounter.innerText = "Round — / —";
+  } else if (maxRounds !== null && roundNo > maxRounds) {
+    roundCounter.innerText = `${roundNo} turns (limit ${maxRounds})`;
+  } else {
+    roundCounter.innerText = `Round ${roundNo} / ${maxRounds === null ? "—" : maxRounds}`;
+  }
   const counterOffer = tfNum(
     data.recommended_offer_price ?? action.authorized_price ?? turn?.buyer_counter_offer,
     null,
@@ -324,7 +358,17 @@ function renderSession(session) {
 
   const turns = Array.isArray(session.history) ? session.history : session.turns || [];
   const maxRounds0 = tfNum(spec2.max_rounds, null);
-  roundCounter.innerText = `Round ${turns.length} / ${maxRounds0 === null ? "—" : maxRounds0}`;
+  if (turns.length > 0) {
+    hasRenderedLiveData = true;
+    // 與 renderEngineData 一致的輪數顯示規則（超過上限時標示總回合數）。
+    if (maxRounds0 !== null && turns.length > maxRounds0) {
+      roundCounter.innerText = `${turns.length} turns (limit ${maxRounds0})`;
+    } else {
+      roundCounter.innerText = `Round ${turns.length} / ${maxRounds0 === null ? "—" : maxRounds0}`;
+    }
+  } else {
+    roundCounter.innerText = `Round 0 / ${maxRounds0 === null ? "—" : maxRounds0}`;
+  }
 
   if (turns.length > 0) {
     const lastTurn = turns[turns.length - 1];
