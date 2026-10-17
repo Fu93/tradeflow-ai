@@ -9,8 +9,30 @@
 """
 from __future__ import annotations
 import numpy as np
+from src.config.heuristics import (
+    ANCHORING_BETA,
+    ANCHORING_CLIP,
+    ANCHORING_REF,
+    BELIEF_CONF_BASE,
+    BELIEF_CONF_CV,
+    BELIEF_CONF_HI,
+    BELIEF_CONF_LO,
+    BELIEF_CONF_VAR,
+    BREAK_PENALTY,
+    CONCESSION_RATE_CAP,
+    DEAL_DECAY_SCALE,
+    DEAL_TOLERANCE,
+    OPENING_BREAK_BASE,
+    OPENING_BREAK_BLUFF,
+    OPENING_GAP_BREAK,
+    OPPONENT_GAP_SHARE,
+)
+from src.sim.scenarios import UMBRELLA
 from . import model
 from .backend import resolve_use_gpu
+
+# Re-exported so tests and callers can still assign solver.ANCHORING_BETA = 0.
+# The values live in src.config.heuristics.
 
 # ============================================================================
 # [誠實揭露] 對抗式開盤錨定反應係數 (Adversarial Anchoring Reaction)
@@ -35,11 +57,6 @@ from .backend import resolve_use_gpu
 # 設定 `solver.ANCHORING_BETA = 0.0` 可還原舊版（無錨定反應）的目標函式，
 # 此槓桿即迴歸測試的依據（見 tests/test_solver_behavior.py）。
 # ============================================================================
-ANCHORING_REF = 0.10
-ANCHORING_BETA = 1.00
-ANCHORING_CLIP = (0.50, 1.50)
-
-
 def anchoring_multiplier(xp, gap):
     """後端無關（NumPy/CuPy）的對手讓步率錨定反應乘數。
 
@@ -149,23 +166,24 @@ def solve(
     # first_gap 是固定量（隨 op 變、與輪次無關），所以乘數可逐 (n_open) 預算。
     first_gap = xp.abs(res - op)
     react = anchoring_multiplier(xp, first_gap)
-    cr_eff = xp.clip(cr * react, 0.0, 0.95)
+    cr_eff = xp.clip(cr * react, 0.0, CONCESSION_RATE_CAP)
     for r in range(model.ROUNDS):
         step_you = cf[..., r] * gap
         paid = paid + step_you
         gap = gap - step_you
-        step_opp = cr_eff * urg * (1.0 - 0.45 * blf) * gap
+        step_opp = cr_eff * urg * (1.0 - OPPONENT_GAP_SHARE * blf) * gap
         gap = gap - step_opp
         gap = xp.maximum(gap, 0.0)
 
     final_gap = gap
-    tol = 0.02
-    p_deal = xp.exp(-xp.maximum(final_gap - tol, 0.0) / 0.05)
+    tol = DEAL_TOLERANCE
+    p_deal = xp.exp(-xp.maximum(final_gap - tol, 0.0) / DEAL_DECAY_SCALE)
     p_break = xp.clip(
-        1.0 - p_deal + (first_gap > 0.32) * (0.20 + 0.30 * blf), 0.0, 1.0
+        1.0 - p_deal + (first_gap > OPENING_GAP_BREAK) * (OPENING_BREAK_BASE + OPENING_BREAK_BLUFF * blf),
+        0.0,
+        1.0,
     )
-    # payoff 常數：成交時拿 (你的 ceiling − 已付總價)，破局扣 0.10（見上方揭露）。
-    payoff = p_deal * (model.YOUR_CEILING - paid) - p_break * 0.10
+    payoff = p_deal * (model.YOUR_CEILING - paid) - p_break * BREAK_PENALTY
     exp_margin = payoff.mean(axis=0)
     exp_break = p_break.mean(axis=0)
 
@@ -239,14 +257,14 @@ def compute_belief_confidence(prior_std: float, post_std: float, post_mean: floa
     它是供 UI 呈現的相對收斂度指標。
     """
     if post_mean <= 0 or post_std <= 0:
-        return 0.50
+        return BELIEF_CONF_LO
     cv = post_std / post_mean
     variance_reduction = max(0.0, (prior_std - post_std) / (prior_std + 1e-6))
-    raw_conf = 0.75 + 0.35 * variance_reduction - 0.80 * cv
-    return round(float(np.clip(raw_conf, 0.50, 0.98)), 3)
+    raw_conf = BELIEF_CONF_BASE + BELIEF_CONF_VAR * variance_reduction - BELIEF_CONF_CV * cv
+    return round(float(np.clip(raw_conf, BELIEF_CONF_LO, BELIEF_CONF_HI)), 3)
 
 
-def recommend(solve_result, target_price=12.0, opens=None, scheds=None):
+def recommend(solve_result, target_price=None, opens=None, scheds=None):
     """把歸一化結果轉成可讀建議。
 
     [修正] 舊版在 `solve()` 接受自訂 opens/scheds 時，`recommend()` 卻只
@@ -254,6 +272,9 @@ def recommend(solve_result, target_price=12.0, opens=None, scheds=None):
     傳了自訂網格，best 索引會對到錯誤的數值。
     現在 recommend() 接受並沿用 solve() 使用的同一份 opens/scheds。
     """
+    if target_price is None:
+        # Omitted price means the simulated umbrella mandate, not a market quote.
+        target_price = UMBRELLA.target
     i_open, i_sched = solve_result["best"]
     if opens is None or scheds is None:
         opens, scheds = model.strategy_grid()

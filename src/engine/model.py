@@ -6,31 +6,31 @@
 from __future__ import annotations
 import numpy as np
 
-# 你的 walk-away 上限（規格目標價 ¥12 的 1.35 倍）。實際金額在 demo 層乘上。
-# 這是策略網格的歸一化上界，不是某次實測。
-YOUR_CEILING = 1.35
-ROUNDS = 5
+from src.config.heuristics import (
+    BREAKDOWN_TRIP_THRESHOLD,
+    CONCESSION_FIXED_ROWS,
+    CONCESSION_FLAT_RATES,
+    CONCESSION_RAMPS,
+    CONCESSION_RATE_CAP,
+    GRID_EDGE_INSET,
+    PARAM_FLOOR,
+    SAMPLE_AXIS_NOISE,
+    SAMPLE_NOISE,
+    YOUR_CEILING,
+)
+from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS
 
-# 破局機率達到此值就熔斷，交給人。啟發式安全門檻，不是擬合出來的臨界值。
-# main.py、multi_solver.py、proposal.py 與擴充套件的顯示門檻都對這一個數。
-BREAKDOWN_TRIP_THRESHOLD = 0.15
+# Re-exported from src.config.heuristics and src.sim.archetypes so existing
+# callers can keep reading model.YOUR_CEILING and model.OPP_TYPES.
+ROUNDS = 5
 
 
 def breakdown_circuit_tripped(p_break: float) -> bool:
     """True when a breakdown probability reaches the shared safety threshold."""
     return float(p_break) >= BREAKDOWN_TRIP_THRESHOLD
 
-# 對手類型：[reserve 底價乘數, urgency 急單度, bluff 詐唬機率, conc_rate 每輪讓步傾向]
-OPP_TYPES = np.array(
-    [
-        [1.05, 0.90, 0.35, 0.55],   # 庫存壓力大
-        [1.00, 0.50, 0.50, 0.35],   # 中間型
-        [1.18, 0.30, 0.65, 0.25],   # 不缺單（強硬）
-        [1.10, 0.70, 0.80, 0.30],   # 詐唬型
-    ],
-    dtype=float,
-)
-OPP_NAMES = ["庫存壓力大", "中間型", "不缺單(強硬)", "詐唬型"]
+OPP_TYPES = np.array(OPPONENT_TYPE_ROWS, dtype=float)
+OPP_NAMES = list(OPPONENT_TYPE_NAMES)
 
 
 def strategy_grid(n_open: int = 40, n_sched: int = 12):
@@ -58,21 +58,15 @@ def strategy_grid(n_open: int = 40, n_sched: int = 12):
     `opens[0]` ~ `opens[i_peak]`（約前 7 檔），其餘 30+ 檔在基準先驗下為負分。
     引用「480 條策略網格」時必須一併說明此集中性。
     """
-    opens = np.linspace(1.00, YOUR_CEILING - 0.02, n_open)
-    base = np.array(
-        [
-            [0.05] * ROUNDS, [0.10] * ROUNDS, [0.15] * ROUNDS, [0.20] * ROUNDS,
-            np.linspace(0.03, 0.27, ROUNDS), np.linspace(0.27, 0.03, ROUNDS),
-            np.linspace(0.06, 0.20, ROUNDS), np.linspace(0.20, 0.06, ROUNDS),
-            [0.08, 0.10, 0.12, 0.14, 0.16], [0.16, 0.14, 0.12, 0.10, 0.08],
-            [0.10, 0.08, 0.12, 0.10, 0.10], [0.12, 0.14, 0.10, 0.12, 0.10],
-        ],
-        dtype=float,
-    )
+    opens = np.linspace(1.0, YOUR_CEILING - GRID_EDGE_INSET, n_open)
+    rows = [[rate] * ROUNDS for rate in CONCESSION_FLAT_RATES]
+    rows.extend(np.linspace(start, end, ROUNDS) for start, end in CONCESSION_RAMPS)
+    rows.extend(CONCESSION_FIXED_ROWS)
+    base = np.array(rows, dtype=float)
     return opens, base[:n_sched]
 
 
-def sample_opponents(rng, n_samples: int, prior_mix=None, noise=0.08,
+def sample_opponents(rng, n_samples: int, prior_mix=None, noise=SAMPLE_NOISE,
                      reserve_mean=None, reserve_std=None):
     """從 4 類型混合抽 n_samples 個對手，回傳參數陣列。
 
@@ -88,7 +82,7 @@ def sample_opponents(rng, n_samples: int, prior_mix=None, noise=0.08,
         reserve = reserve_mean * (1 + rng.normal(0, reserve_std, n_samples))
     else:
         reserve = OPP_TYPES[t, 0] * (1 + rng.normal(0, noise, n_samples))
-    urgency = np.clip(OPP_TYPES[t, 1] + rng.normal(0, 0.10, n_samples), 0.05, 1.0)
-    bluff = np.clip(OPP_TYPES[t, 2] + rng.normal(0, 0.10, n_samples), 0.0, 1.0)
-    conc = np.clip(OPP_TYPES[t, 3] + rng.normal(0, 0.08, n_samples), 0.05, 0.95)
+    urgency = np.clip(OPP_TYPES[t, 1] + rng.normal(0, SAMPLE_AXIS_NOISE, n_samples), PARAM_FLOOR, 1.0)
+    bluff = np.clip(OPP_TYPES[t, 2] + rng.normal(0, SAMPLE_AXIS_NOISE, n_samples), 0.0, 1.0)
+    conc = np.clip(OPP_TYPES[t, 3] + rng.normal(0, SAMPLE_NOISE, n_samples), PARAM_FLOOR, CONCESSION_RATE_CAP)
     return reserve, urgency, bluff, conc

@@ -19,13 +19,13 @@ The deadline in SUBMISSION.md is the pack's instruction (11:00 London, BST, 18 O
 
 Checked by `tests/test_logic_invariants.py`.
 
-- **Expectimax.** `solver.solve` is an open-loop search: one opening and one concession schedule, scored by the expected payoff over sampled opponents. It does not re-optimise inside the round. A scalar loop uses the same samples, the same anchoring constants, and the same payoff (opponent eats 0.45 of the remaining gap, deal tolerance 0.02, break penalty 0.10, first-gap break extra above 0.32). On a 5-sample by 3-opening by 2-schedule grid the vectorised margins match that loop, and `best` is the argmax of margin minus break probability. Those constants are heuristics, documented in `src/engine/solver.py`. They are not fitted parameters.
+- **Expectimax.** `solver.solve` is an open-loop search: one opening and one concession schedule, scored by the expected payoff over sampled opponents. It does not re-optimise inside the round. A scalar loop uses the same samples, the same anchoring constants, and the same payoff (opponent eats 0.45 of the remaining gap, deal tolerance 0.02, break penalty 0.10, first-gap break extra above 0.32). On a 5-sample by 3-opening by 2-schedule grid the vectorised margins match that loop, and `best` is the argmax of margin minus break probability. Those constants are heuristics, documented in `src/config/heuristics.py`. They are not fitted parameters.
 - **Bayesian update.** With no new offer, the posterior equals the prior at 4 decimal places, information gain is 0, and clean responsibility is 1. Responsibility stays in [0, 1]. An offer far from the prior moves the mean less than an offer near it. Deal probability stays in [0, 1]. The default four-type mix sums to 1.
 - **Logrolling.** Ranked trades from `LogrollingEngine.evaluate` stay inside the mandate: price at or under the walk-away ceiling, deposit at or under `max_allowed_deposit_pct`, lead and MOQ inside their caps, and supplier surplus not negative. The status-quo baseline is not treated as a trade. Shadow prices (`lead_day_shadow_value`, capital rates, `estimated_mold_fee`, volume discount) are buyer-side settings on `CorporateMandate`, not factory quotes.
 - **Reverse auction.** Openings are taken from the strategy grid, which runs up to `YOUR_CEILING` (1.35 times target). If the session ceiling is tighter, openings above that ceiling are removed before the argmax. If every grid point is above the ceiling, the offer is the ceiling and the break probability is reported as 1. A 13.0 ceiling on a 12.0 target was checked this way. Supplier names in that path are parameterised archetypes. The dashboard says so. Savings on that screen are labelled against the walk-away ceiling and against the first quote separately.
 - **Intent.** Stage-1 confidence on three short strings is inside [0, 1]. That is not a new accuracy measurement. The held-out score remains the one in `models/onnx_export_metrics.json`.
 - **Guardrail.** An authorised price above the object's own ceiling, and a deposit above 0.6001, raise `GuardrailViolationError`. The check is an explicit `raise`, and the same rejection still happens under `python -O`. The guardrail checks the object against itself. It does not prove the ceiling equals a separate mandate. The business deposit cap on the mandate defaults to 0.50, which is stricter than this 0.60 safety cap.
-- **Circuit breaker.** `model.BREAKDOWN_TRIP_THRESHOLD` is 0.15. 0.149 does not trip. 0.15 does. `main.py`, `multi_solver.py`, and `proposal.py` use that constant. The extension scripts contain the same 0.15 literal for display.
+- **Circuit breaker.** `model.BREAKDOWN_TRIP_THRESHOLD` is 0.15. 0.149 does not trip. 0.15 does. `main.py`, `multi_solver.py`, and `proposal.py` use that constant. The dashboard and the extension read the same value from `GET /api/v1/heuristics`. They do not keep a second copy of the threshold.
 
 ## Human send
 
@@ -43,6 +43,35 @@ Checked by `tests/test_logic_invariants.py`.
 - A stated `deposit_pct` was stored as null. It is stored when the request includes it.
 - Auction counter-offers could sit above a session ceiling tighter than `YOUR_CEILING`, because the grid was not masked. They are masked now.
 - The pre-approval Evolus email draft on an autopilot deal candidate was an outbound call. It is removed.
+
+## No fabricated numbers outside the simulator
+
+`scripts/check_no_fake_literals.py` walks production Python with the AST, and walks the dashboard and extension HTML/JS as text. CI runs it. `tests/test_no_fake_literals.py` runs it too.
+
+Allowed to contain scenario floats:
+
+- `src/config/heuristics.py`, and only when the assignment sits under a `Rationale:` comment. These are chosen safety bands, unit caps, and display quantisation. `GET /api/v1/heuristics` is what the desk and the extension display.
+- `src/sim/`, including simulated mandates, archetype parameters, scripted red-team lines, and the inputs used by `verify_all.py` and `verify_live.py`.
+- The self-play generator (`src/benchmark/adversaries.py`, `src/benchmark/arena.py`, `src/benchmark/ood_500_dataset.py`, `scripts/generate_ood_500.py`) and the auction simulator (`src/engine/multi_solver.py`).
+- `extension/mock_chat.html`, which is labelled simulated on the page.
+- Plot geometry in `src/engine/viz.py`, and the frozen early copies `benchmark_negotiation.py` and `benchmark_negotiation_v2.py`. The live solver does not import those copies.
+
+A float that is not 0, 1, a numeric epsilon, an input cap at or above one million, a timeout, or a ×1000 / ÷1000 unit conversion is a failure anywhere else. A `¥` amount written into those files is a failure. A percent or a day-range typed into dashboard or extension HTML is a failure, because those bands have to come from the heuristics endpoint or the simulation catalogue.
+
+What this pass moved:
+
+- Dashboard commodity prices, lead labels, and deposit labels are no longer in `index.html` or `app.js`. The page starts at "—" and fills them from `GET /api/v1/simulation/mandates`, with a line that says they are simulated.
+- The trip and caution bands are no longer typed into the dashboard, the side panel, or the content script. They are filled from `GET /api/v1/heuristics`.
+- The belief chart no longer draws `target × 1.08` before any offer exists.
+- Auction cards show "—" when a quote is missing. They do not fall back to zero.
+- Smoke-script prices live in `src/sim/smoke.py` and `src/sim/redteam.py`.
+
+Honest exceptions the scanner does not treat as scenario data:
+
+- Integers: counts, seeds, HTTP statuses, day defaults on a pydantic field, loop bounds.
+- Tests. They assert behaviour and may use the simulated mandates.
+- `results/*.json` and the markdown under `docs/`. Those are measured outputs or write-ups. `scripts/check_claims.py` is what keeps README and SUBMISSION numbers tied to the result files.
+- Comments and docstrings, including ones that say a number is not a quote.
 
 ## Not verified
 

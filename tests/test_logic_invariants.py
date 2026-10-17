@@ -292,10 +292,14 @@ class TestExtensionDoesNotAutoSend(unittest.TestCase):
         background = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
         self.assertIn("chrome.runtime.onConnect", background)
         self.assertIn("chrome.runtime.onMessage", background)
-        literal = f"{model.BREAKDOWN_TRIP_THRESHOLD:.2f}"
         for name in ("content.js", "sidepanel.js"):
-            live = _strip_js_comments((ROOT / "extension" / name).read_text(encoding="utf-8"))
-            self.assertIn(literal, live)
+            raw = (ROOT / "extension" / name).read_text(encoding="utf-8")
+            live = _strip_js_comments(raw)
+            # The comment stripper also cuts http:// URLs, so the path is
+            # checked on the raw file. The live source must not embed the
+            # threshold; both scripts read it from the heuristics endpoint.
+            self.assertIn("/api/v1/heuristics", raw)
+            self.assertNotIn(f"{model.BREAKDOWN_TRIP_THRESHOLD:.2f}", live)
 
 
 class TestRoundPathHonesty(unittest.TestCase):

@@ -7,17 +7,19 @@
 """
 from __future__ import annotations
 import numpy as np
+from src.config.heuristics import PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD
+from src.sim.scenarios import SUPPLIER_REPLIES, UMBRELLA
 from . import model, solver
 
 
 def build_proposal(spec: dict, observed_offer: float | None = None):
     """spec: 同 /negotiate 的欄位。回傳 dict（含逐輪 price 表 + 文案）。"""
-    post_mean = spec.get("prior_reserve_mean", 1.08)
-    post_std = spec.get("prior_reserve_std", 0.10)
+    post_mean = spec.get("prior_reserve_mean", PRIOR_RESERVE_MEAN)
+    post_std = spec.get("prior_reserve_std", PRIOR_RESERVE_STD)
     if observed_offer is not None:
         post_mean, post_std = solver.bayes_update(post_mean, post_std, observed_offer)
 
-    tp = spec.get("target_price", 12.0)
+    tp = spec.get("target_price", UMBRELLA.target)
     # [修正/誠實揭露] 舊版把讓步軌跡的上限硬寫為 model.YOUR_CEILING (=規格目標
     # 價的 1.35 倍)，完全忽略 spec 可能傳入的 walk_away_ceiling —— 若呼叫端把
     # ceiling 設成別的值（例如 1.20 倍），proposal 仍會一路讓到 1.35 倍而破框。
@@ -85,7 +87,7 @@ def build_proposal(spec: dict, observed_offer: float | None = None):
 
 
 if __name__ == "__main__":
-    spec = {"target_price": 12.0, "n_samples": 20000}
-    p = build_proposal(spec, observed_offer=1.25)
+    spec = {"target_price": UMBRELLA.target, "n_samples": 20000}
+    p = build_proposal(spec, observed_offer=SUPPLIER_REPLIES[0])
     import json
     print(json.dumps(p, ensure_ascii=False, indent=2))

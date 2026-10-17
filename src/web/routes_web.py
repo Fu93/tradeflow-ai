@@ -109,7 +109,7 @@ async def _session_event_generator(request: Request, max_seconds: float | None =
         try:
             max_seconds = float(os.getenv("TRADEFLOW_SSE_MAX_SECONDS", "300"))
         except ValueError:
-            max_seconds = 300.0
+            max_seconds = 300
     started = time.monotonic()
     try:
         while True:

@@ -35,6 +35,24 @@ except Exception as _dotenv_err:  # pragma: no cover - 缺套件時不應讓 API
         "Install it via `pip install -r requirements.txt`.", _dotenv_err,
     )
 
+from src.config.heuristics import (
+    API_EXTRACTED_PRICE_CAP,
+    API_MARKUP_CAP,
+    API_NORM_CAP,
+    API_PRICE_CAP,
+    BAYES_MARKUP,
+    BUYER_CAPITAL_RATE,
+    CAUTION_RISK_THRESHOLD,
+    DEPOSIT_HARD_CAP,
+    NEAR_DEAL_RATIO,
+    PRICE_MATCH_RATIO,
+    PRIOR_RESERVE_MEAN,
+    PRIOR_RESERVE_STD,
+    STAGNATION_PREMIUM,
+    SUPERVISOR_MIN_PRICE_RATIO,
+    public_payload as heuristics_payload,
+)
+from src.sim.scenarios import UMBRELLA, public_payload as simulation_payload
 from ..engine.backend import describe_solver_backend, resolve_use_gpu
 from ..engine.llm_config import llm_status
 from ..engine import (
@@ -305,16 +323,28 @@ def _latest_recommended_price(sess) -> Optional[float]:
 
 class Spec(BaseModel):
     product: str = Field(default="auto umbrella", max_length=512)
-    target_price: float = Field(default=12.0, gt=0.0, allow_inf_nan=False)   # ¥ per unit
+    target_price: float = Field(default=UMBRELLA.target, gt=0.0, allow_inf_nan=False)
     moq: int = Field(default=500, ge=1, le=10_000_000)
     rounds: int = Field(default=model.ROUNDS, ge=1, le=100)
     # [REGRESSION] 未認證端點會直接把 n_samples 餵給 solve() 決定張量大小；
     # 舊版毫無上界，單一請求即可配置任意大的工作集（DoS）。
     n_samples: int = Field(default=20_000, ge=1, le=50_000)
-    lambda_break: float = Field(default=1.0, ge=0.0, le=100.0, allow_inf_nan=False)
-    prior_reserve_mean: float = Field(default=1.08, gt=0.0, allow_inf_nan=False)
-    prior_reserve_std: float = Field(default=0.10, gt=0.0, allow_inf_nan=False)
+    lambda_break: float = Field(default=1.0, ge=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    prior_reserve_mean: float = Field(default=PRIOR_RESERVE_MEAN, gt=0.0, allow_inf_nan=False)
+    prior_reserve_std: float = Field(default=PRIOR_RESERVE_STD, gt=0.0, allow_inf_nan=False)
     observed_offer: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)  # 供應商回價（歸一化，1.0=目標價）
+
+
+@api_v1.get("/heuristics")
+def documented_heuristics():
+    """Safety bands and display quantisation. Not fitted rates."""
+    return heuristics_payload()
+
+
+@api_v1.get("/simulation/mandates")
+def simulated_mandates():
+    """Sandbox commodity mandates. Not factory quotes."""
+    return simulation_payload()
 
 
 @app.get("/health")
@@ -371,11 +401,11 @@ class EvolusExtractedFields(BaseModel):
     """
     model_config = ConfigDict(extra="ignore")
 
-    target_price: Optional[float] = Field(default=None, gt=0.0, le=1_000.0, allow_inf_nan=False)
+    target_price: Optional[float] = Field(default=None, gt=0.0, le=API_EXTRACTED_PRICE_CAP, allow_inf_nan=False)
     n_samples: Optional[int] = Field(default=None, ge=1, le=20_000)
-    lambda_break: Optional[float] = Field(default=None, ge=0.0, le=100.0, allow_inf_nan=False)
-    prior_reserve_mean: Optional[float] = Field(default=None, gt=0.0, le=100.0, allow_inf_nan=False)
-    prior_reserve_std: Optional[float] = Field(default=None, gt=0.0, le=100.0, allow_inf_nan=False)
+    lambda_break: Optional[float] = Field(default=None, ge=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    prior_reserve_mean: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    prior_reserve_std: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
 
 
 class EvolusWebhookPayload(BaseModel):
@@ -421,9 +451,6 @@ class MobileCommandBody(BaseModel):
 # （ActionObjectASTGuardrail 也只看 auth_p <= ceiling），因此「主管可以單方面
 # 承諾任意低價」。低於此比例（目標價的 50%）的覆寫一律拒絕，必須改走
 # /approve 的人工覆寫路徑（有明確的 action="override" 與理由可稽核）。
-SUPERVISOR_MIN_PRICE_RATIO = 0.5
-
-
 def _dispatch_supervisor_command(
     session_id: str,
     user_command: str,
@@ -582,7 +609,7 @@ def _dispatch_supervisor_command(
             if sess.latest_opponent_offer is not None:
                 settled_price = round(min(sess.latest_opponent_offer, sess.spec.ceiling_price), 2)
             else:
-                settled_price = round(min(sess.spec.target_price * 1.05, sess.spec.ceiling_price), 2)
+                settled_price = round(min(sess.spec.target_price * STAGNATION_PREMIUM, sess.spec.ceiling_price), 2)
         else:
             settled_price = sess.spec.target_price
 
@@ -853,17 +880,17 @@ class RoundActionRequest(BaseModel):
 
     opponent_raw_text: Optional[str] = Field(default=None, max_length=10_000)
     supplier_text: Optional[str] = Field(default=None, max_length=10_000)
-    opponent_offer_price: Optional[float] = Field(default=None, gt=0.0, le=1_000_000.0, allow_inf_nan=False)
-    supplier_offer: Optional[float] = Field(default=None, gt=0.0, le=1_000_000.0, allow_inf_nan=False)
+    opponent_offer_price: Optional[float] = Field(default=None, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
+    supplier_offer: Optional[float] = Field(default=None, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
     round_index: Optional[int] = Field(default=None, ge=1, le=100)
     offered_lead_days: Optional[int] = Field(default=None, ge=1, le=3650)
     offered_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)
     # [REGRESSION] 原本 deposit_pct 無上界：0.85 會被 Pydantic 接受，然後
     # ActionObjectASTGuardrail 才拋 GuardrailViolationError，直接把路由炸成
     # HTTP 500。加上 60% 的硬紅線，讓越界輸入在邊界就變成 422。
-    deposit_pct: Optional[float] = Field(default=None, gt=0.0, le=0.60, allow_inf_nan=False)
+    deposit_pct: Optional[float] = Field(default=None, gt=0.0, le=DEPOSIT_HARD_CAP, allow_inf_nan=False)
     unbundled_tax_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0, allow_inf_nan=False)
-    unbundled_packaging_fee: Optional[float] = Field(default=None, ge=0.0, le=1_000_000.0, allow_inf_nan=False)
+    unbundled_packaging_fee: Optional[float] = Field(default=None, ge=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
     expected_version: Optional[int] = Field(default=None, ge=1)
     # [REGRESSION] 預設值原為 "autopilot"，也就是 API 的預設路徑會在零人工核可
     # 下直接進入終止態 DEAL_CLOSED 並產出可直接複製發送的成交確認話術，違反
@@ -926,7 +953,7 @@ class ApproveActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     action: str = "approve"  # "approve", "modify", "override", "reject"
-    custom_price: Optional[float] = Field(default=None, gt=0.0, le=1_000_000.0, allow_inf_nan=False)
+    custom_price: Optional[float] = Field(default=None, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
     custom_reply_text: Optional[str] = Field(default=None, max_length=10_000)
     expected_version: Optional[int] = Field(default=None, ge=1)
     tactical_rationale: Optional[str] = Field(default=None, max_length=2_000)
@@ -949,12 +976,12 @@ class ApproveActionRequest(BaseModel):
 
 class TCOEvalRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    raw_price: float = Field(..., gt=0.0, le=1_000_000.0, allow_inf_nan=False)
+    raw_price: float = Field(..., gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
     baseline_lead_days: int = Field(default=15, ge=1, le=3650)
     offered_lead_days: Optional[int] = Field(default=None, ge=1, le=3650)
     baseline_moq: int = Field(default=500, ge=1, le=10_000_000)
     offered_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)
-    wacc: float = Field(default=0.08, ge=0.0, le=1.0, allow_inf_nan=False)
+    wacc: float = Field(default=BUYER_CAPITAL_RATE, ge=0.0, le=1.0, allow_inf_nan=False)
 
 
 class BayesianUpdateRequest(BaseModel):
@@ -962,11 +989,11 @@ class BayesianUpdateRequest(BaseModel):
     # [REGRESSION] prior_std 原無 gt=0；prior_std=0 會讓 bayesian_v2 出現
     # math domain error，並以裸 500 回應（FastAPI 的 ServerErrorMiddleware 會
     # 繞過 detail 包裝）。現在在邊界就回 422。
-    prior_mean: float = Field(default=1.08, gt=0.0, le=100.0, allow_inf_nan=False)
-    prior_std: float = Field(default=0.10, gt=0.0, le=100.0, allow_inf_nan=False)
-    observed_offer: float = Field(..., gt=0.0, le=100.0, allow_inf_nan=False)
-    estimated_markup: float = Field(default=0.08, ge=0.0, le=10.0, allow_inf_nan=False)
-    our_next_offer: Optional[float] = Field(default=None, gt=0.0, le=100.0, allow_inf_nan=False)
+    prior_mean: float = Field(default=PRIOR_RESERVE_MEAN, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    prior_std: float = Field(default=PRIOR_RESERVE_STD, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    observed_offer: float = Field(..., gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    estimated_markup: float = Field(default=BAYES_MARKUP, ge=0.0, le=API_MARKUP_CAP, allow_inf_nan=False)
+    our_next_offer: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
 
 
 class SemanticClassifyRequest(BaseModel):
@@ -988,8 +1015,8 @@ class MultiAuctionRunRequest(BaseModel):
     # [REGRESSION] 舊版 n_samples / n_rounds / rounds_quotes 全無上界，且端點
     # 無認證：單一請求即可配置任意大的張量工作集（n_samples=1e6 約需 32GB），
     # 一個便宜請求就能打爆記憶體。現在全部給定硬上界。
-    target_price: float = Field(default=12.0, gt=0.0, le=1_000_000.0, allow_inf_nan=False)
-    walk_away_ceiling: float = Field(default=16.2, gt=0.0, le=1_000_000.0, allow_inf_nan=False)
+    target_price: float = Field(default=UMBRELLA.target, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
+    walk_away_ceiling: float = Field(default=UMBRELLA.ceiling, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
     moq: int = Field(default=10000, ge=1, le=10_000_000)
     n_samples: int = Field(default=20000, ge=1, le=50_000)
     n_rounds: int = Field(default=3, ge=1, le=10)
@@ -1310,8 +1337,8 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         default_spec = SessionSpec(
             session_id=session_id,
             product_name="Custom Carbon Auto Umbrella",
-            target_price=12.0,
-            ceiling_price=16.2,
+            target_price=UMBRELLA.target,
+            ceiling_price=UMBRELLA.ceiling,
             moq=5000,
             max_rounds=5,
             supplier_id="Web_Inbound_Supplier",
@@ -1627,7 +1654,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     # 判定是否觸發多維條款置換 (當對手不降價或哭窮抬價時)
     should_logroll = (
         opp_price is not None
-        and opp_price > target_price * 1.05
+        and opp_price > target_price * STAGNATION_PREMIUM
         and current_round >= 2
     )
 
@@ -1729,7 +1756,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     else:
         t_mode = (
             TacticalModeEnum.LEAN_IN
-            if p_break < 0.08
+            if p_break < CAUTION_RISK_THRESHOLD
             else (
                 TacticalModeEnum.CROSS_ANCHOR
                 if not model.breakdown_circuit_tripped(p_break)
@@ -1962,9 +1989,9 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     is_deal_closed = False
     awaiting_human_approval = False
     if opp_price is not None:
-        if opp_price <= target_price * 1.02:
+        if opp_price <= target_price * NEAR_DEAL_RATIO:
             is_deal_closed = True
-        elif current_round >= sess.spec.max_rounds and opp_price <= ceiling_price and abs(opp_price - recommended_offer_price) <= (0.02 * target_price):
+        elif current_round >= sess.spec.max_rounds and opp_price <= ceiling_price and abs(opp_price - recommended_offer_price) <= (PRICE_MATCH_RATIO * target_price):
             is_deal_closed = True
 
     if is_deal_closed and sess.state != AutopilotState.DEAL_CLOSED:

@@ -9,6 +9,8 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field, field_validator
 
+from src.config.heuristics import PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD, SILENCE_CONCESSION_RATIO
+
 
 # 會話識別碼白名單 (Session id whitelist)。
 # session_id 由呼叫端自由提供，且被 manager._atomic_write_json 直接拼進檔案路徑
@@ -75,8 +77,8 @@ class SessionSpec(BaseModel):
     ceiling_price: float = Field(..., gt=0.0, allow_inf_nan=False)
     moq: int = Field(default=500, ge=1, le=10_000_000)
     max_rounds: int = Field(default=5, ge=1, le=100)
-    prior_reserve_mean: float = Field(default=1.08, gt=0.0, allow_inf_nan=False)
-    prior_reserve_std: float = Field(default=0.10, gt=0.0, allow_inf_nan=False)
+    prior_reserve_mean: float = Field(default=PRIOR_RESERVE_MEAN, gt=0.0, allow_inf_nan=False)
+    prior_reserve_std: float = Field(default=PRIOR_RESERVE_STD, gt=0.0, allow_inf_nan=False)
     supplier_id: str = Field(default="default_supplier", max_length=256)
     supplier_channel: str = Field(default="web_chat", max_length=64)
     corporate_mandate: Optional[Dict[str, Any]] = None
@@ -121,7 +123,7 @@ class NegotiationSession(BaseModel):
 
         if new_offer is not None and self.latest_opponent_offer is not None:
             # 降價幅度 >= 3%
-            if new_offer <= self.latest_opponent_offer * 0.97:
+            if new_offer <= self.latest_opponent_offer * SILENCE_CONCESSION_RATIO:
                 self.silence_until_ts = None
                 return True
 

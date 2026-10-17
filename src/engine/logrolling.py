@@ -13,6 +13,22 @@ from enum import Enum
 from typing import List, Dict, Any, Optional, Tuple
 from pydantic import BaseModel, Field, model_validator
 
+from src.config.heuristics import (
+    BASELINE_DEPOSIT_PCT,
+    BUYER_CAPITAL_RATE,
+    EXCESS_HOLDING_RATE,
+    LEAD_DAY_SHADOW,
+    MAX_DEPOSIT_PCT,
+    MOLD_SURPLUS_SHARE,
+    MOQ_STRETCH,
+    PLANNING_MOLD_FEE,
+    RUSH_COST_COEFFICIENT,
+    RUSH_COST_EXPONENT,
+    SUPPLIER_COST_RATIO,
+    SUPPLIER_RELIEF_RATE,
+    VOLUME_DISCOUNT_RATIO,
+)
+
 
 class TradeoffType(str, Enum):
     """授權置換條款類型枚舉。"""
@@ -30,28 +46,28 @@ class CorporateMandate(BaseModel):
     baseline_lead_days: int = Field(default=25, gt=0, description="標準基準交期 (天)")
     max_acceptable_lead_days: int = Field(default=35, gt=0, description="最長可容忍交期 (天)")
     min_desired_lead_days: int = Field(default=12, gt=0, description="期望壓縮交期下限 (天)")
-    lead_day_shadow_value: float = Field(default=0.15, ge=0.0, description="每提前一天商業影子單價 (元/天/件)")
-    baseline_deposit_pct: float = Field(default=0.30, ge=0.0, le=1.0, description="基準定金比例 (30%)")
-    max_allowed_deposit_pct: float = Field(default=0.50, ge=0.0, le=1.0, description="公司授權最高定金比例 (50%)")
-    buyer_capital_cost_rate: float = Field(default=0.08, ge=0.0, description="買方年化資本成本率 (8%)")
-    supplier_capital_relief_rate: float = Field(default=0.22, ge=0.0, description="供應商資金短缺緩釋年化收益率 (22%)")
+    lead_day_shadow_value: float = Field(default=LEAD_DAY_SHADOW, ge=0.0, description="每提前一天商業影子單價 (元/天/件)")
+    baseline_deposit_pct: float = Field(default=BASELINE_DEPOSIT_PCT, ge=0.0, le=1.0, description="基準定金比例")
+    max_allowed_deposit_pct: float = Field(default=MAX_DEPOSIT_PCT, ge=0.0, le=1.0, description="公司授權最高定金比例")
+    buyer_capital_cost_rate: float = Field(default=BUYER_CAPITAL_RATE, ge=0.0, description="買方年化資本成本率")
+    supplier_capital_relief_rate: float = Field(default=SUPPLIER_RELIEF_RATE, ge=0.0, description="供應商資金短缺緩釋年化收益率")
     baseline_moq: int = Field(default=500, gt=0, description="基準標準採購量 (件)")
     max_allowed_moq: int = Field(default=1200, gt=0, description="最大允許採購量 (件)")
-    excess_holding_cost_rate: float = Field(default=0.05, ge=0.0, description="超額庫存持有成本率 (5%)")
+    excess_holding_cost_rate: float = Field(default=EXCESS_HOLDING_RATE, ge=0.0, description="超額庫存持有成本率")
     mold_fee_exemption_demanded: bool = Field(default=True, description="是否要求免除模具費")
-    estimated_mold_fee: float = Field(default=3000.0, ge=0.0, description="預估模具費總額 (元)")
+    estimated_mold_fee: float = Field(default=PLANNING_MOLD_FEE, ge=0.0, description="規劃用模具費，不是供應商報價")
     volume_discount_ratio: float = Field(
-        default=0.08,
+        default=VOLUME_DISCOUNT_RATIO,
         ge=0.0,
         le=1.0,
         description=(
-            "以量換價時假設的規模效應折讓率 (預設 8%)。"
+            "以量換價時假設的規模效應折讓率。"
             "此為**未經真實工廠報價校準的選擇值**，非量測值；"
             "不同品類/工廠應覆寫此欄位。舊版寫死於程式碼中，現開放設定。"
         ),
     )
     supplier_production_cost_ratio: float = Field(
-        default=0.82,
+        default=SUPPLIER_COST_RATIO,
         ge=0.0,
         le=1.0,
         description=(
@@ -60,15 +76,15 @@ class CorporateMandate(BaseModel):
         ),
     )
     supplier_rush_cost_coefficient: float = Field(
-        default=0.08,
+        default=RUSH_COST_COEFFICIENT,
         ge=0.0,
         description=(
-            "供應商趕工成本係數 (預設 0.08)，與下方指數共同決定趕工成本曲線。"
+            "供應商趕工成本係數，與下方指數共同決定趕工成本曲線。"
             "**兩個常數皆無公開文獻或成本單推導**；舊版寫死，現開放覆寫。"
         ),
     )
     supplier_rush_cost_exponent: float = Field(
-        default=1.25,
+        default=RUSH_COST_EXPONENT,
         gt=0.0,
         description="供應商趕工成本對提前天數的凸性指數 (預設 1.25)。未經校準，可覆寫。",
     )
@@ -100,9 +116,9 @@ class SupplierCurrentOffer(BaseModel):
     """供應商當前堅持之報價條件。"""
     price: float = Field(..., gt=0.0, description="供應商堅持之單價 (元)")
     lead_days: int = Field(default=25, gt=0, description="供應商報出之交期 (天)")
-    deposit_pct: float = Field(default=0.30, ge=0.0, le=1.0, description="供應商要求之定金比例")
+    deposit_pct: float = Field(default=BASELINE_DEPOSIT_PCT, ge=0.0, le=1.0, description="供應商要求之定金比例")
     moq: int = Field(default=500, gt=0, description="供應商要求之起訂量 (件)")
-    mold_fee: float = Field(default=3000.0, ge=0.0, description="供應商要求之模具費 (元)")
+    mold_fee: float = Field(default=PLANNING_MOLD_FEE, ge=0.0, description="未報價時的規劃值，不是已收到的模具費")
     is_price_stagnant: bool = Field(default=True, description="是否在單價上寸步不讓")
 
 
@@ -222,7 +238,7 @@ def evaluate_mandate_invariants(props, mandate):
     ) -> None:
         pct_matches = re.findall(r"(\d+(?:\.\d+)?)\s*%", script)
         for pct_str in pct_matches:
-            val = float(pct_str) / 100.0
+            val = float(pct_str) / 100
             if val > mandate.max_allowed_deposit_pct + 1e-4:
                 raise ASTMandateViolationError(
                     f"AST: 話術承諾定金 {pct_str}% 超出公司最高授權 {mandate.max_allowed_deposit_pct*100:.1f}%"
@@ -464,7 +480,7 @@ class LogrollingEngine:
                 p=round((offer.price + mandate.target_price) / 2, 2),
                 l=mandate.min_desired_lead_days,
                 d=mandate.max_allowed_deposit_pct,
-                q=min(mandate.max_allowed_moq, int(offer.moq * 1.5)),
+                q=min(mandate.max_allowed_moq, int(offer.moq * MOQ_STRETCH)),
                 mold_exempt=True,
                 tradeoffs=[
                     TradeoffType.DEPOSIT_FOR_LEADTIME,
@@ -576,7 +592,7 @@ class LogrollingEngine:
         )
 
         extra_deposit_pct = max(0.0, d - mandate.baseline_deposit_pct)
-        buyer_deposit_cost = p * q * extra_deposit_pct * mandate.buyer_capital_cost_rate * (l / 365.0)
+        buyer_deposit_cost = p * q * extra_deposit_pct * mandate.buyer_capital_cost_rate * (l / 365)
 
         buyer_moq_cost = p * extra_qty * mandate.excess_holding_cost_rate
 
@@ -589,7 +605,7 @@ class LogrollingEngine:
         # 並在 description 中標明其性質，避免被誤讀為量測值。
         est_prod_cost = mandate.target_price * mandate.supplier_production_cost_ratio
         supplier_profit = (p - est_prod_cost) * q
-        supplier_cash_gain = p * q * extra_deposit_pct * mandate.supplier_capital_relief_rate * (l / 365.0)
+        supplier_cash_gain = p * q * extra_deposit_pct * mandate.supplier_capital_relief_rate * (l / 365)
         supplier_rush_cost = (
             mandate.supplier_rush_cost_coefficient
             * (max(0, mandate.baseline_lead_days - l) ** mandate.supplier_rush_cost_exponent)
@@ -598,7 +614,7 @@ class LogrollingEngine:
         # 與買方模具收益同步：只有在 mandate 授權、且對方真的開過模具費時，
         # 供應商端才承擔對應的模具成本。否則又是一筆單方面的虛構數字。
         supplier_mold_cost = (
-            (mandate.estimated_mold_fee * 0.5)
+            (mandate.estimated_mold_fee * MOLD_SURPLUS_SHARE)
             if (mold_exempt and mandate.mold_fee_exemption_demanded and offer.mold_fee > 0.0)
             else 0.0
         )

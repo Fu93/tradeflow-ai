@@ -106,6 +106,9 @@ jobs:
       - name: Check documented numbers against source files
         run: python scripts/check_claims.py
 
+      - name: Reject undeclared scenario numbers outside the simulator
+        run: python scripts/check_no_fake_literals.py
+
       # Run the guard tests explicitly so a regression in a security/integrity
       # gate is visible as a named CI step rather than buried in the suite.
       - name: Run security and integrity guard tests

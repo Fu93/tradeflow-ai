@@ -50,15 +50,19 @@ from src.benchmark.adversaries import (
     TitForTatAdversary,
 )
 
-# 目標價與上限（歸一化 1.0 = 目標價）
-TARGET_PRICE = 12.0
-WALK_AWAY_CEILING = 16.2
-CEILING_NORM = WALK_AWAY_CEILING / TARGET_PRICE  # 1.35
+from src.config.heuristics import (  # noqa: E402
+    BENCHMARK_FINAL_STEP,
+    DEAL_TOLERANCE,
+    PLAUSIBLE_OFFER_MAX,
+    PLAUSIBLE_OFFER_MIN,
+)
+from src.sim.scenarios import UMBRELLA  # noqa: E402
 
-# 合理報價帶（人民幣元）。落在帶外視為單位/格式異常並明確記錄，
-# 絕不靜默當成有效出價——這是「不捏造數據」的具體落實。
-PLAUSIBLE_OFFER_MIN = 5.0
-PLAUSIBLE_OFFER_MAX = 30.0
+# Simulated umbrella mandate. The benchmark prices a fictional SKU so the
+# model can be scored. It is not a factory quote.
+TARGET_PRICE = UMBRELLA.target
+WALK_AWAY_CEILING = UMBRELLA.ceiling
+CEILING_NORM = WALK_AWAY_CEILING / TARGET_PRICE
 
 ADVERSARY_FACTORY = {
     "Hard-Bargainer": lambda rounds: HardBargainerAdversary(max_rounds=rounds),
@@ -259,9 +263,9 @@ def run_match(buyer: RealLLMBuyer, adversary, max_rounds: int = 5,
         supplier_history.append(supp_offer)
 
         # 成交判定（與 arena.py 相同規則）
-        if current_buyer_offer >= supp_offer or abs(supp_offer - current_buyer_offer) <= 0.02:
+        if current_buyer_offer >= supp_offer or abs(supp_offer - current_buyer_offer) <= DEAL_TOLERANCE:
             deal_closed = True
-            final_price = min(supp_offer, current_buyer_offer + 0.01)
+            final_price = min(supp_offer, current_buyer_offer + BENCHMARK_FINAL_STEP)
             final_round = r
             if final_price > CEILING_NORM + 1e-4:
                 has_budget_violation = True

@@ -23,13 +23,25 @@ import os
 import time
 from typing import Dict, Any, List, Tuple
 import numpy as np
+from src.sim.scenarios import UMBRELLA
 from . import model, solver
 from .multi_solver import simulate_reverse_auction
 
-# 硬體規格基準常數 (Hardware Architecture Constants)
-CPU_DDR5_BANDWIDTH_GB_S = 60.0       # 標準伺服器/工作站 DDR5 記憶體頻寬
-AMD_MI300X_HBM3_BANDWIDTH_GB_S = 5300.0  # AMD Instinct MI300X HBM3 頻寬 (5.3 TB/s)
-THEORETICAL_BANDWIDTH_SPEEDUP = AMD_MI300X_HBM3_BANDWIDTH_GB_S / CPU_DDR5_BANDWIDTH_GB_S  # ~88.3x
+
+def _published_bandwidths() -> tuple[float, float]:
+    """Read the roofline constants from results/bench.json.
+
+    Those figures are the published peak-bandwidth specs already stored with
+    the bench file. This module does not invent a second copy.
+    """
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "results", "bench.json")
+    with open(path, encoding="utf-8") as fh:
+        specs = json.load(fh)["roofline_specs"]
+    return float(specs["cpu_bandwidth_gb_s"]), float(specs["mi300x_hbm3_bandwidth_gb_s"])
+
+
+CPU_DDR5_BANDWIDTH_GB_S, AMD_MI300X_HBM3_BANDWIDTH_GB_S = _published_bandwidths()
+THEORETICAL_BANDWIDTH_SPEEDUP = AMD_MI300X_HBM3_BANDWIDTH_GB_S / CPU_DDR5_BANDWIDTH_GB_S
 
 
 def detect_gpu_hardware() -> Tuple[bool, str]:
@@ -73,7 +85,7 @@ def _measure_working_set_mb(n: int, opens, scheds, use_gpu: bool) -> float:
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
-    return peak / (1024.0 * 1024.0)
+    return peak / (1024 * 1024)
 
 
 def run(n_list=(2_000, 10_000, 20_000, 50_000), force_cpu=False) -> Dict[str, Any]:
@@ -111,7 +123,7 @@ def run(n_list=(2_000, 10_000, 20_000, 50_000), force_cpu=False) -> Dict[str, An
             dt_gpu_measured = None
             # 純資料搬運下界：把實測工作集搬一趟所需時間。這是物理下界，
             # 但**不是**執行時間預測，也不得與 CPU 運算時間相除當作加速倍率。
-            transfer_s = (working_set_mb / 1024.0) / AMD_MI300X_HBM3_BANDWIDTH_GB_S
+            transfer_s = (working_set_mb / 1024) / AMD_MI300X_HBM3_BANDWIDTH_GB_S
             mode = "CPU_MEASURED_WITH_TRANSFER_BOUND"
 
         rows.append({
@@ -132,8 +144,8 @@ def run(n_list=(2_000, 10_000, 20_000, 50_000), force_cpu=False) -> Dict[str, An
     # 多供應商張量逆向拍賣模擬基準測試 (Reverse Auction 4-Supplier Benchmark)
     t_multi_0 = time.perf_counter()
     multi_res = simulate_reverse_auction(
-        target_price=12.0,
-        walk_away_ceiling=16.2,
+        target_price=UMBRELLA.target,
+        walk_away_ceiling=UMBRELLA.ceiling,
         moq=10000,
         n_samples=50_000,
         use_gpu=use_gpu,
@@ -195,7 +207,7 @@ if __name__ == "__main__":
         print(f"Samples: {r['samples']:>6,} | Rollouts: {r['rollouts']:>10,} | "
               f"CPU (measured): {r['cpu_seconds']:>6.3f}s | "
               f"Working set (measured): {r['working_set_mb']:>8.2f} MB | "
-              f"MI300X transfer bound: {bound*1e3:>9.4f} ms [{r['execution_mode']}]")
+              f"MI300X transfer bound: {bound*1000:>9.4f} ms [{r['execution_mode']}]")
     print("-----------------------------------------------------------------")
     m = report["multi_supplier_auction"]
     print(f"Multi-Supplier Auction ({m['total_rollouts']:,} rollouts): CPU measured {m['cpu_seconds']:.2f}s")

@@ -18,9 +18,17 @@ import math
 import os
 import sys
 
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-def wilson_ci(successes: int, n: int, z: float = 1.96) -> tuple:
+from src.config.heuristics import WILSON_ALPHA, WILSON_Z  # noqa: E402
+
+
+def wilson_ci(successes: int, n: int, z: float | None = None) -> tuple:
     """Wilson score 區間（小樣本下比正態近似更穩健）。"""
+    if z is None:
+        z = WILSON_Z
     if n == 0:
         return (0.0, 0.0)
     p = successes / n
@@ -30,8 +38,10 @@ def wilson_ci(successes: int, n: int, z: float = 1.96) -> tuple:
     return (max(0.0, centre - half), min(1.0, centre + half))
 
 
-def clopper_pearson_upper(successes: int, n: int, alpha: float = 0.05) -> float:
+def clopper_pearson_upper(successes: int, n: int, alpha: float | None = None) -> float:
     """單邊精確上界。0 事件時即 1 - alpha^(1/n)。"""
+    if alpha is None:
+        alpha = WILSON_ALPHA
     if successes >= n:
         return 1.0
     if successes == 0:

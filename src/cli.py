@@ -14,6 +14,7 @@ from .engine import solve, recommend, bayes_update, model, robustness, viz, benc
 from .benchmark import AdversarialArena
 from .engine.multi_solver import simulate_reverse_auction
 from .app.demo_data import DEMO_SPEC, SUPPLIER_REPLIES
+from src.sim.scenarios import UMBRELLA
 
 # Windows consoles default to cp1252 / cp936, which mangled ¥ and — in earlier
 # runs (the operator saw "?12.51"). Force UTF-8 output where the stream allows it.
@@ -145,11 +146,16 @@ def run_self_play(matches=20, out_dir="results"):
 
 def run_multi_supplier_demo(out_dir="results"):
     print("=== TradeFlow Multi-Supplier Reverse Auction Coordination Demo ===")
-    print("Scenario: Custom Carbon Auto Umbrella (10,000 units)")
-    print("Target Price: ¥12.00 | Walk-away Ceiling: ¥16.20\n")
+    print(f"Scenario: {UMBRELLA.name} (simulated archetype, MOQ {UMBRELLA.moq:,})")
+    print(f"Target Price: ¥{UMBRELLA.target:.2f} | Walk-away Ceiling: ¥{UMBRELLA.ceiling:.2f}\n")
 
     t0 = time.perf_counter()
-    res = simulate_reverse_auction(target_price=12.0, walk_away_ceiling=16.2, moq=10000, n_samples=20000)
+    res = simulate_reverse_auction(
+        target_price=UMBRELLA.target,
+        walk_away_ceiling=UMBRELLA.ceiling,
+        moq=UMBRELLA.moq,
+        n_samples=20000,
+    )
     total_elapsed = time.perf_counter() - t0
 
     # [修正] 舊版在 CLI 端硬編了 4 個虛構的公司名（浙江頂尖/深圳宏達/義烏博創/東莞榮耀），
@@ -215,7 +221,7 @@ def run_sandbox_demo(host: str = "127.0.0.1", port: int = 8000):
     import webbrowser
     import uvicorn
     from .session.manager import SessionManager
-    from .session.schema import SessionSpec, AutopilotState, NegotiationTurn
+    from .session.schema import SessionSpec, AutopilotState
 
     print("=== TradeFlow Interactive Evaluation Sandbox ===")
     print(f"Target URL: http://{host}:{port}/")
@@ -224,28 +230,20 @@ def run_sandbox_demo(host: str = "127.0.0.1", port: int = 8000):
     mgr = SessionManager()
     seed_spec = SessionSpec(
         session_id="DEMO_SANDBOX_01",
-        product_name="Custom Carbon Auto Umbrella",
-        target_price=12.0,
-        ceiling_price=16.2,
-        moq=5000,
+        product_name=UMBRELLA.name,
+        target_price=UMBRELLA.target,
+        ceiling_price=UMBRELLA.ceiling,
+        moq=UMBRELLA.moq,
         max_rounds=5,
-        supplier_id="Hangzhou_Textile_Co",
-        supplier_channel="web_chat",
+        supplier_id="simulated_archetype",
+        supplier_channel="sandbox",
     )
     sess = mgr.create_session(seed_spec)
-    # 預填初始供應商開局報價
-    sess = mgr.transition_state("DEMO_SANDBOX_01", AutopilotState.AUTOPILOT_CRUISING)
-    t1 = NegotiationTurn(
-        round_index=1,
-        sender="opponent",
-        raw_text="老闆，這款自動傘我們外貿品質含防風骨架，首批報價 ¥15.80，交期 25 天。",
-        parsed_price=15.80,
-        p_break=0.04,
-        posterior_mean=1.12,
-        posterior_std=0.08,
+    sess = mgr.transition_state("DEMO_SANDBOX_01", AutopilotState.COPILOT_MONITORING)
+    print(
+        "[Seed Session Created] ID: DEMO_SANDBOX_01. "
+        "Simulated umbrella mandate only. No supplier quote was invented."
     )
-    mgr.append_turn("DEMO_SANDBOX_01", t1)
-    print("[Seed Session Created] ID: DEMO_SANDBOX_01 (Cruising state, Initial offer: ¥15.80)")
 
     # 2. 背景或延遲啟動瀏覽器
     def open_browser():

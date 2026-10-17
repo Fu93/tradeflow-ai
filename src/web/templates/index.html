@@ -186,15 +186,15 @@
             <div class="risk-scale">
               <div class="risk-bar"><span class="risk-marker"></span></div>
               <div class="risk-ticks">
-                <span>safe &lt; 8%</span>
-                <span>caution 8–15%</span>
-                <span>trip ≥ 15%</span>
+                <span id="riskBandSafe">—</span>
+                <span id="riskBandCaution">—</span>
+                <span id="riskBandTrip">—</span>
               </div>
             </div>
           </div>
-          <p class="fineprint">
-            The marker sits at the measured probability. At 15% the engine stops
-            proposing and waits for you.
+          <p class="fineprint" id="riskFineprint">
+            The marker sits at the measured probability. The engine stops
+            proposing at the documented trip threshold and waits for you.
           </p>
         </section>
 
@@ -214,9 +214,9 @@
           </label>
           <table class="terms">
             <tbody>
-              <tr><th>Target / ceiling <span class="tag-enforced">enforced</span></th><td id="mandatePrice">¥12.0 / ¥16.2</td></tr>
-              <tr><th>Lead time <span class="tag-target">target</span></th><td id="mandateLead">12 - 35 days</td></tr>
-              <tr><th>Deposit <span class="tag-target">target</span></th><td id="mandateDeposit">30% - 50%</td></tr>
+              <tr><th>Target / ceiling <span class="tag-enforced">enforced</span></th><td id="mandatePrice">—</td></tr>
+              <tr><th>Lead time <span class="tag-target">target</span></th><td id="mandateLead">—</td></tr>
+              <tr><th>Deposit <span class="tag-target">target</span></th><td id="mandateDeposit">—</td></tr>
               <tr><th>Mold fee <span class="tag-target">target</span></th><td id="mandateTooling">Exemption demanded, no amount assumed</td></tr>
             </tbody>
           </table>
@@ -226,11 +226,11 @@
           </div>
           <p class="fineprint">
             Only target price, ceiling and MOQ bind the solver. Lead time, deposit and
-            tooling are negotiating targets: the logrolling model plans against its own
-            baseline (25 days / 30%) and labels any term the supplier never stated as a
-            buyer-side assumption, not as the supplier's offer.
+            tooling are negotiating targets: the logrolling model plans against the
+            buyer baseline on the mandate and labels any term the supplier never
+            stated as a buyer-side assumption, not as the supplier's offer.
           </p>
-          <p class="fineprint" id="presetStatus">Pick a commodity to open a deal bound to that mandate.</p>
+          <p class="fineprint" id="presetStatus">Simulated mandates load from the sandbox catalogue. They are not factory quotes.</p>
         </section>
 
         <!-- Deals -->

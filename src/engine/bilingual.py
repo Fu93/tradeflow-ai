@@ -28,6 +28,28 @@ from enum import Enum
 from typing import Optional, Dict, Any, List, Tuple, Iterable
 from pydantic import BaseModel, Field
 
+from src.config.heuristics import (
+    FIELD_DEFAULT_CONFIDENCE,
+    GUARDRAIL_CEILING_MULTIPLE,
+    BASELINE_DEPOSIT_PCT,
+    LLM_DEFAULT_CONFIDENCE,
+    MAX_MENTIONED_MOLD_FEE,
+    MENTION_CONFUSION_TOLERANCE,
+    MAX_MENTIONED_PRICE,
+    MIN_MENTIONED_PRICE,
+    ONNX_ACCEPT_CONFIDENCE,
+    POSTERIOR_STD_PLACEHOLDER,
+    PRICE_MENTION_TOLERANCE,
+    REGEX_CONF_DEAL,
+    REGEX_CONF_IDENTITY,
+    REGEX_CONF_OFFLINE,
+    REGEX_CONF_POVERTY,
+    REGEX_CONF_SPEC,
+    REGEX_CONF_TAX,
+    REGEX_CONF_UNRECOGNIZED,
+    REGEX_CONF_VOLUME,
+)
+
 from src.engine.safe_regex import SafeLinearRegexEngine, SafeLinearPattern
 from src.engine.onnx_classifier import OnDeviceIntentClassifier
 
@@ -137,7 +159,7 @@ class ExecutiveActionEnum(str, Enum):
 
 class InboundTacticalClassification(BaseModel):
     primary_intent: VendorTacticEnum
-    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+    confidence: float = Field(default=FIELD_DEFAULT_CONFIDENCE, ge=0.0, le=1.0)
     mentioned_price: Optional[float] = None
     demanded_moq: Optional[int] = None
     demanded_mold_fee: Optional[float] = None
@@ -162,45 +184,45 @@ class InboundIntentClassifier:
         (
             VendorTacticEnum.OFFLINE_BYPASS_DIVERT,
             SafeLinearRegexEngine.compile(r"(加個?微信|加个?微信|私下聊|電話聊|电话聊|wx|私聊|轉私帳|转私账|線下付|线下付|v\s*信|微\s*信|\+v|加\s*(?:我)?\s*v|私發|私发|私下交易|走線下|走线下)", re.IGNORECASE),
-            0.95,
+            REGEX_CONF_OFFLINE,
             True,  # 脫離平台直接觸發風控警報
         ),
         (
             VendorTacticEnum.MATERIAL_SPEC_DEGRADE,
             SafeLinearRegexEngine.compile(r"(換成?便宜|换成?便宜|回料|水口料|減薄|减薄|普通料|換成\s*201|换成\s*201|201\s*不[鏽銹锈]鋼|201\s*不[鏽銹锈]钢|降低規格|降低规格|改用常規|改用常规|非標|非标|換料|换料|非正品|二料|次料)", re.IGNORECASE),
-            0.90,
+            REGEX_CONF_SPEC,
             True,  # 品質降級需主管確認
         ),
         (
             VendorTacticEnum.IDENTITY_PROBE_TEST,
             SafeLinearRegexEngine.compile(r"(外貿公司|做外貿|外贸公司|做外贸|美金|美元|做外銷|做外销|出口還是內銷|出口还是内销|主要做哪個市場|主要做哪个市场|哪裡人|哪里人|哪個港|哪个港|哪裡的倉庫|哪里的仓库|老外|海外客戶|海外客户|出口到哪|美元帳戶|美元账户|走哪個口岸|走哪个口岸|你們老闆|你们老板|哪裡過來的|哪里过来的)", re.IGNORECASE),
-            0.92,
+            REGEX_CONF_IDENTITY,
             False,  # 身份試探需以地道本地老採購話術化解
         ),
         (
             VendorTacticEnum.FINAL_DEAL_CONCESSION,
             SafeLinearRegexEngine.compile(r"(行吧|服了你|就按你|發合同|发合同|打款吧|簽單|签单|成交|定金打哪|訂金打哪|虧本做給你|亏本做给你|按你說的|按你说的|可以做|給您排單|给您排单)", re.IGNORECASE),
-            0.90,
+            REGEX_CONF_DEAL,
             False,
         ),
         (
             VendorTacticEnum.CRY_POVERTY_COST_HIKE,
             # 使用有界量詞 [^\n，。！？]{0,15} 替代 .*，徹底杜絕 ReDoS 災難性回溯
             SafeLinearRegexEngine.compile(r"(原料[^\n，。！？]{0,15}?漲|原料[^\n，。！？]{0,15}?涨|原材料[^\n，。！？]{0,15}?漲|原材料[^\n，。！？]{0,15}?涨|暴漲|暴涨|成本[^\n，。！？]{0,15}?漲|成本[^\n，。！？]{0,15}?涨|人工[^\n，。！？]{0,15}?(?:貴|贵|漲|涨)|虧本|亏本|賠錢|赔钱|喝西北風|喝西北风|沒利潤|没利润|電費|电费|成本都不夠|成本都不够|純虧|纯亏|壓不住|压不住|貼錢|贴钱|沒法開工|没法开工|做不了|利潤太薄|利润太薄)", re.IGNORECASE),
-            0.85,
+            REGEX_CONF_POVERTY,
             False,
         ),
         (
             VendorTacticEnum.TIER_VOLUME_BLACKMAIL,
             SafeLinearRegexEngine.compile(r"(起訂量|起订量|至少要|量太小|樣品價|样品价|開機費|开机费|加單|加单|翻倍才|起訂|起订|MOQ|小單|小单|幾百個|几百个|量大才能)", re.IGNORECASE),
-            0.85,
+            REGEX_CONF_VOLUME,
             False,
         ),
         (
             VendorTacticEnum.TAX_PACKAGING_UNBUNDLING,
             # 使用有界量詞替代 .*
             SafeLinearRegexEngine.compile(r"(未稅|未税|不含稅|不含税|專票[^\n，。！？]{0,15}?加|专票[^\n，。！？]{0,15}?加|稅點|税点|包裝另算|包装另算|彩盒[^\n，。！？]{0,15}?加|外箱[^\n，。！？]{0,15}?加|不包[^\n，。！？]{0,15}?港口|港雜費|港杂费|裸價|裸价|要票[^\n，。！？]{0,15}?加)", re.IGNORECASE),
-            0.85,
+            REGEX_CONF_TAX,
             False,
         ),
     ]
@@ -226,12 +248,12 @@ class InboundIntentClassifier:
     # 對應夾制，因此單一幻覺欄位就能繞過 Stage-1 已強制的不變量。
     # 現集中為單一真相源，兩條路徑共用同一組邊界。
     # ------------------------------------------------------------------
-    MIN_MENTIONED_PRICE = 0.1
-    MAX_MENTIONED_PRICE = 50000.0
+    MIN_MENTIONED_PRICE = MIN_MENTIONED_PRICE
+    MAX_MENTIONED_PRICE = MAX_MENTIONED_PRICE
     MIN_DEMANDED_MOQ = 1
     MAX_DEMANDED_MOQ = 10_000_000
     MIN_DEMANDED_MOLD_FEE = 0.0
-    MAX_DEMANDED_MOLD_FEE = 100_000_000.0
+    MAX_DEMANDED_MOLD_FEE = MAX_MENTIONED_MOLD_FEE
 
     @staticmethod
     def _is_finite_number(value: Any) -> bool:
@@ -411,7 +433,7 @@ class InboundIntentClassifier:
                 json=payload,
                 timeout=float(os.getenv("VLLM_TIMEOUT_SECONDS", "90")),
             )
-            cls.last_llm_latency_ms = round((_time.perf_counter() - _t0) * 1000.0, 1)
+            cls.last_llm_latency_ms = round((_time.perf_counter() - _t0) * 1000, 1)
             if resp.status_code != 200:
                 cls.last_llm_error = (
                     f"Stage-2 endpoint returned HTTP {resp.status_code}: "
@@ -440,7 +462,7 @@ class InboundIntentClassifier:
                 # LLM 輸出不得繞過 Stage-1 已強制的不變量。
                 return InboundTacticalClassification(
                     primary_intent=intent_enum,
-                    confidence=cls._clamp_confidence(data.get("confidence", 0.85)),
+                    confidence=cls._clamp_confidence(data.get("confidence", LLM_DEFAULT_CONFIDENCE)),
                     mentioned_price=cls._clamp_price(data.get("mentioned_price")),
                     demanded_moq=cls._clamp_moq(data.get("demanded_moq")),
                     demanded_mold_fee=cls._clamp_mold_fee(data.get("demanded_mold_fee")),
@@ -457,7 +479,7 @@ class InboundIntentClassifier:
             import time as _time
             if _t0 is None:
                 _t0 = _time.perf_counter()
-            cls.last_llm_latency_ms = round((_time.perf_counter() - _t0) * 1000.0, 1)
+            cls.last_llm_latency_ms = round((_time.perf_counter() - _t0) * 1000, 1)
             cls.last_llm_error = f"{type(exc).__name__}: {exc}"
             logger.warning("Stage-2 LLM call raised: %s", cls.last_llm_error)
         return None
@@ -528,7 +550,7 @@ class InboundIntentClassifier:
                 gate_mold_fee = None
             return InboundTacticalClassification(
                 primary_intent=escalation_intent,
-                confidence=0.95 if escalation_intent == VendorTacticEnum.OFFLINE_BYPASS_DIVERT else 0.90,
+                confidence=REGEX_CONF_OFFLINE if escalation_intent == VendorTacticEnum.OFFLINE_BYPASS_DIVERT else REGEX_CONF_SPEC,
                 mentioned_price=None,
                 demanded_mold_fee=gate_mold_fee,
                 tactical_rationale=(
@@ -552,7 +574,7 @@ class InboundIntentClassifier:
                 matched_str = p_match.group(1) or p_match.group(2) or p_match.group(3)
                 if matched_str:
                     candidate = float(matched_str)
-                    if 0.1 <= candidate <= 50000.0:
+                    if MIN_MENTIONED_PRICE <= candidate <= MAX_MENTIONED_PRICE:
                         price_val = candidate
             except ValueError:
                 pass
@@ -612,7 +634,7 @@ class InboundIntentClassifier:
                     onnx_intent = VendorTacticEnum.NORMAL_COUNTER_OFFER
 
             # 若 ONNX 高確信度 (>=0.70) 識別為專門套路 (行話黑話、階梯勒索、反諷哭窮、終局成交等)
-            if onnx_conf >= 0.70 and onnx_intent != VendorTacticEnum.NORMAL_COUNTER_OFFER:
+            if onnx_conf >= ONNX_ACCEPT_CONFIDENCE and onnx_intent != VendorTacticEnum.NORMAL_COUNTER_OFFER:
                 is_mixed = (price_val is not None or mold_fee_val is not None) and onnx_intent in (
                     VendorTacticEnum.IDENTITY_PROBE_TEST,
                     VendorTacticEnum.CRY_POVERTY_COST_HIKE,
@@ -699,7 +721,7 @@ class InboundIntentClassifier:
         # 讓下游可藉 confidence 區分「確信的正常報價」與「未識別、暫按正常處理」。
         return InboundTacticalClassification(
             primary_intent=VendorTacticEnum.NORMAL_COUNTER_OFFER,
-            confidence=0.30,
+            confidence=REGEX_CONF_UNRECOGNIZED,
             mentioned_price=price_val,
             demanded_moq=moq_val,
             # [假資料修正 §5.5] 舊版此處**漏傳** demanded_mold_fee，於是「未識別、
@@ -733,8 +755,8 @@ class TacticalActionObject(BaseModel):
 
     # 貝氏推論狀態
     posterior_reserve_mean: float = Field(default=1.0, description="對手歸一化底價後驗均值")
-    posterior_reserve_std: float = Field(default=0.1, description="對手歸一化底價後驗標準差")
-    bayesian_confidence: float = Field(default=0.85, ge=0.0, le=1.0, description="底價估計置信度")
+    posterior_reserve_std: float = Field(default=POSTERIOR_STD_PLACEHOLDER, description="對手歸一化底價後驗標準差")
+    bayesian_confidence: float = Field(default=LLM_DEFAULT_CONFIDENCE, ge=0.0, le=1.0, description="底價估計置信度")
     estimated_floor_price: Optional[float] = Field(default=None, description="估算對手硬底價 (元)")
 
     # 戰術維度與條款
@@ -742,7 +764,7 @@ class TacticalActionObject(BaseModel):
     product_name: str = Field(default="項目", description="標的品名")
     supplier_contact_name: str = Field(default="老闆", description="對手工廠稱呼")
     lead_days: int = Field(default=25, ge=1, description="承諾交期天數")
-    deposit_pct: float = Field(default=0.30, ge=0.0, le=1.0, description="承諾定金比例")
+    deposit_pct: float = Field(default=BASELINE_DEPOSIT_PCT, ge=0.0, le=1.0, description="承諾定金比例")
     moq: int = Field(default=500, ge=1, description="採購起訂批量")
     mold_fee_exempted: bool = Field(default=False, description="是否要求減免模具/打樣費")
     waive_mold_fee_amount: float = Field(default=0.0, description="要求減免之模具費金額")
@@ -836,7 +858,7 @@ class EnglishExecutiveCommandParser:
         clean_num = text.replace("¥", "").replace("$", "").replace("RMB", "").replace("元", "").strip()
         try:
             val = float(clean_num)
-            if 0.1 <= val <= 50000.0:
+            if MIN_MENTIONED_PRICE <= val <= MAX_MENTIONED_PRICE:
                 return ExecutiveCommandObject(
                     action=ExecutiveActionEnum.OVERRIDE_PRICE,
                     override_price=val,
@@ -851,7 +873,7 @@ class EnglishExecutiveCommandParser:
         dep_match = cls.DEPOSIT_REGEX.search(text)
         if dep_match and dep_match.group(1):
             try:
-                dep_val = float(dep_match.group(1)) / 100.0
+                dep_val = float(dep_match.group(1)) / 100
                 if 0.0 < dep_val <= 1.0:
                     found_dep = dep_val
             except ValueError:
@@ -881,7 +903,7 @@ class EnglishExecutiveCommandParser:
                 p_cand = float(m.group(1))
                 if p_cand >= 100_000:
                     continue  # 量級 sanity：單價不可能上萬；多為數量/型號雜訊
-                if p_cand != found_days and (found_dep is None or abs(p_cand - found_dep * 100) > 0.01):
+                if p_cand != found_days and (found_dep is None or abs(p_cand - found_dep * 100) > MENTION_CONFUSION_TOLERANCE):
                     found_price = p_cand
                     break
             except ValueError:
@@ -1286,7 +1308,7 @@ class CrossLingualSanityChecker:
         if stiff_hits or leak_hits:
             return {
                 "is_native": False,
-                "confidence": 0.95,
+                "confidence": REGEX_CONF_OFFLINE,
                 "stiff_phrases": stiff_hits,
                 "leak_phrases": leak_hits,
                 "audit_mode": "static_deterministic",
@@ -1332,7 +1354,7 @@ class CrossLingualSanityChecker:
                         data = json.loads(m.group(0))
                         return {
                             "is_native": bool(data.get("is_native", True)),
-                            "confidence": float(data.get("confidence", 0.9)),
+                            "confidence": float(data.get("confidence", REGEX_CONF_SPEC)),
                             "stiff_phrases": [],
                             "leak_phrases": [],
                             "audit_mode": "llm_adversarial",
@@ -1346,7 +1368,7 @@ class CrossLingualSanityChecker:
 
         return {
             "is_native": True,
-            "confidence": 0.92,
+            "confidence": REGEX_CONF_IDENTITY,
             "stiff_phrases": [],
             "leak_phrases": [],
             "audit_mode": "static_deterministic",
@@ -1534,7 +1556,7 @@ class NumericGuardrailValidator:
         draft_text: str,
         authorized_price: float,
         walk_away_ceiling: float,
-        tolerance: float = 0.05,
+        tolerance: float = PRICE_MENTION_TOLERANCE,
         authorized_floor: Optional[float] = None,
         allowed_values: Optional[Iterable[float]] = None,
     ) -> bool:
@@ -1599,7 +1621,7 @@ class NumericGuardrailValidator:
         en_text: str,
         authorized_price: float,
         walk_away_ceiling: float,
-        tolerance: float = 0.05,
+        tolerance: float = PRICE_MENTION_TOLERANCE,
         authorized_floor: Optional[float] = None,
         allowed_values: Optional[Iterable[float]] = None,
     ) -> bool:
@@ -1663,7 +1685,7 @@ class BilingualTacticalBridge:
         )
         action_obj = TacticalActionObject(
             authorized_price=authorized_price,
-            walk_away_ceiling=authorized_price * 1.5,
+            walk_away_ceiling=authorized_price * GUARDRAIL_CEILING_MULTIPLE,
             tactical_mode=t_mode,
             product_name=product_name or "項目",
             supplier_contact_name=supplier_contact_name,

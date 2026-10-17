@@ -11,6 +11,15 @@ import math
 from typing import Tuple, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
+from src.config.heuristics import (
+    BAYES_DOMAIN_MAX,
+    BAYES_DOMAIN_MIN,
+    BAYES_MARKUP,
+    BAYES_OBS_NOISE,
+    BAYES_PRIOR_CLEAN,
+    Z_95,
+)
+
 
 class BayesianBeliefState(BaseModel):
     posterior_mean: float = Field(..., description="後驗底價均值乘數")
@@ -31,10 +40,10 @@ class RobustBayesianInferenceEngine:
 
     def __init__(
         self,
-        obs_noise_std: float = 0.06,       # 觀測噪聲標準差 sigma_epsilon
-        prior_clean_prob: float = 0.85,     # 正常商務報價的先驗概率 pi_0
-        domain_min: float = 0.80,          # 合理價格域下界 L_min
-        domain_max: float = 2.50,          # 合理價格域上界 L_max
+        obs_noise_std: float = BAYES_OBS_NOISE,
+        prior_clean_prob: float = BAYES_PRIOR_CLEAN,
+        domain_min: float = BAYES_DOMAIN_MIN,
+        domain_max: float = BAYES_DOMAIN_MAX,
     ):
         """[誠實揭露] 下列為編譯時固定的啟發式常數，非資料擬合：
         obs_noise_std=0.06、prior_clean_prob=0.85、域 [0.80, 2.50]。
@@ -52,24 +61,24 @@ class RobustBayesianInferenceEngine:
         if std <= 1e-6:
             return 1e6 if abs(x - mean) < 1e-4 else 0.0
         var = std * std
-        denom = math.sqrt(2.0 * math.pi * var)
+        denom = math.sqrt(2 * math.pi * var)
         diff = x - mean
-        return math.exp(-0.5 * (diff * diff) / var) / denom
+        return math.exp(-(diff * diff) / (2 * var)) / denom
 
     @classmethod
     def normal_cdf(cls, x: float, mean: float, std: float) -> float:
         """標準常態分佈累積函數 CDF: Phi((x - mean) / std)。"""
         if std <= 1e-7:
             return 1.0 if x >= mean else 0.0
-        z = (x - mean) / (std * math.sqrt(2.0))
-        return 0.5 * (1.0 + math.erf(z))
+        z = (x - mean) / (std * math.sqrt(2))
+        return (1.0 + math.erf(z)) / 2
 
     def update(
         self,
         prior_mean: float,
         prior_std: float,
         observed_offer: Optional[float] = None,
-        estimated_markup: float = 0.08,
+        estimated_markup: float = BAYES_MARKUP,
         our_next_offer: Optional[float] = None,
     ) -> BayesianBeliefState:
         """執行混合似然推斷與矩匹配。
@@ -91,7 +100,7 @@ class RobustBayesianInferenceEngine:
         """
         # [P0 修正] 無新證據：後驗 = 先驗，只計算依賴後驗的欄位。
         if observed_offer is None:
-            z_95 = 1.95996
+            z_95 = Z_95
             ci_lower = max(0.0, prior_mean - z_95 * prior_std)
             ci_upper = prior_mean + z_95 * prior_std
             deal_prob = (
@@ -139,13 +148,13 @@ class RobustBayesianInferenceEngine:
         # 兩常態分佈之 KL 散度: ln(s0/s1) + (s1^2 + (m1-m0)^2)/(2*s0^2) - 0.5
         kl_nats = (
             math.log(prior_std / post_std)
-            + (post_var + ((post_mean - prior_mean) ** 2)) / (2.0 * (prior_std ** 2))
-            - 0.5
+            + (post_var + ((post_mean - prior_mean) ** 2)) / (2 * (prior_std ** 2))
+            - 1 / 2
         )
-        info_gain_bits = max(0.0, kl_nats / math.log(2.0))
+        info_gain_bits = max(0.0, kl_nats / math.log(2))
 
         # 6. 計算 95% 貝氏置信區間 CI_0.95 = [mu - 1.95996*sigma, mu + 1.95996*sigma]
-        z_95 = 1.95996
+        z_95 = Z_95
         ci_lower = max(0.0, post_mean - z_95 * post_std)
         ci_upper = post_mean + z_95 * post_std
 
@@ -171,7 +180,7 @@ def robust_bayes_update(
     prior_mean: float,
     prior_std: float,
     observed_offer: Optional[float] = None,
-    estimated_markup: float = 0.08,
+    estimated_markup: float = BAYES_MARKUP,
     our_next_offer: Optional[float] = None,
 ) -> BayesianBeliefState:
     """提供全域便利用法執行高斯-均勻混合似然推斷。

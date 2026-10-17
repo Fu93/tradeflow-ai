@@ -33,8 +33,14 @@ from src.engine.backend import describe_solver_backend, resolve_use_gpu  # noqa:
 from src.engine import model  # noqa: E402
 from src.engine.solver import solve  # noqa: E402
 
-# Published AMD Instinct MI300X HBM3 peak, used only as a roofline constant.
-MI300X_HBM3_GB_S = 5300.0
+def _published_mi300x_bandwidth() -> float:
+    """The roofline constant already stored in results/bench.json."""
+    path = os.path.join(ROOT, "results", "bench.json")
+    with open(path, encoding="utf-8") as fh:
+        return float(json.load(fh)["roofline_specs"]["mi300x_hbm3_bandwidth_gb_s"])
+
+
+MI300X_HBM3_GB_S = _published_mi300x_bandwidth()
 
 
 def _utc_now() -> str:
@@ -51,12 +57,12 @@ def _measure(samples: int, use_gpu: bool) -> dict:
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
-    working_set_mb = peak / (1024.0 * 1024.0)
+    working_set_mb = peak / (1024 * 1024)
     # tracemalloc sees host allocations. On a GPU run this is not device memory.
     host_only = not use_gpu
     transfer_s = None
     if host_only and working_set_mb > 0:
-        transfer_s = (working_set_mb / 1024.0) / MI300X_HBM3_GB_S
+        transfer_s = (working_set_mb / 1024) / MI300X_HBM3_GB_S
     return {
         "samples": int(samples),
         "grid": int(opens.shape[0] * scheds.shape[0]),

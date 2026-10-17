@@ -14,6 +14,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from src.sim.scenarios import UMBRELLA
 from . import model
 
 
@@ -22,7 +23,7 @@ def _sample_reserve(reserve_mean, reserve_std, n=20000, seed=0):
     return reserve_mean * (1 + rng.normal(0, reserve_std, n))
 
 
-def plot_posterior(reserve_mean, reserve_std, target_price=12.0,
+def plot_posterior(reserve_mean, reserve_std, target_price=UMBRELLA.target,
                    recommended_open_norm=None, save_path=None, seed=0):
     """Posterior over supplier reserve (normalized), with target/walk-away/recommended lines."""
     samples = _sample_reserve(reserve_mean, reserve_std, seed=seed)
@@ -48,7 +49,7 @@ def plot_posterior(reserve_mean, reserve_std, target_price=12.0,
     return fig
 
 
-def plot_belief_update(trace, target_price=12.0, save_path=None):
+def plot_belief_update(trace, target_price=UMBRELLA.target, save_path=None):
     """Belief evolution: posterior mean±std + recommended opening, per round."""
     rounds = [t["round"] for t in trace]
     means = [t["mean"] for t in trace]
@@ -74,7 +75,7 @@ def plot_belief_update(trace, target_price=12.0, save_path=None):
     return fig
 
 
-def save_all(reserve_mean, reserve_std, trace, target_price=12.0,
+def save_all(reserve_mean, reserve_std, trace, target_price=UMBRELLA.target,
              out_dir="results", seed=0):
     p1 = os.path.join(out_dir, "posterior.png")
     p2 = os.path.join(out_dir, "belief_update.png")
@@ -178,7 +179,7 @@ def plot_robustness(report_data, save_path=None):
     return fig
 
 
-def plot_prior_decomp(reserve_mean, reserve_std, target_price=12.0, save_path=None, seed=0):
+def plot_prior_decomp(reserve_mean, reserve_std, target_price=UMBRELLA.target, save_path=None, seed=0):
     """Wow #1 加強：把底價後驗分解成 4 類供應商成分（按 type-center 距離加權）。"""
     from . import model
     rng = np.random.default_rng(seed)

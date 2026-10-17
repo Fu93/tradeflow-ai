@@ -55,11 +55,32 @@ function tfNum(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+// Safety bands and the sandbox catalogue. Empty until /api/v1/heuristics and
+// /api/v1/simulation/mandates answer. The desk does not invent either.
+let tfHeuristics = null;
+let categoryPresets = null;
+
+function tfTrip() {
+  const n = tfHeuristics && Number(tfHeuristics.breakdown_trip_threshold);
+  return Number.isFinite(n) ? n : null;
+}
+
+function tfCaution() {
+  const n = tfHeuristics && Number(tfHeuristics.caution_risk_threshold);
+  return Number.isFinite(n) ? n : null;
+}
+
+function tfMoney(value) {
+  const n = tfNum(value, null);
+  return n === null ? "—" : `¥${n.toFixed(2)}`;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   // P1-3: SSE 與遙測配置必須先於圖表初始化；圖表失敗（CDN 不可達）不得中止
   // 整個啟動鏈，否則會話清單永遠停在 "Connecting..."。
   initSSE();
   fetchTelemetryConfig();
+  loadDeskConfig();
   try {
     initBeliefChart();
   } catch (err) {
@@ -248,11 +269,11 @@ function selectSession(s) {
     badge.className = "cb-badge cb-warn";
     badge.textContent = "AWAITING HUMAN DECISION";
     ring.className = "cb-ring";
-  } else if (cbRisk !== null && cbRisk >= 0.15) {
+  } else if (cbRisk !== null && tfTrip() !== null && cbRisk >= tfTrip()) {
     badge.className = "cb-badge cb-tripped";
     badge.textContent = "CIRCUIT TRIPPED (ESCALATED)";
     ring.className = "cb-ring tripped";
-  } else if (cbRisk !== null && cbRisk >= 0.08) {
+  } else if (cbRisk !== null && tfCaution() !== null && cbRisk >= tfCaution()) {
     badge.className = "cb-badge cb-warn";
     badge.textContent = "CAUTION HIGH RISK";
     ring.className = "cb-ring";
@@ -455,11 +476,18 @@ function renderPriceLadder(session) {
     if (plottable) {
       // Round money steps, not quarter fractions: a price axis reads in ¥1 or
       // ¥0.50 increments, and the labels stay stable as the range changes.
-      const step = span <= 1 ? 0.1 : span <= 4 ? 0.5 : span <= 12 ? 1 : span <= 60 ? 5 : 25;
+      const fine = tfHeuristics && Number(tfHeuristics.ladder_step_fine);
+      const mid = tfHeuristics && Number(tfHeuristics.ladder_step_mid);
+      const edgeLo = tfHeuristics && Number(tfHeuristics.ladder_edge_lo);
+      const edgeHi = tfHeuristics && Number(tfHeuristics.ladder_edge_hi);
+      const step = span <= 1 ? fine : span <= 4 ? mid : span <= 12 ? 1 : span <= 60 ? 5 : 25;
+      if (!Number.isFinite(step) || step <= 0 || !Number.isFinite(edgeLo) || !Number.isFinite(edgeHi)) {
+        ticksEl.innerHTML = "";
+      } else {
       for (let v = Math.ceil(target / step) * step; v < ceiling; v += step) {
         const frac = (ceiling - v) / span;
         // Keep clear of the two end labels (ceiling at 0, target at 1).
-        if (v <= target || frac < 0.06 || frac > 0.94) continue;
+        if (v <= target || frac < edgeLo || frac > edgeHi) continue;
         const row = document.createElement("div");
         row.className = "track-tick";
         row.style.top = `${frac * 100}%`;
@@ -467,6 +495,7 @@ function renderPriceLadder(session) {
         label.textContent = `¥${Number.isInteger(v) ? v : v.toFixed(2)}`;
         row.appendChild(label);
         ticksEl.appendChild(row);
+      }
       }
     }
   }
@@ -532,7 +561,7 @@ function renderEngineDecision(session) {
     if (v !== null) { risk = v; break; }
   }
   el("decisionRisk").textContent = risk === null ? "—" : `${(risk * 100).toFixed(1)}%`;
-  el("decisionRisk").style.color = risk === null ? "" : (risk >= 0.15 ? "#f43f5e" : "#10b981");
+  el("decisionRisk").style.color = risk === null || tfTrip() === null ? "" : (risk >= tfTrip() ? "#f43f5e" : "#10b981");
 
   // 最新生成話術：先找最後一則我方（AI 或人工核准）的發言；copilot 模式不會
   // 產生我方輪次，話術存在對手輪 metadata.generated_reply（後端持久化），
@@ -619,52 +648,81 @@ function setBeliefChartEmpty(isEmpty) {
   if (canvas) canvas.style.visibility = isEmpty ? "hidden" : "visible";
 }
 
-// Category presets. Each entry carries the FULL mandate, not just display
-// strings: previously this only rewrote the labels and the chart, so switching
-// category changed what the dashboard *claimed* while the engine kept using the
-// original umbrella spec. The values below are now POSTed to
-// /api/v1/sessions so the displayed mandate and the enforced mandate agree.
-const CATEGORY_PRESETS = {
-  // [P0 REGRESSION — 2026-10-17 稽核] 舊版在 tooling 欄位顯示寫死的金額
-  // （¥3,000 / ¥8,000 / ¥15,000），但這筆金額從未被送出、也從未由供應商報出，
-  // 是純展示層的捏造數字（後端早已移除同一個 3000.0 硬編值）。
-  // 政策文字只描述我方立場；金額一律由實際對話/會話決定。
-  umbrella: {
-    name: "Custom Carbon Auto Umbrella",
-    target: 12.0,
-    ceiling: 16.2,
-    lead: "12 - 35 Days",
-    deposit: "30% - 50%",
-    tooling: "Exemption Demanded (amount only if the supplier quotes one)",
-    moq: 5000
-  },
-  cnc_case: {
-    name: "Aerospace CNC Metal Case",
-    target: 28.0,
-    ceiling: 36.5,
-    lead: "15 - 40 Days",
-    deposit: "25% - 45%",
-    tooling: "Tooling waiver requested (no amount assumed)",
-    moq: 2000
-  },
-  battery: {
-    name: "Industrial LiFePO4 Battery Pack",
-    target: 185.0,
-    ceiling: 240.0,
-    lead: "20 - 45 Days",
-    deposit: "30% - 60%",
-    tooling: "Certification cost: to be quoted, not assumed",
-    moq: 500
+// Sandbox commodities. The catalogue arrives from /api/v1/simulation/mandates.
+// Changing the selector still POSTs /api/v1/sessions so the engine enforces
+// the same simulated mandate the table shows.
+function paintRiskBands() {
+  const trip = tfTrip();
+  const caution = tfCaution();
+  const safeEl = document.getElementById("riskBandSafe");
+  const cautionEl = document.getElementById("riskBandCaution");
+  const tripEl = document.getElementById("riskBandTrip");
+  const note = document.getElementById("riskFineprint");
+  if (trip === null || caution === null) return;
+  const pct = (n) => `${Math.round(n * 100)}%`;
+  if (safeEl) safeEl.textContent = `safe < ${pct(caution)}`;
+  if (cautionEl) cautionEl.textContent = `caution ${pct(caution)}–${pct(trip)}`;
+  if (tripEl) tripEl.textContent = `trip ≥ ${pct(trip)}`;
+  if (note) {
+    note.textContent = `The marker sits at the measured probability. At ${pct(trip)} the engine stops proposing and waits for you.`;
   }
-};
+}
 
-async function applyCategoryPreset(cat) {
-  const p = CATEGORY_PRESETS[cat] || CATEGORY_PRESETS.umbrella;
-
-  document.getElementById("mandatePrice").textContent = `¥${p.target.toFixed(1)} / ¥${p.ceiling.toFixed(1)}`;
+function paintMandate(p) {
+  document.getElementById("mandatePrice").textContent = `${tfMoney(p.target)} / ${tfMoney(p.ceiling)}`;
   document.getElementById("mandateLead").textContent = p.lead;
   document.getElementById("mandateDeposit").textContent = p.deposit;
   document.getElementById("mandateTooling").textContent = p.tooling;
+}
+
+async function loadDeskConfig() {
+  try {
+    const [heuristicsRes, mandatesRes] = await Promise.all([
+      fetch("/api/v1/heuristics", { headers: tfAuthHeaders() }),
+      fetch("/api/v1/simulation/mandates", { headers: tfAuthHeaders() }),
+    ]);
+    if (heuristicsRes.ok) tfHeuristics = await heuristicsRes.json();
+    if (mandatesRes.ok) {
+      const body = await mandatesRes.json();
+      categoryPresets = {};
+      for (const item of body.mandates || []) {
+        categoryPresets[item.key] = {
+          name: item.name,
+          target: item.target_price,
+          ceiling: item.ceiling_price,
+          lead: item.lead_label,
+          deposit: item.deposit_label,
+          tooling: item.tooling_label,
+          moq: item.moq,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("[TradeFlow] desk config failed:", err);
+  }
+  paintRiskBands();
+  const select = document.getElementById("presetCategorySelect");
+  const statusEl = document.getElementById("presetStatus");
+  if (select && categoryPresets && categoryPresets[select.value]) {
+    paintMandate(categoryPresets[select.value]);
+    if (statusEl) {
+      statusEl.textContent = "Preview of a simulated mandate. It is not a factory quote. Changing the commodity opens a sandbox session bound to it.";
+    }
+  }
+}
+
+async function applyCategoryPreset(cat) {
+  const p = categoryPresets && categoryPresets[cat];
+  const statusEl = document.getElementById("presetStatus");
+  if (!p) {
+    if (statusEl) {
+      statusEl.textContent = "Simulated mandates have not loaded. Refresh the desk.";
+      statusEl.style.color = "#f87171";
+    }
+    return;
+  }
+
+  paintMandate(p);
 
   // Create (or reuse) a real session so the engine actually operates under this
   // mandate instead of the display merely changing.
@@ -678,7 +736,6 @@ async function applyCategoryPreset(cat) {
     max_rounds: 5
   };
 
-  const statusEl = document.getElementById("presetStatus");
   try {
     const res = await fetch("/api/v1/sessions", {
       method: "POST",
@@ -690,7 +747,7 @@ async function applyCategoryPreset(cat) {
       document.getElementById("cmdSessionId").value = newSid;
       document.getElementById("sessionLabel").textContent = `${newSid} (${p.name})`;
       if (statusEl) {
-        statusEl.textContent = `Session ${newSid} created — engine now bound to this mandate.`;
+        statusEl.textContent = `Sandbox session ${newSid} created. The engine is bound to this simulated mandate, not a factory quote.`;
         statusEl.style.color = "#4ade80";
       }
       fetchSessionDetails(newSid);
@@ -708,12 +765,7 @@ async function applyCategoryPreset(cat) {
     }
   }
 
-  if (beliefChart) {
-    beliefChart.data.labels = ["Prior"];
-    beliefChart.data.datasets[0].data = [p.target * 1.08];
-    beliefChart.data.datasets[1].data = [null];
-    beliefChart.update();
-  }
+  setBeliefChartEmpty(true);
 }
 
 // ---------------------------------------------------------------------------
@@ -826,15 +878,17 @@ async function runMultiAuction() {
       : ["Supplier A", "Supplier B", "Supplier C", "Supplier D"];
 
     cardsWrap.innerHTML = "";
-    const walkAway = tfNum(data.walk_away_ceiling, 0);
+    const walkAway = tfNum(data.walk_away_ceiling, null);
     suppliers.forEach((sName, i) => {
       const quote = lastRound.quotes[i];
       const tactic = lastRound.tactics[i];
       const ceiling = lastRound.effective_ceilings_cny[i];
-      const pBreak = (tfNum(lastRound.p_break_array[i], 0) * 100).toFixed(1);
-      const quoteNum = tfNum(quote, 0);
-      const scale = walkAway > 0 ? walkAway : Math.max(quoteNum, 1);
-      const quotePct = Math.max(0, Math.min(100, (quoteNum / scale) * 100));
+      const pBreakNum = tfNum(lastRound.p_break_array[i], null);
+      const pBreak = pBreakNum === null ? "—" : (pBreakNum * 100).toFixed(1);
+      const quoteNum = tfNum(quote, null);
+      const ceilingNum = tfNum(ceiling, null);
+      const scale = walkAway !== null && walkAway > 0 ? walkAway : (quoteNum === null ? 1 : Math.max(quoteNum, 1));
+      const quotePct = Math.max(0, Math.min(100, (Number(quoteNum) / scale) * 100));
 
       let tagClass = "tactic-anchor";
       if (tactic === "LEAN_IN") tagClass = "tactic-lean";
@@ -849,9 +903,9 @@ async function runMultiAuction() {
           <span class="tactic-tag ${tfEsc(tagClass)}">${tfEsc(tactic)}</span>
         </div>
         <div class="card-metrics">
-          <div>Quote: <span class="metric-val">¥${quoteNum.toFixed(2)}</span></div>
-          <div>BATNA: <span class="metric-val">¥${tfNum(ceiling, 0).toFixed(2)}</span></div>
-          <div>Risk: <span class="metric-val">${tfEsc(pBreak)}%</span></div>
+          <div>Quote: <span class="metric-val">${quoteNum === null ? "—" : "¥" + quoteNum.toFixed(2)}</span></div>
+          <div>BATNA: <span class="metric-val">${ceilingNum === null ? "—" : "¥" + ceilingNum.toFixed(2)}</span></div>
+          <div>Risk: <span class="metric-val">${pBreak === "—" ? "—" : tfEsc(pBreak) + "%"}</span></div>
         </div>
         <div class="quote-meter" role="img" aria-label="Quote is ${quotePct.toFixed(0)} percent of the walk-away ceiling">
           <span class="quote-meter-fill" style="width: ${quotePct.toFixed(1)}%"></span>
@@ -863,9 +917,9 @@ async function runMultiAuction() {
 
     summaryEl.innerHTML = `
       <p class="summary-lead"><strong>Simulated suppliers</strong> Parameterised archetypes, not live factory quotes. Tensor grid cells: ${tfNum(data.total_rollouts, 0).toLocaleString()} (parameterised K×S×N_open×N_sched, not measured iterations). Compute: ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}).</p>
-      <p><strong>Winner:</strong> ${tfEsc(data.winning_supplier)} @ ¥${tfNum(data.winning_price, 0).toFixed(2)}</p>
-      <p><strong>Savings vs walk-away ceiling</strong> (¥${tfNum(data.walk_away_ceiling, 0).toFixed(2)}): ¥${tfNum(data.total_savings_cny, 0).toLocaleString()} (${(tfNum(data.total_savings_pct, 0) * 100).toFixed(1)}%)</p>
-      <p><strong>Savings vs first quote</strong> (¥${tfNum(data.first_round_best_quote, 0).toFixed(2)}): ¥${tfNum(data.savings_vs_first_quote_cny, 0).toLocaleString()} (${(tfNum(data.savings_vs_first_quote_pct, 0) * 100).toFixed(1)}%)</p>
+      <p><strong>Winner:</strong> ${tfEsc(data.winning_supplier)} @ ${tfNum(data.winning_price, null) === null ? "—" : "¥" + tfNum(data.winning_price, 0).toFixed(2)}</p>
+      <p><strong>Savings vs walk-away ceiling</strong> (${tfNum(data.walk_away_ceiling, null) === null ? "—" : "¥" + tfNum(data.walk_away_ceiling, 0).toFixed(2)}): ${tfNum(data.total_savings_cny, null) === null ? "—" : "¥" + tfNum(data.total_savings_cny, 0).toFixed(2)} (${tfNum(data.total_savings_pct, null) === null ? "—" : (tfNum(data.total_savings_pct, 0) * 100).toFixed(1) + "%"})</p>
+      <p><strong>Savings vs first quote</strong> (${tfNum(data.first_round_best_quote, null) === null ? "—" : "¥" + tfNum(data.first_round_best_quote, 0).toFixed(2)}): ${tfNum(data.savings_vs_first_quote_cny, null) === null ? "—" : "¥" + tfNum(data.savings_vs_first_quote_cny, 0).toFixed(2)} (${tfNum(data.savings_vs_first_quote_pct, null) === null ? "—" : (tfNum(data.savings_vs_first_quote_pct, 0) * 100).toFixed(1) + "%"})</p>
     `;
     summaryEl.classList.remove("hidden");
 
