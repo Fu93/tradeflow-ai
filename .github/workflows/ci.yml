@@ -20,6 +20,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # [FAIL-CLOSED] A workflow GitHub refuses to validate produces a run with
+      # ZERO jobs and conclusion=failure, so no step in this file can report it —
+      # that is exactly how `if: ${{ secrets.X != '' }}` silently disabled CI on
+      # two pushes. actionlint enforces GitHub's own expression/context rules.
+      - name: Lint workflow files
+        run: |
+          python -m pip install --quiet actionlint-py
+          actionlint .github/workflows/*.yml
+
       # Previously this job ran only 4 test files directly (test_engine,
       # test_evolus, test_benchmark, test_api), so 97 of 101 tests never ran in
       # CI and a regression anywhere else could not be detected.
@@ -43,10 +52,16 @@ jobs:
 
       # Optional strengthening: when the CI environment provides the real
       # credential values as secrets, write them to a throwaway .env so the scan
-      # becomes a genuine leak check instead of a no-op. This is skipped
-      # automatically when the secrets are not configured.
+      # becomes a genuine leak check instead of a no-op.
+      #
+      # [FAIL-CLOSED] This step must NOT be guarded by
+      # `if: ${{ secrets.X != '' }}`: the `secrets` context is not available in
+      # step-level `if:` expressions, so GitHub rejected the whole workflow at
+      # validation time (run created, zero jobs, conclusion failure) and the
+      # entire CI pipeline never executed. The guard now happens inside the
+      # script: with no secrets the step prints an explicit skip, with secrets
+      # it performs the real scan.
       - name: Scan for committed credentials using configured secrets
-        if: ${{ secrets.EVOLUS_API_KEY != '' }}
         env:
           CI_EVOLUS_API_KEY: ${{ secrets.EVOLUS_API_KEY }}
           CI_EVOLUS_APP_ID: ${{ secrets.EVOLUS_APP_ID }}
@@ -54,19 +69,25 @@ jobs:
         run: |
           python - <<'PY'
           import os
+          import sys
+
           keys = {
               "EVOLUS_API_KEY": os.environ.get("CI_EVOLUS_API_KEY", ""),
               "EVOLUS_APP_ID": os.environ.get("CI_EVOLUS_APP_ID", ""),
               "VLLM_API_KEY": os.environ.get("CI_VLLM_API_KEY", ""),
           }
+          present = {k: v for k, v in keys.items() if v}
+          if not present:
+              print("SKIP: no credential secrets configured in this repository;")
+              print("      this was NOT a leak check. Configure EVOLUS_API_KEY /")
+              print("      EVOLUS_APP_ID / VLLM_API_KEY to enable the real scan.")
+              sys.exit(0)
           with open(".env", "w", encoding="utf-8") as fh:
-              for k, v in keys.items():
-                  if v:
-                      fh.write(f"{k}={v}\n")
-          print("wrote .env with", len([v for v in keys.values() if v]), "credential(s)")
+              for k, v in present.items():
+                  fh.write(f"{k}={v}\n")
+          print("wrote .env with", len(present), "credential(s)")
           PY
-          python scripts/secret_scan.py
-          rm -f .env
+          if [ -f .env ]; then python scripts/secret_scan.py; rm -f .env; fi
 
       - name: Verify documentation links resolve
         run: python scripts/check_doc_links.py

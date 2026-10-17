@@ -32,6 +32,11 @@ python-multipart>=0.0.9
 # Only needed to run the test suite; the application itself does not import them.
 pytest>=8.0
 httpx>=0.27
+# Parses .github/workflows/*.yml in tests/test_ci_workflow_validity.py. That
+# guard exists because an `if: ${{ secrets.X != '' }}` expression made GitHub
+# reject the whole workflow, producing runs with zero jobs that no test could
+# ever report. Without PyYAML the guard test errors out instead of guarding.
+PyYAML>=6.0
 
 # --- Optional GPU acceleration (AMD Instinct / MI300X) ---
 # Install cupy-rocm or a ROCm torch build to enable use_gpu=True in src/engine/solver.py.
