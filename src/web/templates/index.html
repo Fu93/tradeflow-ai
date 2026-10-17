@@ -57,6 +57,20 @@
       </div>
     </section>
 
+    <!-- Supplier auction sits above the dossier so the comparison is the first read. -->
+    <section class="sheet auction-sheet auction-hero" id="tacticPanel">
+      <div class="sheet-head">
+        <h2 class="sheet-title">Four-supplier auction</h2>
+        <button class="btn-quiet" type="button" onclick="runMultiAuction()">Run</button>
+      </div>
+      <p class="fineprint auction-kicker">Simulated suppliers (parameterised archetypes), not live factory quotes.</p>
+      <div id="auctionLoader" class="loader hidden" role="status">Computing the parameterised tensor grid…</div>
+      <div id="supplierCards" class="supplier-cards">
+        <div class="empty-state">Run the auction to compare four simulated suppliers on price, terms and walk-away risk. These are parameterised archetypes, not live factory quotes.</div>
+      </div>
+      <div id="auctionSummary" class="auction-summary hidden"></div>
+    </section>
+
     <!-- ===================== BODY ===================== -->
     <div class="sheet-grid">
 
@@ -228,20 +242,6 @@
           <div id="sessionList" class="session-list">
             <div class="empty-state">No deals on file. Start one from the API, the CLI, or the commodity picker above.</div>
           </div>
-        </section>
-
-        <!-- Auction -->
-        <section class="sheet auction-sheet" id="tacticPanel">
-          <div class="sheet-head">
-            <h2 class="sheet-title">Four-supplier auction</h2>
-            <button class="btn-quiet" type="button" onclick="runMultiAuction()">Run</button>
-          </div>
-          <p class="fineprint">Simulated suppliers (parameterised archetypes), not live factory quotes.</p>
-          <div id="auctionLoader" class="loader hidden">Computing the parameterised tensor grid…</div>
-          <div id="supplierCards" class="supplier-cards">
-            <div class="empty-state">Run the auction to compare four simulated suppliers on price, terms and walk-away risk. These are parameterised archetypes, not live factory quotes.</div>
-          </div>
-          <div id="auctionSummary" class="auction-summary hidden"></div>
         </section>
 
       </aside>

@@ -34,6 +34,21 @@ python -m src.cli            # one-supplier walkthrough
 python -m src.cli --multi    # four-supplier auction
 ```
 
+## Interface
+
+The desk is set in self-hosted Fraunces and Outfit (SIL Open Font License) on a bone-paper palette. The four-supplier auction is the first panel. Each quote is drawn as a share of the walk-away ceiling returned by the auction API. The page still says the suppliers are simulated archetypes, and approval stays with the buyer.
+
+`extension/mock_chat.html` is the same desk language used as a sandbox. It is not a live supplier site. The banner on that page says the quotes are simulated.
+
+Screenshots:
+
+- Desktop, before a run: [docs/screenshots/dashboard-desktop.png](docs/screenshots/dashboard-desktop.png)
+- Mobile, before a run: [docs/screenshots/dashboard-mobile.png](docs/screenshots/dashboard-mobile.png)
+- Auction panel before Run: [docs/screenshots/auction-before-desktop.png](docs/screenshots/auction-before-desktop.png), [docs/screenshots/auction-before-mobile.png](docs/screenshots/auction-before-mobile.png)
+- Auction panel after Run: [docs/screenshots/auction-after-desktop.png](docs/screenshots/auction-after-desktop.png), [docs/screenshots/auction-after-mobile.png](docs/screenshots/auction-after-mobile.png)
+- Full desk after Run: [docs/screenshots/dashboard-desktop-after-run.png](docs/screenshots/dashboard-desktop-after-run.png)
+- Simulated supplier sandbox: [docs/screenshots/mock-chat-desktop.png](docs/screenshots/mock-chat-desktop.png), [docs/screenshots/mock-chat-mobile.png](docs/screenshots/mock-chat-mobile.png)
+
 ## Architecture
 
 ```mermaid

@@ -89,22 +89,22 @@ function initBeliefChart() {
           // Empty until a real posterior arrives: the old hardcoded 12.96 drew
           // a data point for a session that had never been measured.
           data: [],
-          borderColor: "#2e4f63",
-          backgroundColor: "rgba(46, 79, 99, 0.10)",
-          borderWidth: 1.5,
+          borderColor: "#1e3a4c",
+          backgroundColor: "rgba(30, 58, 76, 0.12)",
+          borderWidth: 2,
           pointRadius: 3,
-          pointBackgroundColor: "#2e4f63",
+          pointBackgroundColor: "#1e3a4c",
           tension: 0.25,
           fill: true,
         },
         {
           label: "Breakdown risk (%)",
           data: [null],
-          borderColor: "#a33a2a",
-          borderWidth: 1.5,
+          borderColor: "#9a3412",
+          borderWidth: 2,
           borderDash: [4, 4],
           pointRadius: 3,
-          pointBackgroundColor: "#a33a2a",
+          pointBackgroundColor: "#9a3412",
           yAxisID: "yRisk",
         }
       ]
@@ -116,32 +116,32 @@ function initBeliefChart() {
       plugins: {
         legend: {
           labels: {
-            color: "#55645c",
+            color: "#3e463f",
             boxWidth: 14,
-            font: { size: 11, family: "Segoe UI, system-ui, sans-serif" }
+            font: { size: 12, family: '"Outfit TF", sans-serif' }
           }
         }
       },
       scales: {
         x: {
-          ticks: { color: "#8b968d", font: { size: 11 } },
-          grid: { color: "#c2c8bd" },
-          border: { color: "#9ba79c" }
+          ticks: { color: "#4e5a52", font: { size: 11, family: '"Outfit TF", sans-serif' } },
+          grid: { color: "#ddd2c2" },
+          border: { color: "#b7a894" }
         },
         y: {
-          ticks: { color: "#8b968d", font: { size: 11 } },
-          grid: { color: "#d3d7cd" },
-          border: { color: "#9ba79c" },
-          title: { display: true, text: "Price (¥)", color: "#8b968d", font: { size: 11 } }
+          ticks: { color: "#4e5a52", font: { size: 11, family: '"Outfit TF", sans-serif' } },
+          grid: { color: "#efe6d6" },
+          border: { color: "#b7a894" },
+          title: { display: true, text: "Price (¥)", color: "#4e5a52", font: { size: 11, family: '"Outfit TF", sans-serif' } }
         },
         yRisk: {
           position: "right",
           min: 0,
           max: 100,
-          ticks: { color: "#a33a2a", font: { size: 10 } },
+          ticks: { color: "#9a3412", font: { size: 10, family: '"Outfit TF", sans-serif' } },
           grid: { display: false },
-          border: { color: "#c2c8bd" },
-          title: { display: true, text: "Risk %", color: "#a33a2a", font: { size: 11 } }
+          border: { color: "#ddd2c2" },
+          title: { display: true, text: "Risk %", color: "#9a3412", font: { size: 11, family: '"Outfit TF", sans-serif' } }
         }
       }
     }
@@ -805,14 +805,14 @@ async function runMultiAuction() {
     });
     if (!res.ok) {
       loader.classList.add("hidden");
-      cardsWrap.innerHTML = `<div class="empty-state">Multi-auction rejected (HTTP ${tfEsc(res.status)}).</div>`;
+      cardsWrap.innerHTML = `<div class="empty-state is-error">Multi-auction rejected (HTTP ${tfEsc(res.status)}).</div>`;
       return;
     }
     const data = await res.json();
     loader.classList.add("hidden");
 
     if (!data.success) {
-      cardsWrap.innerHTML = `<div class="empty-state">Error running multi-auction: ${tfEsc(data.detail || "Unknown")}</div>`;
+      cardsWrap.innerHTML = `<div class="empty-state is-error">Error running multi-auction: ${tfEsc(data.detail || "Unknown")}</div>`;
       return;
     }
 
@@ -826,11 +826,15 @@ async function runMultiAuction() {
       : ["Supplier A", "Supplier B", "Supplier C", "Supplier D"];
 
     cardsWrap.innerHTML = "";
+    const walkAway = tfNum(data.walk_away_ceiling, 0);
     suppliers.forEach((sName, i) => {
       const quote = lastRound.quotes[i];
       const tactic = lastRound.tactics[i];
       const ceiling = lastRound.effective_ceilings_cny[i];
       const pBreak = (tfNum(lastRound.p_break_array[i], 0) * 100).toFixed(1);
+      const quoteNum = tfNum(quote, 0);
+      const scale = walkAway > 0 ? walkAway : Math.max(quoteNum, 1);
+      const quotePct = Math.max(0, Math.min(100, (quoteNum / scale) * 100));
 
       let tagClass = "tactic-anchor";
       if (tactic === "LEAN_IN") tagClass = "tactic-lean";
@@ -838,32 +842,36 @@ async function runMultiAuction() {
 
       const card = document.createElement("div");
       card.className = "supplier-card";
+      if (sName === data.winning_supplier) card.classList.add("is-winner");
       card.innerHTML = `
         <div class="card-top">
           <span class="supplier-title">${tfEsc(sName)}</span>
           <span class="tactic-tag ${tfEsc(tagClass)}">${tfEsc(tactic)}</span>
         </div>
         <div class="card-metrics">
-          <div>Quote: <span class="metric-val">¥${tfNum(quote, 0).toFixed(2)}</span></div>
+          <div>Quote: <span class="metric-val">¥${quoteNum.toFixed(2)}</span></div>
           <div>BATNA: <span class="metric-val">¥${tfNum(ceiling, 0).toFixed(2)}</span></div>
           <div>Risk: <span class="metric-val">${tfEsc(pBreak)}%</span></div>
         </div>
+        <div class="quote-meter" role="img" aria-label="Quote is ${quotePct.toFixed(0)} percent of the walk-away ceiling">
+          <span class="quote-meter-fill" style="width: ${quotePct.toFixed(1)}%"></span>
+        </div>
+        <div class="quote-meter-scale"><span>0</span><span>walk-away ceiling</span></div>
       `;
       cardsWrap.appendChild(card);
     });
 
     summaryEl.innerHTML = `
-      <strong>Simulated suppliers</strong> (parameterised archetypes, not live factory quotes).<br/>
-      <strong>Winner:</strong> ${tfEsc(data.winning_supplier)} @ ¥${tfNum(data.winning_price, 0).toFixed(2)}<br/>
-      <strong>Savings vs walk-away ceiling</strong> (¥${tfNum(data.walk_away_ceiling, 0).toFixed(2)}): ¥${tfNum(data.total_savings_cny, 0).toLocaleString()} (${(tfNum(data.total_savings_pct, 0) * 100).toFixed(1)}%)<br/>
-      <strong>Savings vs first quote</strong> (¥${tfNum(data.first_round_best_quote, 0).toFixed(2)}): ¥${tfNum(data.savings_vs_first_quote_cny, 0).toLocaleString()} (${(tfNum(data.savings_vs_first_quote_pct, 0) * 100).toFixed(1)}%)<br/>
-      <strong>Tensor grid cells:</strong> ${tfNum(data.total_rollouts, 0).toLocaleString()} (parameterised K×S×N_open×N_sched, not measured iterations) | Compute: ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)})
+      <p class="summary-lead"><strong>Simulated suppliers</strong> Parameterised archetypes, not live factory quotes. Tensor grid cells: ${tfNum(data.total_rollouts, 0).toLocaleString()} (parameterised K×S×N_open×N_sched, not measured iterations). Compute: ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}).</p>
+      <p><strong>Winner:</strong> ${tfEsc(data.winning_supplier)} @ ¥${tfNum(data.winning_price, 0).toFixed(2)}</p>
+      <p><strong>Savings vs walk-away ceiling</strong> (¥${tfNum(data.walk_away_ceiling, 0).toFixed(2)}): ¥${tfNum(data.total_savings_cny, 0).toLocaleString()} (${(tfNum(data.total_savings_pct, 0) * 100).toFixed(1)}%)</p>
+      <p><strong>Savings vs first quote</strong> (¥${tfNum(data.first_round_best_quote, 0).toFixed(2)}): ¥${tfNum(data.savings_vs_first_quote_cny, 0).toLocaleString()} (${(tfNum(data.savings_vs_first_quote_pct, 0) * 100).toFixed(1)}%)</p>
     `;
     summaryEl.classList.remove("hidden");
 
   } catch (err) {
     loader.classList.add("hidden");
-    cardsWrap.innerHTML = `<div class="empty-state">Request failed: ${tfEsc(err.message)}</div>`;
+    cardsWrap.innerHTML = `<div class="empty-state is-error">Request failed: ${tfEsc(err.message)}</div>`;
   }
 }
 
