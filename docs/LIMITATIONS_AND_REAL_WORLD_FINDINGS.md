@@ -95,7 +95,7 @@ We refuse to imply this is "a point estimate from hundreds of real cloud-LLM cal
 
 > **Data class**: every number in this section is **class C (synthetic simulation)** in the §0 taxonomy — not a real-world observation.
 
-* **Code fact**: in [`src/benchmark/arena.py`](src/benchmark/arena.py), `agent_type == "vanilla_llm"` is a **parametric behavioural simulator calibrated against published behaviour** (NegotiationArena / Bianchi et al., ICLR 2024; AgenticPay, arXiv:2602.06008; Cattle Trade, arXiv:2605.14537).
+* **Code fact**: in [`src/benchmark/arena.py`](../src/benchmark/arena.py), `agent_type == "vanilla_llm"` is a **parametric behavioural simulator calibrated against published behaviour** (NegotiationArena / Bianchi et al., ICLR 2024; AgenticPay, arXiv:2602.06008; Cattle Trade, arXiv:2605.14537).
 * **Formulas**:
   1. **No opening anchor**: without a game-theoretic anchor the opening drifts: $p_{\text{open}} \sim \text{Clip}(\mathcal{N}(1.12, 0.03^2), 1.05, 1.25)$.
   2. **Concession panic**: against a hard supplier the unscheduled buyer concedes passively:
@@ -357,8 +357,9 @@ The self-play baseline (recorded artefact: 100 matches = 20 × 5 archetypes, see
   * From AMD's official AI developer programme and related ROCm open benchmarks (e.g. comparable kernel measurements from the ROCmPort-AI project on MI300X):
     - **Memory-bound kernels**: **531.8 GB/s** measured (over 6.6× DDR5 bandwidth);
     - **Compute-bound matmul**: **1843.7 GB/s** measured.
+    - These two figures are citations of that external write-up. TradeFlow did not measure them.
 * **Architecture portability**:
-  * The engine wraps its array backend in the `_xp()` abstraction in [`src/engine/solver.py`](src/engine/solver.py). On CPU it calls NumPy SIMD natively; `use_gpu=True` switches straight to an AMD ROCm CuPy runtime.
+  * The engine wraps its array backend in the `_xp()` abstraction in [`src/engine/solver.py`](../src/engine/solver.py). The default is NumPy. `TRADEFLOW_SOLVER_BACKEND=cupy` (or `use_gpu=True`) requests CuPy and falls back to NumPy when CuPy cannot be imported. That GPU path has not been measured on an AMD device in this repository.
 
 ---
 
@@ -517,7 +518,7 @@ To eliminate "the model estimates from memory", three domain knowledge bases wer
 
 ## 13. Calibration provenance, sensitivity and prior dependency
 
-> Produced on 2026-10-14 from the hardcoded-value audit ([HARDCODED_DATA_AUDIT.md](HARDCODED_DATA_AUDIT.md)) and from running the code. Purpose: turn the sentence "validity depends strictly on the prior" into **checkable numbers**, and answer the official *"explain how the prediction was calculated"* — including an honest account of which numbers were **chosen** rather than derived.
+> Produced on 2026-10-14 from the hardcoded-value audit ([HARDCODED_DATA_AUDIT.md](internal/HARDCODED_DATA_AUDIT.md)) and from running the code. Purpose: turn the sentence "validity depends strictly on the prior" into **checkable numbers**, and answer the official *"explain how the prediction was calculated"* — including an honest account of which numbers were **chosen** rather than derived.
 
 ### 13.1 Three sources of engine numbers
 
@@ -559,7 +560,7 @@ To eliminate "the model estimates from memory", three domain knowledge bases wer
 | `logrolling.py:408` | `0.08 · d^1.25` | Expedite-cost exponent | Chosen |
 | `logrolling.py:37` | `supplier_capital_relief_rate=0.22` | Supplier capital-relief yield | Chosen (aggressive; the item most open to challenge) |
 
-**Class C — projection constants**: `benchmark.py`'s `PROJECTION_*` (0.18 / 16.5 / 15.8) affect no decision; see [HARDCODED_DATA_AUDIT.md](HARDCODED_DATA_AUDIT.md).
+**Class C — projection constants**: `benchmark.py`'s `PROJECTION_*` (0.18 / 16.5 / 15.8) affect no decision; see [HARDCODED_DATA_AUDIT.md](internal/HARDCODED_DATA_AUDIT.md).
 
 > **In one sentence**: predictions come from "class-A policy parameters × class-B model assumptions × grid search".
 > **Not one class-B value is fitted from real negotiation data** — they are rough mappings of literature behaviour traits.

@@ -2,7 +2,7 @@
 
 > [!IMPORTANT]
 > **Provenance statement**
-> * Every "system response" value (latency, intent, circuit trip, reply script) is **copied verbatim from machine-generated logs** in [`results/real_stress_test_log.json`](results/real_stress_test_log.json), produced by [`scripts/run_real_stress_test.py`](scripts/run_real_stress_test.py) against the **real local API** (`TestClient` → `/api/v1/sessions/{id}/round`). It can be re-run and reproduced at any time.
+> * Every "system response" value (latency, intent, circuit trip, reply script) is **copied verbatim from machine-generated logs** in [`results/real_stress_test_log.json`](../results/real_stress_test_log.json), produced by [`scripts/run_real_stress_test.py`](../scripts/run_real_stress_test.py) against the **real local API** (`TestClient` → `/api/v1/sessions/{id}/round`). It can be re-run and reproduced at any time.
 > * The factory salesperson lines are a **hand-written stress-test script** (not a real factory).
 > * The "analysis" paragraphs are **our own commentary**, not machine output, and add no measured evidence.
 > * This document is **not** "real-world transaction records" — no real supplier took part.

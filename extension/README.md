@@ -10,7 +10,7 @@
    - 350 ms debounce plus message deduplication, so supplier bubbles and step quotes are captured precisely.
 2. **Decision radar and tactical cards (Decision Deck HUD)**
    - Non-price (TCO) shadow costs for lead-time slippage, excess MOQ and payment terms are computed by `src/engine/tco.py`.
-     *Boundary*: that module's conversion parameters (8% annual capital cost, 0.3% per day of lead-time delay, …) are **overridable defaults**, not calibrated against real transactions — see `LIMITATIONS_AND_REAL_WORLD_FINDINGS.md` §13.
+     *Boundary*: that module's conversion parameters (8% annual capital cost, 0.3% per day of lead-time delay, …) are **overridable defaults**, not calibrated against real transactions — see `docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md` §13.
    - Produces three differentiated reply cards (budget-authority pressure, terms swap, alternative-supplier leverage), each with **one-click copy**. Card bodies are in Chinese because they are pasted straight to a Chinese supplier; the surrounding UI is English.
 3. **Human-in-the-loop approval gate**
    - Copilot mode by default. The extension **deliberately cannot** fill the chat box or click send —

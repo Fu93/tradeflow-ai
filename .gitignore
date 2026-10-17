@@ -56,3 +56,6 @@ _verify_findings.py
 debug_findings/_sessions_backup/
 debug_findings/**/*.log
 debug_findings/**/*.png
+docs/internal/debug_findings/_sessions_backup/
+docs/internal/debug_findings/**/*.log
+docs/internal/debug_findings/**/*.png

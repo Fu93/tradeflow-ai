@@ -213,9 +213,10 @@ def test_no_document_still_claims_the_contaminated_92_percent_as_generalisation(
     """
     doc_files = [
         "README.md",
-        "TARGET_ARCHITECTURE_AND_ROADMAP.md",
-        "PITCH.md",
-        "SUBMISSION_DRAFT.md",
+        "SUBMISSION.md",
+        "docs/internal/TARGET_ARCHITECTURE_AND_ROADMAP.md",
+        "docs/internal/PITCH.md",
+        "docs/internal/SUBMISSION_DRAFT.md",
     ]
     offenders = []
     for rel in doc_files:
@@ -295,7 +296,15 @@ def test_dataset_is_template_recycled_not_500_distinct_samples():
     assert len(groups) < len(OOD_500_DATASET) / 5
 
 
-@pytest.mark.parametrize("rel", ["README.md", "PITCH.md", "SUBMISSION_DRAFT.md"])
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "README.md",
+        "SUBMISSION.md",
+        "docs/internal/PITCH.md",
+        "docs/internal/SUBMISSION_DRAFT.md",
+    ],
+)
 def test_docs_do_not_claim_a_blind_or_distinct_dataset(rel):
     """對外文件不得把本集宣稱為「盲測集」或「500 條獨特語料」。"""
     path = os.path.join(_REPO_ROOT, rel)

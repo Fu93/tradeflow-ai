@@ -187,4 +187,4 @@ We believe **that in front of a technical review, drawing the boundary honestly 
 
 > **Document status.** This deck supersedes every earlier pitch version. Architecture details follow
 > [TARGET_ARCHITECTURE_AND_ROADMAP.md](TARGET_ARCHITECTURE_AND_ROADMAP.md); technical boundaries follow
-> [LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](LIMITATIONS_AND_REAL_WORLD_FINDINGS.md).
+> [LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](../LIMITATIONS_AND_REAL_WORLD_FINDINGS.md).
