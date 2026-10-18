@@ -42,6 +42,7 @@ from src.benchmark.ood_500_dataset import (
     SPLIT_METHOD,
     template_key,
 )
+from src.config.heuristics import ONNX_LOGREG_C, ONNX_TEMPERATURE
 from src.engine.bilingual import VendorTacticEnum
 
 MODEL_DIR = "models"
@@ -153,7 +154,7 @@ def train_and_export_onnx():
     vec = CountVectorizer(analyzer="char", ngram_range=(1, 2), min_df=2, max_features=2500)
     X = vec.fit_transform(all_texts)
 
-    clf = LogisticRegression(max_iter=500, C=3.0)
+    clf = LogisticRegression(max_iter=500, C=ONNX_LOGREG_C)
     clf.fit(X, y)
     train_acc = clf.score(X, y)
     print(f"LogisticRegression trained on {len(all_texts)} samples! Train Acc: {train_acc*100:.2f}%")
@@ -179,7 +180,7 @@ def train_and_export_onnx():
     # 填充實際特徵權重 (index 從 1 開始)
     W_data[1:, :] = coef_raw.T.astype(np.float32)
     b_data = intercept_raw.astype(np.float32)
-    temperature = 1.20
+    temperature = ONNX_TEMPERATURE
 
     # 5. 導出 ONNX 計算圖
     W_t = helper.make_tensor("W", TensorProto.FLOAT, [V, C], W_data.flatten())
@@ -215,7 +216,7 @@ def train_and_export_onnx():
     onnx.checker.check_model(model)
     onnx.save(model, MODEL_PATH)
 
-    file_size_kb = os.path.getsize(MODEL_PATH) / 1024.0
+    file_size_kb = os.path.getsize(MODEL_PATH) / 1024
     print(f"ONNX Model saved to {MODEL_PATH}, file size: {file_size_kb:.2f} KB (<10MB limit)")
 
     # 6. 驗證 ONNX 推斷（單句煙霧測試）

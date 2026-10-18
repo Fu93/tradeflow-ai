@@ -2,7 +2,7 @@
 > **[SUPERSEDED] 本文件已封存 (Archived Document)**
 > SUPERSEDED by TARGET_ARCHITECTURE_AND_ROADMAP.md (2026-10-14). Describes the pre-Copilot Autopilot architecture, which was explicitly abandoned.
 >
-> 現行唯一權威規格：[TARGET_ARCHITECTURE_AND_ROADMAP.md](../../TARGET_ARCHITECTURE_AND_ROADMAP.md)（架構）
+> 現行唯一權威規格：[TARGET_ARCHITECTURE_AND_ROADMAP.md](../internal/TARGET_ARCHITECTURE_AND_ROADMAP.md)（架構）
 > 與 [README.md](../../README.md)（入口）。本文件僅供歷史追溯，**請勿據此開發**。
 
 ---
@@ -48,7 +48,7 @@
     [TradeFlow 核心決策大腦 (FastAPI + AMD MI300X)]
        ├── 談判狀態機 (NegotiationSession: SQLite WAL + 原子 JSON 雙寫)
        ├── 貝氏信念更新 (對手真實底價推斷與詐唬機率重估)
-       ├── 向量化 MCTS 求解器 (96M 巨型張量 Rollout, 耗時 0.38s)
+       ├── 向量化 Expectimax 求解器 (96M 是參數組合數，不是已在 MI300X 上測得的耗時)
        ├── 多供應商逆向拍賣協調 (動態 BATNA + 交叉錨點反饋)
        └── 量化安全熔斷矩陣 (Guardrails: P_break >= 15% 觸發斷路器)
            │
@@ -355,7 +355,7 @@ $$C_{eff, i}^{(t)} = \min\left( C_{walk\_away},\; BATNA_{-i}^{(t)} \right)$$
 - **硬體效能實測**：
   - CPU（單線程迴圈）：$460\text{s}$（無法線上互動）
   - CPU（NumPy 向量化）：$12.5\text{s}$
-  - **AMD MI300X（ROCm / CuPy 張量並行）**：**$\approx 0.38\text{s}$**（充分發揮 192GB HBM3 超高頻寬）。
+  - **AMD MI300X**：未實測。Datasheet 容量是 192 GB HBM3。耗時欄不留估算秒數；見 `results/mi300x_roofline.json`（theoretical roofline lower-bound estimate, not measured）。
 
 ---
 

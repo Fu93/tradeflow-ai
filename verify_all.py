@@ -18,6 +18,27 @@ import sys
 import time
 from pathlib import Path
 
+from src.sim.smoke import (
+    AUCTION_CEILING,
+    AUCTION_TARGET,
+    EXEC_CEILING,
+    EXEC_COMMAND,
+    EXEC_CONFIDENCE,
+    EXEC_DEPOSIT,
+    EXEC_FLOOR,
+    EXEC_MOLD,
+    EXEC_PRICE,
+    EXEC_PRICE_STEP,
+    EXEC_RISK,
+    GUARD_DEPOSIT,
+    GUARD_PRICE,
+    LOGROLL_CEILING,
+    LOGROLL_OFFER,
+    LOGROLL_TARGET,
+    PERSIST_CEILING,
+    PERSIST_TARGET,
+)
+
 
 def audit_system():
     print("================================================================================")
@@ -49,8 +70,8 @@ def audit_system():
             spec = SessionSpec(
                 session_id="AUDIT_VERIFY_TEMP",
                 product_name="Audit Verification Test",
-                target_price=10.0,
-                ceiling_price=15.0,
+                target_price=PERSIST_TARGET,
+                ceiling_price=PERSIST_CEILING,
             )
             s = mgr.create_session(spec)
             assert s.state == AutopilotState.IDLE
@@ -92,7 +113,7 @@ def audit_system():
     try:
         from src.engine.multi_solver import simulate_reverse_auction
         t0 = time.perf_counter()
-        res = simulate_reverse_auction(target_price=12.0, walk_away_ceiling=16.2, n_samples=10000, use_gpu=False)
+        res = simulate_reverse_auction(target_price=AUCTION_TARGET, walk_away_ceiling=AUCTION_CEILING, n_samples=10000, use_gpu=False)
         dt = time.perf_counter() - t0
         assert res["total_rollouts"] > 0
         assert res["backend"].startswith("CPU"), f"unexpected backend: {res['backend']}"
@@ -100,7 +121,7 @@ def audit_system():
         # 真求解器必須對輸入敏感：不同報價必須產生不同的贏家/價格，
         # 或至少不同的戰術分流。常數假物件會在此失敗。
         res_alt = simulate_reverse_auction(
-            target_price=12.0, walk_away_ceiling=16.2, n_samples=10000, use_gpu=False,
+            target_price=AUCTION_TARGET, walk_away_ceiling=AUCTION_CEILING, n_samples=10000, use_gpu=False,
             suppliers=[
                 {"name": "A", "profile": "Agile Conceder"},
                 {"name": "B", "profile": "Rational Tit-for-Tat"},
@@ -119,8 +140,8 @@ def audit_system():
     # Pillar 3: Corporate Mandate & Logrolling Pareto Frontier
     try:
         from src.engine.logrolling import CorporateMandate, SupplierCurrentOffer, LogrollingEngine
-        mandate = CorporateMandate(target_price=12.0, walk_away_ceiling=16.0)
-        offer = SupplierCurrentOffer(price=15.0, lead_days=25, is_price_stagnant=True)
+        mandate = CorporateMandate(target_price=LOGROLL_TARGET, walk_away_ceiling=LOGROLL_CEILING)
+        offer = SupplierCurrentOffer(price=LOGROLL_OFFER, lead_days=25, is_price_stagnant=True)
         lr_res = LogrollingEngine.evaluate(mandate, offer)
         assert lr_res.ast_guardrail_passed is True
         assert len(lr_res.all_pareto_proposals) > 0
@@ -136,7 +157,7 @@ def audit_system():
         blocked = False
         try:
             ASTMandateGuardrail.verify_proposal(
-                {"proposed_price": 14.0, "proposed_lead_days": 20, "proposed_deposit_pct": 0.4, "proposed_moq": 500, "tradeoff_types_used": ["DEPOSIT_FOR_LEADTIME"]},
+                {"proposed_price": GUARD_PRICE, "proposed_lead_days": 20, "proposed_deposit_pct": GUARD_DEPOSIT, "proposed_moq": 500, "tradeoff_types_used": ["DEPOSIT_FOR_LEADTIME"]},
                 mandate,
                 buyer_script=illegal_script,
             )
@@ -173,10 +194,10 @@ def audit_system():
             CURRENT_SCHEMA_VERSION,
         )
         # 1. 測試高管自然語言指令反向解析
-        exec_cmd = EnglishExecutiveCommandParser.parse("offer 13.80 with 50% deposit and waive mold fee")
+        exec_cmd = EnglishExecutiveCommandParser.parse(EXEC_COMMAND)
         assert exec_cmd.action == ExecutiveActionEnum.OVERRIDE_PRICE
-        assert exec_cmd.override_price == 13.80
-        assert exec_cmd.demanded_deposit_pct == 0.50
+        assert exec_cmd.override_price == EXEC_PRICE
+        assert exec_cmd.demanded_deposit_pct == EXEC_DEPOSIT
         assert exec_cmd.waive_mold_fee is True
 
         # 2. 構建策略對象並經 AST 護欄驗證
@@ -184,16 +205,16 @@ def audit_system():
             schema_version=CURRENT_SCHEMA_VERSION,
             source_round_id="AUDIT_VERIFY_R1_EXEC",
             authorized_price=exec_cmd.override_price,
-            walk_away_ceiling=16.00,
-            breakdown_risk=0.08,
-            bayesian_confidence=0.95,
-            estimated_floor_price=12.96,
+            walk_away_ceiling=EXEC_CEILING,
+            breakdown_risk=EXEC_RISK,
+            bayesian_confidence=EXEC_CONFIDENCE,
+            estimated_floor_price=EXEC_FLOOR,
             tactical_mode=TacticalModeEnum.LOGROLL,
             product_name="Aerospace Aluminum Case",
             supplier_contact_name="陳總",
             deposit_pct=exec_cmd.demanded_deposit_pct,
             mold_fee_exempted=exec_cmd.waive_mold_fee,
-            waive_mold_fee_amount=3000.0,
+            waive_mold_fee_amount=EXEC_MOLD,
         )
         assert ActionObjectASTGuardrail.verify(action_obj) is True
 
@@ -214,7 +235,7 @@ def audit_system():
         assert f"{action_obj.authorized_price:.2f}" in zh_script, "ZH script omits the authorized price"
         assert f"{action_obj.authorized_price:.2f}" in en_card, "EN card omits the authorized price"
         # 渲染器必須對輸入敏感：改變決策物件，輸出必須跟著改變
-        alt = action_obj.model_copy(update={"authorized_price": action_obj.authorized_price - 1.11})
+        alt = action_obj.model_copy(update={"authorized_price": action_obj.authorized_price - EXEC_PRICE_STEP})
         alt_zh = ChineseSurfaceRenderer.render(alt)
         assert alt_zh != zh_script, "renderer output did not change when the decision object changed"
 

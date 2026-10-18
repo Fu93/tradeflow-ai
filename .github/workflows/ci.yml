@@ -41,6 +41,11 @@ jobs:
       - name: Run full test suite
         run: python -m pytest tests -q
 
+      # No API key in CI. The script must exit 0 and record a skip, not a pass
+      # that pretends the AMD endpoint was checked.
+      - name: AMD endpoint probe skips without a key
+        run: python scripts/verify_amd_endpoint.py --evidence /tmp/amd_endpoint_evidence.json
+
       # Gate on the honesty checks this project relies on.
       #
       # [FAIL-CLOSED] secret_scan.py reads the credential VALUES from .env and
@@ -97,6 +102,15 @@ jobs:
 
       - name: Verify documentation links resolve
         run: python scripts/check_doc_links.py
+
+      - name: Check documented numbers against source files
+        run: python scripts/check_claims.py
+
+      - name: Check the MI300X roofline still matches the formula
+        run: python scripts/regen_mi300x_roofline.py --check
+
+      - name: Reject undeclared scenario numbers outside the simulator
+        run: python scripts/check_no_fake_literals.py
 
       # Run the guard tests explicitly so a regression in a security/integrity
       # gate is visible as a named CI step rather than buried in the suite.

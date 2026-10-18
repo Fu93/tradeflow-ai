@@ -172,16 +172,18 @@ class TestCliBenchmarkNoStaleKey(unittest.TestCase):
         import inspect
         import src.engine.benchmark as benchmark
         src = inspect.getsource(benchmark)
-        self.assertIn("bandwidth_ratio_cpu_to_mi300x", src)
+        self.assertIn("theoretical roofline lower-bound estimate, not measured", src)
+        self.assertNotIn("bandwidth_ratio_cpu_to_mi300x", src)
+        self.assertNotIn("cpu_bandwidth_gb_s", src)
         self.assertNotIn("theoretical_max_speedup", src)
 
     def test_cli_uses_the_present_key(self):
         import inspect
         import src.cli as cli
         src = inspect.getsource(cli)
-        self.assertIn("bandwidth_ratio_cpu_to_mi300x", src)
-        # 且必須標明該比值不是加速預測（與 benchmark.py 的 note 一致）。
-        self.assertIn("NOT a speedup prediction", src)
+        self.assertIn("theoretical roofline lower-bound estimate, not measured", src)
+        self.assertNotIn("bandwidth_ratio_cpu_to_mi300x", src)
+        self.assertNotIn("['theoretical_max_speedup']", src)
 
 
 if __name__ == "__main__":

@@ -18,8 +18,8 @@
   --moss: #46664c;
   --ochre: #8d641b;
 
-  --display: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
-  --text: "Segoe UI", system-ui, -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --display: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", Arial, "Noto Sans CJK TC", "Noto Sans TC", sans-serif;
+  --text: "Segoe UI", system-ui, -apple-system, "Noto Sans CJK TC", "Noto Sans TC", "Source Han Sans TC", "PingFang TC", "Microsoft JhengHei", "WenQuanYi Micro Hei", "Droid Sans Fallback", sans-serif;
 
   /* Names consumed by sidepanel.js — mapped onto the palette above. */
   --text-main: var(--ink);
@@ -39,6 +39,7 @@ body {
   font-family: var(--text);
   font-size: 12px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
   background-image: repeating-linear-gradient(
     to bottom,
     rgba(27, 38, 34, 0.028) 0,
@@ -57,13 +58,17 @@ body {
   top: 0;
   z-index: 5;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "mark pill" "sub sub";
   align-items: baseline;
-  gap: 8px;
+  gap: 4px 8px;
   padding: 10px 12px 9px;
   background: var(--paper);
   border-bottom: 2px solid var(--ink);
 }
+
+.deck-mark { grid-area: mark; }
+.deck-sub { grid-area: sub; }
 
 .deck-mark {
   font-family: var(--display);
@@ -78,6 +83,7 @@ body {
 
 /* sidepanel.js rewrites className to "status-pill" / "status-pill tripped". */
 .status-pill {
+  grid-area: pill;
   justify-self: end;
   display: inline-flex;
   align-items: center;
@@ -89,7 +95,10 @@ body {
   font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  white-space: nowrap;
+  line-height: 1.3;
+  text-align: end;
+  max-width: 46vw;
+  overflow-wrap: anywhere;
 }
 
 .status-pill .dot {
@@ -115,6 +124,7 @@ body {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
 }
@@ -126,7 +136,7 @@ body {
   letter-spacing: 0.01em;
 }
 
-.note { font-size: 10px; color: var(--ink-faint); text-align: right; }
+.note { font-size: 10px; color: var(--ink-faint); text-align: end; line-height: 1.4; overflow-wrap: anywhere; }
 
 #btn-refresh {
   padding: 1px 7px;
@@ -164,6 +174,8 @@ body {
 
 .terms th,
 .terms td {
+  overflow-wrap: anywhere;
+  line-height: 1.4;
   padding: 5px 0;
   border-bottom: 1px dotted var(--rule);
   text-align: left;

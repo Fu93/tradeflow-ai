@@ -48,7 +48,7 @@ video:
 	PDF_CHARSET=utf-8 $(PY) scripts/make_demo_video.py
 
 server:
-	uvicorn src.app.main:app --host 0.0.0.0 --port 8000
+	uvicorn src.app.main:app --host 0.0.0.0 --port $${PORT:-8000}
 
 clean:
 	rm -f results/*.png results/*.json results/*.mp4 results/*.gif results/*.pptx

@@ -121,9 +121,15 @@ def on_webhook(payload: dict) -> dict:
 
 
 if __name__ == "__main__":
-    # 離線自檢：模擬一封供應商回價 ¥15 的信進來
-    payload = {"extracted": {"product": "auto umbrella", "target_price": 12.0},
-               "offer": 1.25, "email_body": "We can do ¥15 per unit, MOQ 500."}
+    from src.sim.scenarios import SUPPLIER_REPLIES, UMBRELLA
+    payload = {
+        "extracted": {"product": UMBRELLA.name, "target_price": UMBRELLA.target},
+        "offer": SUPPLIER_REPLIES[0],
+        "email_body": (
+            "Simulated supplier reply for the offline self-check. "
+            "The numeric offer is the scripted walkthrough reply, not a factory quote."
+        ),
+    }
     out = on_webhook(payload)
     import json
     print(json.dumps(out, ensure_ascii=False, indent=2))

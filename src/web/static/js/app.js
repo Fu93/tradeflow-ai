@@ -55,11 +55,40 @@ function tfNum(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+// Safety bands and the sandbox catalogue. Empty until /api/v1/heuristics and
+// /api/v1/simulation/mandates answer. The desk does not invent either.
+let tfHeuristics = null;
+let categoryPresets = null;
+
+function tfTrip() {
+  const n = tfHeuristics && Number(tfHeuristics.breakdown_trip_threshold);
+  return Number.isFinite(n) ? n : null;
+}
+
+function tfCaution() {
+  const n = tfHeuristics && Number(tfHeuristics.caution_risk_threshold);
+  return Number.isFinite(n) ? n : null;
+}
+
+function tfMoney(value) {
+  const n = tfNum(value, null);
+  return n === null ? "—" : `¥${n.toFixed(2)}`;
+}
+
+function tfTone(el, tone) {
+  if (!el) return;
+  el.style.color = "";
+  el.classList.toggle("is-ok", tone === "is-ok");
+  el.classList.toggle("is-bad", tone === "is-bad");
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   // P1-3: SSE 與遙測配置必須先於圖表初始化；圖表失敗（CDN 不可達）不得中止
   // 整個啟動鏈，否則會話清單永遠停在 "Connecting..."。
   initSSE();
   fetchTelemetryConfig();
+  loadDeskConfig();
+  paintAmdAvailability();
   try {
     initBeliefChart();
   } catch (err) {
@@ -89,22 +118,22 @@ function initBeliefChart() {
           // Empty until a real posterior arrives: the old hardcoded 12.96 drew
           // a data point for a session that had never been measured.
           data: [],
-          borderColor: "#2e4f63",
-          backgroundColor: "rgba(46, 79, 99, 0.10)",
-          borderWidth: 1.5,
+          borderColor: "#1e3a4c",
+          backgroundColor: "rgba(30, 58, 76, 0.12)",
+          borderWidth: 2,
           pointRadius: 3,
-          pointBackgroundColor: "#2e4f63",
+          pointBackgroundColor: "#1e3a4c",
           tension: 0.25,
           fill: true,
         },
         {
           label: "Breakdown risk (%)",
           data: [null],
-          borderColor: "#a33a2a",
-          borderWidth: 1.5,
+          borderColor: "#9a3412",
+          borderWidth: 2,
           borderDash: [4, 4],
           pointRadius: 3,
-          pointBackgroundColor: "#a33a2a",
+          pointBackgroundColor: "#9a3412",
           yAxisID: "yRisk",
         }
       ]
@@ -116,32 +145,32 @@ function initBeliefChart() {
       plugins: {
         legend: {
           labels: {
-            color: "#55645c",
+            color: "#3e463f",
             boxWidth: 14,
-            font: { size: 11, family: "Segoe UI, system-ui, sans-serif" }
+            font: { size: 12, family: '"Outfit TF", sans-serif' }
           }
         }
       },
       scales: {
         x: {
-          ticks: { color: "#8b968d", font: { size: 11 } },
-          grid: { color: "#c2c8bd" },
-          border: { color: "#9ba79c" }
+          ticks: { color: "#4e5a52", font: { size: 11, family: '"Outfit TF", sans-serif' } },
+          grid: { color: "#ddd2c2" },
+          border: { color: "#b7a894" }
         },
         y: {
-          ticks: { color: "#8b968d", font: { size: 11 } },
-          grid: { color: "#d3d7cd" },
-          border: { color: "#9ba79c" },
-          title: { display: true, text: "Price (¥)", color: "#8b968d", font: { size: 11 } }
+          ticks: { color: "#4e5a52", font: { size: 11, family: '"Outfit TF", sans-serif' } },
+          grid: { color: "#efe6d6" },
+          border: { color: "#b7a894" },
+          title: { display: true, text: "Price (¥)", color: "#4e5a52", font: { size: 11, family: '"Outfit TF", sans-serif' } }
         },
         yRisk: {
           position: "right",
           min: 0,
           max: 100,
-          ticks: { color: "#a33a2a", font: { size: 10 } },
+          ticks: { color: "#9a3412", font: { size: 10, family: '"Outfit TF", sans-serif' } },
           grid: { display: false },
-          border: { color: "#c2c8bd" },
-          title: { display: true, text: "Risk %", color: "#a33a2a", font: { size: 11 } }
+          border: { color: "#ddd2c2" },
+          title: { display: true, text: "Risk %", color: "#9a3412", font: { size: 11, family: '"Outfit TF", sans-serif' } }
         }
       }
     }
@@ -198,8 +227,8 @@ function renderSessions(sessions) {
 
     let stateClass = "badge-idle";
     if (s.state === "AUTOPILOT_CRUISING" || s.state === "COPILOT_MONITORING") stateClass = "badge-cruising";
-    else if (s.state === "CIRCUIT_TRIPPED_ESCALATED" || s.state === "AWAITING_HUMAN_DECISION") stateClass = "badge-tripped";
-    else if (s.state === "DEAL_CLOSED") stateClass = "badge-closed";
+    else if (s.state === "CIRCUIT_TRIPPED_ESCALATED" || s.state === "AWAITING_HUMAN_DECISION" || s.state === "WALK_AWAY") stateClass = "badge-tripped";
+    else if (s.state === "DEAL_CLOSED" || s.state === "HUMAN_APPROVED_APPLIED") stateClass = "badge-closed";
 
     // H1: session_id / state / product are free-form strings persisted from
     // the API and pushed over SSE. Every one is escaped before interpolation.
@@ -244,15 +273,31 @@ function selectSession(s) {
     ring.style.setProperty("--risk", cbRisk === null ? "0" : String(Math.max(0, Math.min(100, cbRisk * 100))));
   }
 
-  if (s.state === "AWAITING_HUMAN_DECISION") {
-    badge.className = "cb-badge cb-warn";
-    badge.textContent = "AWAITING HUMAN DECISION";
-    ring.className = "cb-ring";
-  } else if (cbRisk !== null && cbRisk >= 0.15) {
+  if (s.state === "CIRCUIT_TRIPPED_ESCALATED") {
     badge.className = "cb-badge cb-tripped";
     badge.textContent = "CIRCUIT TRIPPED (ESCALATED)";
     ring.className = "cb-ring tripped";
-  } else if (cbRisk !== null && cbRisk >= 0.08) {
+  } else if (s.state === "WALK_AWAY") {
+    badge.className = "cb-badge cb-tripped";
+    badge.textContent = "WALK AWAY";
+    ring.className = "cb-ring tripped";
+  } else if (s.state === "AWAITING_HUMAN_DECISION") {
+    badge.className = "cb-badge cb-warn";
+    badge.textContent = "AWAITING HUMAN DECISION";
+    ring.className = "cb-ring";
+  } else if (s.state === "DEAL_CLOSED") {
+    badge.className = "cb-badge cb-safe";
+    badge.textContent = "DEAL CLOSED";
+    ring.className = "cb-ring";
+  } else if (s.state === "HUMAN_APPROVED_APPLIED") {
+    badge.className = "cb-badge cb-safe";
+    badge.textContent = "HUMAN APPROVED";
+    ring.className = "cb-ring";
+  } else if (cbRisk !== null && tfTrip() !== null && cbRisk >= tfTrip()) {
+    badge.className = "cb-badge cb-tripped";
+    badge.textContent = "CIRCUIT TRIPPED (ESCALATED)";
+    ring.className = "cb-ring tripped";
+  } else if (cbRisk !== null && tfCaution() !== null && cbRisk >= tfCaution()) {
     badge.className = "cb-badge cb-warn";
     badge.textContent = "CAUTION HIGH RISK";
     ring.className = "cb-ring";
@@ -455,11 +500,18 @@ function renderPriceLadder(session) {
     if (plottable) {
       // Round money steps, not quarter fractions: a price axis reads in ¥1 or
       // ¥0.50 increments, and the labels stay stable as the range changes.
-      const step = span <= 1 ? 0.1 : span <= 4 ? 0.5 : span <= 12 ? 1 : span <= 60 ? 5 : 25;
+      const fine = tfHeuristics && Number(tfHeuristics.ladder_step_fine);
+      const mid = tfHeuristics && Number(tfHeuristics.ladder_step_mid);
+      const edgeLo = tfHeuristics && Number(tfHeuristics.ladder_edge_lo);
+      const edgeHi = tfHeuristics && Number(tfHeuristics.ladder_edge_hi);
+      const step = span <= 1 ? fine : span <= 4 ? mid : span <= 12 ? 1 : span <= 60 ? 5 : 25;
+      if (!Number.isFinite(step) || step <= 0 || !Number.isFinite(edgeLo) || !Number.isFinite(edgeHi)) {
+        ticksEl.innerHTML = "";
+      } else {
       for (let v = Math.ceil(target / step) * step; v < ceiling; v += step) {
         const frac = (ceiling - v) / span;
         // Keep clear of the two end labels (ceiling at 0, target at 1).
-        if (v <= target || frac < 0.06 || frac > 0.94) continue;
+        if (v <= target || frac < edgeLo || frac > edgeHi) continue;
         const row = document.createElement("div");
         row.className = "track-tick";
         row.style.top = `${frac * 100}%`;
@@ -467,6 +519,7 @@ function renderPriceLadder(session) {
         label.textContent = `¥${Number.isInteger(v) ? v : v.toFixed(2)}`;
         row.appendChild(label);
         ticksEl.appendChild(row);
+      }
       }
     }
   }
@@ -532,7 +585,10 @@ function renderEngineDecision(session) {
     if (v !== null) { risk = v; break; }
   }
   el("decisionRisk").textContent = risk === null ? "—" : `${(risk * 100).toFixed(1)}%`;
-  el("decisionRisk").style.color = risk === null ? "" : (risk >= 0.15 ? "#f43f5e" : "#10b981");
+  tfTone(
+    el("decisionRisk"),
+    risk === null || tfTrip() === null ? "" : (risk >= tfTrip() ? "is-bad" : "is-ok")
+  );
 
   // 最新生成話術：先找最後一則我方（AI 或人工核准）的發言；copilot 模式不會
   // 產生我方輪次，話術存在對手輪 metadata.generated_reply（後端持久化），
@@ -619,52 +675,81 @@ function setBeliefChartEmpty(isEmpty) {
   if (canvas) canvas.style.visibility = isEmpty ? "hidden" : "visible";
 }
 
-// Category presets. Each entry carries the FULL mandate, not just display
-// strings: previously this only rewrote the labels and the chart, so switching
-// category changed what the dashboard *claimed* while the engine kept using the
-// original umbrella spec. The values below are now POSTed to
-// /api/v1/sessions so the displayed mandate and the enforced mandate agree.
-const CATEGORY_PRESETS = {
-  // [P0 REGRESSION — 2026-10-17 稽核] 舊版在 tooling 欄位顯示寫死的金額
-  // （¥3,000 / ¥8,000 / ¥15,000），但這筆金額從未被送出、也從未由供應商報出，
-  // 是純展示層的捏造數字（後端早已移除同一個 3000.0 硬編值）。
-  // 政策文字只描述我方立場；金額一律由實際對話/會話決定。
-  umbrella: {
-    name: "Custom Carbon Auto Umbrella",
-    target: 12.0,
-    ceiling: 16.2,
-    lead: "12 - 35 Days",
-    deposit: "30% - 50%",
-    tooling: "Exemption Demanded (amount only if the supplier quotes one)",
-    moq: 5000
-  },
-  cnc_case: {
-    name: "Aerospace CNC Metal Case",
-    target: 28.0,
-    ceiling: 36.5,
-    lead: "15 - 40 Days",
-    deposit: "25% - 45%",
-    tooling: "Tooling waiver requested (no amount assumed)",
-    moq: 2000
-  },
-  battery: {
-    name: "Industrial LiFePO4 Battery Pack",
-    target: 185.0,
-    ceiling: 240.0,
-    lead: "20 - 45 Days",
-    deposit: "30% - 60%",
-    tooling: "Certification cost: to be quoted, not assumed",
-    moq: 500
+// Sandbox commodities. The catalogue arrives from /api/v1/simulation/mandates.
+// Changing the selector still POSTs /api/v1/sessions so the engine enforces
+// the same simulated mandate the table shows.
+function paintRiskBands() {
+  const trip = tfTrip();
+  const caution = tfCaution();
+  const safeEl = document.getElementById("riskBandSafe");
+  const cautionEl = document.getElementById("riskBandCaution");
+  const tripEl = document.getElementById("riskBandTrip");
+  const note = document.getElementById("riskFineprint");
+  if (trip === null || caution === null) return;
+  const pct = (n) => `${Math.round(n * 100)}%`;
+  if (safeEl) safeEl.textContent = `safe < ${pct(caution)}`;
+  if (cautionEl) cautionEl.textContent = `caution ${pct(caution)}–${pct(trip)}`;
+  if (tripEl) tripEl.textContent = `trip ≥ ${pct(trip)}`;
+  if (note) {
+    note.textContent = `The marker sits at the measured probability. At ${pct(trip)} the engine stops proposing and waits for you.`;
   }
-};
+}
 
-async function applyCategoryPreset(cat) {
-  const p = CATEGORY_PRESETS[cat] || CATEGORY_PRESETS.umbrella;
-
-  document.getElementById("mandatePrice").textContent = `¥${p.target.toFixed(1)} / ¥${p.ceiling.toFixed(1)}`;
+function paintMandate(p) {
+  document.getElementById("mandatePrice").textContent = `${tfMoney(p.target)} / ${tfMoney(p.ceiling)}`;
   document.getElementById("mandateLead").textContent = p.lead;
   document.getElementById("mandateDeposit").textContent = p.deposit;
   document.getElementById("mandateTooling").textContent = p.tooling;
+}
+
+async function loadDeskConfig() {
+  try {
+    const [heuristicsRes, mandatesRes] = await Promise.all([
+      fetch("/api/v1/heuristics", { headers: tfAuthHeaders() }),
+      fetch("/api/v1/simulation/mandates", { headers: tfAuthHeaders() }),
+    ]);
+    if (heuristicsRes.ok) tfHeuristics = await heuristicsRes.json();
+    if (mandatesRes.ok) {
+      const body = await mandatesRes.json();
+      categoryPresets = {};
+      for (const item of body.mandates || []) {
+        categoryPresets[item.key] = {
+          name: item.name,
+          target: item.target_price,
+          ceiling: item.ceiling_price,
+          lead: item.lead_label,
+          deposit: item.deposit_label,
+          tooling: item.tooling_label,
+          moq: item.moq,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("[TradeFlow] desk config failed:", err);
+  }
+  paintRiskBands();
+  const select = document.getElementById("presetCategorySelect");
+  const statusEl = document.getElementById("presetStatus");
+  if (select && categoryPresets && categoryPresets[select.value]) {
+    paintMandate(categoryPresets[select.value]);
+    if (statusEl) {
+      statusEl.textContent = "Preview of a simulated mandate. It is not a factory quote. Changing the commodity opens a sandbox session bound to it.";
+    }
+  }
+}
+
+async function applyCategoryPreset(cat) {
+  const p = categoryPresets && categoryPresets[cat];
+  const statusEl = document.getElementById("presetStatus");
+  if (!p) {
+    if (statusEl) {
+      statusEl.textContent = "Simulated mandates have not loaded. Refresh the desk.";
+      tfTone(statusEl, "is-bad");
+    }
+    return;
+  }
+
+  paintMandate(p);
 
   // Create (or reuse) a real session so the engine actually operates under this
   // mandate instead of the display merely changing.
@@ -678,7 +763,6 @@ async function applyCategoryPreset(cat) {
     max_rounds: 5
   };
 
-  const statusEl = document.getElementById("presetStatus");
   try {
     const res = await fetch("/api/v1/sessions", {
       method: "POST",
@@ -690,30 +774,25 @@ async function applyCategoryPreset(cat) {
       document.getElementById("cmdSessionId").value = newSid;
       document.getElementById("sessionLabel").textContent = `${newSid} (${p.name})`;
       if (statusEl) {
-        statusEl.textContent = `Session ${newSid} created — engine now bound to this mandate.`;
-        statusEl.style.color = "#4ade80";
+        statusEl.textContent = `Sandbox session ${newSid} created. The engine is bound to this simulated mandate, not a factory quote.`;
+        tfTone(statusEl, "is-ok");
       }
       fetchSessionDetails(newSid);
     } else {
       const detail = await res.text();
       if (statusEl) {
-        statusEl.textContent = `Could not create session (HTTP ${tfEsc(res.status)}): ${detail.slice(0, 140)}`;
-        statusEl.style.color = "#f87171";
+        statusEl.textContent = `Could not create session (HTTP ${res.status}): ${detail.slice(0, 140)}`;
+        tfTone(statusEl, "is-bad");
       }
     }
   } catch (err) {
     if (statusEl) {
-      statusEl.textContent = `Session creation failed: ${err.message}`;
-      statusEl.style.color = "#f87171";
+      statusEl.textContent = `Session creation failed: ${err.message || "request failed"}`;
+      tfTone(statusEl, "is-bad");
     }
   }
 
-  if (beliefChart) {
-    beliefChart.data.labels = ["Prior"];
-    beliefChart.data.datasets[0].data = [p.target * 1.08];
-    beliefChart.data.datasets[1].data = [null];
-    beliefChart.update();
-  }
+  setBeliefChartEmpty(true);
 }
 
 // ---------------------------------------------------------------------------
@@ -764,25 +843,27 @@ async function sendCommand(cmdCode) {
     }
     if (!resp.ok) {
       const detail = (result && result.detail) || "";
-      resEl.className = "cmd-result";
-      resEl.style.color = "#f87171";
+      resEl.className = "cmd-result is-bad";
+      tfTone(resEl, "is-bad");
       resEl.textContent = `[HTTP ${resp.status}] Command NOT applied: ${detail || resp.statusText || "request rejected"}`;
       return;
     }
     if (result && result.status === "success") {
+      resEl.className = "cmd-result is-ok";
+      tfTone(resEl, "is-ok");
       resEl.textContent = `[SUCCESS] Resolved Action: ${result.action} | Session state updated.`;
     } else {
       // HTTP 200 but the backend did not apply the command (e.g. unknown
       // session with no pending authorization bridge). Do not claim success.
       const reason = (result && (result.detail || result.reason)) || "no action applied";
-      resEl.className = "cmd-result";
-      resEl.style.color = "#f87171";
+      resEl.className = "cmd-result is-bad";
+      tfTone(resEl, "is-bad");
       resEl.textContent = `[NOT APPLIED] ${reason}`;
     }
   } catch (err) {
-    resEl.className = "cmd-result";
-    resEl.style.color = "#f87171";
-    resEl.textContent = `[NETWORK ERROR] ${err.message}`;
+    resEl.className = "cmd-result is-bad";
+    tfTone(resEl, "is-bad");
+    resEl.textContent = `[NETWORK ERROR] ${err.message || "request failed"}`;
   }
 }
 
@@ -805,14 +886,14 @@ async function runMultiAuction() {
     });
     if (!res.ok) {
       loader.classList.add("hidden");
-      cardsWrap.innerHTML = `<div class="empty-state">Multi-auction rejected (HTTP ${tfEsc(res.status)}).</div>`;
+      cardsWrap.innerHTML = `<div class="empty-state is-error">Multi-auction rejected (HTTP ${tfEsc(res.status)}).</div>`;
       return;
     }
     const data = await res.json();
     loader.classList.add("hidden");
 
     if (!data.success) {
-      cardsWrap.innerHTML = `<div class="empty-state">Error running multi-auction: ${tfEsc(data.detail || "Unknown")}</div>`;
+      cardsWrap.innerHTML = `<div class="empty-state is-error">Error running multi-auction: ${tfEsc(data.detail || "Unknown")}</div>`;
       return;
     }
 
@@ -826,11 +907,17 @@ async function runMultiAuction() {
       : ["Supplier A", "Supplier B", "Supplier C", "Supplier D"];
 
     cardsWrap.innerHTML = "";
+    const walkAway = tfNum(data.walk_away_ceiling, null);
     suppliers.forEach((sName, i) => {
       const quote = lastRound.quotes[i];
       const tactic = lastRound.tactics[i];
       const ceiling = lastRound.effective_ceilings_cny[i];
-      const pBreak = (tfNum(lastRound.p_break_array[i], 0) * 100).toFixed(1);
+      const pBreakNum = tfNum(lastRound.p_break_array[i], null);
+      const pBreak = pBreakNum === null ? "—" : (pBreakNum * 100).toFixed(1);
+      const quoteNum = tfNum(quote, null);
+      const ceilingNum = tfNum(ceiling, null);
+      const scale = walkAway !== null && walkAway > 0 ? walkAway : (quoteNum === null ? 1 : Math.max(quoteNum, 1));
+      const quotePct = Math.max(0, Math.min(100, (Number(quoteNum) / scale) * 100));
 
       let tagClass = "tactic-anchor";
       if (tactic === "LEAN_IN") tagClass = "tactic-lean";
@@ -838,31 +925,36 @@ async function runMultiAuction() {
 
       const card = document.createElement("div");
       card.className = "supplier-card";
+      if (sName === data.winning_supplier) card.classList.add("is-winner");
       card.innerHTML = `
         <div class="card-top">
           <span class="supplier-title">${tfEsc(sName)}</span>
           <span class="tactic-tag ${tfEsc(tagClass)}">${tfEsc(tactic)}</span>
         </div>
         <div class="card-metrics">
-          <div>Quote: <span class="metric-val">¥${tfNum(quote, 0).toFixed(2)}</span></div>
-          <div>BATNA: <span class="metric-val">¥${tfNum(ceiling, 0).toFixed(2)}</span></div>
-          <div>Risk: <span class="metric-val">${tfEsc(pBreak)}%</span></div>
+          <div>Quote: <span class="metric-val">${quoteNum === null ? "—" : "¥" + quoteNum.toFixed(2)}</span></div>
+          <div>BATNA: <span class="metric-val">${ceilingNum === null ? "—" : "¥" + ceilingNum.toFixed(2)}</span></div>
+          <div>Risk: <span class="metric-val">${pBreak === "—" ? "—" : tfEsc(pBreak) + "%"}</span></div>
         </div>
+        <div class="quote-meter" role="img" aria-label="Quote is ${quotePct.toFixed(0)} percent of the walk-away ceiling">
+          <span class="quote-meter-fill" style="width: ${quotePct.toFixed(1)}%"></span>
+        </div>
+        <div class="quote-meter-scale"><span>0</span><span>walk-away ceiling</span></div>
       `;
       cardsWrap.appendChild(card);
     });
 
     summaryEl.innerHTML = `
-      <strong>Winner:</strong> ${tfEsc(data.winning_supplier)} @ ¥${tfNum(data.winning_price, 0).toFixed(2)}<br/>
-      <strong>Savings vs walk-away ceiling</strong> (¥${tfNum(data.walk_away_ceiling, 0).toFixed(2)}): ¥${tfNum(data.total_savings_cny, 0).toLocaleString()} (${(tfNum(data.total_savings_pct, 0) * 100).toFixed(1)}%)<br/>
-      <strong>Savings vs first quote</strong> (¥${tfNum(data.first_round_best_quote, 0).toFixed(2)}): ¥${tfNum(data.savings_vs_first_quote_cny, 0).toLocaleString()} (${(tfNum(data.savings_vs_first_quote_pct, 0) * 100).toFixed(1)}%)<br/>
-      <strong>Tensor grid cells:</strong> ${tfNum(data.total_rollouts, 0).toLocaleString()} (parameterised K×S×N_open×N_sched, not measured iterations) | Compute: ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)})
+      <p class="summary-lead"><strong>Simulated suppliers</strong> Parameterised archetypes, not live factory quotes. Winner: ${tfEsc(data.winning_supplier)} @ ${tfNum(data.winning_price, null) === null ? "—" : "¥" + tfNum(data.winning_price, 0).toFixed(2)}. Tensor grid cells: ${tfNum(data.total_rollouts, 0).toLocaleString()} (parameterised K×S×N_open×N_sched, not measured iterations). Compute: ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}).</p>
+      <p class="summary-headline"><strong>Headline: savings vs first-round best quote</strong> (${tfNum(data.first_round_best_quote, null) === null ? "—" : "¥" + tfNum(data.first_round_best_quote, 0).toFixed(2)}): ${tfNum(data.total_savings_cny, null) === null ? "—" : "¥" + tfNum(data.total_savings_cny, 0).toFixed(2)} (${tfNum(data.total_savings_pct, null) === null ? "—" : (tfNum(data.total_savings_pct, 0) * 100).toFixed(1) + "%"})</p>
+      <p class="${tfNum(data.savings_vs_target_pct, 0) < 0 ? "is-negative" : ""}"><strong>Versus target</strong> (${tfNum(data.product_target, null) === null ? "—" : "¥" + tfNum(data.product_target, 0).toFixed(2)}): ${tfNum(data.savings_vs_target_cny, null) === null ? "—" : "¥" + tfNum(data.savings_vs_target_cny, 0).toFixed(2)} (${tfNum(data.savings_vs_target_pct, null) === null ? "—" : (tfNum(data.savings_vs_target_pct, 0) * 100).toFixed(1) + "%"})</p>
+      <p class="summary-secondary"><strong>Secondary: versus walk-away ceiling</strong> (${tfNum(data.walk_away_ceiling, null) === null ? "—" : "¥" + tfNum(data.walk_away_ceiling, 0).toFixed(2)}): ${tfNum(data.savings_vs_ceiling_cny, null) === null ? "—" : "¥" + tfNum(data.savings_vs_ceiling_cny, 0).toFixed(2)} (${tfNum(data.savings_vs_ceiling_pct, null) === null ? "—" : (tfNum(data.savings_vs_ceiling_pct, 0) * 100).toFixed(1) + "%"})</p>
     `;
     summaryEl.classList.remove("hidden");
 
   } catch (err) {
     loader.classList.add("hidden");
-    cardsWrap.innerHTML = `<div class="empty-state">Request failed: ${tfEsc(err.message)}</div>`;
+    cardsWrap.innerHTML = `<div class="empty-state is-error">Request failed: ${tfEsc(err.message)}</div>`;
   }
 }
 
@@ -920,28 +1012,187 @@ async function saveConfig() {
       body: JSON.stringify(payload)
     });
     if (!res.ok) {
-      resEl.className = "cmd-result";
-      resEl.style.color = "#f87171";
+      resEl.className = "cmd-result is-bad";
+      tfTone(resEl, "is-bad");
       resEl.textContent = `[SAVE FAILED] HTTP ${res.status}: ${res.statusText || "request rejected"}`;
       resEl.classList.remove("hidden");
       return;
     }
     const d = await res.json();
-    resEl.className = "cmd-result";
+    resEl.className = "cmd-result is-ok";
+    tfTone(resEl, "is-ok");
     const updated = Array.isArray(d.fields_updated) ? d.fields_updated.join(", ") : "";
     resEl.textContent = `[SAVED] Hot reload status: ${d.hot_reload}. Updated: ${updated || "(no allowlisted fields changed)"}`;
     resEl.classList.remove("hidden");
   } catch (err) {
-    resEl.className = "cmd-result";
-    resEl.style.color = "#f87171";
-    resEl.textContent = `[SAVE ERROR] ${err.message}`;
+    resEl.className = "cmd-result is-bad";
+    tfTone(resEl, "is-bad");
+    resEl.textContent = `[SAVE ERROR] ${err.message || "request failed"}`;
     resEl.classList.remove("hidden");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Supplier quote: paste / sample / AMD live reading
+// The round endpoint decides the price. /quotes/read only words and extracts.
+// ---------------------------------------------------------------------------
+let quoteImagePayload = "";
+
+function paintAmdAvailability() {
+  const hint = document.getElementById("amdLiveHint");
+  if (!hint) return;
+  fetch("/health")
+    .then((res) => (res.ok ? res.json() : null))
+    .then((body) => {
+      const ver = document.getElementById("feedVer");
+      if (ver) ver.textContent = body && body.version ? `API ${body.version}` : "—";
+      if (!body || !body.llm) return;
+      const model = body.llm.default_model || body.llm.model || "the configured model";
+      if (body.llm.amd_live_available) {
+        hint.textContent = `AMD live mode can call ${model}. It stays off until you turn it on. The solver still sets every price.`;
+      } else {
+        hint.textContent = `AMD live mode is available only when VLLM_API_KEY is a real secret. This server is in offline mode. The configured default model name is ${model}. Turning the switch on shows the offline fallback; it does not invent a call.`;
+      }
+    })
+    .catch(() => {});
+}
+
+async function loadSampleQuote(name) {
+  const note = document.getElementById("quoteSampleNote");
+  const paste = document.getElementById("quotePaste");
+  const img = document.getElementById("quoteSampleImg");
+  quoteImagePayload = "";
+  try {
+    const res = await fetch(`/static/samples/${name}.txt`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    paste.value = await res.text();
+    img.src = `/static/samples/${name}.png`;
+    img.hidden = false;
+    img.alt = "Labeled simulation, not a real supplier screenshot";
+    if (note) {
+      note.textContent = "Labeled simulation. The picture was generated in this repo. The reader is given this transcript, not a pixel OCR claim.";
+    }
+  } catch (err) {
+    if (note) note.textContent = `Could not load the sample: ${err.message || "request failed"}`;
+  }
+}
+
+function onQuoteFile(input) {
+  const file = input.files && input.files[0];
+  const note = document.getElementById("quoteSampleNote");
+  const img = document.getElementById("quoteSampleImg");
+  quoteImagePayload = "";
+  if (!file) return;
+  if (img) {
+    img.src = URL.createObjectURL(file);
+    img.hidden = false;
+    img.alt = "Uploaded supplier image";
+  }
+  if (note) {
+    note.textContent = "Uploaded image. Offline mode does not OCR pixels. Paste the chat text, or turn on AMD live mode with no transcript to ask the endpoint to read the image.";
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    quoteImagePayload = String(reader.result || "");
+  };
+  reader.readAsDataURL(file);
+}
+
+function paintQuoteReading(payload) {
+  const callout = document.getElementById("amdCallout");
+  const fields = document.getElementById("quoteFields");
+  const accuracy = document.getElementById("quoteAccuracy");
+  if (callout) {
+    const status = payload && payload.status;
+    let text = (payload && payload.display) || "No reading returned.";
+    const liveLine = typeof text === "string" && text.indexOf("AMD GPU Cloud ·") === 0;
+    const liveOk = status === "ok" && liveLine;
+    if (status === "ok" && !liveLine) {
+      text = "AMD reading was not applied. The response was not a confirmed live call.";
+    } else if (status !== "ok" && liveLine) {
+      text = "AMD live call failed. The offline fallback is shown instead.";
+    }
+    callout.textContent = text;
+    tfTone(callout, liveOk ? "is-ok" : "");
+  }
+  if (fields && payload && payload.fields) {
+    const f = payload.fields;
+    const price = f.price === null || f.price === undefined ? "—" : String(f.price);
+    const moq = f.moq === null || f.moq === undefined ? "—" : String(f.moq);
+    const lead = f.lead_time_days === null || f.lead_time_days === undefined ? "—" : String(f.lead_time_days);
+    const deposit = f.deposit_pct === null || f.deposit_pct === undefined ? "—" : String(f.deposit_pct);
+    fields.textContent = `Extracted supplier fields (not our price): price ${price}, MOQ ${moq}, lead time days ${lead}, deposit fraction ${deposit}.`;
+  }
+  if (accuracy) {
+    const reading = payload && payload.reading ? ` Model wording: ${payload.reading}` : "";
+    accuracy.textContent = `${(payload && payload.accuracy_note) || ""}${reading}`;
+  }
+}
+
+async function readSupplierQuote() {
+  const paste = document.getElementById("quotePaste");
+  const callout = document.getElementById("amdCallout");
+  const live = !!(document.getElementById("amdLiveToggle") && document.getElementById("amdLiveToggle").checked);
+  const text = paste ? paste.value : "";
+  const select = document.getElementById("presetCategorySelect");
+  if (!currentSessionId && select) {
+    await applyCategoryPreset(select.value);
+  }
+  const sid = currentSessionId || (document.getElementById("cmdSessionId") || {}).value || "";
+  if (callout) {
+    callout.textContent = live ? "Asking AMD GPU Cloud…" : "Reading with the offline extractor…";
+    tfTone(callout, "");
+  }
+  const readBody = { text: text, amd_live: live };
+  if (!text.trim() && quoteImagePayload) readBody.image_base64 = quoteImagePayload;
+  const readPromise = fetch("/api/v1/quotes/read", {
+    method: "POST",
+    headers: tfJsonHeaders(),
+    body: JSON.stringify(readBody),
+  });
+  let roundOk = false;
+  if (sid && text.trim()) {
+    try {
+      const roundRes = await fetch(`/api/v1/sessions/${encodeURIComponent(sid)}/round`, {
+        method: "POST",
+        headers: tfJsonHeaders(),
+        body: JSON.stringify({
+          opponent_raw_text: text,
+          mode: "copilot",
+          amd_live: live,
+        }),
+      });
+      roundOk = roundRes.ok;
+      if (roundOk) await fetchSessionDetails(sid);
+      else if (callout) {
+        callout.textContent = `The solver round was rejected (HTTP ${roundRes.status}). The AMD reading is separate and still cannot set the price.`;
+      }
+    } catch (err) {
+      if (callout) callout.textContent = `Solver round failed: ${err.message || "request failed"}`;
+    }
+  }
+  try {
+    const res = await readPromise;
+    let payload = null;
+    try { payload = await res.json(); } catch (_) { payload = null; }
+    if (!res.ok) {
+      const detail = (payload && payload.detail) || res.statusText || "request rejected";
+      if (callout) callout.textContent = `AMD reading was not applied (HTTP ${res.status}): ${detail}`;
+      return;
+    }
+    paintQuoteReading(payload);
+    if (!roundOk && callout && !text.trim()) {
+      // keep the reading display; there was no solver round
+    }
+  } catch (err) {
+    if (callout) callout.textContent = `AMD reading failed: ${err.message || "request failed"}`;
   }
 }
 
 async function testPush(ch) {
   const resEl = document.getElementById("configResult");
   resEl.className = "cmd-result";
+  tfTone(resEl, "");
   resEl.textContent = `Sending test message to channel '${ch}'...`;
   resEl.classList.remove("hidden");
 
@@ -952,16 +1203,25 @@ async function testPush(ch) {
       body: JSON.stringify({ channel: ch })
     });
     if (!res.ok) {
-      resEl.className = "cmd-result";
-      resEl.style.color = "#f87171";
+      resEl.className = "cmd-result is-bad";
+      tfTone(resEl, "is-bad");
       resEl.textContent = `[TEST FAILED] HTTP ${res.status}: ${res.statusText || "request rejected"}`;
       return;
     }
     const d = await res.json();
-    resEl.textContent = `[RESULT] ${JSON.stringify(d.results)}`;
+    let shown = "";
+    try {
+      shown = JSON.stringify(d.results);
+    } catch (_) {
+      shown = "unreadable result";
+    }
+    if (shown.indexOf("Traceback") !== -1) {
+      shown = "A channel reported an internal error. The server log has the detail.";
+    }
+    resEl.textContent = `[RESULT] ${shown}`;
   } catch (err) {
-    resEl.className = "cmd-result";
-    resEl.style.color = "#f87171";
-    resEl.textContent = `[TEST ERROR] ${err.message}`;
+    resEl.className = "cmd-result is-bad";
+    tfTone(resEl, "is-bad");
+    resEl.textContent = `[TEST ERROR] ${err.message || "request failed"}`;
   }
 }

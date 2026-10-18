@@ -1,0 +1,81 @@
+# lablab form cheat-sheet
+
+Copy the fenced blocks into the AMD Developer Hackathon ACT III form. Track: **Reinvent Commerce**. Working deadline used for this pack: **11:00 London (BST), 18 October 2026**. Confirm that timestamp on the live form before you submit. This file cannot click the form for you.
+
+The long description is the same text as [SUBMISSION.md](../SUBMISSION.md). If either file changes, keep them identical.
+
+## Title
+
+```
+TradeFlow AI
+```
+
+12 characters. The form allows 5–50.
+
+## Short description
+
+```
+One-person sourcing desk: a Bayesian Expectimax engine sets the price, an AMD-hosted model only phrases it, and a human sends the offer.
+```
+
+136 characters. The form allows 50–255. If the form wants a shorter line:
+
+```
+Expectimax prices the offer. An AMD-hosted model only phrases it. A human sends it.
+```
+
+83 characters.
+
+## Long description
+
+~~~
+Small cross-border sellers lose procurement margin when they negotiate factory quotes alone, often across a language gap, or pay a sourcing agent a commission. TradeFlow is a prototype of a third arrangement: one operator, a Bayesian Expectimax engine that sets the price, an optional AMD-hosted model that only reads a quote and phrases the reply, and a human who sends the offer. No factory deal has closed. A proposed revenue model is a desk subscription or a share of documented savings. No revenue is claimed.
+
+The decision core does not ask a language model what to pay (src/engine/solver.py, src/engine/multi_solver.py). A language model is not the forecasting method. The default model for a new call is Gemma-4-31B-IT. Set VLLM_MODEL=Qwen3.8-Flash-Next to select the model in the committed log. That log, results/real_llm_benchmark_100.json, records 348 calls (average latency 16.81 s, cost $0.108444). No HTTP status is stored. python scripts/verify_amd_endpoint.py lists models and, with a real key, sends one chat. status: ok means that process received HTTP 200. skipped_no_credentials is not a successful check. No evidence file is committed. No committed Gemma latency.
+
+The auction headline is savings versus the first-round best quote. Versus target stays visible, including when that figure is negative. Savings versus the walk-away ceiling are secondary. Self-play (results/self_play_benchmark.md, 20 matches x 5 archetypes, 100 matches, seed 42) runs from 8.8% to 20.0% versus that table's walk-away ceiling. Against a Hard-Bargainer, 8.8% versus a fixed baseline's 9.2%. The real-model log closed at 61.11% of completed matches against a Bluffing Hardliner, with 0 budget violations in 94 completed matches. Held-out intent accuracy is 63.08% (195 of 500 held out). results/bench.json is a CPU measurement (is_gpu_active: false).
+
+The desk runs offline until AMD live mode is on and VLLM_API_KEY is a real secret. The model never sets our price.
+~~~
+
+## Track
+
+```
+Reinvent Commerce
+```
+
+## Tags
+
+Paste as the form allows. These match the GitHub topics the repo settings still need:
+
+```
+procurement
+negotiation
+expectimax
+fastapi
+amd
+hackathon
+commerce
+```
+
+## Links
+
+```
+https://github.com/Fu93/tradeflow-ai
+```
+
+No public hostname is claimed. `render.yaml` is the Blueprint; leave the live-demo URL blank until Render has assigned one you have opened. The video is the demo.
+
+## Demo video
+
+Upload the narrated 3–5 minute file you record from [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md).
+
+`results/demo_video.mp4` is a short silent clip already in the repo. It is not the submission video. Do not upload it as the narrated demo.
+
+## Cover image
+
+[results/cover_1280x720.png](../results/cover_1280x720.png) — 1280×720.
+
+## Deck
+
+[results/pitch.pptx](../results/pitch.pptx) and [results/pitch.pdf](../results/pitch.pdf) — 9 slides from the SUBMISSION.md outline. lablab asks for a PDF; the pptx is the source. Regenerate both with `python scripts/make_pitch.py` after installing `python-pptx`. Every measured figure on the slides is read from a source file when that command runs. `python scripts/check_claims.py` checks the title (5–50), the short description (50–255), and the long description (600–2000).

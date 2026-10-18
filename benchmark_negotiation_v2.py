@@ -164,13 +164,15 @@ if __name__ == "__main__":
             f"舊版 n×8 公式（已知低估約 9.1 倍；因引擎不可用而退回，{type(exc).__name__}）"
         )
 
-    mi300x_lower_bound_s = (working_set_mb / 1024.0) / 5300.0
+    from src.engine.roofline import formula as roofline_formula
+    from src.engine.roofline import rounded_lower_bound_seconds
+
+    mi300x_lower_bound_s = rounded_lower_bound_seconds(working_set_mb)
     print(f"  * 每輪談判要在買方收信當下重解 1 次 = {S:,} 對手樣本 x {N_OPEN*N_SCHED} 策略 = {n:,} rollout 位")
     print(f"  * CPU 向量化（本次實測）= {dt*1000:.0f} ms")
     print(f"  * 純 loop 時間為**外推值**（沿用 v1 實測的 37–43x 比值）~ {dt*37:.0f}–{dt*43:.0f}s -> 不適合互動")
-    print(f"  * MI300X：本機無 GPU，無實測值。Analytical Roofline **下界** = "
-          f"工作集 {working_set_mb:.1f} MB ÷ 5300 GB/s = {mi300x_lower_bound_s*1000:.3f} ms")
+    print("  * MI300X：本機無 GPU，無實測值。theoretical roofline lower-bound estimate, not measured")
+    print(f"    formula: {roofline_formula()}")
+    print(f"    working set {working_set_mb:.1f} MiB -> {mi300x_lower_bound_s:.9f} s")
     print(f"    （工作集來源：{working_set_source}）")
-    print(f"    （這是物理不可逾越的下界，**不是**預期實測時間；實際值會高於此）")
-    print(f"  * 敘事：'收信後即時重解讓步計畫' —— 瓶頸是訪存頻寬，故 HBM3 與 DDR5 的頻寬比"
-          f"（{5300.0/60.0:.1f}x）即為理論上限")
+    print("    （這不是執行時間，也不是加速倍率。主機 DDR 頻寬沒有可引用的來源，已移除。）")

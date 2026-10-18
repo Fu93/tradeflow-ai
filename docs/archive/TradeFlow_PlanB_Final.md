@@ -2,7 +2,7 @@
 > **[SUPERSEDED] 本文件已封存 (Archived Document)**
 > SUPERSEDED by TARGET_ARCHITECTURE_AND_ROADMAP.md (2026-10-14). Historical contingency plan.
 >
-> 現行唯一權威規格：[TARGET_ARCHITECTURE_AND_ROADMAP.md](../../TARGET_ARCHITECTURE_AND_ROADMAP.md)（架構）
+> 現行唯一權威規格：[TARGET_ARCHITECTURE_AND_ROADMAP.md](../internal/TARGET_ARCHITECTURE_AND_ROADMAP.md)（架構）
 > 與 [README.md](../../README.md)（入口）。本文件僅供歷史追溯，**請勿據此開發**。
 
 ---
@@ -161,10 +161,9 @@ curl http://localhost:8000/v1/models
   | 20,000 | 1,083 ms | 9.6M | 0.12 |
   | 50,000 | 2,760 ms | 24M | 0.12 |
 
-- **誠實對照**：向量化 vs 純 loop 在 v1 實測為 **43×**（→ 50k 樣本純 loop 約 **119 秒**，完全不能互動）。MI300X 批量預期 ~0.3–0.6s（記憶體頻寬瓶頸，約 10–20×）。
-- **Demo 實測數字（用這組，可信）**：`20k 對手樣本 × 480 策略 = 960 萬 rollouts` → **CPU 向量化 1.08s / 純 loop ~46s / MI300X ~0.4s**。
-  - **不要講 100×**（評審 AMD 工程師會拆穿）。講 **10–20×**，敘事改成：「採購人員收信當下要重解 960 萬次情境才能給出帶風險機率的讓步計畫——CPU 要幾十秒（聊天像卡死），MI300X 0.4 秒像即時」。
-  - 順帶：v1 的 50k 樣本版可作「深度分析模式」截圖（CPU 2.3s / MI300X ~0.2s）。
+- **誠實對照（只含 CPU）**：向量化 vs 純 loop 在 v1 實測為 **43×**（→ 50k 樣本純 loop 約 **119 秒**，完全不能互動）。上表的毫秒數也是 CPU。
+- **Demo 可引用的 CPU 數字**：`20k 對手樣本 × 480 策略 = 960 萬 rollouts` 的牆鐘以 `results/bench.json` 的 `cpu_seconds` 為準。舊計畫寫過的 GPU 秒數已刪，因為沒有測量、也沒有可重算的輸入。
+- 後來唯一留下的 GPU 數字在 `results/mi300x_roofline.json`，標籤是 theoretical roofline lower-bound estimate, not measured。那不是這張 CPU 表的一欄。
 
 ### 穩健性測試（評審最會捅的點 → 當 headline metric）
 - 用**沒參與擬合**的對手模型跑同一套策略。
@@ -192,7 +191,7 @@ curl http://localhost:8000/v1/models
 1. **信念初始化**：4 種供應商類型先驗（reserve/urgency/bluff/conc_rate）。
 2. **首輪建議**（v2 實測輸出）：開盤檔位 `opens[0]=1.000`、讓步曲線 `[0.2,0.2,0.2,0.2,0.2]`（恆定每輪讓 20%）、期望邊際 `0.256`（×¥12 ≈ **¥3.07/把省下空間**）、破局率 `0.117`。→ 畫出「4 類供應商底價分布 + 建議報價帶」。
 3. **供應商回價 ¥15**（高於預期）→ 貝氏更新：底價後驗上移，信念分布圖即時變化（**Demo Wow #1：信念更新視覺化**）。
-4. **重解讓步計畫**：MI300X 跑 `20k 樣本 × 480 策略 = 960 萬 rollouts` 在 **0.4s** 內給出新讓步曲線（**Demo Wow #2：CPU 46s vs MI300X 0.4s**）。
+4. **重解讓步計畫**：`20k 樣本 × 480 策略 = 960 萬 rollouts` 的 CPU 牆鐘見 `results/bench.json`。MI300X 未跑。Wow #2 只能標 theoretical roofline lower-bound estimate, not measured。
 5. **穩健性 overlay**（**Demo Wow #3**）：叠上加權 prior ±50% 後的期望成交價區間 + regret vs 固定 5%/輪基準 → 「即使我們對供應商判斷偏 50%，建議仍優於人類基準 X%」。
 6. **Evolus 收尾**：agent 用 AI Tool `email` 生成回覆草稿 → 人類審批 → 送出。
 

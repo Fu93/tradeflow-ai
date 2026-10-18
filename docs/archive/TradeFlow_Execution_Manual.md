@@ -2,7 +2,7 @@
 > **[SUPERSEDED] 本文件已封存 (Archived Document)**
 > SUPERSEDED by TARGET_ARCHITECTURE_AND_ROADMAP.md (2026-10-14). Historical execution manual for Plan B.
 >
-> 現行唯一權威規格：[TARGET_ARCHITECTURE_AND_ROADMAP.md](../../TARGET_ARCHITECTURE_AND_ROADMAP.md)（架構）
+> 現行唯一權威規格：[TARGET_ARCHITECTURE_AND_ROADMAP.md](../internal/TARGET_ARCHITECTURE_AND_ROADMAP.md)（架構）
 > 與 [README.md](../../README.md)（入口）。本文件僅供歷史追溯，**請勿據此開發**。
 
 ---
@@ -166,7 +166,7 @@ def run_email_tool(notes, reply_to=None, tone="commercial"):
 ## 5. Day 5（10/17）— Demo + Pitch + 提交（上午交）
 
 ### 5.1 錄 3–5 分鐘 demo（腳本見 Plan §7）
-- Wow#1 信念更新視覺化 → Wow#2 CPU 46s vs MI300X 0.4s → Wow#3 穩健性 overlay。
+- Wow#1 信念更新視覺化 → Wow#2 CPU 實測 vs MI300X（未實測；僅 theoretical roofline lower-bound estimate, not measured，見 `results/mi300x_roofline.json`）→ Wow#3 穩健性 overlay。
 - 預錄 supplier 回覆 + 離線 GPU 截圖兜底，現場只跑穩定段。
 
 ### 5.2 Pitch deck（8–10 頁）
@@ -176,7 +176,7 @@ def run_email_tool(notes, reply_to=None, tone="commercial"):
 4. 架構圖
 5. Demo 三個 wow
 6. 商業價值（100 萬訂單省 5% = 5 萬）
-7. AMD 技術（MI300X 真在算）
+7. AMD 技術（MI300X 未實測；solver 跑在 CPU）
 8. Evolus 整合（4 blocks）
 9. 穩健性（regret）
 10. 下一步（CFR + 真實 log）

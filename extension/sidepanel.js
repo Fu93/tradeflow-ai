@@ -9,6 +9,26 @@
  */
 
 const API_BASE_URL = "http://localhost:8000";
+let tfHeuristics = null;
+
+function tfTrip() {
+  const n = tfHeuristics && Number(tfHeuristics.breakdown_trip_threshold);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function loadHeuristics() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/heuristics`, { headers: tfAuthHeaders() });
+    if (res.ok) tfHeuristics = await res.json();
+  } catch (err) {
+    tfHeuristics = null;
+  }
+  const note = document.getElementById("riskFineprint");
+  const trip = tfTrip();
+  if (note && trip !== null) {
+    note.textContent = `At ${Math.round(trip * 100)}% the engine stops proposing and waits for you. The bar shows the measured probability, not a target.`;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Security helpers (H3): outbound auth + HTML escaping.
@@ -284,7 +304,7 @@ function renderEngineData(data) {
   } else {
     valBreakdownRisk.innerText = `${(risk * 100).toFixed(1)}%`;
     progressBreakdown.style.width = `${Math.min(100, Math.max(5, risk * 100))}%`;
-    valBreakdownRisk.style.color = risk >= 0.15 ? "#a33a2a" : "#46664c";
+    valBreakdownRisk.style.color = tfTrip() !== null && risk >= tfTrip() ? "#a33a2a" : "#46664c";
   }
 
   // H3 (F5): turn.round_number is interpolated raw into innerHTML below; it is
@@ -385,7 +405,7 @@ function renderSession(session) {
     }
     valBreakdownRisk.innerText = risk === null ? "--" : `${(risk * 100).toFixed(1)}%`;
     progressBreakdown.style.width = risk === null ? "0%" : `${Math.min(100, Math.max(5, risk * 100))}%`;
-    valBreakdownRisk.style.color = risk === null ? "" : (risk >= 0.15 ? "#a33a2a" : "#46664c");
+    valBreakdownRisk.style.color = risk === null || tfTrip() === null ? "" : (risk >= tfTrip() ? "#a33a2a" : "#46664c");
 
     // H3 (F5) + H2-class coercion: every backend value rendered here is escaped
     // (round_number, which is interpolated raw) or numerically coerced before
@@ -459,4 +479,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 // Initialize on DOM load
-document.addEventListener("DOMContentLoaded", initPortConnection);
+document.addEventListener("DOMContentLoaded", () => {
+  loadHeuristics();
+  initPortConnection();
+});

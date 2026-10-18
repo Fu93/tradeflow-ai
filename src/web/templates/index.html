@@ -33,7 +33,7 @@
     <div class="masthead-feed">
       <span class="feed-dot" id="sseStatus"></span>
       <span class="feed-label" id="sseLabel">Connecting…</span>
-      <span class="feed-ver">v5.0</span>
+      <span class="feed-ver" id="feedVer">—</span>
     </div>
   </header>
 
@@ -57,11 +57,53 @@
       </div>
     </section>
 
+    <!-- Supplier auction sits above the dossier so the comparison is the first read. -->
+    <section class="sheet auction-sheet auction-hero" id="tacticPanel">
+      <div class="sheet-head">
+        <h2 class="sheet-title">Four-supplier auction</h2>
+        <button class="btn-quiet" type="button" id="runAuctionBtn" onclick="runMultiAuction()" aria-describedby="auctionKicker">Run auction</button>
+      </div>
+      <p class="fineprint auction-kicker" id="auctionKicker">Simulated suppliers (parameterised archetypes), not live factory quotes. The headline is savings versus the first-round best quote. Versus target stays visible when negative. The walk-away ceiling is secondary.</p>
+      <div id="auctionLoader" class="loader hidden" role="status">Computing the parameterised tensor grid…</div>
+      <div id="supplierCards" class="supplier-cards">
+        <div class="empty-state">Run the auction to compare four simulated suppliers on price, terms and walk-away risk. These are parameterised archetypes, not live factory quotes.</div>
+      </div>
+      <div id="auctionSummary" class="auction-summary hidden" aria-live="polite" aria-label="Auction savings by baseline"></div>
+    </section>
+
     <!-- ===================== BODY ===================== -->
     <div class="sheet-grid">
 
       <!-- ---------------- LEFT: the negotiation in progress ---------------- -->
       <div class="col-main">
+
+        <section class="sheet quote-sheet" id="quoteSheet">
+          <div class="sheet-head">
+            <h2 class="sheet-title">Supplier quote</h2>
+            <span class="sheet-note">paste, upload, or a labeled sample</span>
+          </div>
+          <label class="amd-toggle" for="amdLiveToggle">
+            <input id="amdLiveToggle" type="checkbox" />
+            <span>AMD live mode</span>
+          </label>
+          <p class="fineprint" id="amdLiveHint">Off by default. A call leaves this browser only when this is on and the server has a real VLLM_API_KEY. The solver still sets every price.</p>
+          <label class="quote-label" for="quotePaste">Supplier chat text</label>
+          <textarea id="quotePaste" class="input-plain quote-paste" rows="5" placeholder="Paste a supplier message. A labeled sample fills this with a simulation transcript."></textarea>
+          <div class="quote-actions">
+            <label class="btn-quiet quote-file" for="quoteUpload">Upload image
+              <input id="quoteUpload" type="file" accept="image/png,image/jpeg,image/webp" onchange="onQuoteFile(this)" />
+            </label>
+            <button class="btn-quiet" type="button" id="sampleQuote1" onclick="loadSampleQuote('quote_01')">Sample 1 — simulation</button>
+            <button class="btn-quiet" type="button" id="sampleQuote2" onclick="loadSampleQuote('quote_02')">Sample 2 — simulation</button>
+            <button class="btn-quiet" type="button" id="sampleQuote3" onclick="loadSampleQuote('quote_03')">Sample 3 — simulation</button>
+            <button class="btn-primary" type="button" id="readQuoteBtn" onclick="readSupplierQuote()">Read this quote</button>
+          </div>
+          <img id="quoteSampleImg" class="quote-sample-img" alt="Labeled simulation, not a real supplier screenshot" hidden />
+          <p class="fineprint" id="quoteSampleNote">Three in-repo pictures are labeled simulations. Offline mode does not OCR pixels. AMD live mode sends the pasted transcript, or the image only when there is no transcript.</p>
+          <p class="amd-callout" id="amdCallout" role="status" aria-live="polite">AMD live mode is off. The next read uses the offline fallback.</p>
+          <p class="fineprint" id="quoteFields"></p>
+          <p class="fineprint" id="quoteAccuracy"></p>
+        </section>
 
         <!-- Price ladder: where the supplier sits inside the authorised range.
              This is the one number a buyer reads first, so it gets the space. -->
@@ -172,15 +214,15 @@
             <div class="risk-scale">
               <div class="risk-bar"><span class="risk-marker"></span></div>
               <div class="risk-ticks">
-                <span>safe &lt; 8%</span>
-                <span>caution 8–15%</span>
-                <span>trip ≥ 15%</span>
+                <span id="riskBandSafe">—</span>
+                <span id="riskBandCaution">—</span>
+                <span id="riskBandTrip">—</span>
               </div>
             </div>
           </div>
-          <p class="fineprint">
-            The marker sits at the measured probability. At 15% the engine stops
-            proposing and waits for you.
+          <p class="fineprint" id="riskFineprint">
+            The marker sits at the measured probability. The engine stops
+            proposing at the documented trip threshold and waits for you.
           </p>
         </section>
 
@@ -200,9 +242,9 @@
           </label>
           <table class="terms">
             <tbody>
-              <tr><th>Target / ceiling <span class="tag-enforced">enforced</span></th><td id="mandatePrice">¥12.0 / ¥16.2</td></tr>
-              <tr><th>Lead time <span class="tag-target">target</span></th><td id="mandateLead">12 - 35 days</td></tr>
-              <tr><th>Deposit <span class="tag-target">target</span></th><td id="mandateDeposit">30% - 50%</td></tr>
+              <tr><th>Target / ceiling <span class="tag-enforced">enforced</span></th><td id="mandatePrice">—</td></tr>
+              <tr><th>Lead time <span class="tag-target">target</span></th><td id="mandateLead">—</td></tr>
+              <tr><th>Deposit <span class="tag-target">target</span></th><td id="mandateDeposit">—</td></tr>
               <tr><th>Mold fee <span class="tag-target">target</span></th><td id="mandateTooling">Exemption demanded, no amount assumed</td></tr>
             </tbody>
           </table>
@@ -212,11 +254,11 @@
           </div>
           <p class="fineprint">
             Only target price, ceiling and MOQ bind the solver. Lead time, deposit and
-            tooling are negotiating targets: the logrolling model plans against its own
-            baseline (25 days / 30%) and labels any term the supplier never stated as a
-            buyer-side assumption, not as the supplier's offer.
+            tooling are negotiating targets: the logrolling model plans against the
+            buyer baseline on the mandate and labels any term the supplier never
+            stated as a buyer-side assumption, not as the supplier's offer.
           </p>
-          <p class="fineprint" id="presetStatus">Pick a commodity to open a deal bound to that mandate.</p>
+          <p class="fineprint" id="presetStatus">Simulated mandates load from the sandbox catalogue. They are not factory quotes.</p>
         </section>
 
         <!-- Deals -->
@@ -228,19 +270,6 @@
           <div id="sessionList" class="session-list">
             <div class="empty-state">No deals on file. Start one from the API, the CLI, or the commodity picker above.</div>
           </div>
-        </section>
-
-        <!-- Auction -->
-        <section class="sheet auction-sheet" id="tacticPanel">
-          <div class="sheet-head">
-            <h2 class="sheet-title">Four-supplier auction</h2>
-            <button class="btn-quiet" type="button" onclick="runMultiAuction()">Run</button>
-          </div>
-          <div id="auctionLoader" class="loader hidden">Computing the parameterised tensor grid…</div>
-          <div id="supplierCards" class="supplier-cards">
-            <div class="empty-state">Run the auction to compare four suppliers on price, terms and walk-away risk.</div>
-          </div>
-          <div id="auctionSummary" class="auction-summary hidden"></div>
         </section>
 
       </aside>

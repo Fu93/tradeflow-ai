@@ -35,6 +35,26 @@ except Exception as _dotenv_err:  # pragma: no cover - 缺套件時不應讓 API
         "Install it via `pip install -r requirements.txt`.", _dotenv_err,
     )
 
+from src.config.heuristics import (
+    API_EXTRACTED_PRICE_CAP,
+    API_MARKUP_CAP,
+    API_NORM_CAP,
+    API_PRICE_CAP,
+    BAYES_MARKUP,
+    BUYER_CAPITAL_RATE,
+    CAUTION_RISK_THRESHOLD,
+    DEPOSIT_HARD_CAP,
+    NEAR_DEAL_RATIO,
+    PRICE_MATCH_RATIO,
+    PRIOR_RESERVE_MEAN,
+    PRIOR_RESERVE_STD,
+    STAGNATION_PREMIUM,
+    SUPERVISOR_MIN_PRICE_RATIO,
+    public_payload as heuristics_payload,
+)
+from src.sim.scenarios import UMBRELLA, public_payload as simulation_payload
+from ..engine.backend import describe_solver_backend, resolve_use_gpu
+from ..engine.llm_config import llm_status
 from ..engine import (
     solve,
     recommend,
@@ -106,15 +126,16 @@ _SOLVE_CACHE_MAX = 128
 _SOLVE_CACHE: "OrderedDict[tuple, Any]" = OrderedDict()
 
 
-def _solve_round_cached(n_opp_samples: int, use_gpu: bool, reserve_mean: float, reserve_std: float):
-    key = (int(n_opp_samples), bool(use_gpu), float(reserve_mean), float(reserve_std))
+def _solve_round_cached(n_opp_samples: int, use_gpu: bool | None, reserve_mean: float, reserve_std: float):
+    resolved = resolve_use_gpu(use_gpu)
+    key = (int(n_opp_samples), bool(resolved), float(reserve_mean), float(reserve_std))
     cached = _SOLVE_CACHE.get(key)
     if cached is not None:
         _SOLVE_CACHE.move_to_end(key)
         return cached
     result = solve(
         n_opp_samples=n_opp_samples,
-        use_gpu=use_gpu,
+        use_gpu=resolved,
         reserve_mean=reserve_mean,
         reserve_std=reserve_std,
     )
@@ -302,21 +323,40 @@ def _latest_recommended_price(sess) -> Optional[float]:
 
 class Spec(BaseModel):
     product: str = Field(default="auto umbrella", max_length=512)
-    target_price: float = Field(default=12.0, gt=0.0, allow_inf_nan=False)   # ¥ per unit
+    target_price: float = Field(default=UMBRELLA.target, gt=0.0, allow_inf_nan=False)
     moq: int = Field(default=500, ge=1, le=10_000_000)
     rounds: int = Field(default=model.ROUNDS, ge=1, le=100)
     # [REGRESSION] 未認證端點會直接把 n_samples 餵給 solve() 決定張量大小；
     # 舊版毫無上界，單一請求即可配置任意大的工作集（DoS）。
     n_samples: int = Field(default=20_000, ge=1, le=50_000)
-    lambda_break: float = Field(default=1.0, ge=0.0, le=100.0, allow_inf_nan=False)
-    prior_reserve_mean: float = Field(default=1.08, gt=0.0, allow_inf_nan=False)
-    prior_reserve_std: float = Field(default=0.10, gt=0.0, allow_inf_nan=False)
+    lambda_break: float = Field(default=1.0, ge=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    prior_reserve_mean: float = Field(default=PRIOR_RESERVE_MEAN, gt=0.0, allow_inf_nan=False)
+    prior_reserve_std: float = Field(default=PRIOR_RESERVE_STD, gt=0.0, allow_inf_nan=False)
     observed_offer: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)  # 供應商回價（歸一化，1.0=目標價）
+
+
+@api_v1.get("/heuristics")
+def documented_heuristics():
+    """Safety bands and display quantisation. Not fitted rates."""
+    return heuristics_payload()
+
+
+@api_v1.get("/simulation/mandates")
+def simulated_mandates():
+    """Sandbox commodity mandates. Not factory quotes."""
+    return simulation_payload()
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "0.4.0"}
+    language = llm_status()
+    return {
+        "status": "ok",
+        "version": "0.4.0",
+        "solver": describe_solver_backend(),
+        "llm": language,
+        "offline_demo": language["offline_demo"],
+    }
 
 
 @app.post("/negotiate")
@@ -327,7 +367,6 @@ def negotiate(spec: Spec):
     try:
         res = solve(
             n_opp_samples=spec.n_samples,
-            use_gpu=False,
             lambda_break=spec.lambda_break,
             reserve_mean=post_mean,
             reserve_std=post_std,
@@ -362,11 +401,11 @@ class EvolusExtractedFields(BaseModel):
     """
     model_config = ConfigDict(extra="ignore")
 
-    target_price: Optional[float] = Field(default=None, gt=0.0, le=1_000.0, allow_inf_nan=False)
+    target_price: Optional[float] = Field(default=None, gt=0.0, le=API_EXTRACTED_PRICE_CAP, allow_inf_nan=False)
     n_samples: Optional[int] = Field(default=None, ge=1, le=20_000)
-    lambda_break: Optional[float] = Field(default=None, ge=0.0, le=100.0, allow_inf_nan=False)
-    prior_reserve_mean: Optional[float] = Field(default=None, gt=0.0, le=100.0, allow_inf_nan=False)
-    prior_reserve_std: Optional[float] = Field(default=None, gt=0.0, le=100.0, allow_inf_nan=False)
+    lambda_break: Optional[float] = Field(default=None, ge=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    prior_reserve_mean: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    prior_reserve_std: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
 
 
 class EvolusWebhookPayload(BaseModel):
@@ -412,9 +451,6 @@ class MobileCommandBody(BaseModel):
 # （ActionObjectASTGuardrail 也只看 auth_p <= ceiling），因此「主管可以單方面
 # 承諾任意低價」。低於此比例（目標價的 50%）的覆寫一律拒絕，必須改走
 # /approve 的人工覆寫路徑（有明確的 action="override" 與理由可稽核）。
-SUPERVISOR_MIN_PRICE_RATIO = 0.5
-
-
 def _dispatch_supervisor_command(
     session_id: str,
     user_command: str,
@@ -573,7 +609,7 @@ def _dispatch_supervisor_command(
             if sess.latest_opponent_offer is not None:
                 settled_price = round(min(sess.latest_opponent_offer, sess.spec.ceiling_price), 2)
             else:
-                settled_price = round(min(sess.spec.target_price * 1.05, sess.spec.ceiling_price), 2)
+                settled_price = round(min(sess.spec.target_price * STAGNATION_PREMIUM, sess.spec.ceiling_price), 2)
         else:
             settled_price = sess.spec.target_price
 
@@ -844,17 +880,17 @@ class RoundActionRequest(BaseModel):
 
     opponent_raw_text: Optional[str] = Field(default=None, max_length=10_000)
     supplier_text: Optional[str] = Field(default=None, max_length=10_000)
-    opponent_offer_price: Optional[float] = Field(default=None, gt=0.0, le=1_000_000.0, allow_inf_nan=False)
-    supplier_offer: Optional[float] = Field(default=None, gt=0.0, le=1_000_000.0, allow_inf_nan=False)
+    opponent_offer_price: Optional[float] = Field(default=None, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
+    supplier_offer: Optional[float] = Field(default=None, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
     round_index: Optional[int] = Field(default=None, ge=1, le=100)
     offered_lead_days: Optional[int] = Field(default=None, ge=1, le=3650)
     offered_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)
     # [REGRESSION] 原本 deposit_pct 無上界：0.85 會被 Pydantic 接受，然後
     # ActionObjectASTGuardrail 才拋 GuardrailViolationError，直接把路由炸成
     # HTTP 500。加上 60% 的硬紅線，讓越界輸入在邊界就變成 422。
-    deposit_pct: Optional[float] = Field(default=None, gt=0.0, le=0.60, allow_inf_nan=False)
+    deposit_pct: Optional[float] = Field(default=None, gt=0.0, le=DEPOSIT_HARD_CAP, allow_inf_nan=False)
     unbundled_tax_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0, allow_inf_nan=False)
-    unbundled_packaging_fee: Optional[float] = Field(default=None, ge=0.0, le=1_000_000.0, allow_inf_nan=False)
+    unbundled_packaging_fee: Optional[float] = Field(default=None, ge=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
     expected_version: Optional[int] = Field(default=None, ge=1)
     # [REGRESSION] 預設值原為 "autopilot"，也就是 API 的預設路徑會在零人工核可
     # 下直接進入終止態 DEAL_CLOSED 並產出可直接複製發送的成交確認話術，違反
@@ -864,6 +900,10 @@ class RoundActionRequest(BaseModel):
     # Stage-2 LLM 語意推理為同步網路呼叫（實測 2–13 秒）。預設關閉以維持回應速度；
     # 需要更深語意理解時才開啟（例如離線批次分析、或使用者明確願意等待）。
     deep_semantic: bool = False
+    # AMD live mode is a parallel reading. It does not run inside this handler.
+    # The dashboard calls POST /quotes/read beside this round. The solver price
+    # below never reads a model field.
+    amd_live: bool = False
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -917,7 +957,7 @@ class ApproveActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     action: str = "approve"  # "approve", "modify", "override", "reject"
-    custom_price: Optional[float] = Field(default=None, gt=0.0, le=1_000_000.0, allow_inf_nan=False)
+    custom_price: Optional[float] = Field(default=None, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
     custom_reply_text: Optional[str] = Field(default=None, max_length=10_000)
     expected_version: Optional[int] = Field(default=None, ge=1)
     tactical_rationale: Optional[str] = Field(default=None, max_length=2_000)
@@ -940,12 +980,12 @@ class ApproveActionRequest(BaseModel):
 
 class TCOEvalRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    raw_price: float = Field(..., gt=0.0, le=1_000_000.0, allow_inf_nan=False)
+    raw_price: float = Field(..., gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
     baseline_lead_days: int = Field(default=15, ge=1, le=3650)
     offered_lead_days: Optional[int] = Field(default=None, ge=1, le=3650)
     baseline_moq: int = Field(default=500, ge=1, le=10_000_000)
     offered_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)
-    wacc: float = Field(default=0.08, ge=0.0, le=1.0, allow_inf_nan=False)
+    wacc: float = Field(default=BUYER_CAPITAL_RATE, ge=0.0, le=1.0, allow_inf_nan=False)
 
 
 class BayesianUpdateRequest(BaseModel):
@@ -953,11 +993,11 @@ class BayesianUpdateRequest(BaseModel):
     # [REGRESSION] prior_std 原無 gt=0；prior_std=0 會讓 bayesian_v2 出現
     # math domain error，並以裸 500 回應（FastAPI 的 ServerErrorMiddleware 會
     # 繞過 detail 包裝）。現在在邊界就回 422。
-    prior_mean: float = Field(default=1.08, gt=0.0, le=100.0, allow_inf_nan=False)
-    prior_std: float = Field(default=0.10, gt=0.0, le=100.0, allow_inf_nan=False)
-    observed_offer: float = Field(..., gt=0.0, le=100.0, allow_inf_nan=False)
-    estimated_markup: float = Field(default=0.08, ge=0.0, le=10.0, allow_inf_nan=False)
-    our_next_offer: Optional[float] = Field(default=None, gt=0.0, le=100.0, allow_inf_nan=False)
+    prior_mean: float = Field(default=PRIOR_RESERVE_MEAN, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    prior_std: float = Field(default=PRIOR_RESERVE_STD, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    observed_offer: float = Field(..., gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    estimated_markup: float = Field(default=BAYES_MARKUP, ge=0.0, le=API_MARKUP_CAP, allow_inf_nan=False)
+    our_next_offer: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
 
 
 class SemanticClassifyRequest(BaseModel):
@@ -979,8 +1019,8 @@ class MultiAuctionRunRequest(BaseModel):
     # [REGRESSION] 舊版 n_samples / n_rounds / rounds_quotes 全無上界，且端點
     # 無認證：單一請求即可配置任意大的張量工作集（n_samples=1e6 約需 32GB），
     # 一個便宜請求就能打爆記憶體。現在全部給定硬上界。
-    target_price: float = Field(default=12.0, gt=0.0, le=1_000_000.0, allow_inf_nan=False)
-    walk_away_ceiling: float = Field(default=16.2, gt=0.0, le=1_000_000.0, allow_inf_nan=False)
+    target_price: float = Field(default=UMBRELLA.target, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
+    walk_away_ceiling: float = Field(default=UMBRELLA.ceiling, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
     moq: int = Field(default=10000, ge=1, le=10_000_000)
     n_samples: int = Field(default=20000, ge=1, le=50_000)
     n_rounds: int = Field(default=3, ge=1, le=10)
@@ -1078,8 +1118,38 @@ def get_session(session_id: str):
     return sess
 
 
+class QuoteReadRequest(BaseModel):
+    """Paste or upload a supplier quote. The response never contains our price."""
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(default="", max_length=10_000)
+    amd_live: bool = False
+    image_base64: Optional[str] = Field(default=None, max_length=1_500_000)
+    sample_id: Optional[str] = Field(default=None, max_length=64)
+
+
+@api_v1.post("/quotes/read")
+def read_quote(body: QuoteReadRequest, request: Request):
+    """Parallel AMD reading. Does not create a round and does not set a price."""
+    from ..app.rate_limit import arm_amd_call
+    from ..engine.quote_read import read_supplier_quote
+
+    if body.amd_live:
+        arm_amd_call(request)
+    result = read_supplier_quote(
+        body.text,
+        amd_live=body.amd_live,
+        image_base64=body.image_base64,
+    )
+    if body.sample_id:
+        result["sample_id"] = body.sample_id
+        result["simulated_sample"] = True
+    result["buyer_price"] = None
+    result["decides_price"] = False
+    return result
+
+
 @api_v1.post("/classify/semantic")
-async def classify_semantic_preview(body: SemanticClassifyRequest):
+async def classify_semantic_preview(body: SemanticClassifyRequest, request: Request):
     """Stage-2 語意分類的獨立端點（非同步、不阻塞事件迴圈）。
 
     設計動機：Stage-2 為 2–13 秒的網路呼叫。將其從主談判輪次中拆出後：
@@ -1096,6 +1166,9 @@ async def classify_semantic_preview(body: SemanticClassifyRequest):
     stage2 = None
     stage2_error = None
     if body.enable_stage2:
+        from ..app.rate_limit import arm_amd_call
+
+        arm_amd_call(request)
         deep = await _Clf.classify_with_llm_async(text)
         if deep is not None:
             stage2 = {
@@ -1301,8 +1374,8 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         default_spec = SessionSpec(
             session_id=session_id,
             product_name="Custom Carbon Auto Umbrella",
-            target_price=12.0,
-            ceiling_price=16.2,
+            target_price=UMBRELLA.target,
+            ceiling_price=UMBRELLA.ceiling,
             moq=5000,
             max_rounds=5,
             supplier_id="Web_Inbound_Supplier",
@@ -1354,18 +1427,25 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     #    效能說明：Stage-1（正則 + 端側 ONNX）實測 ~1ms。
     #    Stage-2（AMD tokenfactory LLM）實測 2–13 秒，故預設不啟用，避免阻塞同步 HTTP 請求。
     #    呼叫端若需要更深語意理解，可設 deep_semantic=true。
-    inbound_classification = (
-        InboundIntentClassifier.classify(raw_text)
-        if action.deep_semantic
-        else InboundIntentClassifier.classify_stage1_only(raw_text)
-    )
-    if opp_price is None and inbound_classification.mentioned_price is not None:
-        opp_price = inbound_classification.mentioned_price
+    #    The price, MOQ, and lead time the solver sees come from the request or
+    #    from Stage-1. A model mentioned_price is ignored even when Stage-2 runs.
+    from ..engine.quote_fields import price_the_solver_may_use
+
+    stage1 = InboundIntentClassifier.classify_stage1_only(raw_text)
+    if action.deep_semantic:
+        inbound_classification = InboundIntentClassifier.classify(raw_text)
+    else:
+        inbound_classification = stage1
+    explicit_price = opp_price
+    llm_mentioned = None
+    if action.deep_semantic:
+        llm_mentioned = inbound_classification.mentioned_price
+    opp_price = price_the_solver_may_use(explicit_price, stage1.mentioned_price, llm_mentioned)
 
     # 1.5 多目標非價格條款 TCO 影子成本折算 (Total Cost of Ownership Normalization)
     from ..engine.tco import TradeTermsSpec
     terms_spec = TradeTermsSpec(baseline_moq=sess.spec.moq)
-    offered_moq = action.offered_moq or inbound_classification.demanded_moq
+    offered_moq = action.offered_moq or stage1.demanded_moq
     tco_breakdown = None
     effective_opp_price = opp_price
 
@@ -1399,7 +1479,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     # 3. 跑引擎重解（[PERF] 有界快取：同輸入直接命中，輪間不再重解 20K 樣本）
     solve_res = _solve_round_cached(
         sess.spec.max_rounds * 4000,
-        False,
+        None,
         post_mean,
         post_std,
     )
@@ -1459,7 +1539,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                 "mold_fee": getattr(inbound_classification, "demanded_mold_fee", None),
                 "moq": offered_moq,
                 "lead_days": action.offered_lead_days,
-                "deposit_pct": None,
+                "deposit_pct": action.deposit_pct,
             },
             "bayesian_confidence": float(bayesian_confidence),
             "expected_margin": float(rec.get("expected_margin_price", 0.0)),
@@ -1479,8 +1559,11 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     trip_reason = None
     if inbound_classification.requires_escalation:
         trip_reason = f"Security escalation: {inbound_classification.primary_intent.value} ({inbound_classification.tactical_rationale})"
-    elif p_break >= 0.15:
-        trip_reason = f"Breakdown risk {p_break:.1%} exceeds 15% safety limit."
+    elif model.breakdown_circuit_tripped(p_break):
+        trip_reason = (
+            f"Breakdown risk {p_break:.1%} exceeds "
+            f"{model.BREAKDOWN_TRIP_THRESHOLD:.0%} safety limit."
+        )
     elif opp_price and opp_price > ceiling_price:
         trip_reason = f"Opponent offer ¥{opp_price:.2f} breaches ceiling ¥{ceiling_price:.2f}."
     elif raw_recommended_price > ceiling_price:
@@ -1488,6 +1571,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
 
     if trip_reason:
         # 觸發熔斷！構建結構化策略對象並派發高階英文決策卡
+        from ..engine.logrolling import CorporateMandate
         trip_action_obj = TacticalActionObject(
             schema_version=CURRENT_SCHEMA_VERSION,
             source_round_id=f"{session_id}_R{current_round}_{sess.spec.supplier_id}",
@@ -1500,10 +1584,26 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             posterior_reserve_std=post_std,
             bayesian_confidence=bayesian_confidence,
             estimated_floor_price=floor_price_est,
-            tactical_mode=TacticalModeEnum.FIRM_HOLD if p_break < 0.15 else TacticalModeEnum.WALK_AWAY,
+            tactical_mode=(
+                TacticalModeEnum.FIRM_HOLD
+                if not model.breakdown_circuit_tripped(p_break)
+                else TacticalModeEnum.WALK_AWAY
+            ),
             product_name=sess.spec.product_name,
-            lead_days=action.offered_lead_days or 25,
-            deposit_pct=action.deposit_pct or 0.30,
+            # Buyer-side planning defaults from CorporateMandate. A missing
+            # observation stays missing in session metadata; these fields describe
+            # OUR proposal and the card labels them as such. `or 25` would also
+            # treat a numeric 0 as missing.
+            lead_days=(
+                action.offered_lead_days
+                if action.offered_lead_days is not None
+                else int(CorporateMandate.model_fields["baseline_lead_days"].default)
+            ),
+            deposit_pct=(
+                action.deposit_pct
+                if action.deposit_pct is not None
+                else float(CorporateMandate.model_fields["baseline_deposit_pct"].default)
+            ),
             moq=offered_moq or sess.spec.moq,
             counterpart_intent=inbound_classification.primary_intent,
             counterpart_offered_price=opp_price,
@@ -1576,10 +1676,13 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             pass
     if not mandate_obj:
         b_moq = sess.spec.moq
+        # Buyer planning baseline. Do not copy the supplier's quoted lead into
+        # this field: a quoted lead of 10 fails CorporateMandate validation
+        # (min desired lead is 12) and used to 500 the round. The supplier's
+        # observed lead is applied later, only on SupplierCurrentOffer.
         mandate_obj = CorporateMandate(
             target_price=target_price,
             walk_away_ceiling=ceiling_price,
-            baseline_lead_days=action.offered_lead_days or 25,
             baseline_moq=b_moq,
             max_allowed_moq=max(1200, int(b_moq * 2)),
         )
@@ -1595,7 +1698,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     # 判定是否觸發多維條款置換 (當對手不降價或哭窮抬價時)
     should_logroll = (
         opp_price is not None
-        and opp_price > target_price * 1.05
+        and opp_price > target_price * STAGNATION_PREMIUM
         and current_round >= 2
     )
 
@@ -1697,8 +1800,12 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     else:
         t_mode = (
             TacticalModeEnum.LEAN_IN
-            if p_break < 0.08
-            else (TacticalModeEnum.CROSS_ANCHOR if p_break < 0.15 else TacticalModeEnum.SIDELINE)
+            if p_break < CAUTION_RISK_THRESHOLD
+            else (
+                TacticalModeEnum.CROSS_ANCHOR
+                if not model.breakdown_circuit_tripped(p_break)
+                else TacticalModeEnum.SIDELINE
+            )
         )
         auth_price = recommended_offer_price
         # [假資料修正 §5.8] 與上方 supp_offer_obj 同一原則：這裡的 lead_days /
@@ -1915,6 +2022,16 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             "recommendation": rec,
             "proposal": prop,
             "recommended_offer_price": auth_price,
+            "price_source": (
+                "explicit_offer" if explicit_price is not None
+                else ("stage1_regex" if stage1.mentioned_price is not None else "none")
+            ),
+            "llm_price_ignored": llm_mentioned if action.deep_semantic else None,
+            "amd_live": {
+                "requested": bool(action.amd_live),
+                "decides_price": False,
+                "note": "POST /api/v1/quotes/read does the parallel AMD reading. This price is the solver's.",
+            },
             "reply_text": auto_reply_text,
             "bayesian_belief_state": v2_belief.model_dump(),
         }
@@ -1926,9 +2043,9 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     is_deal_closed = False
     awaiting_human_approval = False
     if opp_price is not None:
-        if opp_price <= target_price * 1.02:
+        if opp_price <= target_price * NEAR_DEAL_RATIO:
             is_deal_closed = True
-        elif current_round >= sess.spec.max_rounds and opp_price <= ceiling_price and abs(opp_price - recommended_offer_price) <= (0.02 * target_price):
+        elif current_round >= sess.spec.max_rounds and opp_price <= ceiling_price and abs(opp_price - recommended_offer_price) <= (PRICE_MATCH_RATIO * target_price):
             is_deal_closed = True
 
     if is_deal_closed and sess.state != AutopilotState.DEAL_CLOSED:
@@ -1947,6 +2064,10 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                 "Could not park autopilot deal candidate for session %s at "
                 "AWAITING_HUMAN_DECISION: %s", session_id, _st_err,
             )
+        # Operator alert only. The text tells the buyer the contract is not sent.
+        # Do not call Evolus (or any other outbound drafter) here: this branch
+        # runs before /approve, and a model call that produces reply text is not
+        # a human send.
         notifier.notify_deal_closed(
             session_id=session_id,
             product=sess.spec.product_name,
@@ -1954,25 +2075,6 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             savings_pct=(ceiling_price - opp_price) / ceiling_price,
             rounds=current_round,
         )
-        # [REGRESSION] 舊版 `except Exception: pass` 會靜默吞掉長達 60 秒的
-        # Evolus 外呼失敗，讓已成交的會話從未被公告。現在記錄例外。
-        if os.getenv("EVOLUS_API_KEY") and os.getenv("EVOLUS_APP_ID"):
-            try:
-                from ..evolus.client import EvolusClient
-                evolus_c = EvolusClient()
-                deal_summary = (
-                    f"Procurement Deal Closed: {sess.spec.product_name} at ¥{opp_price:.2f} "
-                    f"(Target: ¥{target_price:.2f}, MOQ: {sess.spec.moq}). "
-                    f"Completed in {current_round} rounds with total savings of "
-                    f"{((ceiling_price - opp_price) / ceiling_price):.1%}."
-                )
-                evolus_c.run_email_tool(notes=deal_summary, tone="professional")
-            except Exception as _ev_err:
-                logger.warning(
-                    "Deal-closed Evolus email notification failed for session %s: %s "
-                    "(the deal candidate is still reported in the response)",
-                    session_id, _ev_err,
-                )
 
     # [假資料修正 §5.7] 我方輪次同樣帶上本輪真實遙測值，讓「最近一輪」無論
     # 取自對手輪或我方輪，主管卡還原出的都是同一組數字（同一 session 不因
@@ -2015,6 +2117,16 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         "recommendation": rec,
         "proposal": prop,
         "recommended_offer_price": auth_price,
+        "price_source": (
+            "explicit_offer" if explicit_price is not None
+            else ("stage1_regex" if stage1.mentioned_price is not None else "none")
+        ),
+        "llm_price_ignored": llm_mentioned if action.deep_semantic else None,
+        "amd_live": {
+            "requested": bool(action.amd_live),
+            "decides_price": False,
+            "note": "POST /api/v1/quotes/read does the parallel AMD reading. This price is the solver's.",
+        },
         "reply_text": auto_reply_text,
         "bayesian_belief_state": v2_belief.model_dump(),
     }
@@ -2143,7 +2255,64 @@ def _assert_api_v1_auth_coverage() -> None:
 _assert_api_v1_auth_coverage()
 
 
+def listen_port_available(host: str, port: int) -> bool:
+    """Return True when ``host:port`` can be bound.
+
+    A process that already holds the port returns False. Other socket errors
+    propagate so a bad address is not reported as "already in use".
+    """
+    import errno
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind((host, port))
+    except OSError as exc:
+        # 98 Linux, 48 macOS, 10048 Windows.
+        if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:
+            return False
+        raise
+    else:
+        return True
+    finally:
+        sock.close()
+
+
+def port_in_use_message(port: int) -> str:
+    """Explain that the listen port is taken and how to choose another."""
+    import sys
+    from pathlib import Path
+
+    exe = Path(sys.executable).name or "python3"
+    return (
+        f"Port {port} is already in use. Stop the other process, or start "
+        f"TradeFlow on a free port:\n"
+        f"  PORT=<free-port> {exe} -m src.app.main"
+    )
+
+
 if __name__ == "__main__":
+    import sys
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    # Render and other hosts inject PORT. Local compose and the README use 8000.
+    _raw_port = os.environ.get("PORT", "8000")
+    try:
+        _port = int(_raw_port)
+    except ValueError:
+        print(
+            f"PORT={_raw_port!r} is not an integer. Example: PORT=8001 python3 -m src.app.main",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    if not 0 < _port < 65536:
+        print(
+            f"PORT={_port} is outside 1-65535. Example: PORT=8001 python3 -m src.app.main",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    if not listen_port_available("0.0.0.0", _port):
+        print(port_in_use_message(_port), file=sys.stderr)
+        raise SystemExit(1)
+    uvicorn.run(app, host="0.0.0.0", port=_port)
 

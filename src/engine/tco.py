@@ -13,25 +13,32 @@ import math
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
 
-
-# 超額庫存的平均持有/滯銷週轉天數。**單一定義**，供本模組兩條 TCO 路徑
-# (calculate_effective_price 與 calculate_nonlinear_effective_tco) 共用，
-# 避免同一概念出現兩套數字（見 DEEP_DEFECT_AUDIT.md §4.7）。
-# [誠實揭露] 90 天為編譯時固定的產業經驗假設，非由買方實際庫存週轉率量測而得；
-# 呼叫端若持有真實週轉數據，應以此常數為基礎覆寫。
-INVENTORY_HOLDING_DAYS = 90.0
+from src.config.heuristics import (
+    BASELINE_DEPOSIT_PCT,
+    BUYER_CAPITAL_RATE,
+    DAILY_LEAD_PENALTY,
+    EXCESS_HOLDING_RATE,
+    INVENTORY_HOLDING_DAYS,
+    TCO_CRISIS_DELAY_SCALE,
+    TCO_CRISIS_DELAY_START,
+    TCO_CRISIS_EXPONENT,
+    TCO_CRISIS_RATE,
+    TCO_MARKDOWN_EXP,
+    TCO_MARKDOWN_RATE,
+    TCO_UNFAVORABLE_PREMIUM,
+)
 
 
 class TradeTermsSpec(BaseModel):
     """採購方基準合約標準條款。"""
     baseline_lead_days: int = Field(default=20, description="基準標準交期 (天)")
     baseline_moq: int = Field(default=1000, description="基準標準訂單量 (件)")
-    baseline_payment_deposit_pct: float = Field(default=0.30, description="基準定金比例 (如 30%)")
+    baseline_payment_deposit_pct: float = Field(default=BASELINE_DEPOSIT_PCT, description="基準定金比例")
     baseline_payment_credit_days: int = Field(default=0, description="基準驗收後帳期天數 (0=見提單走帳)")
-    annual_cost_of_capital: float = Field(default=0.08, description="買方年化資本佔用成本 (8%)")
-    daily_lead_delay_penalty_pct: float = Field(default=0.003, description="交期每延遲一天之違約險折算係數 (0.3%/天)")
+    annual_cost_of_capital: float = Field(default=BUYER_CAPITAL_RATE, description="買方年化資本佔用成本")
+    daily_lead_delay_penalty_pct: float = Field(default=DAILY_LEAD_PENALTY, description="交期每延遲一天之違約險折算係數")
     excess_moq_holding_cost_rate: float = Field(
-        default=0.05,
+        default=EXCESS_HOLDING_RATE,
         description=(
             "超額庫存持有與滯銷風險**年化**費率 (5%)。"
             "注意此為年化率，必須乘上持有天數/365 才是單件影子成本；"
@@ -91,7 +98,7 @@ class TCOEngine:
         moq_penalty = 0.0
         if offered.offered_moq is not None and offered.offered_moq > terms_spec.baseline_moq:
             excess_ratio = (offered.offered_moq - terms_spec.baseline_moq) / terms_spec.baseline_moq
-            holding_years = INVENTORY_HOLDING_DAYS / 365.0
+            holding_years = INVENTORY_HOLDING_DAYS / 365
             moq_penalty = p_raw * excess_ratio * terms_spec.excess_moq_holding_cost_rate * holding_years
 
         # 3. 付款條款與資金佔用成本 (Payment Terms Cashflow Cost)
@@ -101,7 +108,7 @@ class TCOEngine:
             deposit_delta = max(0.0, offered.deposit_pct - terms_spec.baseline_payment_deposit_pct)
             # 佔用時長預設以生產交期天數折算
             lead_days = offered.offered_lead_days or terms_spec.baseline_lead_days
-            payment_penalty = p_raw * deposit_delta * (terms_spec.annual_cost_of_capital * (lead_days / 365.0))
+            payment_penalty = p_raw * deposit_delta * (terms_spec.annual_cost_of_capital * (lead_days / 365))
 
         # 4. 稅票與包裝拆分額外成本 (Tax & Packaging Surcharge)
         tax_pack_adj = 0.0
@@ -138,7 +145,7 @@ class TCOEngine:
         offered_lead_days: Optional[int] = None,
         baseline_moq: int = 500,
         offered_moq: Optional[int] = None,
-        wacc: float = 0.08,
+        wacc: float = BUYER_CAPITAL_RATE,
     ) -> Dict[str, Any]:
         """計算非價格條款之非線性影子成本 (Shadow Cost)。
 
@@ -169,11 +176,11 @@ class TCOEngine:
         if offered_lead_days is not None and offered_lead_days > baseline_lead_days:
             delay = offered_lead_days - baseline_lead_days
             # 資金佔用折算
-            cap_cost = raw_price * (wacc * (delay / 365.0))
+            cap_cost = raw_price * (wacc * (delay / 365))
             crisis_cost = 0.0
             # 5 天安全緩衝區之外，超線性懲罰 (階梯指數 1.75) — 常數見上方揭露
             if delay > 5:
-                crisis_cost = raw_price * 0.015 * math.pow((delay - 5) / 10.0, 1.75)
+                crisis_cost = raw_price * TCO_CRISIS_RATE * math.pow((delay - TCO_CRISIS_DELAY_START) / TCO_CRISIS_DELAY_SCALE, TCO_CRISIS_EXPONENT)
             lead_penalty = cap_cost + crisis_cost
             lead_breakdown = {
                 "capital_cost": round(cap_cost, 3),
@@ -185,9 +192,9 @@ class TCOEngine:
         if offered_moq is not None and offered_moq > baseline_moq:
             excess_ratio = (offered_moq - baseline_moq) / float(baseline_moq)
             # 庫存持有資金佔用 (以平均 90 天滯銷週轉計) — 天數常數與線性路徑共用
-            holding_cost = raw_price * excess_ratio * (wacc * (INVENTORY_HOLDING_DAYS / 365.0))
+            holding_cost = raw_price * excess_ratio * (wacc * (INVENTORY_HOLDING_DAYS / 365))
             # 滯銷降價非線性飽和風險: 1 - exp(-1.2 * excess_ratio) — 常數見上方揭露
-            markdown_risk = raw_price * excess_ratio * 0.08 * (1.0 - math.exp(-1.2 * excess_ratio))
+            markdown_risk = raw_price * excess_ratio * TCO_MARKDOWN_RATE * (1.0 - math.exp(-TCO_MARKDOWN_EXP * excess_ratio))
             moq_penalty = holding_cost + markdown_risk
             moq_breakdown = {
                 "holding_cost": round(holding_cost, 3),
@@ -205,6 +212,6 @@ class TCOEngine:
             "effective_tco_price": round(effective_price, 3),
             "effective_unit_tco": round(effective_price, 3),
             "effective_unit_price": round(effective_price, 3),
-            "is_unfavorable": effective_price > raw_price * 1.05,
+            "is_unfavorable": effective_price > raw_price * TCO_UNFAVORABLE_PREMIUM,
         }
 

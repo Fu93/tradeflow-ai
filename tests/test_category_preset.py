@@ -38,8 +38,8 @@ def test_preset_rounds_never_touch_the_real_session_store():
     assert os.path.basename(os.path.dirname(db_path)).startswith("tf_test_"), db_path
     assert db_path != os.path.abspath(os.path.join("data", "sessions.db")), db_path
 
-# 與 src/web/static/js/app.js 的 CATEGORY_PRESETS 對應。若前端改了 preset，
-# 這裡必須同步；不一致時本測試會失敗，提醒更新。
+# 與 src/sim/scenarios.py 的模擬授權對應。前端從 /api/v1/simulation/mandates
+# 讀同一份目錄，不再在 app.js 裡寫第二份價格。
 EXPECTED_PRESETS = {
     "umbrella": dict(target=12.0, ceiling=16.2, moq=5000),
     "cnc_case": dict(target=28.0, ceiling=36.5, moq=2000),
@@ -97,3 +97,5 @@ def test_preset_selector_posts_to_sessions_endpoint():
         "applyCategoryPreset no longer creates a session; the dashboard would "
         "display a mandate the engine does not enforce"
     )
+    assert "/api/v1/simulation/mandates" in src
+    assert "target: 12.0" not in src

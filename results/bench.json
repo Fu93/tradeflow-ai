@@ -1,64 +1,77 @@
 {
+  "disclosure": "No AMD GPU was present on the measuring host unless is_gpu_active is true. mi300x_transfer_lower_bound_seconds is a theoretical roofline lower-bound estimate, not measured. Formula: lower_bound_seconds = (working_set_mb * 1024 * 1024) / (5.3e12). working_set_mb is the tracemalloc peak already stored on the matching samples row of results/bench.json. src/engine/benchmark.py:_measure_working_set_mb records peak bytes during solver.solve and divides by (1024 * 1024). This script does not re-time the CPU. 5.3 TB/s max. peak theoretical (https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/data-sheets/amd-instinct-mi300x-data-sheet.pdf). Up to 192 GB HBM3. Do not divide the bound by cpu_seconds to claim a speedup.",
   "hardware_detected": "CPU Vectorized (NumPy SIMD Fallback)",
   "is_gpu_active": false,
+  "multi_supplier_auction": {
+    "cpu_seconds": 8.223,
+    "savings_pct": 0.2222222222222222,
+    "savings_pct_baseline": "walk_away_ceiling",
+    "theoretical_max_rollouts": 96000000,
+    "total_rollouts": 72000000,
+    "winning_price": 12.6
+  },
   "roofline_specs": {
-    "cpu_bandwidth_gb_s": 60.0,
-    "mi300x_hbm3_bandwidth_gb_s": 5300.0,
-    "bandwidth_ratio_cpu_to_mi300x": 88.3,
-    "note": "bandwidth_ratio \u50c5\u662f\u5169\u500b\u898f\u683c\u7684\u6bd4\u503c (5300/60)\uff0c**\u4e0d\u662f**\u4efb\u4f55\u5de5\u4f5c\u8ca0\u8f09\u7684\u52a0\u901f\u500d\u7387\u9810\u6e2c\u3002"
+    "datasheet_quote_bandwidth": "5.3 TB/s max. peak theoretical",
+    "datasheet_quote_capacity": "Up to 192 GB HBM3",
+    "datasheet_url": "https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/data-sheets/amd-instinct-mi300x-data-sheet.pdf",
+    "formula": "lower_bound_seconds = (working_set_mb * 1024 * 1024) / (5.3e12)",
+    "hbm3_capacity_gb": 192,
+    "label": "theoretical roofline lower-bound estimate, not measured",
+    "note": "theoretical roofline lower-bound estimate, not measured. Not a runtime and not a speedup. Host DDR bandwidth is omitted because this bench file does not name a CPU and the datasheet does not state one.",
+    "peak_bandwidth_bytes_per_s": 5300000000000.0,
+    "peak_bandwidth_gb_s": 5300.0,
+    "peak_bandwidth_tb_s": 5.3,
+    "product_page_url": "https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html",
+    "source_file": "results/mi300x_roofline.json"
   },
   "single_supplier_grid": [
     {
-      "samples": 2000,
-      "rollouts": 960000,
-      "working_set_mb": 67.81,
-      "working_set_measured": true,
       "cpu_seconds": 0.3021,
+      "execution_mode": "CPU_MEASURED_WITH_TRANSFER_BOUND",
+      "mi300x_measured_seconds": null,
+      "mi300x_transfer_lower_bound_label": "theoretical roofline lower-bound estimate, not measured",
+      "mi300x_transfer_lower_bound_seconds": 1.3416e-05,
+      "rollouts": 960000,
+      "samples": 2000,
       "us_per_rollout": 0.3147,
-      "mi300x_transfer_lower_bound_seconds": 1.2495e-05,
-      "mi300x_measured_seconds": null,
-      "execution_mode": "CPU_MEASURED_WITH_TRANSFER_BOUND"
+      "working_set_mb": 67.81,
+      "working_set_measured": true
     },
     {
-      "samples": 10000,
-      "rollouts": 4800000,
-      "working_set_mb": 339.05,
-      "working_set_measured": true,
       "cpu_seconds": 1.1111,
+      "execution_mode": "CPU_MEASURED_WITH_TRANSFER_BOUND",
+      "mi300x_measured_seconds": null,
+      "mi300x_transfer_lower_bound_label": "theoretical roofline lower-bound estimate, not measured",
+      "mi300x_transfer_lower_bound_seconds": 6.7079e-05,
+      "rollouts": 4800000,
+      "samples": 10000,
       "us_per_rollout": 0.2315,
-      "mi300x_transfer_lower_bound_seconds": 6.2473e-05,
-      "mi300x_measured_seconds": null,
-      "execution_mode": "CPU_MEASURED_WITH_TRANSFER_BOUND"
+      "working_set_mb": 339.05,
+      "working_set_measured": true
     },
     {
-      "samples": 20000,
-      "rollouts": 9600000,
-      "working_set_mb": 678.1,
-      "working_set_measured": true,
       "cpu_seconds": 1.6825,
-      "us_per_rollout": 0.1753,
-      "mi300x_transfer_lower_bound_seconds": 0.000124946,
+      "execution_mode": "CPU_MEASURED_WITH_TRANSFER_BOUND",
       "mi300x_measured_seconds": null,
-      "execution_mode": "CPU_MEASURED_WITH_TRANSFER_BOUND"
+      "mi300x_transfer_lower_bound_label": "theoretical roofline lower-bound estimate, not measured",
+      "mi300x_transfer_lower_bound_seconds": 0.000134158,
+      "rollouts": 9600000,
+      "samples": 20000,
+      "us_per_rollout": 0.1753,
+      "working_set_mb": 678.1,
+      "working_set_measured": true
     },
     {
-      "samples": 50000,
-      "rollouts": 24000000,
-      "working_set_mb": 1695.26,
-      "working_set_measured": true,
       "cpu_seconds": 3.8335,
-      "us_per_rollout": 0.1597,
-      "mi300x_transfer_lower_bound_seconds": 0.000312363,
+      "execution_mode": "CPU_MEASURED_WITH_TRANSFER_BOUND",
       "mi300x_measured_seconds": null,
-      "execution_mode": "CPU_MEASURED_WITH_TRANSFER_BOUND"
+      "mi300x_transfer_lower_bound_label": "theoretical roofline lower-bound estimate, not measured",
+      "mi300x_transfer_lower_bound_seconds": 0.000335398,
+      "rollouts": 24000000,
+      "samples": 50000,
+      "us_per_rollout": 0.1597,
+      "working_set_mb": 1695.26,
+      "working_set_measured": true
     }
-  ],
-  "multi_supplier_auction": {
-    "total_rollouts": 72000000,
-    "theoretical_max_rollouts": 96000000,
-    "cpu_seconds": 8.223,
-    "winning_price": 12.6,
-    "savings_pct": 0.2222222222222222
-  },
-  "disclosure": "No AMD GPU was present on the measuring host unless is_gpu_active is true. mi300x_transfer_lower_bound_seconds is a data-movement bound (measured working set / 5300 GB/s), NOT a runtime prediction, and must not be divided by cpu_seconds to claim a speedup."
+  ]
 }

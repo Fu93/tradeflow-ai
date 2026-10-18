@@ -14,6 +14,7 @@ from .engine import solve, recommend, bayes_update, model, robustness, viz, benc
 from .benchmark import AdversarialArena
 from .engine.multi_solver import simulate_reverse_auction
 from .app.demo_data import DEMO_SPEC, SUPPLIER_REPLIES
+from src.sim.scenarios import UMBRELLA
 
 # Windows consoles default to cp1252 / cp936, which mangled ¥ and — in earlier
 # runs (the operator saw "?12.51"). Force UTF-8 output where the stream allows it.
@@ -34,7 +35,7 @@ def run_demo():
     trace = []
     for round_i in range(model.ROUNDS):
         t0 = time.perf_counter()
-        res = solve(n_opp_samples=DEMO_SPEC["n_samples"], use_gpu=False,
+        res = solve(n_opp_samples=DEMO_SPEC["n_samples"],
                     lambda_break=DEMO_SPEC["lambda_break"],
                     reserve_mean=post_mean, reserve_std=post_std)
         dt = time.perf_counter() - t0
@@ -54,10 +55,8 @@ def run_demo():
         else:
             print("  No supplier reply  →  continue / hand to human approval")
 
-    # [審計修正] 舊版在此印出寫死的 "MI300X ~0.4s / CPU ~1s / naive loop ~46s"。
-    # 那些數字既非本機實測，也與現行的 Analytical Roofline 下界不符（0.4s 曾被
-    # 人為折扣係數推出，已於 HARDCODED_DATA_AUDIT.md 移除）。
-    # 改為只報告本次實際測得的 CPU 耗時，並明確標注 GPU 數字為理論下界而非實測。
+    # The old hardcoded MI300X runtime was removed. It was not a measurement.
+    # This path prints the CPU wall clock from this process only.
     # [誠實揭露] 這裡的數字是「張量元素位數」= n_samples × 開盤檔 × 讓步曲線，
     # 不是迴圈執行次數；一次向量化廣播就求完整個張量。舊版把 480 寫成魔法數
     # 並稱其為 measured rollouts，容易讀成「執行了 960 萬次 rollout」。
@@ -71,9 +70,9 @@ def run_demo():
           f"evaluated by one vectorised pass per round")
     print(f"  Measured this run : {len(trace)} rounds in {elapsed:.2f}s on CPU "
           f"(NumPy vectorised) — wall-clock measured, the position count is arithmetic.")
-    print("  GPU note          : no AMD GPU on this host; consult results/bench.json "
-          "for the analytical roofline lower bound (working set ÷ 5300 GB/s), which is a "
-          "physical bound, not a measured runtime.")
+    print("  GPU note          : no AMD GPU solve is recorded in this repository. "
+          "results/mi300x_roofline.json is a theoretical roofline lower-bound estimate, "
+          "not measured.")
     return trace
 
 
@@ -145,11 +144,16 @@ def run_self_play(matches=20, out_dir="results"):
 
 def run_multi_supplier_demo(out_dir="results"):
     print("=== TradeFlow Multi-Supplier Reverse Auction Coordination Demo ===")
-    print("Scenario: Custom Carbon Auto Umbrella (10,000 units)")
-    print("Target Price: ¥12.00 | Walk-away Ceiling: ¥16.20\n")
+    print(f"Scenario: {UMBRELLA.name} (simulated archetype, MOQ {UMBRELLA.moq:,})")
+    print(f"Target Price: ¥{UMBRELLA.target:.2f} | Walk-away Ceiling: ¥{UMBRELLA.ceiling:.2f}\n")
 
     t0 = time.perf_counter()
-    res = simulate_reverse_auction(target_price=12.0, walk_away_ceiling=16.2, moq=10000, n_samples=20000)
+    res = simulate_reverse_auction(
+        target_price=UMBRELLA.target,
+        walk_away_ceiling=UMBRELLA.ceiling,
+        moq=UMBRELLA.moq,
+        n_samples=20000,
+    )
     total_elapsed = time.perf_counter() - t0
 
     # [修正] 舊版在 CLI 端硬編了 4 個虛構的公司名（浙江頂尖/深圳宏達/義烏博創/東莞榮耀），
@@ -177,8 +181,18 @@ def run_multi_supplier_demo(out_dir="results"):
     print("=== Reverse Auction Settlement Summary ===")
     print(f"  Winning Vendor     : {res['winning_supplier']}")
     print(f"  Settled Unit Price : ¥{res['winning_price']:.2f} (Target ¥{res['product_target']:.2f}, Ceiling ¥{res['walk_away_ceiling']:.2f})")
-    print(f"  Procurement Savings: {res['total_savings_pct']:.1%} (¥{res['walk_away_ceiling'] - res['winning_price']:.2f}/unit)")
-    print(f"  Total Cash Saved   : ¥{res['total_savings_cny']:,.2f} for MOQ {res['moq']:,} units")
+    print(
+        f"  Headline savings   : {res['total_savings_pct']:.1%} vs first-round best quote "
+        f"¥{res['first_round_best_quote']:.2f} (¥{res['total_savings_cny']:,.2f} for MOQ {res['moq']:,})"
+    )
+    print(
+        f"  Versus target      : {res['savings_vs_target_pct']:.1%} "
+        f"(¥{res['savings_vs_target_cny']:,.2f}); a negative figure means the settled price is above target"
+    )
+    print(
+        f"  Secondary, ceiling : {res['savings_vs_ceiling_pct']:.1%} vs walk-away ceiling "
+        f"¥{res['walk_away_ceiling']:.2f} (¥{res['savings_vs_ceiling_cny']:,.2f})"
+    )
     print(f"  Tensor grid cells  : {res['total_rollouts_accum']:,} (parameterised, not an execution count) in {res['total_compute_seconds']:.2f}s tensor time")
     print(f"  Total Process Time : {total_elapsed:.2f}s\n")
 
@@ -188,9 +202,12 @@ def run_multi_supplier_demo(out_dir="results"):
 - Product: Custom Carbon Auto Umbrella (MOQ: 10,000 units)
 - Target Price: ¥{res['product_target']:.2f}
 - Walk-away Ceiling: ¥{res['walk_away_ceiling']:.2f}
+- First-round best quote: ¥{res['first_round_best_quote']:.2f}
 - Winning Supplier: {res['winning_supplier']}
 - Settled Price: ¥{res['winning_price']:.2f}
-- Procurement Savings: {res['total_savings_pct']:.1%} (¥{res['total_savings_cny']:,.2f} total)
+- Headline savings vs first-round best quote: {res['total_savings_pct']:.1%} (¥{res['total_savings_cny']:,.2f} total)
+- Versus target: {res['savings_vs_target_pct']:.1%} (¥{res['savings_vs_target_cny']:,.2f} total). A negative figure means the settled price is above target.
+- Secondary, versus walk-away ceiling: {res['savings_vs_ceiling_pct']:.1%} (¥{res['savings_vs_ceiling_cny']:,.2f} total)
 - Tensor Grid Cells: {res['total_rollouts_accum']:,} (= K x S x N_open x N_sched parameterised product, NOT a measured rollout/iteration count)
 
 | Round | Supplier | Quote (¥) | Tactic Classification | Dynamic BATNA Ceiling (¥) | Risk (%) | Counter-Offer (¥) |
@@ -215,7 +232,7 @@ def run_sandbox_demo(host: str = "127.0.0.1", port: int = 8000):
     import webbrowser
     import uvicorn
     from .session.manager import SessionManager
-    from .session.schema import SessionSpec, AutopilotState, NegotiationTurn
+    from .session.schema import SessionSpec, AutopilotState
 
     print("=== TradeFlow Interactive Evaluation Sandbox ===")
     print(f"Target URL: http://{host}:{port}/")
@@ -224,28 +241,20 @@ def run_sandbox_demo(host: str = "127.0.0.1", port: int = 8000):
     mgr = SessionManager()
     seed_spec = SessionSpec(
         session_id="DEMO_SANDBOX_01",
-        product_name="Custom Carbon Auto Umbrella",
-        target_price=12.0,
-        ceiling_price=16.2,
-        moq=5000,
+        product_name=UMBRELLA.name,
+        target_price=UMBRELLA.target,
+        ceiling_price=UMBRELLA.ceiling,
+        moq=UMBRELLA.moq,
         max_rounds=5,
-        supplier_id="Hangzhou_Textile_Co",
-        supplier_channel="web_chat",
+        supplier_id="simulated_archetype",
+        supplier_channel="sandbox",
     )
     sess = mgr.create_session(seed_spec)
-    # 預填初始供應商開局報價
-    sess = mgr.transition_state("DEMO_SANDBOX_01", AutopilotState.AUTOPILOT_CRUISING)
-    t1 = NegotiationTurn(
-        round_index=1,
-        sender="opponent",
-        raw_text="老闆，這款自動傘我們外貿品質含防風骨架，首批報價 ¥15.80，交期 25 天。",
-        parsed_price=15.80,
-        p_break=0.04,
-        posterior_mean=1.12,
-        posterior_std=0.08,
+    sess = mgr.transition_state("DEMO_SANDBOX_01", AutopilotState.COPILOT_MONITORING)
+    print(
+        "[Seed Session Created] ID: DEMO_SANDBOX_01. "
+        "Simulated umbrella mandate only. No supplier quote was invented."
     )
-    mgr.append_turn("DEMO_SANDBOX_01", t1)
-    print("[Seed Session Created] ID: DEMO_SANDBOX_01 (Cruising state, Initial offer: ¥15.80)")
 
     # 2. 背景或延遲啟動瀏覽器
     def open_browser():
@@ -259,6 +268,11 @@ def run_sandbox_demo(host: str = "127.0.0.1", port: int = 8000):
     t.start()
 
     # 3. 運行伺服器
+    from src.app.main import listen_port_available, port_in_use_message
+
+    if not listen_port_available(host, port):
+        print(port_in_use_message(port), file=sys.stderr)
+        raise SystemExit(1)
     print(f"[Server Starting] Uvicorn running on {host}:{port}. Press Ctrl+C to terminate.")
     uvicorn.run("src.app.main:app", host=host, port=port, log_level="info")
 
@@ -271,23 +285,11 @@ def run_benchmark():
     p_img = "results/benchmark.png"
     viz.plot_benchmark(report, p_img)
     print(f"\n[Hardware Detected] {report['hardware_detected']}")
-    # [修正] 見 DEEP_DEFECT_AUDIT.md §4 附註：舊版在此讀取一個
-    # roofline_specs 中**已被移除**的鍵（名為 theoretical-max-speedup 的舊欄位），
-    # 但 `benchmark.run()` 自 commit 045d243 起只輸出 cpu_bandwidth_gb_s /
-    # mi300x_hbm3_bandwidth_gb_s / bandwidth_ratio_cpu_to_mi300x / note，
-    # 因此 `python -m src.cli --benchmark` 在全新 clone 上必定 KeyError 並以
-    # exit 1 結束（已實測）。
-    # 現改讀真正存在的鍵，並明確標示該比值**不是**加速預測（與 benchmark.py 的
-    # note 一致），避免把規格比值誤讀成可達成的加速倍率。
+    # theoretical_max_speedup was removed. Do not subscript it.
+    # Host DDR ratios were removed: the bench file does not name a CPU.
     specs = report.get("roofline_specs", {})
-    ratio = specs.get("bandwidth_ratio_cpu_to_mi300x")
-    if ratio is not None:
-        print(
-            f"[Roofline Model] Bandwidth ratio CPU→MI300X: {ratio}x "
-            f"(specification ratio only — NOT a speedup prediction)"
-        )
-    else:
-        print("[Roofline Model] bandwidth ratio unavailable in this report.")
+    print(f"[Roofline] {specs.get('label', 'theoretical roofline lower-bound estimate, not measured')}")
+    print(f"[Roofline Formula] {specs.get('formula', '(missing formula)')}")
     print(f"[Roofline Note] {specs.get('note', '(none)')}")
     print(f"[Saved Profile] -> {p_json}")
     print(f"[Saved Plot] -> {p_img}")

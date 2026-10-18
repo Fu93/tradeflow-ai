@@ -7,6 +7,18 @@
 """
 from __future__ import annotations
 import numpy as np
+
+from src.config.heuristics import (
+    FIXED_BASELINE_CONCESSION,
+    PRIOR_RESERVE_MEAN,
+    PRIOR_RESERVE_STD,
+    ROBUSTNESS_BREAK_MULTIPLE,
+    ROBUSTNESS_CONCESSIONS,
+    ROBUSTNESS_FACTORS,
+    ROBUSTNESS_STABLE_BREAK,
+    ROBUSTNESS_STABLE_GAP,
+)
+from src.sim.scenarios import UMBRELLA
 from . import model
 from .solver import solve
 
@@ -27,8 +39,8 @@ def _baseline_at_own_best(res_b) -> tuple[float, float, int]:
     return float(res_b["exp_margin"][bi, bj]), float(res_b["exp_break"][bi, bj]), int(bi)
 
 
-def fixed_baseline_margin(rng, n_samples: int = 20_000, fixed_conc: float = 0.05,
-                          reserve_mean=1.08, reserve_std=0.10):
+def fixed_baseline_margin(rng, n_samples: int = 20_000, fixed_conc: float = FIXED_BASELINE_CONCESSION,
+                          reserve_mean=PRIOR_RESERVE_MEAN, reserve_std=PRIOR_RESERVE_STD):
     """固定類人基準：每輪固定讓 fixed_conc（如 5%/輪），與我們引擎的同情境期望邊際比。
 
     回傳 (engine_margin, engine_break, baseline_margin, baseline_break, gain)。
@@ -52,7 +64,7 @@ def fixed_baseline_margin(rng, n_samples: int = 20_000, fixed_conc: float = 0.05
     return engine_margin, engine_break, baseline_margin, baseline_break, engine_margin - baseline_margin
 
 
-def multi_baseline(rng, n_samples: int = 20_000, reserve_mean=1.08, reserve_std=0.10):
+def multi_baseline(rng, n_samples: int = 20_000, reserve_mean=PRIOR_RESERVE_MEAN, reserve_std=PRIOR_RESERVE_STD):
     """多個類人基準對比（不同固定讓步率），回傳 [ {name,margin,break,gain}, ... ]。
 
     每個基準都取自己的最優開盤檔，與引擎的最優選取規則一致。
@@ -62,7 +74,7 @@ def multi_baseline(rng, n_samples: int = 20_000, reserve_mean=1.08, reserve_std=
     em = float(res["exp_margin"][i, j]); eb = float(res["exp_break"][i, j])
     opens, scheds = model.strategy_grid()
     out = []
-    for conc in (0.03, 0.05, 0.10, 0.15):
+    for conc in ROBUSTNESS_CONCESSIONS:
         sb = np.full_like(scheds, conc)
         rb = solve(n_opp_samples=n_samples, opens=opens, scheds=sb, rng=rng,
                    reserve_mean=reserve_mean, reserve_std=reserve_std)
@@ -73,8 +85,8 @@ def multi_baseline(rng, n_samples: int = 20_000, reserve_mean=1.08, reserve_std=
     return out
 
 
-def prior_sensitivity(rng, n_samples: int = 20_000, base_mean=1.08, base_std=0.10,
-                      factors=(0.5, 1.0, 1.5)):
+def prior_sensitivity(rng, n_samples: int = 20_000, base_mean=PRIOR_RESERVE_MEAN, base_std=PRIOR_RESERVE_STD,
+                      factors=ROBUSTNESS_FACTORS):
     """prior reserve mean/std 在 ±50% 下，引擎「實際推薦策略」的期望邊際與破局率。
 
     回傳 list of (factor, mean, rec_margin, rec_break) —— 量化先驗偏離的後果。
@@ -96,8 +108,8 @@ def prior_sensitivity(rng, n_samples: int = 20_000, base_mean=1.08, base_std=0.1
     return out
 
 
-def misbelief_sensitivity(n_samples: int = 20_000, base_mean=1.08, base_std=0.10,
-                          beliefs=(0.5, 1.0, 1.5)):
+def misbelief_sensitivity(n_samples: int = 20_000, base_mean=PRIOR_RESERVE_MEAN, base_std=PRIOR_RESERVE_STD,
+                          beliefs=ROBUSTNESS_FACTORS):
     """真正的「信念錯誤」測試 (misbelief test)：現實不變，僅引擎先驗偏移。
 
     與 prior_sensitivity() 的關鍵差別：
@@ -132,8 +144,10 @@ def misbelief_sensitivity(n_samples: int = 20_000, base_mean=1.08, base_std=0.10
     return out
 
 
-def report(target_price=12.0, n_samples=20000, seed=20261013):
+def report(target_price=None, n_samples=20000, seed=20261013):
     """Produce text + numeric report (for Demo / README / pitch)."""
+    if target_price is None:
+        target_price = UMBRELLA.target
     rng = np.random.default_rng(seed)
     em, eb, bm, bb, gain = fixed_baseline_margin(rng, n_samples)
     sens = prior_sensitivity(rng, n_samples)
@@ -153,7 +167,7 @@ def report(target_price=12.0, n_samples=20000, seed=20261013):
     base_m, base_b = sens[1][2], sens[1][3]
     worst_b = max(rb for _, _, _, rb in sens)
     worst_gap = max(abs(rm - base_m) for _, _, rm, _ in sens)
-    stable = (worst_b <= max(0.15, 2.0 * base_b)) and (worst_gap <= 0.05)
+    stable = (worst_b <= max(ROBUSTNESS_STABLE_BREAK, ROBUSTNESS_BREAK_MULTIPLE * base_b)) and (worst_gap <= ROBUSTNESS_STABLE_GAP)
     if stable:
         lines.append("Prior sensitivity: recommended strategy remains stable across the tested prior range.")
     else:

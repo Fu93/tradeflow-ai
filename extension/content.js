@@ -316,9 +316,10 @@
           bottom: 24px;
           right: 24px;
           z-index: 2147483647; /* 最大 32-bit 安全層次 */
-          font-family: "Segoe UI", system-ui, -apple-system, "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+          font-family: "Segoe UI", system-ui, -apple-system, "Noto Sans CJK TC", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", "WenQuanYi Micro Hei", "Droid Sans Fallback", sans-serif;
           font-size: 12px;
           line-height: 1.5;
+          overflow-wrap: anywhere;
           color-scheme: light;
           pointer-events: auto;
           user-select: none;
@@ -343,6 +344,7 @@
           display: flex;
           align-items: center;
           gap: 10px;
+          max-width: min(360px, calc(100vw - 16px));
         }
 
         .tf-dot {
@@ -354,13 +356,15 @@
         }
 
         .tf-title {
-          font-family: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", sans-serif;
+          font-family: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", "Noto Sans CJK TC", "Noto Sans TC", sans-serif;
           font-size: 13px;
           font-weight: 600;
           letter-spacing: 0.01em;
           display: flex;
           align-items: center;
+          flex-wrap: wrap;
           gap: 7px;
+          min-width: 0;
         }
 
         .tf-badge {
@@ -382,7 +386,7 @@
         .tf-btn {
           border-radius: 0;
           cursor: pointer;
-          font-family: "Segoe UI", system-ui, sans-serif;
+          font-family: "Segoe UI", system-ui, "Noto Sans CJK TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
           font-size: 10px;
           font-weight: 600;
           padding: 5px 9px;
@@ -415,7 +419,7 @@
           position: fixed;
           bottom: 74px;
           right: 24px;
-          width: 392px;
+          width: min(392px, calc(100vw - 16px));
           max-height: 72vh;
           overflow-y: auto;
           background: #f2f2ec;
@@ -432,6 +436,7 @@
           display: flex;
           align-items: baseline;
           justify-content: space-between;
+          flex-wrap: wrap;
           gap: 10px;
           padding-bottom: 8px;
           border-bottom: 2px solid #1b2622;
@@ -439,7 +444,7 @@
         }
 
         .tf-deck-title {
-          font-family: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", sans-serif;
+          font-family: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", "Noto Sans CJK TC", "Noto Sans TC", sans-serif;
           font-size: 13px;
           font-weight: 600;
           display: inline-flex;
@@ -452,7 +457,8 @@
           color: #8b968d;
           border: 1px solid #c2c8bd;
           padding: 1px 5px;
-          white-space: nowrap;
+          line-height: 1.35;
+          overflow-wrap: anywhere;
         }
 
         .tf-deal-row {
@@ -471,7 +477,7 @@
         }
 
         .tf-deal-figure {
-          font-family: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", sans-serif;
+          font-family: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", "Noto Sans CJK TC", "Noto Sans TC", sans-serif;
           font-size: 18px;
           font-variant-numeric: tabular-nums;
         }
@@ -518,6 +524,11 @@
 
         .tf-card-body + div .tf-btn {
           font-size: 10px;
+        }
+
+        @media (max-width: 420px) {
+          :host { right: 8px; bottom: 8px; }
+          .tf-deck-container { right: 8px; bottom: 64px; }
         }
 `;
     }
@@ -1046,8 +1057,23 @@
   // 詳見 TARGET_ARCHITECTURE_AND_ROADMAP.md §6.1。
   // 決策卡的複製行為由 renderDecisionDeck() 內的 .tf-copy-btn 處理。
 
+  let tripThreshold = null;
+
+  async function loadHeuristics() {
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/heuristics");
+      if (!res.ok) return;
+      const data = await res.json();
+      const n = Number(data.breakdown_trip_threshold);
+      if (Number.isFinite(n)) tripThreshold = n;
+    } catch (err) {
+      tripThreshold = null;
+    }
+  }
+
   function setup() {
     initOverlay();
+    loadHeuristics();
     portClient = new RobustPortClient();
 
     // Register this tab's dynamic session context
@@ -1091,7 +1117,7 @@
       const tripped =
         data.circuit_tripped === true ||
         stateName === "CIRCUIT_TRIPPED_ESCALATED" ||
-        (risk != null && risk >= 0.15);
+        (risk != null && tripThreshold != null && risk >= tripThreshold);
 
       if (tripped) {
         circuitTripped = true;

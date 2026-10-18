@@ -13,6 +13,7 @@ os.environ.setdefault("TRADEFLOW_STORE_DIR", os.path.join(_SMOKE_DIR, "sessions_
 
 from fastapi.testclient import TestClient
 import src.app.main as m
+from src.sim.smoke import LIVE_CEILING, LIVE_OFFER_R1, LIVE_OFFER_R2, LIVE_TARGET
 
 print(f"[info] isolated session store: {m.session_mgr.db_path}")
 client = TestClient(m.app)
@@ -34,8 +35,8 @@ print('[PASS] 2. Static Assets (/static/css/theme.css, /static/js/app.js)')
 spec_payload = {
     'session_id': 'test-session-live-01',
     'product_name': '自動反開摺疊傘',
-    'target_price': 12.0,
-    'ceiling_price': 15.0,
+    'target_price': LIVE_TARGET,
+    'ceiling_price': LIVE_CEILING,
     'moq': 1000,
     'max_rounds': 5,
     'supplier_id': 'supplier-zhejiang-01'
@@ -47,7 +48,7 @@ print('[PASS] 3. Session Created: test-session-live-01')
 # 4. 測試第 1 輪對手報價與雙語意圖反饋
 r1_payload = {
     'opponent_raw_text': '老闆，現在銅和碰擊布原料都在漲，最低報 14.20 元/把，沒利潤！',
-    'opponent_offer_price': 14.20
+    'opponent_offer_price': LIVE_OFFER_R1
 }
 res_r1 = client.post('/api/v1/sessions/test-session-live-01/round', json=r1_payload)
 assert res_r1.status_code == 200, f'Round 1 failed: {res_r1.text}'
@@ -62,7 +63,7 @@ print(f'         Agent Tactical Reply: {r1_data["reply_text"][:50]}...')
 # 5. 測試工廠誘惑私聊引發安全熔斷 (Circuit Breaker Tripped)
 r2_payload = {
     'opponent_raw_text': '平台聊天總卡，加個微信 13812345678 私下聊，價格好商量',
-    'opponent_offer_price': 13.80
+    'opponent_offer_price': LIVE_OFFER_R2
 }
 res_r2 = client.post('/api/v1/sessions/test-session-live-01/round', json=r2_payload)
 assert res_r2.status_code == 200

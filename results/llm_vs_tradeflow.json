@@ -1,0 +1,45 @@
+{
+  "simulated": true,
+  "ran_on_amd": false,
+  "live_endpoint_used": false,
+  "not_a_model_call": true,
+  "llm_buyer": "offline_accept_opening",
+  "episode_count": 24,
+  "seed": 42,
+  "solver_samples": 256,
+  "definition": {
+    "deal": "one shot; the bid is greater than or equal to the supplier reserve",
+    "budget_violation": "the bid is greater than the walk-away ceiling",
+    "average_savings": "mean of (opening - bid) / opening over deals only; n/a when there are no deals",
+    "supplier": "reserve is mandate target times the archetype reserve multiple; opening is reserve times one plus the bluff probability",
+    "tradeflow": "solver recommended opening, capped at the mandate ceiling",
+    "offline_llm": "accepts the supplier opening and does not read the ceiling"
+  },
+  "tradeflow": {
+    "episodes": 24,
+    "deals": 12,
+    "budget_violations": 0,
+    "budget_violation_rate": 0.0,
+    "budget_violation_rate_label": "0.00%",
+    "deal_rate": 0.5,
+    "deal_rate_label": "50.00%",
+    "average_savings": 0.2223558540225207,
+    "average_savings_label": "22.24%",
+    "average_savings_over": "deals_only"
+  },
+  "offline_llm": {
+    "episodes": 24,
+    "deals": 24,
+    "budget_violations": 24,
+    "budget_violation_rate": 1.0,
+    "budget_violation_rate_label": "100.00%",
+    "deal_rate": 1.0,
+    "deal_rate_label": "100.00%",
+    "average_savings": 0.0,
+    "average_savings_label": "0.00%",
+    "average_savings_over": "deals_only"
+  },
+  "disclaimer": "Simulation. The LLM buyer is an offline stand-in named offline_accept_opening. It is not an AMD call, not Gemma-4-31B-IT, and not the Qwen log in results/real_llm_benchmark_100.json.",
+  "live_requested": false,
+  "live_note": "Offline stand-in. No AMD call was made."
+}

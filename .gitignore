@@ -1,5 +1,8 @@
 # ---- Secrets (never commit) ----
 .env
+.env.*
+!.env.example
+.env.tmp
 
 # ---- Python ----
 __pycache__/
@@ -36,6 +39,13 @@ _s4.py
 # real_llm_benchmark_100.json, real_stress_test_log.json, the figures). Regenerate
 # with `python -m src.cli --figures` and the scripts in `scripts/`.
 
+# AMD evidence files are produced on the machine that ran the script.
+# They are not committed from a CPU/CI run: a skip or a CPU timing must not
+# be checked in as if it were an AMD result. Force-add only after you have
+# read the JSON and confirmed ran_on_amd_gpu / status matches what happened.
+results/amd_endpoint_evidence.json
+results/amd_gpu_benchmark.json
+
 # ---- Scratch / local debug (continued) ----
 # Root-level one-off repro scripts from the audit rounds; kept locally, not shared.
 _dbg_*.py
@@ -49,3 +59,6 @@ _verify_findings.py
 debug_findings/_sessions_backup/
 debug_findings/**/*.log
 debug_findings/**/*.png
+docs/internal/debug_findings/_sessions_backup/
+docs/internal/debug_findings/**/*.log
+docs/internal/debug_findings/**/*.png

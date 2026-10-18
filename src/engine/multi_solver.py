@@ -16,17 +16,18 @@
    若將 S 提升至 50,000，每輪為 24M；最大策略網格 (n_open=40, n_sched=12) 搭配
    S=50,000 時為 96M rollouts，但**示範路徑並未使用該網格**，故對外引用實測值。
 
-[硬體誠實揭露] 舊版此處寫「支援 AMD ROCm/CuPy 顯存加速」。本專案**從未在
-AMD 硬體上執行過**（開發機為 Intel Core Ultra 7 355，無獨立 GPU、無 ROCm）。
-此層的 `_get_xp(use_gpu=True)` 之「CuPy/ROCm 分支」是**未經實際驗證的**
-潛在路徑；實際執行一律回落至 NumPy CPU。對外所有效能數字皆為 CPU 實測，
-MI300X 的唯一量化是 benchmark.py 的 roofline 資料搬運下界。
+[硬體誠實揭露] `results/bench.json` 的 `is_gpu_active` 為 false，
+`hardware_detected` 是 CPU。本儲存庫沒有 AMD GPU 實測。
+`_get_xp(use_gpu=True)` 在 CuPy 不存在時回落 NumPy，不會把 CPU 計時說成 GPU。
+MI300X 的唯一量化是 theoretical roofline lower-bound estimate, not measured
+（見 results/mi300x_roofline.json）。本路徑沒有在 MI300X 上執行。
 """
 from __future__ import annotations
 import time
 from typing import Optional, List, Dict, Any, Tuple
 import numpy as np
 from . import model
+from .backend import resolve_use_gpu
 from .solver import anchoring_multiplier
 
 
@@ -54,14 +55,14 @@ class MultiSupplierSolver:
         n_opp_samples: int = 50_000,
         n_open: int = 40,
         n_sched: int = 12,
-        use_gpu: bool = False,
+        use_gpu: bool | None = None,
         walk_away_ceiling: float = 1.35,
         rounds: int = model.ROUNDS,
     ):
         self.n_opp_samples = n_opp_samples
         self.n_open = n_open
         self.n_sched = n_sched
-        self.use_gpu = use_gpu
+        self.use_gpu = resolve_use_gpu(use_gpu)
         self.walk_away_ceiling = walk_away_ceiling
         self.rounds = rounds
 
@@ -270,7 +271,24 @@ class MultiSupplierSolver:
         p_break_array = []
         exp_margin_array = []
 
+        # The strategy grid is built up to YOUR_CEILING, which can sit above a
+        # tighter session ceiling. Openings outside the mandate are not candidates.
+        # If none of the grid is legal, the only authorized offer is the ceiling
+        # itself (no concession schedule), and the round is reported as broken.
+        legal_open = np.asarray(opens, dtype=np.float64) <= (
+            float(self.walk_away_ceiling) + 1e-9
+        )
+        if np.any(legal_open):
+            scores_np = np.array(scores_np, dtype=np.float64, copy=True)
+            scores_np[:, ~legal_open, :] = -np.inf
+
         for i in range(k):
+            if not np.any(legal_open):
+                best_offers.append(float(self.walk_away_ceiling))
+                best_sched_curves.append([0.0] * int(np.asarray(scheds).shape[1]))
+                p_break_array.append(1.0)
+                exp_margin_array.append(0.0)
+                continue
             flat_idx = int(np.argmax(scores_np[i]))
             i_open, i_sched = divmod(flat_idx, n_sched)
             best_offers.append(float(opens[i_open]))
@@ -306,7 +324,9 @@ class MultiSupplierSolver:
             "exp_margin_array": exp_margin_array,
             "tactics": tactics,
             "effective_ceilings": [float(x) for x in effective_ceilings],
-            "circuit_tripped": any(p >= 0.15 for p in p_break_array),
+            "circuit_tripped": any(
+                model.breakdown_circuit_tripped(p) for p in p_break_array
+            ),
         }
 
 
@@ -330,7 +350,7 @@ class MultiAuctionSession:
         n_samples: int = 20000,
         n_open: int = 20,
         n_sched: int = 6,
-        use_gpu: bool = False,
+        use_gpu: bool | None = None,
     ):
         if suppliers is None:
             suppliers = [
@@ -345,7 +365,7 @@ class MultiAuctionSession:
         self.walk_away_ceiling = float(walk_away_ceiling)
         self.moq = int(moq)
         self.n_samples = int(n_samples)
-        self.use_gpu = use_gpu
+        self.use_gpu = resolve_use_gpu(use_gpu)
 
         self.solver = MultiSupplierSolver(
             n_opp_samples=n_samples,
@@ -469,7 +489,13 @@ class MultiAuctionSession:
         return round_info
 
     def get_summary(self) -> Dict[str, Any]:
-        """結算拍賣結果。"""
+        """Settle the auction and report savings against three baselines.
+
+        ``total_savings_pct`` / ``total_savings_cny`` use the first-round best
+        quote (``total_savings_baseline == "first_round_best_quote"``).
+        ``savings_vs_target_*`` and ``savings_vs_ceiling_*`` are the other two
+        baselines. A negative percent is returned as negative.
+        """
         if not self.trace:
             raise ValueError("No rounds have been executed yet.")
 
@@ -477,16 +503,14 @@ class MultiAuctionSession:
         final_quote = last_round["best_quote"]
         winning_idx = int(np.argmin(last_round["quotes"]))
         winning_supplier = self.suppliers[winning_idx]["name"]
-        # [誠實揭露 — 2026-10-17 深度稽查] 此處的「節省」是**相對我方 walk-away
-        # 上限**（最壞情況下願意付的最高價），不是相對供應商的首輪報價或目標價。
-        # 實測：首輪最低 ¥13.26、成交 ¥12.60、上限 ¥16.20 → total_savings_pct 為
-        # 22.2%（相對上限），但相對首輪報價只省 5.0%、相對目標價則完全沒省到。
-        # 舊版只回「Savings 22.2%」一個數字，儀表板/文件很容易被讀成「比報價省
-        # 22%」。現在同時回三個基準與各自的 baseline，讓任一數字都能被檢驗。
+        # Headline is savings versus the first-round best quote: the price a
+        # buyer could already see before any counter. Versus target is reported
+        # even when negative (settled price above target). Versus the walk-away
+        # ceiling is secondary and labeled; a ceiling of ¥16.20 and a close of
+        # ¥12.60 is 22.2%, which is not "22% off the quote". Signs are never
+        # clamped.
         first_round = self.trace[0]
         first_best_quote = first_round["best_quote"]
-        total_savings_pct = (self.walk_away_ceiling - final_quote) / self.walk_away_ceiling
-        total_savings_cny = (self.walk_away_ceiling - final_quote) * self.moq
         savings_vs_first_quote_pct = (
             (first_best_quote - final_quote) / first_best_quote if first_best_quote else 0.0
         )
@@ -494,6 +518,16 @@ class MultiAuctionSession:
         savings_vs_target_pct = (
             (self.target_price - final_quote) / self.target_price if self.target_price else 0.0
         )
+        savings_vs_target_cny = (self.target_price - final_quote) * self.moq
+        savings_vs_ceiling_pct = (
+            (self.walk_away_ceiling - final_quote) / self.walk_away_ceiling
+            if self.walk_away_ceiling
+            else 0.0
+        )
+        savings_vs_ceiling_cny = (self.walk_away_ceiling - final_quote) * self.moq
+        # Unlabeled readers of total_savings_* see the headline baseline.
+        total_savings_pct = savings_vs_first_quote_pct
+        total_savings_cny = savings_vs_first_quote_cny
 
         return {
             "success": True,
@@ -510,13 +544,15 @@ class MultiAuctionSession:
             "winning_price": final_quote,
             "total_savings_pct": total_savings_pct,
             "total_savings_cny": total_savings_cny,
-            # 明確標示基準與其他對照，避免 22.2% 被誤讀成「比報價省 22%」。
-            "total_savings_baseline": "walk_away_ceiling",
-            "total_savings_baseline_value": self.walk_away_ceiling,
+            "total_savings_baseline": "first_round_best_quote",
+            "total_savings_baseline_value": first_best_quote,
             "first_round_best_quote": first_best_quote,
             "savings_vs_first_quote_pct": savings_vs_first_quote_pct,
             "savings_vs_first_quote_cny": savings_vs_first_quote_cny,
             "savings_vs_target_pct": savings_vs_target_pct,
+            "savings_vs_target_cny": savings_vs_target_cny,
+            "savings_vs_ceiling_pct": savings_vs_ceiling_pct,
+            "savings_vs_ceiling_cny": savings_vs_ceiling_cny,
             "total_rollouts": self.total_rollouts_accum,
             "total_rollouts_accum": self.total_rollouts_accum,
             "total_compute_seconds": round(self.total_compute_seconds, 4),
@@ -532,7 +568,7 @@ def simulate_reverse_auction(
     walk_away_ceiling: float = 16.2,
     moq: int = 10000,
     n_samples: int = 20000,
-    use_gpu: bool = False,
+    use_gpu: bool | None = None,
     suppliers: Optional[List[Dict[str, str]]] = None,
     rounds_quotes: Optional[List[List[float]]] = None,
     n_rounds: int = 3,

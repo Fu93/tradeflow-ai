@@ -1,0 +1,60 @@
+{
+  "datasheet_quote_bandwidth": "5.3 TB/s max. peak theoretical",
+  "datasheet_quote_capacity": "Up to 192 GB HBM3",
+  "datasheet_url": "https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/data-sheets/amd-instinct-mi300x-data-sheet.pdf",
+  "footnote": {
+    "bus_width_bits": 8192,
+    "formula": "8192 bits * 5.2 Gbps / 8",
+    "id": "MI300-18",
+    "pin_rate_gbps": 5.2,
+    "product_gb_s": 5324.8,
+    "quoted_rounding_tb_s": 5.325,
+    "role": "Derivation of AMD's published rounding to 5.3 TB/s. The estimate denominator is the datasheet figure 5.3 TB/s, not this footnote product.",
+    "url": "https://www.amd.com/en/products/accelerators/instinct/mi300.html"
+  },
+  "formula": "lower_bound_seconds = (working_set_mb * 1024 * 1024) / (5.3e12)",
+  "formula_notes": "working_set_mb is mebibytes (tracemalloc bytes / 1024 / 1024). Multiplying by 1024 * 1024 restores bytes. The denominator is 5.3e12 bytes/s, the datasheet's 5.3 TB/s.",
+  "hbm3_capacity_gb": 192,
+  "kind": "theoretical roofline lower-bound estimate, not measured",
+  "label": "theoretical roofline lower-bound estimate, not measured",
+  "not_a_measurement": true,
+  "peak_bandwidth_bytes_per_s": 5300000000000.0,
+  "peak_bandwidth_gb_s": 5300.0,
+  "peak_bandwidth_tb_s": 5.3,
+  "product_page_quote_bandwidth": "Peak Memory Bandwidth 5.3 TB/s",
+  "product_page_quote_capacity": "Dedicated Memory Size 192 GB",
+  "product_page_url": "https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html",
+  "removed_because_unsourced": [
+    "cpu_bandwidth_gb_s",
+    "bandwidth_ratio_cpu_to_mi300x",
+    "Any host DDR bandwidth figure. The bench file does not name a CPU.",
+    "Any MI300X runtime or speedup whose inputs are not in this file."
+  ],
+  "rows": [
+    {
+      "lower_bound_seconds": 1.3416e-05,
+      "samples": 2000,
+      "working_set_bytes": 71103938.56,
+      "working_set_mb": 67.81
+    },
+    {
+      "lower_bound_seconds": 6.7079e-05,
+      "samples": 10000,
+      "working_set_bytes": 355519692.8,
+      "working_set_mb": 339.05
+    },
+    {
+      "lower_bound_seconds": 0.000134158,
+      "samples": 20000,
+      "working_set_bytes": 711039385.6,
+      "working_set_mb": 678.1
+    },
+    {
+      "lower_bound_seconds": 0.000335398,
+      "samples": 50000,
+      "working_set_bytes": 1777608949.76,
+      "working_set_mb": 1695.26
+    }
+  ],
+  "working_set_derivation": "working_set_mb is the tracemalloc peak already stored on the matching samples row of results/bench.json. src/engine/benchmark.py:_measure_working_set_mb records peak bytes during solver.solve and divides by (1024 * 1024). This script does not re-time the CPU."
+}

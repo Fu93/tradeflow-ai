@@ -3,9 +3,12 @@
 - Product: Custom Carbon Auto Umbrella (MOQ: 10,000 units)
 - Target Price: ¥12.00
 - Walk-away Ceiling: ¥16.20
+- First-round best quote: ¥13.26
 - Winning Supplier: Supplier A (Agile Conceder)
 - Settled Price: ¥12.60
-- Procurement Savings: 22.2% (¥36,000.00 total)
+- Headline savings vs first-round best quote: 5.0% (¥6,600.00 total)
+- Versus target: -5.0% (¥-6,000.00 total). A negative figure means the settled price is above target.
+- Secondary, versus walk-away ceiling: 22.2% (¥36,000.00 total)
 - Tensor Grid Cells: 28,800,000 (= K x S x N_open x N_sched parameterised product, NOT a measured rollout/iteration count)
 
 | Round | Supplier | Quote (¥) | Tactic Classification | Dynamic BATNA Ceiling (¥) | Risk (%) | Counter-Offer (¥) |
