@@ -91,6 +91,7 @@
       <div id="status-badge" class="status-pill is-idle" aria-live="polite">
         <span class="dot" aria-hidden="true"></span>
         <span id="status-text">--</span>
+        <button type="button" id="status-more" class="status-more" hidden aria-expanded="false">Show more</button>
       </div>
       <div id="loading-skeleton" class="skeleton" hidden aria-hidden="true">
         <span class="sr-only">Loading</span>
@@ -155,6 +156,7 @@
             </div>
           </div>
           <p id="range-flag" class="flag" hidden>Above reserve</p>
+          <p id="decide-suggestion" class="decide-suggestion" hidden>Engine suggests: <strong id="decide-action">--</strong></p>
           <p class="savings-line">
             <span>Savings</span>
             <strong id="val-savings">--</strong>
@@ -290,18 +292,15 @@
       <div id="gate-buttons" class="gate-buttons">
         <button id="btn-concede" type="button" class="gate-btn gate-btn-primary" aria-keyshortcuts="1" aria-describedby="gate-send-note" aria-disabled="true" disabled title="Concede (1)">
           <span class="suggested-tag">Suggested</span>
-          <span class="gate-label">Concede</span>
-          <kbd>1</kbd>
+          <span class="gate-label">Concede<kbd>1</kbd></span>
         </button>
         <button id="btn-hold" type="button" class="gate-btn" aria-keyshortcuts="2" aria-describedby="gate-send-note" aria-disabled="true" disabled title="Hold (2)">
           <span class="suggested-tag">Suggested</span>
-          <span class="gate-label">Hold</span>
-          <kbd>2</kbd>
+          <span class="gate-label">Hold<kbd>2</kbd></span>
         </button>
         <button id="btn-abort" type="button" class="gate-btn gate-btn-walk" aria-keyshortcuts="3" aria-describedby="gate-send-note" aria-disabled="true" disabled title="Walk away (3)">
           <span class="suggested-tag">Suggested</span>
-          <span class="gate-label">Walk away</span>
-          <kbd>3</kbd>
+          <span class="gate-label">Walk away<kbd>3</kbd></span>
         </button>
       </div>
       <div id="gate-confirm" class="gate-confirm" hidden>

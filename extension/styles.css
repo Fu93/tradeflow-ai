@@ -372,10 +372,12 @@ body[data-source="simulator"] #approval-card { border-top: 2px solid var(--sim);
 }
 .status-pill {
   align-self: flex-start;
+  width: fit-content;
   max-width: 100%;
   min-width: 0;
   min-height: 24px;
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 4px;
   margin: 0 0 8px;
@@ -389,9 +391,35 @@ body[data-source="simulator"] #approval-card { border-top: 2px solid var(--sim);
   font-weight: 500;
 }
 .status-pill #status-text {
+  flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
   overflow-wrap: anywhere;
   white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.status-pill.is-open #status-text {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+.status-more {
+  flex: 1 0 100%;
+  min-height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
 }
 .status-pill.is-wait { color: var(--warn); background: var(--warn-bg); }
 .status-pill.is-trip,
@@ -867,6 +895,8 @@ body.is-dormant .hero-price { font-size: 20px; line-height: 26px; }
 .action-bar {
   flex: 0 0 auto;
   min-height: 88px;
+  max-height: min(200px, 34vh);
+  overflow: auto;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
   background: var(--surface);
   border-top: 1px solid var(--border);
@@ -884,15 +914,31 @@ body.is-dormant .hero-price { font-size: 20px; line-height: 26px; }
 .suggest-line {
   flex: 1 1 140px;
   min-width: 0;
+  max-height: 36px;
   color: var(--ink-2);
   font-size: 13px;
-  line-height: 20px;
+  line-height: 18px;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 #approval-action {
   color: var(--ink);
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+.decide-suggestion {
+  margin: 0 0 8px;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.decide-suggestion strong {
+  color: var(--ink);
+  font-weight: 600;
 }
 .state-chip {
   display: inline-flex;
@@ -934,32 +980,44 @@ body.is-dormant .hero-price { font-size: 20px; line-height: 26px; }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0;
-  padding: 4px 6px;
+  gap: 1px;
+  padding: 4px 2px;
   border-radius: 10px;
   border: 1.5px solid var(--border-strong);
   background: var(--surface);
   color: var(--ink);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 16px;
   font-weight: 600;
 }
 .gate-btn kbd {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  min-width: 18px;
-  height: 18px;
+  position: static;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
   padding: 0 3px;
   border-radius: 4px;
   background: var(--surface-2);
   color: var(--ink-2);
   font-size: 11px;
-  line-height: 18px;
+  line-height: 16px;
   font-weight: 500;
   text-align: center;
 }
-.gate-label { max-width: 100%; overflow-wrap: anywhere; text-align: center; }
+.gate-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  text-align: center;
+}
 .suggested-tag { display: none; font-size: 11px; line-height: 14px; font-weight: 500; color: var(--accent); }
 .gate-btn.is-suggested .suggested-tag { display: block; }
 .gate-btn.is-suggested { box-shadow: inset 0 -2px 0 var(--accent); }
@@ -1050,8 +1108,8 @@ button:focus, .party:focus, .source-badge:focus {
   .wordmark { font-size: 14px; }
   .wordmark-ai { display: none; }
   .tabbar [role="tab"] { font-size: 12px; gap: 2px; }
-  .gate-btn kbd { display: none; }
-  .gate-label { font-size: 12px; }
+  .gate-btn { padding: 4px 1px; }
+  .gate-label { gap: 2px; }
   .quote-num { font-size: 14px; line-height: 18px; }
 }
 

@@ -252,11 +252,75 @@ function markBlank(id, blank) {
   if (el) el.classList.toggle("is-blank", !!blank);
 }
 
+function statusTextOverflows() {
+  if (!statusText) return false;
+  const width = statusText.clientWidth;
+  if (width < 1) return false;
+  const probe = document.createElement("span");
+  const cs = getComputedStyle(statusText);
+  probe.textContent = statusText.textContent || "";
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  probe.style.pointerEvents = "none";
+  probe.style.left = "0";
+  probe.style.top = "0";
+  probe.style.width = `${width}px`;
+  probe.style.font = cs.font;
+  probe.style.lineHeight = cs.lineHeight;
+  probe.style.letterSpacing = cs.letterSpacing;
+  probe.style.wordBreak = cs.wordBreak;
+  probe.style.overflowWrap = cs.overflowWrap;
+  probe.style.whiteSpace = "normal";
+  document.body.appendChild(probe);
+  const full = probe.getBoundingClientRect().height;
+  probe.remove();
+  const line = parseFloat(cs.lineHeight) || 16;
+  return full > line * 3 + 1;
+}
+
+function syncStatusClamp() {
+  if (!statusText || !statusBadge) return;
+  const more = document.getElementById("status-more");
+  const full = (statusText.textContent || "").trim();
+  statusText.title = full && full !== "--" ? full : "";
+  if (!more) return;
+  if (!full || full === "--") {
+    more.hidden = true;
+    more.setAttribute("aria-expanded", "false");
+    statusBadge.classList.remove("is-open");
+    return;
+  }
+  const overflow = statusTextOverflows();
+  if (!overflow) {
+    more.hidden = true;
+    more.setAttribute("aria-expanded", "false");
+    statusBadge.classList.remove("is-open");
+    return;
+  }
+  more.hidden = false;
+  const open = statusBadge.classList.contains("is-open");
+  more.textContent = open ? "Show less" : "Show more";
+  more.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function mirrorActionText() {
+  const full = approvalAction ? (approvalAction.textContent || "").trim() : "";
+  if (approvalAction) approvalAction.title = full && full !== "--" ? full : "";
+  const suggest = document.getElementById("approval-suggest");
+  if (suggest) suggest.title = full && full !== "--" ? `Engine suggests: ${full}` : "";
+  const decide = document.getElementById("decide-action");
+  const row = document.getElementById("decide-suggestion");
+  if (decide) decide.textContent = full || "--";
+  if (row) row.hidden = !full || full === "--";
+}
+
 function tfStatusPill(state) {
   const name = tfStateName(state);
   if (statusText) statusText.textContent = name ? name.replace(/_/g, " ") : "--";
   if (!statusBadge) return;
+  const open = statusBadge.classList.contains("is-open");
   statusBadge.className = "status-pill";
+  if (open) statusBadge.classList.add("is-open");
   if (name === "CIRCUIT_TRIPPED_ESCALATED" || name === "WALK_AWAY") {
     statusBadge.classList.add("is-trip", "tripped");
   } else if (name === "DEAL_CLOSED" || name === "HUMAN_APPROVED_APPLIED") {
@@ -268,6 +332,7 @@ function tfStatusPill(state) {
   } else {
     statusBadge.classList.add("is-live");
   }
+  syncStatusClamp();
 }
 
 function tfReadingStatus(round) {
@@ -959,6 +1024,7 @@ function clearFigures() {
   paintRisk(null);
   roundCounter.textContent = "Round — / —";
   if (approvalAction) approvalAction.textContent = "--";
+  mirrorActionText();
   if (approvalPrice) approvalPrice.textContent = "--";
   if (approvalEvidence) approvalEvidence.textContent = "--";
   if (approvalState) {
@@ -1044,11 +1110,15 @@ function paintAll(data, session) {
   paintDeltas(enginePrice, supplierPrice, ceiling, turns);
 
   const savings = tfSavings(data, session);
-  if (valSavings) valSavings.textContent = savings ? savings.shown : "--";
+  if (valSavings) {
+    valSavings.textContent = savings ? savings.shown : "--";
+    valSavings.title = savings ? "" : "Not provided by engine";
+  }
   if (savingsBasis) savingsBasis.textContent = savings && savings.basis ? savings.basis : "";
 
   paintGate(data, session);
   if (approvalAction) approvalAction.textContent = tfActionLabel(data) || "--";
+  mirrorActionText();
   if (approvalPrice) {
     approvalPrice.textContent = tfMoney(enginePrice);
     approvalPrice.title = enginePrice === null ? "Not provided by engine" : "Engine-computed";
@@ -1562,6 +1632,19 @@ btnRetry?.addEventListener("click", () => {
   });
 });
 
+document.getElementById("status-more")?.addEventListener("click", () => {
+  if (!statusBadge) return;
+  statusBadge.classList.toggle("is-open");
+  syncStatusClamp();
+});
+if (statusText) {
+  const statusWatch = new MutationObserver(() => syncStatusClamp());
+  statusWatch.observe(statusText, { childList: true, characterData: true, subtree: true });
+}
+if (approvalAction) {
+  const actionWatch = new MutationObserver(() => mirrorActionText());
+  actionWatch.observe(approvalAction, { childList: true, characterData: true, subtree: true });
+}
 document.getElementById("btn-concede")?.addEventListener("click", () => dispatchCommand("1"));
 document.getElementById("btn-hold")?.addEventListener("click", () => dispatchCommand("2"));
 document.getElementById("btn-abort")?.addEventListener("click", () => armWalk());
