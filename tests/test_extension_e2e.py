@@ -224,21 +224,28 @@ def main() -> int:
 
                 # session_id whitelist: the tab session the SW registered must be
                 # backend-legal even though the mock supplier name is CJK.
-                sw_session = sw.evaluate(
-                    """async () => {
-                        try {
-                          const r = await chrome.runtime.sendMessage({type:'GET_ALL_SESSIONS'});
-                          if (r && r.sessions && r.sessions.length) return r.sessions[0];
-                        } catch (e) {}
-                        try {
-                          const all = await chrome.storage.session.get(null);
-                          const keys = Object.keys(all).filter(k => k.startsWith('tab_'));
-                          if (keys.length) return all[keys[0]];
-                        } catch (e) {}
-                        return null;
-                    }"""
-                )
-                sid = (sw_session or {}).get("sessionId") or ""
+                # Registration is async after the HUD paints, so wait briefly.
+                sid = ""
+                session_deadline = time.time() + 8
+                while time.time() < session_deadline:
+                    sw_session = sw.evaluate(
+                        """async () => {
+                            try {
+                              const r = await chrome.runtime.sendMessage({type:'GET_ALL_SESSIONS'});
+                              if (r && r.sessions && r.sessions.length) return r.sessions[0];
+                            } catch (e) {}
+                            try {
+                              const all = await chrome.storage.session.get(null);
+                              const keys = Object.keys(all).filter(k => k.startsWith('tab_'));
+                              if (keys.length) return all[keys[0]];
+                            } catch (e) {}
+                            return null;
+                        }"""
+                    )
+                    sid = (sw_session or {}).get("sessionId") or ""
+                    if sid:
+                        break
+                    page.wait_for_timeout(200)
                 import re as _re
                 print(f"    registered session_id: {sid!r}")
                 check(
