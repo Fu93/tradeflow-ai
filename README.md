@@ -43,6 +43,8 @@ python -m src.cli --multi    # four-supplier auction
 
 Recording clicks and narration: [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md). Form fields: [docs/LABLAB_FORM.md](docs/LABLAB_FORM.md). The slide deck is [results/pitch.pptx](results/pitch.pptx) and [results/pitch.pdf](results/pitch.pdf) (nine slides, rebuilt from the SUBMISSION.md outline).
 
+![Pitch cover for TradeFlow AI](results/cover_1280x720.png)
+
 ## Human + AI workflow
 
 Hybrid desk. The workflow is written for the Hybrid, Becreatives, and Vibe Generation criteria. The model reads a supplier message and may phrase a reply. The solver sets every number. The human copies the draft and sends it. The Chrome extension cannot press Send.
@@ -76,6 +78,14 @@ The auction headline is savings versus the first-round best quote. In the commit
 `extension/mock_chat.html` is the same desk language used as a sandbox. It is not a live supplier site. The banner on that page says the quotes are simulated.
 
 Screenshots:
+
+![Dashboard before a run, desktop width](docs/screenshots/dashboard-desktop.png)
+
+![Dashboard before a run, mobile width](docs/screenshots/dashboard-mobile.png)
+
+![Auction panel after Run, desktop width](docs/screenshots/auction-after-desktop.png)
+
+![Extension side panel at a narrow width](docs/screenshots/sidepanel-360.png)
 
 - Desktop, before a run: [docs/screenshots/dashboard-desktop.png](docs/screenshots/dashboard-desktop.png)
 - Mobile, before a run: [docs/screenshots/dashboard-mobile.png](docs/screenshots/dashboard-mobile.png)

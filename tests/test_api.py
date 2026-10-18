@@ -62,6 +62,24 @@ class TestAPI(_IsolatedClientCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["status"], "ok")
 
+    def test_favicon_and_extension_icons(self):
+        page = self.c.get("/")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('rel="icon"', page.text)
+        self.assertIn("data:image/png;base64,", page.text)
+        icon = self.c.get("/favicon.ico")
+        self.assertNotEqual(icon.status_code, 404)
+        self.assertEqual(icon.status_code, 200)
+        self.assertTrue(icon.content.startswith(b"\x89PNG"))
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        manifest_path = os.path.join(root, "extension", "manifest.json")
+        with open(manifest_path, encoding="utf-8") as handle:
+            manifest = __import__("json").load(handle)
+        for size in ("16", "48", "128"):
+            rel = manifest["icons"][size]
+            self.assertEqual(manifest["action"]["default_icon"][size], rel)
+            self.assertTrue(os.path.isfile(os.path.join(root, "extension", rel)))
+
     def test_negotiate(self):
         r = self.c.post("/negotiate", json={"target_price": 12.0, "n_samples": 2000,
                                             "observed_offer": 1.25})

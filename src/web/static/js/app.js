@@ -1130,17 +1130,18 @@ function onQuoteFile(input) {
   const img = document.getElementById("quoteSampleImg");
   quoteImagePayload = "";
   if (!file) return;
-  if (img) {
-    img.src = URL.createObjectURL(file);
-    img.hidden = false;
-    img.alt = "Uploaded supplier image";
-  }
   if (note) {
     note.textContent = "Uploaded image. Offline mode does not OCR pixels. Paste the chat text, or turn on AMD live mode with no transcript to ask the endpoint to read the image.";
   }
   const reader = new FileReader();
   reader.onload = () => {
-    quoteImagePayload = String(reader.result || "");
+    const dataUrl = String(reader.result || "");
+    quoteImagePayload = dataUrl;
+    if (img && dataUrl.indexOf("data:") === 0) {
+      img.src = dataUrl;
+      img.hidden = false;
+      img.alt = "Uploaded supplier image";
+    }
   };
   reader.readAsDataURL(file);
 }
