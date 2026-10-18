@@ -456,6 +456,15 @@ body {
   border-bottom: 1px solid var(--rule);
 }
 
+.market-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 18px;
+  padding-bottom: 12px;
+}
+
+.market-sheet .select-row { margin-top: 8px; }
+
 .field { min-width: 0; }
 
 .field-label {
@@ -1135,6 +1144,7 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
   .supplier-cards,
   .auction-summary { grid-template-columns: 1fr; }
   .decision-grid { grid-template-columns: 1fr 1fr; }
+  .market-grid { grid-template-columns: 1fr; }
   .field-last { grid-column: 1 / -1; }
   .ladder { grid-template-columns: 108px minmax(0, 1fr); }
   .ladder-readout {

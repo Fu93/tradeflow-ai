@@ -557,8 +557,96 @@ function customsReferenceLine(ctx) {
 
 function paintCustomsReference(ctx) {
   const el = document.getElementById("marketReference");
-  if (!el) return;
-  el.textContent = customsReferenceLine(ctx);
+  if (el) el.textContent = customsReferenceLine(ctx);
+  paintMarketIntel(ctx);
+}
+
+function paintMarketIntel(ctx) {
+  const set = (id, value) => {
+    const node = document.getElementById(id);
+    if (!node) return;
+    node.textContent = value === null || value === undefined || value === "" ? "not available" : String(value);
+  };
+  if (!ctx || typeof ctx !== "object") {
+    set("marketStatus", "not available");
+    set("marketHs", "not available");
+    set("marketYear", "not available");
+    set("marketValue", "not available");
+    set("marketQty", "not available");
+    set("marketUnit", "not available");
+    set("marketSource", "not available");
+    set("marketFetched", "not available");
+    const empty = document.getElementById("marketCaveat");
+    if (empty) empty.textContent = customsReferenceLine(null);
+    return;
+  }
+  const provenance = ctx.provenance || {};
+  set("marketStatus", ctx.reason ? ctx.status + " (" + ctx.reason + ")" : ctx.status);
+  set("marketHs", ctx.hs);
+  set("marketYear", ctx.year);
+  set("marketValue", ctx.value_usd);
+  set("marketQty", ctx.qty);
+  set("marketUnit", ctx.unit_value_usd);
+  set("marketSource", provenance.source);
+  set("marketFetched", provenance.fetched_at);
+  const caveat = document.getElementById("marketCaveat");
+  if (caveat) caveat.textContent = customsReferenceLine(ctx);
+}
+
+async function lookupMarketIntel() {
+  const hsEl = document.getElementById("marketHsInput");
+  const keyEl = document.getElementById("marketKeyword");
+  const note = document.getElementById("marketCandidates");
+  const hs = (hsEl && hsEl.value ? hsEl.value : "").trim();
+  const keyword = (keyEl && keyEl.value ? keyEl.value : "").trim();
+  if (/^\d{2,6}$/.test(hs)) {
+    if (note) note.textContent = "Fetching the HS code you entered. This does not change the recommended price.";
+    try {
+      const res = await fetch("/api/v1/market?hs=" + encodeURIComponent(hs), { headers: tfAuthHeaders() });
+      const data = await res.json();
+      paintMarketIntel(data);
+      if (note) note.textContent = res.ok
+        ? "Fetched the HS code you confirmed. Reference only."
+        : "The HS code was rejected. Use 2 to 6 digits.";
+    } catch (err) {
+      paintMarketIntel({ status: "unavailable", reason: "offline", hs: hs });
+      if (note) note.textContent = "Customs reference: not available. No upstream call completed.";
+    }
+    return;
+  }
+  if (!keyword) {
+    paintMarketIntel(null);
+    if (note) note.textContent = "Enter a keyword or a 2 to 6 digit HS code.";
+    return;
+  }
+  if (note) note.textContent = "Searching the local HS list. A keyword does not pick a code.";
+  try {
+    const res = await fetch("/api/v1/market?keyword=" + encodeURIComponent(keyword), { headers: tfAuthHeaders() });
+    const data = await res.json();
+    if (data.status === "needs_confirmation") {
+      paintMarketIntel({
+        status: "needs_confirmation",
+        hs: "not available",
+        value_usd: "not available",
+        qty: "not available",
+        unit_value_usd: "not available",
+        year: null,
+        provenance: { source: "local HS list", fetched_at: "not available" },
+      });
+      const lines = (data.candidates || []).map((row) => {
+        const code = String(row.hs || "not available");
+        const text = String(row.text || "");
+        return text.indexOf(code) === 0 ? text : code + " " + text;
+      });
+      if (note) note.textContent = "Needs confirmation. Enter one HS code to fetch. " + lines.join(" | ");
+      return;
+    }
+    paintMarketIntel(data);
+    if (note) note.textContent = "No confirmed HS code. Enter one to fetch.";
+  } catch (err) {
+    paintMarketIntel({ status: "unavailable", reason: "offline" });
+    if (note) note.textContent = "Customs reference: not available.";
+  }
 }
 
 function renderEngineDecision(session) {

@@ -184,6 +184,35 @@
           </div>
         </section>
 
+        <section class="sheet market-sheet" id="marketIntel">
+          <div class="sheet-head">
+            <h2 class="sheet-title">Market intel</h2>
+            <span class="sheet-note">reference only</span>
+          </div>
+          <p class="fineprint">Implied customs unit value is not a price quote. CIF customs valuation does not set the counter.</p>
+          <div class="market-grid">
+            <div class="field"><span class="field-label">Status</span><span class="field-value" id="marketStatus">not available</span></div>
+            <div class="field"><span class="field-label">HS code</span><span class="field-value" id="marketHs">not available</span></div>
+            <div class="field"><span class="field-label">Year</span><span class="field-value" id="marketYear">not available</span></div>
+            <div class="field"><span class="field-label">UK from China, USD</span><span class="field-value" id="marketValue">not available</span></div>
+            <div class="field"><span class="field-label">Quantity</span><span class="field-value" id="marketQty">not available</span></div>
+            <div class="field"><span class="field-label">Implied customs unit value, USD</span><span class="field-value" id="marketUnit">not available</span></div>
+            <div class="field"><span class="field-label">Source</span><span class="field-value" id="marketSource">not available</span></div>
+            <div class="field"><span class="field-label">Fetched at</span><span class="field-value" id="marketFetched">not available</span></div>
+          </div>
+          <p class="fineprint" id="marketCaveat">Customs reference: not available.</p>
+          <label class="select-row" for="marketKeyword">
+            <span>Keyword</span>
+            <input id="marketKeyword" class="input-plain" type="text" maxlength="80" autocomplete="off" />
+          </label>
+          <label class="select-row" for="marketHsInput">
+            <span>HS code</span>
+            <input id="marketHsInput" class="input-plain" type="text" maxlength="6" autocomplete="off" />
+          </label>
+          <button class="btn-quiet" type="button" id="marketLookupBtn" onclick="lookupMarketIntel()">Look up customs reference</button>
+          <p class="fineprint" id="marketCandidates">A keyword lists candidates and does not pick one. Enter an HS code to fetch.</p>
+        </section>
+
         <!-- Belief: the model behind the counter, kept subordinate to the decision. -->
         <section class="sheet belief-sheet" id="beliefPanel">
           <div class="sheet-head">
