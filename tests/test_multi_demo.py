@@ -63,7 +63,11 @@ class TestMultiSupplierSimulation(unittest.TestCase):
         # [新增 §3.2 回歸] 首輪 counter-offer 必須反映各家首輪報價 —— 舊版
         # 四家完全相同（`prior_means=np.full(k,1.08)`），此斷言在修正前會失敗。
         cheapest = min(r1["quotes"])
-        for offer, quote in zip(r1["counter_offers_cny"], r1["quotes"]):
+        self.assertIsNotNone(r1["counter_offers_cny"][0])
+        for offer, quote, blocked in zip(r1["counter_offers_cny"], r1["quotes"], r1["blocked"]):
+            if blocked:
+                self.assertIsNone(offer)
+                continue
             self.assertLessEqual(offer, cheapest + 1e-6)
             self.assertLessEqual(offer, quote + 1e-6)
             self.assertLessEqual(offer, 16.20 + 1e-6)

@@ -253,8 +253,17 @@ class TestAuctionOfferBound(unittest.TestCase):
             n_sched=4,
             use_gpu=False,
         )
-        info = session.step_round([15.0, 14.5, 16.0, 13.8])
-        for offer in info["counter_offers_cny"]:
+        info = session.step_round([12.4, 14.5, 16.0, 13.8])
+        self.assertFalse(info["all_quotes_above_ceiling"])
+        self.assertTrue(any(offer is not None for offer in info["counter_offers_cny"]))
+        for offer, blocked, reason in zip(
+            info["counter_offers_cny"], info["blocked"], info["block_reasons"]
+        ):
+            if blocked:
+                self.assertIsNone(offer)
+                self.assertIn("not actionable", reason or "")
+                continue
+            self.assertIsNotNone(offer)
             self.assertLessEqual(offer, 13.0 + 1e-6)
         self.assertLessEqual(info["best_quote"], 16.0)
 
@@ -268,9 +277,9 @@ class TestAuctionOfferBound(unittest.TestCase):
             use_gpu=False,
         )
         info = session.step_round([14.0, 14.0, 14.0, 14.0])
-        for offer in info["counter_offers_cny"]:
-            self.assertLessEqual(offer, 11.0 + 1e-6)
-            self.assertGreater(offer, 0.0)
+        self.assertTrue(info["all_quotes_above_ceiling"])
+        self.assertTrue(all(offer is None for offer in info["counter_offers_cny"]))
+        self.assertTrue(all("walk-away ceiling" in (reason or "") for reason in info["block_reasons"]))
 
 
 class TestCupyParity(unittest.TestCase):

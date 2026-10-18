@@ -1,6 +1,6 @@
 """Multi-supplier coupled expectimax.
 
-`total_rollouts` counts scenario-offer cells scored, including sweeps.
+`total_rollouts` counts scenario-offer cells scored in one pass.
 It is not K x n_opp_samples x n_open x n_sched.
 """
 import unittest
@@ -27,7 +27,11 @@ class TestMultiSolver(unittest.TestCase):
 
         counters = r1["counter_offers_cny"]
         cheapest = min(r1["quotes"])
-        for offer in counters:
+        self.assertIsNotNone(counters[0])
+        for offer, blocked in zip(counters, r1["blocked"]):
+            if blocked:
+                self.assertIsNone(offer)
+                continue
             self.assertLessEqual(offer, cheapest + 1e-6)
         # Different quotes must move the reserve beliefs even when the
         # outside option caps every counter at the cheapest quote.

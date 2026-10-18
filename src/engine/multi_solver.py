@@ -14,7 +14,12 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from src.config.heuristics import PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD, YOUR_CEILING
+from src.config.heuristics import (
+    DEFAULT_SOLVER_SEED,
+    PRIOR_RESERVE_MEAN,
+    PRIOR_RESERVE_STD,
+    YOUR_CEILING,
+)
 from src.engine import model
 from src.engine.backend import resolve_use_gpu
 from src.engine.coupled import (
@@ -22,7 +27,7 @@ from src.engine.coupled import (
     solve_coupled,
 )
 from src.engine.hazard import HazardBelief
-from src.engine.landed import landed_unit_cost, ranking_basis
+from src.engine.landed import landed_unit_cost
 from src.engine.solver import bayes_update
 from src.sim.scenarios import UMBRELLA
 from src.sim.self_play import BUYER_OPENING_NORM, SELF_PLAY_NAMES, SELF_PLAY_SPECS
@@ -184,7 +189,7 @@ class MultiAuctionSession:
         n_sched: int = 6,
         use_gpu: bool | None = None,
         risk_tolerance: float | None = None,
-        seed: int = 20261013,
+        seed: int = DEFAULT_SOLVER_SEED,
         base_currency: str = "CNY",
     ):
         if suppliers is None:
@@ -212,6 +217,7 @@ class MultiAuctionSession:
         self.prior_means = np.full(self.k, PRIOR_RESERVE_MEAN, dtype=np.float64)
         self.prior_stds = np.full(self.k, PRIOR_RESERVE_STD, dtype=np.float64)
         self.beliefs = [HazardBelief() for _ in range(self.k)]
+        self.inactive: set[int] = set()
         self.current_round = 0
         self.trace: List[Dict[str, Any]] = []
         self.landed_rows: List[Dict[str, Any]] = []
@@ -231,18 +237,22 @@ class MultiAuctionSession:
                 continue
             if i >= self.k:
                 break
+            if outcome == "walk_away":
+                self.inactive.add(i)
+            offer = offers[i] if i < len(offers) else None
+            if offer is None:
+                continue
             reserve = float(self.prior_means[i]) * self.target_price
             self.beliefs[i].update(
                 walked=outcome == "walk_away",
                 quote=float(quotes[i]),
-                offer=float(offers[i]),
+                offer=float(offer),
                 reserve=reserve,
                 round_index=float(self.current_round),
             )
 
-    def _components(self, quotes: List[float]) -> tuple[np.ndarray, np.ndarray, List[dict], List[bool]]:
+    def _components(self, quotes: List[float]) -> tuple[np.ndarray, np.ndarray, List[dict], List[bool], str, Optional[str]]:
         quote_norm = []
-        kappas = []
         rows = []
         comparable = []
         for i, quote in enumerate(quotes):
@@ -260,19 +270,45 @@ class MultiAuctionSession:
             if row.get("unit_price_base") is None:
                 comparable.append(False)
                 quote_norm.append(float(quote) / self.target_price)
-                kappas.append(0.0)
                 continue
             comparable.append(True)
             quote_norm.append(float(row["unit_price_base"]) / self.target_price)
-            if row.get("status") == "complete" and row.get("adder") is not None:
-                kappas.append(float(row["adder"]) / self.target_price)
+        active = [
+            i for i in range(self.k)
+            if comparable[i] and i not in self.inactive
+        ]
+        missing_landed = any(rows[i].get("status") != "complete" for i in active)
+        kappas = []
+        for i in range(self.k):
+            if i not in active or missing_landed:
+                # A missing adder is not a measured zero. If any comparable
+                # supplier lacks landed data, every supplier is scored on
+                # the unit price so a real adder is not mixed with a blank.
+                kappas.append(0.0)
+                continue
+            adder = rows[i].get("adder")
+            if rows[i].get("status") == "complete" and adder is not None:
+                kappas.append(float(adder) / self.target_price)
             else:
                 kappas.append(0.0)
+        if not active or missing_landed:
+            basis = "unit_price"
+        else:
+            basis = "landed_cost"
+        note = None
+        if missing_landed:
+            note = (
+                "Landed-cost data is missing for at least one comparable supplier. "
+                "The solve uses unit prices for every supplier. Missing components "
+                "are reported as no data and are not treated as a zero adder."
+            )
         return (
             np.asarray(quote_norm, dtype=np.float64),
             np.asarray(kappas, dtype=np.float64),
             rows,
             comparable,
+            basis,
+            note,
         )
 
     def step_round(self, quotes: List[float]) -> Dict[str, Any]:
@@ -280,11 +316,13 @@ class MultiAuctionSession:
         if len(quotes) != self.k:
             raise ValueError(f"Expected {self.k} quotes for {self.k} suppliers, got {len(quotes)}")
         self.current_round += 1
-        offers_norm, kappas, rows, comparable = self._components(quotes)
+        offers_norm, kappas, rows, comparable, basis, kappa_note = self._components(quotes)
         self.landed_rows = rows
-        for i in range(self.k):
-            if not comparable[i]:
-                continue
+        active = [
+            i for i in range(self.k)
+            if comparable[i] and i not in self.inactive
+        ]
+        for i in active:
             mean, std = bayes_update(
                 float(self.prior_means[i]),
                 float(self.prior_stds[i]),
@@ -292,8 +330,9 @@ class MultiAuctionSession:
             )
             self.prior_means[i] = mean
             self.prior_stds[i] = max(std, float(np.finfo(np.float64).tiny))
-        active = [i for i in range(self.k) if comparable[i]]
         if not active:
+            if self.inactive and len(self.inactive) >= self.k:
+                raise ValueError("Every supplier has walked away, so there is no rival left to compare.")
             raise ValueError("No supplier quote could be compared without inventing an FX rate.")
         # A quote that cannot be converted is left out of the rival set.
         # Using the unconverted number would invent a comparison.
@@ -314,22 +353,58 @@ class MultiAuctionSession:
             return out
 
         best_offers = _expand(res_active["best_offers"])
+        solver_blocked = _expand(res_active["blocked"], fill=False)
         self.total_rollouts_accum += int(res_active["total_rollouts"])
         self.total_compute_seconds += float(res_active["elapsed_seconds"])
+        unit_bases = [
+            None if rows[i].get("unit_price_base") is None else float(rows[i]["unit_price_base"])
+            for i in range(self.k)
+        ]
+        active_units = [
+            unit_bases[i] if unit_bases[i] is not None else float(quotes[i])
+            for i in active
+        ]
+        all_above = bool(active_units) and all(
+            float(unit) > float(self.walk_away_ceiling) for unit in active_units
+        )
         counters = []
+        block_reasons: List[Optional[str]] = []
+        blocked_out: List[bool] = []
+        above_reason = "every quote is above the walk-away ceiling"
+        hazard_reason = (
+            "not actionable: every offer to this supplier exceeds the risk-tolerance cap"
+        )
         for i in range(self.k):
-            if best_offers[i] is None:
+            if i not in active:
                 counters.append(None)
+                blocked_out.append(False)
+                if i in self.inactive:
+                    block_reasons.append("walked away; removed from the rival set")
+                elif not comparable[i]:
+                    block_reasons.append("no data: this quote has no FX rate, so it was not compared")
+                else:
+                    block_reasons.append("no data")
+                continue
+            if all_above:
+                counters.append(None)
+                blocked_out.append(True)
+                block_reasons.append(above_reason)
+                continue
+            if solver_blocked[i]:
+                counters.append(None)
+                blocked_out.append(True)
+                block_reasons.append(hazard_reason)
                 continue
             raw = float(best_offers[i]) * self.target_price
-            own = rows[i].get("unit_price_base")
+            own = unit_bases[i]
             own_cap = float(own) if own is not None else float(quotes[i])
             cap = min(self.walk_away_ceiling, own_cap)
             counters.append(min(raw, cap))
-        self._last_offers_norm = [
-            counter / self.target_price for counter in counters if counter is not None
-        ]
-        basis = ranking_basis(rows)
+            blocked_out.append(False)
+            block_reasons.append(None)
+        actionable = [counter / self.target_price for counter in counters if counter is not None]
+        self._last_offers_norm = actionable
+        mean_norm = float(np.mean(actionable)) if actionable else None
         lead_pool = list(active)
         if basis == "landed_cost":
             lead = min(lead_pool, key=lambda i: float(rows[i]["landed_cost"]))
@@ -350,21 +425,29 @@ class MultiAuctionSession:
             "p_break_array": [None if p is None else float(p) for p in _expand(res_active["p_break_array"])],
             "hazard_upper": [None if p is None else float(p) for p in _expand(res_active["hazard_upper"])],
             "counter_offers_cny": counters,
-            "counter_offers_mean_norm": float(np.mean(self._last_offers_norm)),
+            "counter_offers_mean_norm": mean_norm,
             "rollouts": res_active["total_rollouts"],
             "elapsed_seconds": res_active["elapsed_seconds"],
-            "unit_prices": [None if rows[i].get("unit_price_base") is None else float(rows[i]["unit_price_base"]) for i in range(self.k)],
+            "unit_prices": unit_bases,
             "landed_costs": [None if rows[i].get("landed_cost") is None else float(rows[i]["landed_cost"]) for i in range(self.k)],
             "landed_status": [rows[i].get("status") for i in range(self.k)],
             "landed_missing": [list(rows[i].get("missing") or []) for i in range(self.k)],
             "ranking_basis": basis,
+            "kappa_basis": basis,
+            "kappa_note": kappa_note,
+            "kappas_norm": [
+                None if i not in active else float(kappas[i]) for i in range(self.k)
+            ],
+            "all_quotes_above_ceiling": all_above,
             "push_order": names,
             "push_first": self.suppliers[active[int(res_active["push_first"])]]["name"],
             "weitzman_index": _expand(res_active["weitzman_index"]),
             "stop": res_active["stop"],
             "stop_reason": res_active["stop_reason"],
             "mc": res_active["mc"],
-            "blocked": _expand(res_active["blocked"]),
+            "blocked": blocked_out,
+            "block_reasons": block_reasons,
+            "active_suppliers": [self.suppliers[i]["name"] for i in active],
             "push_limits": _expand(res_active["push_limits"]),
             "prior_driven": res_active["prior_driven"],
             "hazard_provenance": res_active["hazard_provenance"],
@@ -393,6 +476,7 @@ class MultiAuctionSession:
             winning_idx = int(np.argmin([item if item is not None else np.inf for item in landed]))
             final_quote = float(landed[winning_idx])
         winning_supplier = self.suppliers[winning_idx]["name"]
+        winner_above_ceiling = bool(final_quote > float(self.walk_away_ceiling))
         first_round = self.trace[0]
         first_best_quote = float(first_round["best_quote"])
         savings_vs_first_quote_pct = (
@@ -422,6 +506,9 @@ class MultiAuctionSession:
             "winning_unit_price": float(last_round["quotes"][winning_idx]),
             "winning_landed_cost": last_round["landed_costs"][winning_idx],
             "ranking_basis": basis,
+            "kappa_note": last_round.get("kappa_note"),
+            "all_quotes_above_ceiling": bool(last_round.get("all_quotes_above_ceiling")),
+            "winner_above_ceiling": winner_above_ceiling,
             "total_savings_pct": savings_vs_first_quote_pct,
             "total_savings_cny": savings_vs_first_quote_cny,
             "total_savings_baseline": "first_round_best_quote",
@@ -437,7 +524,7 @@ class MultiAuctionSession:
             "total_rollouts_accum": self.total_rollouts_accum,
             "total_compute_seconds": round(self.total_compute_seconds, 4),
             "trace": self.trace,
-            "counter_offers_mean_norm": float(self.trace[-1]["counter_offers_mean_norm"]),
+            "counter_offers_mean_norm": self.trace[-1]["counter_offers_mean_norm"],
             "mc": last_round.get("mc"),
             "push_order": last_round.get("push_order"),
             "push_first": last_round.get("push_first"),
@@ -531,6 +618,8 @@ def simulate_reverse_auction(
             for i in range(session.k):
                 adv = agents[i % len(agents)]
                 b_offer = round_info["counter_offers_mean_norm"] if r > 1 else BUYER_OPENING_NORM
+                if b_offer is None:
+                    b_offer = BUYER_OPENING_NORM
                 buyer_histories[i].append(b_offer)
                 offer_norm = adv.respond(r, b_offer, buyer_histories[i], supp_histories[i], rng)
                 supp_histories[i].append(offer_norm)

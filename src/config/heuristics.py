@@ -322,18 +322,55 @@ HAZARD_U_POINTS = 64
 # market quote.
 OFFER_GRID_FLOOR = 0.50
 
-# Rationale: weight on CVaR of buyer loss in the coupled objective. The
-# user's risk tolerance scales it. Assumption, not fitted.
+# Rationale: weight on CVaR of buyer loss in the coupled objective. It does
+# not scale with the hazard cap. Assumption, not fitted.
 CVAR_WEIGHT = 0.35
 
-# Rationale: smallest risk tolerance used when scaling the CVaR weight, so
-# a tiny cap cannot divide by zero. The hazard cap itself stays the user's
-# number. A numerical floor, not a measured rate.
+# Rationale: fraction of the cost sample in the upper CVaR tail. Separate
+# from the user's hazard cap, so one number does not drive both. A
+# conventional tail, not a fitted walk-away rate.
+CVAR_TAIL_FRACTION = 0.05
+
+# Rationale: bootstrap resamples used only for the reported CVaR standard
+# error of the chosen offer vector. Not used inside the offer search.
+# A numerical budget.
+CVAR_BOOTSTRAP_DRAWS = 400
+
+# Rationale: smallest accepted user risk tolerance. Below this the hazard
+# cap is not a meaningful policy. A bound, not a measured rate.
 RISK_TOLERANCE_FLOOR = 0.01
+
+# Rationale: largest accepted user risk tolerance. A cap of one would
+# disable the hazard limit on ordinary openings. A policy bound, not a
+# measured rate.
+RISK_TOLERANCE_MAX = 0.50
 
 # Rationale: normalised cost of one more exchange in the Weitzman index,
 # as a share of the target. An ordering assumption, not a supplier quote.
 WEITZMAN_SEARCH_COST = 0.02
+
+# Rationale: bisection steps for the Weitzman reservation. Sixty-four
+# halvings put the root well inside a double's spacing on a bracket a few
+# units wide. A numerical budget, not a price.
+WEITZMAN_BISECTION_ITERS = 64
+
+# Rationale: how many belief standard deviations the Weitzman bracket
+# extends on each side of the mean. The root sits below the mean when the
+# search cost is smaller than the expected improvement at the mean. A
+# bracket width, not a price.
+WEITZMAN_BRACKET_SIGMAS = 8
+
+# Rationale: default NumPy seed when a coupled solve is not given one.
+# Reproducibility only. Not a price.
+DEFAULT_SOLVER_SEED = 20261013
+
+# Rationale: subtracted from the coupled score per unit of offer so equal
+# surplus prefers the lower offer. A numerical epsilon, not a price.
+OFFER_TIE_BREAK = 1e-6
+
+# Rationale: quotes within this gap of the cheapest quote share the
+# lean-in label. A display band, not a price.
+TACTIC_PRICE_TIE = 1e-4
 
 # Rationale: a quote above this multiple of the cheapest quote is labelled
 # sideline. Display band carried forward from the previous hand-set rule.
@@ -344,10 +381,11 @@ TACTIC_SIDELINE_RATIO = 1.12
 # the independence prior. A shared factor is still drawn. Not estimated.
 SHARED_FACTOR_RHO = 0.0
 
-# Rationale: Jacobi sweeps of the coupled offer search. The outside option
-# is the rival quote, so extra sweeps repeat the same decision. The count
-# is the documented search budget.
-COUPLED_SWEEPS = 3
+# Rationale: passes of the coupled offer search. The outside option is the
+# rival quote, which does not move inside the pass, so a second pass would
+# repeat the same decision and inflate the cell count. One pass is the
+# search budget.
+COUPLED_SWEEPS = 1
 
 
 def public_payload() -> dict:
@@ -357,6 +395,9 @@ def public_payload() -> dict:
         "source": "src/config/heuristics.py",
         "breakdown_trip_threshold": BREAKDOWN_TRIP_THRESHOLD,
         "risk_tolerance_default": BREAKDOWN_TRIP_THRESHOLD,
+        "risk_tolerance_floor": RISK_TOLERANCE_FLOOR,
+        "risk_tolerance_max": RISK_TOLERANCE_MAX,
+        "cvar_tail_fraction": CVAR_TAIL_FRACTION,
         "caution_risk_threshold": CAUTION_RISK_THRESHOLD,
         "hazard_status": "prior-driven",
         "hazard_note": (

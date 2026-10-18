@@ -72,9 +72,7 @@ def fetch_ecb_rates(
         missing = [key for key in wanted if key not in rates]
         if missing and not rates:
             return _unavailable(ECB_RATES_URL, ECB_LICENCE, "requested currencies were absent")
-    as_of = None
-    if isinstance(payload, dict):
-        as_of = payload.get("date") or payload.get("as_of")
+    as_of = _ecb_as_of(payload)
     return {
         "status": "ok",
         "value": rates,
@@ -89,7 +87,14 @@ def fetch_ecb_rates(
 
 
 def _ecb_rate_map(payload: Any) -> dict[str, float] | None:
-    """Accept the Frankfurter provider document or a flat ``{CCY: rate}`` map."""
+    """Accept Frankfurter v2's list, a provider document, or a flat map.
+
+    The live ECB provider returns a JSON list of ``{date, base, quote, rate}``
+    objects, with ``base`` EUR and ``rate`` as currency units per euro.
+    A payload that is neither that list nor a rate map is not a rate.
+    """
+    if isinstance(payload, list):
+        return _rates_from_frankfurter_list(payload)
     if not isinstance(payload, dict):
         return None
     if isinstance(payload.get("rates"), dict):
@@ -104,6 +109,38 @@ def _ecb_rate_map(payload: Any) -> dict[str, float] | None:
     flat = _numeric_map(payload)
     if flat and any(len(code) == 3 and code.isalpha() for code in flat):
         return flat
+    return None
+
+
+def _rates_from_frankfurter_list(payload: list) -> dict[str, float] | None:
+    """Currency-per-euro rates from a Frankfurter v2 provider list."""
+    out: dict[str, float] = {}
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        base = item.get("base")
+        if base is not None and str(base).strip().upper() != "EUR":
+            continue
+        quote = item.get("quote")
+        rate = item.get("rate")
+        if not isinstance(quote, str):
+            continue
+        if isinstance(rate, bool) or not isinstance(rate, (int, float)):
+            continue
+        number = float(rate)
+        if number != number or number <= 0:
+            continue
+        out[quote.strip().upper()] = number
+    return out or None
+
+
+def _ecb_as_of(payload: Any):
+    if isinstance(payload, dict):
+        return payload.get("date") or payload.get("as_of")
+    if isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, dict) and item.get("date"):
+                return item.get("date")
     return None
 
 

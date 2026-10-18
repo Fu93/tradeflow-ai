@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request, Depends, APIRouter
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # [REGRESSION] .env 從未進入 os.environ：repo 內無任何 load_dotenv()，而且要
 # requirements.txt 也沒有 python-dotenv。因此 README 快速開始寫的
@@ -48,6 +48,8 @@ from src.config.heuristics import (
     PRICE_MATCH_RATIO,
     PRIOR_RESERVE_MEAN,
     PRIOR_RESERVE_STD,
+    RISK_TOLERANCE_FLOOR,
+    RISK_TOLERANCE_MAX,
     STAGNATION_PREMIUM,
     SUPERVISOR_MIN_PRICE_RATIO,
     public_payload as heuristics_payload,
@@ -910,7 +912,12 @@ class RoundActionRequest(BaseModel):
     # below never reads a model field.
     amd_live: bool = False
     # Blank stays None. The default cap in the heuristics module still applies.
-    risk_tolerance: Optional[float] = Field(default=None, gt=0.0, le=1.0, allow_inf_nan=False)
+    risk_tolerance: Optional[float] = Field(
+        default=None,
+        ge=RISK_TOLERANCE_FLOOR,
+        le=RISK_TOLERANCE_MAX,
+        allow_inf_nan=False,
+    )
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -1043,7 +1050,12 @@ class MultiAuctionRunRequest(BaseModel):
     hs_code: Optional[str] = None
     product_name: Optional[str] = Field(default=None, max_length=512)
     # Blank stays None so the server policy cap applies. The caller sets it.
-    risk_tolerance: Optional[float] = Field(default=None, gt=0.0, le=1.0, allow_inf_nan=False)
+    risk_tolerance: Optional[float] = Field(
+        default=None,
+        ge=RISK_TOLERANCE_FLOOR,
+        le=RISK_TOLERANCE_MAX,
+        allow_inf_nan=False,
+    )
     base_currency: str = Field(default="CNY", min_length=3, max_length=8)
     # Fetched ECB and UK tariff figures enter the solve only when this is set.
     confirm_market_refs: bool = False
@@ -1102,6 +1114,12 @@ class MultiAuctionRunRequest(BaseModel):
                         f"round_outcomes[{idx}] has {item!r}; expected continue, walk_away, or null."
                     )
         return v
+
+    @model_validator(mode="after")
+    def _target_not_above_ceiling(self):
+        if float(self.target_price) > float(self.walk_away_ceiling):
+            raise ValueError("target_price is above walk_away_ceiling.")
+        return self
 
 
 @api_v1.post("/tco/evaluate")
@@ -2317,8 +2335,10 @@ def _official_reference_bundle(suppliers: Optional[List[dict]], req: MultiAuctio
     """ECB and UK tariff, fetched only when a comparison needs them.
 
     Figures stay reference-only unless ``confirm_market_refs`` is set. A
-    confirmed simple rate is copied onto a supplier who did not already
-    supply that input. Freight and fees are never filled in.
+    confirmed ECB cross rate may be copied onto a supplier who did not
+    already supply ``fx_to_base``. UK duty is never copied: a third-country
+    rate is not origin-matched to every supplier who left duty blank.
+    Freight and fees are never filled in.
     """
     from ..market.official_refs import fx_to_base, reference_bundle
 
@@ -2347,12 +2367,7 @@ def _official_reference_bundle(suppliers: Optional[List[dict]], req: MultiAuctio
     fx = bundle.get("fx") or {}
     if fx.get("status") == "ok" and isinstance(fx.get("value"), dict):
         rates = fx["value"]
-    duty = None
-    tariff = bundle.get("tariff") or {}
-    if tariff.get("status") == "ok" and isinstance(tariff.get("value"), dict):
-        duty = tariff["value"].get("ad_valorem_rate")
     fx_used = False
-    duty_used = False
     for row in rows:
         currency = row.get("currency")
         if row.get("fx_to_base") is None and currency:
@@ -2360,14 +2375,13 @@ def _official_reference_bundle(suppliers: Optional[List[dict]], req: MultiAuctio
             if rate is not None and str(currency).strip().upper() != req.base_currency.strip().upper():
                 row["fx_to_base"] = rate
                 fx_used = True
-        if row.get("duty_rate") is None and duty is not None:
-            row["duty_rate"] = duty
-            duty_used = True
     if fx_used and isinstance(bundle.get("fx"), dict):
         bundle["fx"]["used_in_solver"] = True
-    if duty_used and isinstance(bundle.get("tariff"), dict):
-        bundle["tariff"]["used_in_solver"] = True
-    bundle["used_in_solver"] = bool(fx_used or duty_used)
+    bundle["used_in_solver"] = bool(fx_used)
+    bundle["tariff_note"] = (
+        "UK third-country duty stays reference only. It is not copied onto "
+        "suppliers who left duty blank."
+    )
     return bundle
 
 
@@ -2421,6 +2435,8 @@ def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
         return res
     except HTTPException:
         raise  # [FIX] 上方 422 校驗不得被兜底改寫成 500。
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:
         # [REGRESSION] 舊版 detail=str(exc)：numpy 的配置錯誤訊息（例如
         # "Unable to allocate 59.6 GiB"）會直接洩漏主機能力給呼叫端。

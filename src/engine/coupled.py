@@ -21,12 +21,18 @@ import numpy as np
 from src.config.heuristics import (
     BREAKDOWN_TRIP_THRESHOLD,
     COUPLED_SWEEPS,
+    CVAR_BOOTSTRAP_DRAWS,
+    CVAR_TAIL_FRACTION,
     CVAR_WEIGHT,
+    DEFAULT_SOLVER_SEED,
     OFFER_GRID_FLOOR,
-    RISK_TOLERANCE_FLOOR,
+    OFFER_TIE_BREAK,
     SAMPLE_AXIS_NOISE,
     SHARED_FACTOR_RHO,
+    TACTIC_PRICE_TIE,
     TACTIC_SIDELINE_RATIO,
+    WEITZMAN_BISECTION_ITERS,
+    WEITZMAN_BRACKET_SIGMAS,
     WEITZMAN_SEARCH_COST,
 )
 from src.engine.hazard import (
@@ -49,9 +55,9 @@ def risk_cap(risk_tolerance: float | None) -> float:
 
 
 def cvar_weight(risk_tolerance: float | None) -> float:
-    """Tighter tolerance (a smaller cap) puts more weight on tail loss."""
-    scale = max(risk_cap(risk_tolerance), RISK_TOLERANCE_FLOOR)
-    return float(CVAR_WEIGHT) * (float(BREAKDOWN_TRIP_THRESHOLD) / scale)
+    """Fixed weight. Risk tolerance is the hazard cap, not the CVaR tail."""
+    del risk_tolerance
+    return float(CVAR_WEIGHT)
 
 
 def _phi(t: float) -> float:
@@ -78,9 +84,12 @@ def weitzman_reservation(mean: float, sigma: float, cost: float = WEITZMAN_SEARC
     lowest reservation is the one to push first.
     """
     sigma = max(float(sigma), float(np.finfo(np.float64).tiny))
-    lo = float(mean)
-    hi = float(mean) + sigma * 8 + float(cost) + 1
-    for _ in range(48):
+    # The root is below the mean when cost is smaller than the expected
+    # improvement at the mean (sigma / sqrt(2 pi) for a normal).
+    span = float(WEITZMAN_BRACKET_SIGMAS) * sigma + abs(float(cost)) + 1.0
+    lo = float(mean) - span
+    hi = float(mean) + span
+    for _ in range(int(WEITZMAN_BISECTION_ITERS)):
         mid = (lo + hi) / 2
         if _expected_improvement(mid, mean, sigma) > float(cost):
             hi = mid
@@ -111,20 +120,46 @@ def _mean_se(values: np.ndarray) -> tuple[float, float]:
     return mean, se
 
 
-def _cvar_upper(costs: np.ndarray, tail_fraction: float) -> tuple[float, float]:
-    """Mean of the worst tail of a cost sample, and its standard error."""
+def _cvar_upper(costs: np.ndarray, tail_fraction: float) -> float:
+    """Mean of the worst tail of a cost sample."""
     flat = np.asarray(costs, dtype=np.float64).ravel()
     n = int(flat.size)
     if n == 0:
-        return 0.0, 0.0
+        return 0.0
     fraction = min(max(float(tail_fraction), float(np.finfo(np.float64).tiny)), 1.0)
     tail_n = max(1, int(math.ceil(fraction * n)))
     worst = np.partition(flat, n - tail_n)[n - tail_n :]
-    mean = float(np.mean(worst))
-    if tail_n < 2:
-        return mean, 0.0
-    se = float(np.std(worst, ddof=1) / math.sqrt(tail_n))
-    return mean, se
+    return float(np.mean(worst))
+
+
+def _cvar_bootstrap_se(costs: np.ndarray, tail_fraction: float) -> float:
+    """Standard error of the upper-tail CVaR, by resampling the full sample.
+
+    The standard deviation of the tail alone ignores uncertainty in the
+    VaR threshold and is too small. This estimator is used for the reported
+    metric only, not for every column of the offer search.
+    """
+    flat = np.asarray(costs, dtype=np.float64).ravel()
+    n = int(flat.size)
+    if n < 2:
+        return 0.0
+    fraction = min(max(float(tail_fraction), float(np.finfo(np.float64).tiny)), 1.0)
+    tail_n = max(1, int(math.ceil(fraction * n)))
+    draws = int(CVAR_BOOTSTRAP_DRAWS)
+    rng = np.random.default_rng(int(DEFAULT_SOLVER_SEED))
+    estimates = np.empty(draws, dtype=np.float64)
+    width = 8
+    done = 0
+    while done < draws:
+        take = min(width, draws - done)
+        idx = rng.integers(0, n, size=(take, n), dtype=np.int32)
+        sample = flat[idx]
+        part = np.partition(sample, n - tail_n, axis=1)[:, n - tail_n :]
+        estimates[done : done + take] = part.mean(axis=1)
+        done += take
+    if draws < 2:
+        return 0.0
+    return float(np.std(estimates, ddof=1))
 
 
 def sample_joint_scenarios(
@@ -237,12 +272,12 @@ def _score_candidates(
     mean_hazard = hazard_sum / s
     p_accept = deal_sum / s
     weight = cvar_weight(risk_tolerance)
-    tail = min(max(risk_cap(risk_tolerance), RISK_TOLERANCE_FLOOR), 1.0)
+    tail = float(CVAR_TAIL_FRACTION)
     cvar = np.empty(g, dtype=np.float64)
     for column in range(g):
         # Loss is forgone surplus: the ceiling value minus the realised surplus.
-        cvar[column], _ = _cvar_upper(float(ceiling) - surplus[:, column], tail)
-    score = mean_surplus - weight * cvar - candidates * 1e-6
+        cvar[column] = _cvar_upper(float(ceiling) - surplus[:, column], tail)
+    score = mean_surplus - weight * cvar - candidates * float(OFFER_TIE_BREAK)
     return {
         "score": score,
         "mean_surplus": mean_surplus,
@@ -324,7 +359,7 @@ def classify_tactics(quotes: np.ndarray, ceiling: float) -> list[str]:
     cheapest = float(np.min(quotes))
     labels = []
     for quote in quotes:
-        if abs(float(quote) - cheapest) < 1e-4:
+        if abs(float(quote) - cheapest) < float(TACTIC_PRICE_TIE):
             labels.append("LEAN_IN")
         elif float(quote) > TACTIC_SIDELINE_RATIO * cheapest or float(quote) >= float(ceiling):
             labels.append("SIDELINE")
@@ -392,9 +427,11 @@ def evaluate_vector(
     expected, expected_se = _mean_se(surplus)
     regret = oracle - surplus
     regret_mean, regret_se = _mean_se(regret)
-    tail = min(max(risk_cap(risk_tolerance), RISK_TOLERANCE_FLOOR), 1.0)
+    del risk_tolerance
+    tail = float(CVAR_TAIL_FRACTION)
     cost = float(ceiling) - surplus
-    cvar, cvar_se = _cvar_upper(cost, tail)
+    cvar = _cvar_upper(cost, tail)
+    cvar_se = _cvar_bootstrap_se(cost, tail)
     hazards = []
     for i in range(k):
         pred = beliefs[i].predictive(
@@ -450,7 +487,7 @@ def solve_coupled(
     if beliefs is None:
         beliefs = [HazardBelief() for _ in range(k)]
     if rng is None:
-        rng = np.random.default_rng(20261013)
+        rng = np.random.default_rng(int(DEFAULT_SOLVER_SEED))
     cap = risk_cap(risk_tolerance)
     landed = quotes + kappas
     scenarios = sample_joint_scenarios(rng, means, stds, int(n_samples), rho=rho)
@@ -458,50 +495,48 @@ def solve_coupled(
     offers = np.zeros(k, dtype=np.float64)
     choices: list[dict[str, Any]] = []
     cells = 0
-    # The outside option is the rival quote, which does not move inside the
-    # sweep, so each pass repeats the same decision. Cells are the scenario
-    # -offer pairs actually scored, including the repeated passes.
-    for _sweep in range(int(COUPLED_SWEEPS)):
-        choices = []
-        for i in range(k):
-            other = _best_other_landed(landed, ceiling, i)
-            if other is None:
-                batna = 0.0
-                rival_unit_cap = float(ceiling)
-            else:
-                batna = max(0.0, float(ceiling) - other)
-                rival_unit_cap = other - float(kappas[i])
-            hi = min(float(quotes[i]), float(ceiling), float(rival_unit_cap))
-            hi = max(hi, float(np.finfo(np.float64).tiny))
-            candidates = _candidates(grid, hi)
-            scored = _score_candidates(
-                reserves=scenarios["reserves"][i],
-                uniforms=scenarios["uniforms"][i],
-                bluff=scenarios["bluff"][i],
-                quote=float(quotes[i]),
-                kappa=float(kappas[i]),
-                candidates=candidates,
-                batna_surplus=batna,
-                ceiling=float(ceiling),
-                effect=beliefs[i].mean_effect(),
-                risk_tolerance=risk_tolerance,
-            )
-            cells += int(scored["cells"])
-            choice = _choose_offer(
-                scored,
-                candidates,
-                quote=float(quotes[i]),
-                reserve_mean=float(means[i]),
-                belief=beliefs[i],
-                batna_surplus=batna,
-                cap=cap,
-                round_index=float(round_index),
-            )
-            choice["batna_surplus"] = batna
-            choice["hi"] = hi
-            choice["effective_ceiling"] = min(float(ceiling), other if other is not None else float(ceiling))
-            offers[i] = choice["offer"]
-            choices.append(choice)
+    # One pass. The outside option is the rival quote, which does not move
+    # when we write this supplier's offer, so a second pass would rescore
+    # the same grid. Cells are the scenario-offer pairs of this pass.
+    for i in range(k):
+        other = _best_other_landed(landed, ceiling, i)
+        if other is None:
+            batna = 0.0
+            rival_unit_cap = float(ceiling)
+        else:
+            batna = max(0.0, float(ceiling) - other)
+            rival_unit_cap = other - float(kappas[i])
+        hi = min(float(quotes[i]), float(ceiling), float(rival_unit_cap))
+        hi = max(hi, float(np.finfo(np.float64).tiny))
+        candidates = _candidates(grid, hi)
+        scored = _score_candidates(
+            reserves=scenarios["reserves"][i],
+            uniforms=scenarios["uniforms"][i],
+            bluff=scenarios["bluff"][i],
+            quote=float(quotes[i]),
+            kappa=float(kappas[i]),
+            candidates=candidates,
+            batna_surplus=batna,
+            ceiling=float(ceiling),
+            effect=beliefs[i].mean_effect(),
+            risk_tolerance=risk_tolerance,
+        )
+        cells += int(scored["cells"])
+        choice = _choose_offer(
+            scored,
+            candidates,
+            quote=float(quotes[i]),
+            reserve_mean=float(means[i]),
+            belief=beliefs[i],
+            batna_surplus=batna,
+            cap=cap,
+            round_index=float(round_index),
+        )
+        choice["batna_surplus"] = batna
+        choice["hi"] = hi
+        choice["effective_ceiling"] = min(float(ceiling), other if other is not None else float(ceiling))
+        offers[i] = choice["offer"]
+        choices.append(choice)
     metrics = evaluate_vector(
         offers,
         scenarios,
@@ -513,10 +548,16 @@ def solve_coupled(
         risk_tolerance=risk_tolerance,
         round_index=float(round_index),
     )
-    reservations = [
-        weitzman_reservation(float(means[i]), max(float(stds[i]) * max(float(means[i]), 1.0), np.finfo(np.float64).tiny))
-        for i in range(k)
-    ]
+    reservations = []
+    for i in range(k):
+        # Same absolute scale as the scenario draw: shock = std * mean.
+        sigma = abs(float(stds[i]) * float(means[i]))
+        sigma = max(sigma, float(np.finfo(np.float64).tiny))
+        # Kappa is a known adder, so the reservation that is compared with
+        # a landed quote lives on the landed scale.
+        reservations.append(
+            weitzman_reservation(float(means[i]) + float(kappas[i]), sigma)
+        )
     order = sorted(range(k), key=lambda i: (reservations[i], float(landed[i]), i))
     tactics = classify_tactics(quotes, ceiling)
     best = int(np.argmin(landed))

@@ -116,7 +116,11 @@ class TestFirstRoundQuoteResponsiveness(unittest.TestCase):
         counters = r1["counter_offers_cny"]
         self.assertEqual(len(counters), 4)
         cheapest = min(r1["quotes"])
-        for offer in counters:
+        self.assertIsNotNone(counters[0])
+        for offer, blocked in zip(counters, r1["blocked"]):
+            if blocked:
+                self.assertIsNone(offer)
+                continue
             self.assertLessEqual(offer, cheapest + 1e-6)
 
     def test_a_better_rival_quote_does_not_raise_other_counters(self):
@@ -125,11 +129,16 @@ class TestFirstRoundQuoteResponsiveness(unittest.TestCase):
         low = MultiAuctionSession(n_samples=1500, seed=20261013)
         c_high = high.step_round([13.00, 15.00, 16.00, 17.00])["counter_offers_cny"]
         c_low = low.step_round([13.00, 15.00, 16.00, 12.50])["counter_offers_cny"]
+        compared = 0
         for i in range(3):
+            if c_high[i] is None or c_low[i] is None:
+                continue
+            compared += 1
             self.assertLessEqual(
                 c_low[i], c_high[i] + 1e-8,
                 msg=f"rival improvement raised counter {i}: {c_high} -> {c_low}",
             )
+        self.assertGreater(compared, 0)
 
     def test_distinct_quote_sets_give_distinct_counter_offers(self):
         """不同的首輪報價集合 → 不同的首輪 counter-offer 向量。"""

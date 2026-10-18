@@ -219,4 +219,15 @@ def run_markets(
         "coupled_minus_independent_ci95": [d_lo, d_hi],
         "normalised_buyer_surplus": "(ceiling - paid) / (ceiling - oracle reserve)",
         "no_deal_paid": "walk-away ceiling",
+        "reserve_prior_centre": float(PRIOR_RESERVE_MEAN),
+        "suppliers_share_solver_reserve_centre": True,
+        "suppliers_ignore_rival_competition": True,
+        "honesty": (
+            "Simulated reserves are centred on the solver's reserve-prior "
+            "centre (PRIOR_RESERVE_MEAN). Suppliers concede on a clock and "
+            "do not react to rival quotes, so the gap is not evidence about "
+            "live competitive reactions. An 8-market or 24-market draw is "
+            "too small to show that the coupled surplus differs from the "
+            "independent surplus."
+        ),
     }

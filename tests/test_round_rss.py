@@ -1,7 +1,9 @@
 """Interactive web calls must stay inside a 512 MB Render instance.
 
-The ceiling is the process high-water mark, measured in a fresh interpreter
-so earlier tests cannot inflate it. 300 MiB leaves headroom under 512 MB.
+The ceiling is this process's own peak resident set, read from
+/proc/self/status VmHWM inside a fresh interpreter. ru_maxrss is not used:
+on Linux it can carry a high-water mark that is not this process's own
+allocation. 300 MiB leaves headroom under 512 MB.
 """
 from __future__ import annotations
 
@@ -18,7 +20,7 @@ RSS_CEILING_BYTES = 300 * 1024 * 1024
 RECOMMENDED_COUNTER = 13.21846153846154
 
 _PROBE = r"""
-import json, os, resource, tempfile
+import json, os, tempfile
 from pathlib import Path
 
 tmp = tempfile.mkdtemp(prefix="tf_rss_")
@@ -28,8 +30,12 @@ os.environ["TRADEFLOW_ENV"] = "sandbox"
 os.environ.pop("TRADEFLOW_USD_CNY_RATE", None)
 
 def rss():
-    # Linux: ru_maxrss is kilobytes, the process high-water mark.
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
+    # VmHWM is this process's own peak resident set, in kilobytes.
+    with open("/proc/self/status", encoding="utf-8") as handle:
+        for line in handle:
+            if line.startswith("VmHWM:"):
+                return int(line.split()[1]) * 1024
+    raise RuntimeError("VmHWM missing from /proc/self/status")
 
 from fastapi.testclient import TestClient
 from src.app.main import app

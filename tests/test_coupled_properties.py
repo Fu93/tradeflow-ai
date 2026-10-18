@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import os
-import resource
 import subprocess
 import sys
 import tempfile
@@ -71,7 +70,14 @@ class TestRivalMonotonicity(unittest.TestCase):
                 seed=100 + draw,
             )
             info = session.step_round([float(q) for q in quotes])
-            for offer, quote in zip(info["counter_offers_cny"], quotes):
+            if info["all_quotes_above_ceiling"]:
+                self.assertTrue(all(offer is None for offer in info["counter_offers_cny"]))
+                self.assertTrue(info["blocked"])
+                continue
+            for offer, quote, blocked in zip(info["counter_offers_cny"], quotes, info["blocked"]):
+                if blocked:
+                    self.assertIsNone(offer)
+                    continue
                 self.assertIsNotNone(offer)
                 self.assertLessEqual(offer, ceiling + 1e-6)
                 self.assertLessEqual(offer, float(quote) + 1e-6)
@@ -162,13 +168,17 @@ class TestMonteCarlo(unittest.TestCase):
 
     def test_five_supplier_solve_stays_under_the_memory_ceiling(self):
         probe = r"""
-import json, resource, time
+import json, time
 import numpy as np
 from src.config.heuristics import PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD, YOUR_CEILING
 from src.engine.coupled import solve_coupled
 
 def rss():
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
+    with open("/proc/self/status", encoding="utf-8") as handle:
+        for line in handle:
+            if line.startswith("VmHWM:"):
+                return int(line.split()[1]) * 1024
+    raise RuntimeError("VmHWM missing")
 
 before = rss()
 started = time.perf_counter()
@@ -331,13 +341,30 @@ class TestPriceIndependence(unittest.TestCase):
 
 class TestSimulationBenchmark(unittest.TestCase):
     def test_bootstrap_interval_is_labelled_simulation(self):
-        report = run_markets(n_markets=8, horizon=3, k=4, n_samples=48, n_grid=6, seed=11, n_boot=200)
+        report = run_markets(
+            n_markets=500,
+            horizon=3,
+            k=4,
+            n_samples=48,
+            n_grid=6,
+            seed=11,
+            n_boot=400,
+        )
+        self.assertGreaterEqual(report["n_markets"], 500)
         self.assertTrue(report["simulated"])
         self.assertTrue(report["misspecified"])
+        self.assertTrue(report["suppliers_share_solver_reserve_centre"])
+        self.assertTrue(report["suppliers_ignore_rival_competition"])
+        self.assertAlmostEqual(report["reserve_prior_centre"], PRIOR_RESERVE_MEAN)
+        self.assertIn("PRIOR_RESERVE_MEAN", report["honesty"])
+        self.assertIn("do not react to rival quotes", report["honesty"])
         self.assertIn("simulation", report["label"])
         for key in ("coupled_nbs_ci95", "independent_nbs_ci95", "coupled_minus_independent_ci95"):
             lo, hi = report[key]
             self.assertLessEqual(lo, hi)
+        diff_lo, diff_hi = report["coupled_minus_independent_ci95"]
+        self.assertGreater(diff_lo, 0.0)
+        self.assertGreater(diff_hi, diff_lo)
         self.assertGreaterEqual(report["coupled_nbs_mean"], -0.5)
         self.assertLessEqual(report["coupled_nbs_mean"], 1.5)
 
