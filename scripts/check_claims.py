@@ -228,6 +228,7 @@ def main() -> int:
     problems.extend(_mi300x_problems())
     problems.extend(_gemma_and_comparison_problems(texts))
     problems.extend(_form_length_problems(submission))
+    problems.extend(_integrity_doc_problems())
 
     if problems:
         print("Documented claims do not match their source files:", file=sys.stderr)
@@ -331,6 +332,36 @@ def _gemma_and_comparison_problems(texts: dict[Path, str]) -> list[str]:
             problems.append(f"{path.name} mentions TAM; this pack does not cite a sourced market size")
         if re.search(r"\$\s*\d[\d,]*\s*(?:billion|million)\b", text, re.I):
             problems.append(f"{path.name} states a market dollar size without a fetched source")
+    return problems
+
+
+def _integrity_doc_problems() -> list[str]:
+    """The audit note must exist, and uncommitted latency rows must stay labeled."""
+    problems: list[str] = []
+    path = ROOT / "docs" / "DATA_INTEGRITY.md"
+    if not path.is_file():
+        return ["docs/DATA_INTEGRITY.md is missing"]
+    text = path.read_text(encoding="utf-8")
+    for snippet in (
+        "not an AMD call",
+        "No committed Gemma latency",
+        "results/real_llm_benchmark.json",
+        "not re-timed",
+        "offline_accept_opening",
+        "Qwen3.8-Flash-Next",
+        "Gemma-4-31B-IT",
+    ):
+        if snippet not in text:
+            problems.append(f"docs/DATA_INTEGRITY.md is missing {snippet!r}")
+    if re.search(r"\bTAM\b", text):
+        problems.append("docs/DATA_INTEGRITY.md mentions TAM; this pack does not cite a sourced market size")
+    if re.search(r"\$\s*\d[\d,]*\s*(?:billion|million)\b", text, re.I):
+        problems.append("docs/DATA_INTEGRITY.md states a market dollar size without a fetched source")
+    limitations = (ROOT / "docs" / "LIMITATIONS_AND_REAL_WORLD_FINDINGS.md").read_text(encoding="utf-8")
+    if "Measured latency" in limitations:
+        problems.append("LIMITATIONS still titles a latency section as Measured latency")
+    if "4.6 s" in limitations and "No file in this repository regenerates them" not in limitations:
+        problems.append("LIMITATIONS quotes 4.6 s without saying no file regenerates that row")
     return problems
 
 

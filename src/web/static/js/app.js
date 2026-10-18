@@ -1044,6 +1044,8 @@ function paintAmdAvailability() {
   fetch("/health")
     .then((res) => (res.ok ? res.json() : null))
     .then((body) => {
+      const ver = document.getElementById("feedVer");
+      if (ver) ver.textContent = body && body.version ? `API ${body.version}` : "—";
       if (!body || !body.llm) return;
       const model = body.llm.default_model || body.llm.model || "the configured model";
       if (body.llm.amd_live_available) {
@@ -1101,8 +1103,17 @@ function paintQuoteReading(payload) {
   const fields = document.getElementById("quoteFields");
   const accuracy = document.getElementById("quoteAccuracy");
   if (callout) {
-    callout.textContent = (payload && payload.display) || "No reading returned.";
-    tfTone(callout, payload && payload.status === "ok" ? "is-ok" : "");
+    const status = payload && payload.status;
+    let text = (payload && payload.display) || "No reading returned.";
+    const liveLine = typeof text === "string" && text.indexOf("AMD GPU Cloud ·") === 0;
+    const liveOk = status === "ok" && liveLine;
+    if (status === "ok" && !liveLine) {
+      text = "AMD reading was not applied. The response was not a confirmed live call.";
+    } else if (status !== "ok" && liveLine) {
+      text = "AMD live call failed. The offline fallback is shown instead.";
+    }
+    callout.textContent = text;
+    tfTone(callout, liveOk ? "is-ok" : "");
   }
   if (fields && payload && payload.fields) {
     const f = payload.fields;

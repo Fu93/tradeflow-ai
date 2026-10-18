@@ -106,6 +106,9 @@ jobs:
       - name: Check documented numbers against source files
         run: python scripts/check_claims.py
 
+      - name: Check the MI300X roofline still matches the formula
+        run: python scripts/regen_mi300x_roofline.py --check
+
       - name: Reject undeclared scenario numbers outside the simulator
         run: python scripts/check_no_fake_literals.py
 

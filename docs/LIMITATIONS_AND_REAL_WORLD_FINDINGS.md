@@ -27,7 +27,7 @@
 | Expected margin, breakdown rate, tactic labels, BATNA ceilings | **B** | Expectimax grid search + Bayesian update; formulas in §13 | ⚠️ formula real, inputs synthetic |
 | 28.8M / 72M / 96M rollout positions (**arithmetic products, not execution counts**) | **B** | Product of the actual call parameters (K×S×N_open×N_sched) | ⚠️ arithmetic real, **not measured**: the rollouts happen in one vectorised broadcast |
 | MI300X transfer lower bound | **B** | theoretical roofline lower-bound estimate, not measured. Formula `lower_bound_seconds = (working_set_mb * 1024 * 1024) / (5.3e12)` in `results/mi300x_roofline.json`. `working_set_mb` is the tracemalloc peak stored in `results/bench.json` | derivation, not a measurement |
-| ¥17.91/unit fair should-cost | **C** | Expert BOM estimate, tagged `[EXPERT]` | ❌ not a factory quote |
+| ¥17.91/unit fair should-cost | **C** | Line items in `knowledge/spec_baseline.md` are tagged `[EXPERT]`. The ¥17.91 total is tagged `[DERIVED]` (overhead × 1.08, then margin × 1.10). Not a factory quote | ❌ not a factory quote |
 | Supplier quotes ¥13.26 / ¥15.60 / ¥12.60 etc. | **C** | Generated round by round by `adversaries.py` | ❌ **not real factory quotes** |
 | Four opponent archetype parameters (`OPP_TYPES`) | **C** | Chosen values matching literature behaviour traits; never fitted | ❌ no statistical basis |
 | Self-play tournament (the recorded artefact is 100 matches, not 750) panic-proxy violation rate 20.0%–40.0% | **C** | A parameterised behavioural simulator, **not real LLM API calls** | ❌ not measured (and refuted by the real experiment, §2.3) |
@@ -262,9 +262,9 @@ We draw the **two-tier defense boundary** explicitly and refuse any unverified s
 
 ### 6.1 Per-round latency and cost
 
-> **[Scope]** The table below measures **Stage-1 micro-steps on the deterministic path** (no Stage-2 LLM). This is **not** end-to-end latency — a full round also includes the solver body, TCO conversion and persistence; see the note below.
+> **[Scope]** The four micro-step times below (0.6 ms, 0.28 ms, 0.05 ms, 0.45 ms) are historical notes. No file in this repository regenerates them. They are **not** end-to-end latency.
 
-| Step | Component | Stack | Measured latency | API cost |
+| Step | Component | Stack | Note, not regenerated | API cost |
 |---|---|---|---|---|
 | **Playbook detection (Stage-1)** | `InboundIntentClassifier.classify_stage1_only` | Regex ladder + on-device ONNX | **0.6 ms** | 0 tokens ($0.00) |
 | **AST object audit** | `ActionObjectASTGuardrail` | Python AST compiler | 0.28 ms | 0 tokens ($0.00) |
@@ -273,16 +273,15 @@ We draw the **two-tier defense boundary** explicitly and refuse any unverified s
 
 **Full HTTP round (`POST /api/v1/sessions/{id}/round`)**:
 
-| Case | Measured latency |
+| Case | What the repo actually stores |
 |---|---|
-| Stage-1 path (default, `deep_semantic=false`) | **~2.6 s** |
-| of which `solve(n_opp_samples=20_000)` | **~1.7 s** |
-| Stage-2 semantic enhancement (`deep_semantic=true` or the standalone endpoint) | **+15 – 45 s** |
+| Five local rounds in `results/real_stress_test_log.json` | 2606.97, 2252.06, 2281.22, 2294.83, 2273.78 ms. Mean 2.342 s. Median 2.281 s |
+| `solve(n_opp_samples=20_000)` and the 4,000-sample note | Not regenerated. The old 1.7 s and 0.23 s figures have no result file |
+| Stage-2 semantic enhancement | Not regenerated. See §10.3 |
 
-* **The bottleneck is the numeric solver, not the LLM**: `src/app/main.py` uses `max_rounds × 4000` (20,000 by default) for `n_opp_samples`, and one `solve()` measures ≈1.7 s (after the decision-core fixes; 0.23 s at 4,000 samples). A full HTTP round measured mean ≈2.4 s / median 2.3 s (n=3: 2.61 s / 2.25 s / 2.28 s in `results/real_stress_test_log.json`, including the SQLite double write and bilingual rendering).
-  **Correction**: this document previously said "~2.2 s", a pre-fix number; solver cost rose with the anchoring reaction term, and the figure above is the current measurement.
+* **The bottleneck note:** `src/app/main.py` uses `max_rounds × 4000` (20,000 by default) for `n_opp_samples`. The only committed round timings are the five rows above. An earlier draft of this section cited three of those rounds and called the mean about 2.4 s. All five rows average 2.342 s.
 * Stage-2 has been moved off the main round path (`tests/test_async_stage2.py`), so it is not the bottleneck.
-* **Suggested external phrasing**: "Stage-1 micro-steps are sub-millisecond; a full HTTP round measures about 2.6 s on average, driven by the sample count of the vectorised solver."
+* **Suggested external phrasing**: "The five committed local rounds in `results/real_stress_test_log.json` average 2.342 s. Do not quote the unreproduced micro-step notes as that average."
 
 ### 6.2 The honest engineering cost: zero tokens vs rule maintenance
 
@@ -294,7 +293,7 @@ We draw the **two-tier defense boundary** explicitly and refuse any unverified s
 >   * Risk cost: no game-theoretic scheduling and no physical guardrail. Our real run (§2.3, 100 matches) shows the main failure mode is **walking away and conceding too fast** (61.1% deal rate against the bluffing archetype, 81.9% overall), not budget breach — the simulator's predicted 12%–44% breach rate **did not reproduce** (0/94 measured, upper bound 3.1%).
 > * **TradeFlow rules + tensor approach (current prototype)**:
 >   * Running cost: 0 tokens ($0.00/round). Latency is scoped below.
->   * **Latency scope**: the **Stage-1 detection path** is sub-millisecond (0.6 ms measured), but a **full HTTP round measures ~2.6 s on average**, driven by the numeric solver (`solve(n_opp_samples=20_000)` ≈1.7 s), **not** by detection. See §10.3 and §6.1. **Do not use the sub-millisecond figure to describe end-to-end response time.**
+>   * **Latency scope**: the 0.6 ms detection note has no result file. The five committed local rounds in `results/real_stress_test_log.json` average 2.342 s. See §6.1 and §10.3. **Do not use the unreproduced sub-millisecond note to describe end-to-end response time.**
 >   * Adaptation cost: **high maintenance**. Extending to a new vertical (e.g. injection-moulded electronics) needs a domain expert to write regex intent matchers and BOM phrasing templates (roughly 10–20 engineer-hours).
 >   * Safety advantage: no budget breach at all, and a clear compliance responsibility boundary.
 
@@ -304,9 +303,9 @@ We draw the **two-tier defense boundary** explicitly and refuse any unverified s
 * **Important scope correction**:
   * With `classify(enable_llm_fallback=True)`, Stage-2 calls an external LLM endpoint as soon as `VLLM_API_KEY` / `EVOLUS_API_KEY` is present (`src/engine/bilingual.py`).
   * **So "zero LLM" is imprecise**: the correct statement is "the LLM is an **optional enhancement layer**; with no key configured or a failed call the system silently degrades to Stage-1 regex + on-device ONNX and keeps working".
-  * **Status update (2026-10-14)**: both `VLLM_API_KEY` (AMD tokenfactory) and `EVOLUS_API_KEY` **are configured and live-tested** (§10, §11), so Stage-2 **is alive**. To keep the 15–45 s semantic latency off the main round (re-measured 2026-10-17; the old 2–13 s was optimistic), the production path **defaults to Stage-1 only** (`RoundActionRequest.deep_semantic=False`); deep semantics must be enabled explicitly or called through the async endpoint `POST /api/v1/classify/semantic` (see `tests/test_async_stage2.py`).
+  * **Status update**: the committed tokenfactory log is `results/real_llm_benchmark_100.json`. A new Stage-2 call defaults to `Gemma-4-31B-IT`, which is not that log. The production path **defaults to Stage-1 only** (`RoundActionRequest.deep_semantic=False`); deep semantics must be enabled explicitly or called through `POST /api/v1/classify/semantic` (see `tests/test_async_stage2.py`). Older notes that put Stage-2 in a 15–45 s band are not regenerated.
 * **Demo verification**: if a judge asks to "turn off all network and API keys", TradeFlow's **decision and risk-control functions** (price computation, idiom generation, state machine, circuit breaker) still run at 100% — because that is the default path.
-* **Correct latency phrasing**: **never** claim "end-to-end <3 ms". A full HTTP round measures **~2.6 s**, bottlenecked by the solver's sample count (`solve(n_opp_samples=20_000)` ≈1.7 s), not by detection. Sub-millisecond (0.6 ms) describes **Stage-1 detection only**. Full measurements in §6.1 and §10.3.
+* **Correct latency phrasing**: **never** claim "end-to-end <3 ms". The five committed local rounds average 2.342 s (§6.1). The 0.6 ms and 1.7 s notes have no result file. §10.3 latency rows are not regenerated.
 
 ---
 
@@ -380,12 +379,14 @@ This section records **real connection tests** against the hackathon's official 
   * "兄弟你這單子不大，我們車間排產得看緣分，你再加點量我才好跟老闆開口" → `TIER_VOLUME_BLACKMAIL` (conf 0.88)
 * **Also fixed**: the prompt was in **English**, which in practice made the model misclassify Chinese input; it is now a Chinese prompt with embedded category definitions.
 
-### 10.3 Measured latency: Stage-2 costs far more than the claimed 3 ms
+### 10.3 Latency notes this repository does not regenerate
 
-* An earlier §6 described the end-to-end round at **2.05 ms**, but that measured the **Stage-1 local path only**, excluding Stage-2.
-* Measured latency on the AMD tokenfactory:
+**Not a committed measurement.** The rows in this subsection and in §10.4 are historical notes. No file in this repository regenerates them. Do not cite 4.6 s, 15.3 s, 17.9 s, 52.3 s, or 58.0 s as a logged run. The only committed tokenfactory latency in this pack is the Qwen3.8-Flash-Next average in `results/real_llm_benchmark_100.json`.
 
-| Case | Measured latency |
+* An earlier §6 described the end-to-end round at **2.05 ms**, but that figure covered the Stage-1 local path only, excluding Stage-2. That 2.05 ms figure is also not regenerated by a file in this repository.
+* Notes from earlier tokenfactory calls, not regenerated here:
+
+| Case | Note, not regenerated |
 |---|---|
 | Stage-1 hit (regex/ONNX), LLM not invoked | **~1 ms** |
 | Stage-2 invoked (Flash model, short output) | **2.2 – 2.6 s** |
@@ -396,15 +397,17 @@ This section records **real connection tests** against the hackathon's official 
 * **Engineering response**: `timeout` raised from 3.0 s to 30.0 s; `max_tokens` from 150 to 500 (the old value truncated reasoning models before they emitted JSON). A new Stage-2 call defaults to `Gemma-4-31B-IT`. The committed 348-call log is still `Qwen3.8-Flash-Next`. Set `VLLM_MODEL` to that name to select it. This file's Gemma latency row is not that log, and the README does not treat it as a committed measurement.
 * **Honest conclusion**: **never claim "end-to-end <3 ms"** while including Stage-2. The correct phrasing is "Stage-1 deterministic path ~1 ms; Stage-2 LLM semantics is a 15–45 s asynchronous enhancement layer".
 
-### 10.4 Model comparison on the same task
+### 10.4 Model comparison notes with no result file
 
-| Model | Latency | Note |
+The banner in §10.3 applies to every cell below. None of these rows is the committed 348-call log.
+
+| Model | Note, not regenerated | Note |
 |---|---|---|
-| **Qwen3.8-Flash-Next** | **15.3 s** | Recommended; stable JSON |
-| Qwen3.8-27B | 17.9 s | Acceptable, higher cost |
-| Gemma-4-31B-IT | **4.6 s** | Fastest, but wraps output in ```json fences (existing regex tolerates it) |
-| DeepSeek-V4.1-Flash | 52.3 s | Too slow for an interactive path |
-| GLM-5.3-Flash | 58.0 s | Too slow, output truncated |
+| **Qwen3.8-Flash-Next** | **15.3 s** | Historical note only. Not the committed 348-call average |
+| Qwen3.8-27B | 17.9 s | Historical note only |
+| Gemma-4-31B-IT | **4.6 s** | Historical note only. No committed Gemma latency |
+| DeepSeek-V4.1-Flash | 52.3 s | Historical note only |
+| GLM-5.3-Flash | 58.0 s | Historical note only |
 
 ### 10.5 Impact on the Evolus track
 
@@ -663,4 +666,4 @@ The 88.5% at ×0.5 is mostly a **model artefact**: the grid's lowest opening is 
 - **Class-B parameters are not calibrated on real negotiation logs**: all are chosen values; Bayesian calibration should follow once 10,000+ real logs exist.
 - **`OPP_TYPES` is not fitted**: the 4×4 matrix is a rough mapping of literature behaviour traits with no statistical basis.
 - **No parameter-interaction analysis**: this section is single-parameter sensitivity; interactions between parameters are not quantified.
-- **Compute cost is already optimised**: a full `report()` runs 14 solves (n=20,000) in about 17.5 s; `orchestrator.analyze(quick=True)` now downsamples for interactivity (n=2,000, 2.4 s measured), removing the long webhook stall.
+- **Compute cost note**: `orchestrator.analyze(quick=True)` skips a full robustness report on the webhook path. Older notes of 17.5 s (14 solves) and 2.4 s (n=2,000) are not regenerated by a file in this repository.

@@ -128,6 +128,59 @@ class TestQuoteRead(unittest.TestCase):
         self.assertTrue(result["display"].startswith("AMD GPU Cloud · Gemma-4-31B-IT · "))
         self.assertIn("18 tokens", result["display"])
 
+    def test_timeout_is_not_shown_as_a_successful_live_call(self):
+        import requests
+
+        env = {"VLLM_API_KEY": "test-key-not-real", "VLLM_MODEL": "Gemma-4-31B-IT"}
+        with patch.dict(os.environ, env, clear=False), patch(
+            "src.engine.quote_read.requests.post", side_effect=requests.Timeout("slow")
+        ):
+            result = read_supplier_quote(SAMPLE, amd_live=True)
+        self.assertEqual(result["status"], "timeout")
+        self.assertNotEqual(result["status"], "ok")
+        self.assertTrue(result["display"].startswith("Offline fallback"))
+        self.assertNotIn("AMD GPU Cloud", result["display"])
+        self.assertIsNone(result["buyer_price"])
+        self.assertFalse(result["decides_price"])
+
+    def test_http_error_is_not_shown_as_a_successful_live_call(self):
+        class Response:
+            status_code = 500
+            text = "nope"
+
+            def json(self):
+                return {"error": "nope"}
+
+        env = {"VLLM_API_KEY": "test-key-not-real", "VLLM_MODEL": "Gemma-4-31B-IT"}
+        with patch.dict(os.environ, env, clear=False), patch(
+            "src.engine.quote_read.requests.post", return_value=Response()
+        ):
+            result = read_supplier_quote(SAMPLE, amd_live=True)
+        self.assertEqual(result["status"], "failed")
+        self.assertNotIn("AMD GPU Cloud", result["display"])
+        self.assertIn("HTTP 500", result["error"])
+        self.assertIsNone(result["buyer_price"])
+        self.assertFalse(result["decides_price"])
+
+    def test_unparsable_body_is_not_shown_as_a_successful_live_call(self):
+        class Response:
+            status_code = 200
+            text = "hello"
+
+            def json(self):
+                return {"choices": [{"message": {"content": "not json"}}], "usage": {"total_tokens": 4}}
+
+        env = {"VLLM_API_KEY": "test-key-not-real", "VLLM_MODEL": "Gemma-4-31B-IT"}
+        with patch.dict(os.environ, env, clear=False), patch(
+            "src.engine.quote_read.requests.post", return_value=Response()
+        ):
+            result = read_supplier_quote(SAMPLE, amd_live=True)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["error"], "no parsable JSON")
+        self.assertTrue(result["display"].startswith("Offline fallback"))
+        self.assertNotIn("AMD GPU Cloud", result["display"])
+        self.assertIsNone(result["buyer_price"])
+
     def test_image_without_text_stays_offline_without_a_key(self):
         with patch.dict(os.environ, {"VLLM_API_KEY": ""}, clear=False):
             result = read_supplier_quote("", amd_live=True, image_base64="abcd")

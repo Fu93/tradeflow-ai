@@ -28,6 +28,8 @@ Type: headings and figures use `Bahnschrift` (the narrow sans shipped with Windo
 
 ## Layout
 
+The numbers in the sketch below (16.20, ¥15, 1.7%, ¥1.40, ¥2.80) are layout examples. They are not a measured quote and they are not copied from `results/`.
+
 ```
 masthead ──────────────────────────────────────────────────────────────
 Deal file   自動反開摺疊傘                       [ status stamp ]

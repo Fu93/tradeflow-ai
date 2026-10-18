@@ -237,6 +237,10 @@ def test_desk_auction_rounds_and_sandbox(live_server):
             )
             assert "Traceback" not in page.locator("#cbPanel").inner_text()
 
+            page.wait_for_function(
+                "() => document.getElementById('feedVer').textContent === 'API 0.4.0'",
+                timeout=15000,
+            )
             assert page.locator("#amdLiveToggle").is_visible()
             assert page.locator("#amdLiveToggle").is_checked() is False
             page.click("#sampleQuote1")
@@ -251,6 +255,7 @@ def test_desk_auction_rounds_and_sandbox(live_server):
             )
             callout = page.locator("#amdCallout").inner_text()
             assert "AMD GPU Cloud" not in callout
+            assert page.locator("#amdCallout").evaluate("el => el.classList.contains('is-ok')") is False
             assert "Traceback" not in callout
             assert page.locator("#quoteSampleImg").is_visible()
             assert not errors, errors
