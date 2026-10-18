@@ -88,6 +88,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initSSE();
   fetchTelemetryConfig();
   loadDeskConfig();
+  paintAmdAvailability();
   try {
     initBeliefChart();
   } catch (err) {
@@ -1028,6 +1029,152 @@ async function saveConfig() {
     tfTone(resEl, "is-bad");
     resEl.textContent = `[SAVE ERROR] ${err.message || "request failed"}`;
     resEl.classList.remove("hidden");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Supplier quote: paste / sample / AMD live reading
+// The round endpoint decides the price. /quotes/read only words and extracts.
+// ---------------------------------------------------------------------------
+let quoteImagePayload = "";
+
+function paintAmdAvailability() {
+  const hint = document.getElementById("amdLiveHint");
+  if (!hint) return;
+  fetch("/health")
+    .then((res) => (res.ok ? res.json() : null))
+    .then((body) => {
+      if (!body || !body.llm) return;
+      const model = body.llm.default_model || body.llm.model || "the configured model";
+      if (body.llm.amd_live_available) {
+        hint.textContent = `AMD live mode can call ${model}. It stays off until you turn it on. The solver still sets every price.`;
+      } else {
+        hint.textContent = `AMD live mode is available only when VLLM_API_KEY is a real secret. This server is in offline mode. The configured default model name is ${model}. Turning the switch on shows the offline fallback; it does not invent a call.`;
+      }
+    })
+    .catch(() => {});
+}
+
+async function loadSampleQuote(name) {
+  const note = document.getElementById("quoteSampleNote");
+  const paste = document.getElementById("quotePaste");
+  const img = document.getElementById("quoteSampleImg");
+  quoteImagePayload = "";
+  try {
+    const res = await fetch(`/static/samples/${name}.txt`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    paste.value = await res.text();
+    img.src = `/static/samples/${name}.png`;
+    img.hidden = false;
+    img.alt = "Labeled simulation, not a real supplier screenshot";
+    if (note) {
+      note.textContent = "Labeled simulation. The picture was generated in this repo. The reader is given this transcript, not a pixel OCR claim.";
+    }
+  } catch (err) {
+    if (note) note.textContent = `Could not load the sample: ${err.message || "request failed"}`;
+  }
+}
+
+function onQuoteFile(input) {
+  const file = input.files && input.files[0];
+  const note = document.getElementById("quoteSampleNote");
+  const img = document.getElementById("quoteSampleImg");
+  quoteImagePayload = "";
+  if (!file) return;
+  if (img) {
+    img.src = URL.createObjectURL(file);
+    img.hidden = false;
+    img.alt = "Uploaded supplier image";
+  }
+  if (note) {
+    note.textContent = "Uploaded image. Offline mode does not OCR pixels. Paste the chat text, or turn on AMD live mode with no transcript to ask the endpoint to read the image.";
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    quoteImagePayload = String(reader.result || "");
+  };
+  reader.readAsDataURL(file);
+}
+
+function paintQuoteReading(payload) {
+  const callout = document.getElementById("amdCallout");
+  const fields = document.getElementById("quoteFields");
+  const accuracy = document.getElementById("quoteAccuracy");
+  if (callout) {
+    callout.textContent = (payload && payload.display) || "No reading returned.";
+    tfTone(callout, payload && payload.status === "ok" ? "is-ok" : "");
+  }
+  if (fields && payload && payload.fields) {
+    const f = payload.fields;
+    const price = f.price === null || f.price === undefined ? "—" : String(f.price);
+    const moq = f.moq === null || f.moq === undefined ? "—" : String(f.moq);
+    const lead = f.lead_time_days === null || f.lead_time_days === undefined ? "—" : String(f.lead_time_days);
+    const deposit = f.deposit_pct === null || f.deposit_pct === undefined ? "—" : String(f.deposit_pct);
+    fields.textContent = `Extracted supplier fields (not our price): price ${price}, MOQ ${moq}, lead time days ${lead}, deposit fraction ${deposit}.`;
+  }
+  if (accuracy) {
+    const reading = payload && payload.reading ? ` Model wording: ${payload.reading}` : "";
+    accuracy.textContent = `${(payload && payload.accuracy_note) || ""}${reading}`;
+  }
+}
+
+async function readSupplierQuote() {
+  const paste = document.getElementById("quotePaste");
+  const callout = document.getElementById("amdCallout");
+  const live = !!(document.getElementById("amdLiveToggle") && document.getElementById("amdLiveToggle").checked);
+  const text = paste ? paste.value : "";
+  const select = document.getElementById("presetCategorySelect");
+  if (!currentSessionId && select) {
+    await applyCategoryPreset(select.value);
+  }
+  const sid = currentSessionId || (document.getElementById("cmdSessionId") || {}).value || "";
+  if (callout) {
+    callout.textContent = live ? "Asking AMD GPU Cloud…" : "Reading with the offline extractor…";
+    tfTone(callout, "");
+  }
+  const readBody = { text: text, amd_live: live };
+  if (!text.trim() && quoteImagePayload) readBody.image_base64 = quoteImagePayload;
+  const readPromise = fetch("/api/v1/quotes/read", {
+    method: "POST",
+    headers: tfJsonHeaders(),
+    body: JSON.stringify(readBody),
+  });
+  let roundOk = false;
+  if (sid && text.trim()) {
+    try {
+      const roundRes = await fetch(`/api/v1/sessions/${encodeURIComponent(sid)}/round`, {
+        method: "POST",
+        headers: tfJsonHeaders(),
+        body: JSON.stringify({
+          opponent_raw_text: text,
+          mode: "copilot",
+          amd_live: live,
+        }),
+      });
+      roundOk = roundRes.ok;
+      if (roundOk) await fetchSessionDetails(sid);
+      else if (callout) {
+        callout.textContent = `The solver round was rejected (HTTP ${roundRes.status}). The AMD reading is separate and still cannot set the price.`;
+      }
+    } catch (err) {
+      if (callout) callout.textContent = `Solver round failed: ${err.message || "request failed"}`;
+    }
+  }
+  try {
+    const res = await readPromise;
+    let payload = null;
+    try { payload = await res.json(); } catch (_) { payload = null; }
+    if (!res.ok) {
+      const detail = (payload && payload.detail) || res.statusText || "request rejected";
+      if (callout) callout.textContent = `AMD reading was not applied (HTTP ${res.status}): ${detail}`;
+      return;
+    }
+    paintQuoteReading(payload);
+    if (!roundOk && callout && !text.trim()) {
+      // keep the reading display; there was no solver round
+    }
+  } catch (err) {
+    if (callout) callout.textContent = `AMD reading failed: ${err.message || "request failed"}`;
   }
 }
 

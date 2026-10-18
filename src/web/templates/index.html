@@ -77,6 +77,34 @@
       <!-- ---------------- LEFT: the negotiation in progress ---------------- -->
       <div class="col-main">
 
+        <section class="sheet quote-sheet" id="quoteSheet">
+          <div class="sheet-head">
+            <h2 class="sheet-title">Supplier quote</h2>
+            <span class="sheet-note">paste, upload, or a labeled sample</span>
+          </div>
+          <label class="amd-toggle" for="amdLiveToggle">
+            <input id="amdLiveToggle" type="checkbox" />
+            <span>AMD live mode</span>
+          </label>
+          <p class="fineprint" id="amdLiveHint">Off by default. A call leaves this browser only when this is on and the server has a real VLLM_API_KEY. The solver still sets every price.</p>
+          <label class="quote-label" for="quotePaste">Supplier chat text</label>
+          <textarea id="quotePaste" class="input-plain quote-paste" rows="5" placeholder="Paste a supplier message. A labeled sample fills this with a simulation transcript."></textarea>
+          <div class="quote-actions">
+            <label class="btn-quiet quote-file" for="quoteUpload">Upload image
+              <input id="quoteUpload" type="file" accept="image/png,image/jpeg,image/webp" onchange="onQuoteFile(this)" />
+            </label>
+            <button class="btn-quiet" type="button" id="sampleQuote1" onclick="loadSampleQuote('quote_01')">Sample 1 — simulation</button>
+            <button class="btn-quiet" type="button" id="sampleQuote2" onclick="loadSampleQuote('quote_02')">Sample 2 — simulation</button>
+            <button class="btn-quiet" type="button" id="sampleQuote3" onclick="loadSampleQuote('quote_03')">Sample 3 — simulation</button>
+            <button class="btn-primary" type="button" id="readQuoteBtn" onclick="readSupplierQuote()">Read this quote</button>
+          </div>
+          <img id="quoteSampleImg" class="quote-sample-img" alt="Labeled simulation, not a real supplier screenshot" hidden />
+          <p class="fineprint" id="quoteSampleNote">Three in-repo pictures are labeled simulations. Offline mode does not OCR pixels. AMD live mode sends the pasted transcript, or the image only when there is no transcript.</p>
+          <p class="amd-callout" id="amdCallout" role="status" aria-live="polite">AMD live mode is off. The next read uses the offline fallback.</p>
+          <p class="fineprint" id="quoteFields"></p>
+          <p class="fineprint" id="quoteAccuracy"></p>
+        </section>
+
         <!-- Price ladder: where the supplier sits inside the authorised range.
              This is the one number a buyer reads first, so it gets the space. -->
         <section class="sheet ladder-sheet" id="ladderSheet">

@@ -2,9 +2,14 @@
 """Probe the AMD tokenfactory / vLLM-compatible endpoint and write evidence.
 
 Reads VLLM_BASE_URL, VLLM_API_KEY and VLLM_MODEL. Placeholder values from
-.env.example (``__FILL_ME__``) count as "not configured".
+.env.example (``__FILL_ME__``) count as "not configured". When VLLM_MODEL is
+unset the probe uses Gemma-4-31B-IT (the Stage-2 default). Set VLLM_MODEL to
+Qwen3.8-Flash-Next to probe the model named in the committed call log.
 
-The API key is never printed and never written to the evidence file.
+When a real key is present the probe GETs /models and POSTs one short chat
+completion, and records chat HTTP status, latency, and token counts. Pass
+--no-chat to skip the completion. The API key is never printed and never
+written to the evidence file.
 
 Exit status:
   0  skipped (no usable key) or the probe succeeded
@@ -26,7 +31,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from src.engine.llm_config import AMD_TOKENFACTORY_BASE, real_secret  # noqa: E402
+from src.engine.llm_config import (  # noqa: E402
+    AMD_TOKENFACTORY_BASE,
+    DEFAULT_STAGE2_MODEL,
+    real_secret,
+)
 
 
 def _utc_now() -> str:
@@ -52,7 +61,7 @@ def _request(url: str, key: str, payload: dict | None, timeout: float) -> tuple[
 def probe(chat: bool, timeout: float) -> dict:
     key = real_secret(os.getenv("VLLM_API_KEY"))
     base = (os.getenv("VLLM_BASE_URL") or AMD_TOKENFACTORY_BASE).strip().rstrip("/")
-    model = (os.getenv("VLLM_MODEL") or "Qwen3.8-Flash-Next").strip()
+    model = (os.getenv("VLLM_MODEL") or DEFAULT_STAGE2_MODEL).strip() or DEFAULT_STAGE2_MODEL
     evidence = {
         "generated_at_utc": _utc_now(),
         "status": "skipped_no_credentials",
@@ -62,9 +71,12 @@ def probe(chat: bool, timeout: float) -> dict:
         "models_http_status": None,
         "model_count": None,
         "model_ids_sample": [],
-        "chat_attempted": bool(chat),
+        "chat_requested": bool(chat),
+        "chat_attempted": False,
         "chat_http_status": None,
         "chat_latency_ms": None,
+        "chat_prompt_tokens": None,
+        "chat_completion_tokens": None,
         "error": None,
         "disclaimer": (
             "Produced by scripts/verify_amd_endpoint.py. "
@@ -107,9 +119,19 @@ def probe(chat: bool, timeout: float) -> dict:
             "max_tokens": 16,
         }
         started = time.perf_counter()
+        evidence["chat_attempted"] = True
         chat_status, chat_body = _request(f"{base}/chat/completions", key, payload, timeout)
-        evidence["chat_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
+        evidence["chat_latency_ms"] = int(round((time.perf_counter() - started) * 1000.0))
         evidence["chat_http_status"] = chat_status
+        try:
+            usage = json.loads(chat_body).get("usage") if chat_body else None
+        except json.JSONDecodeError:
+            usage = None
+        if isinstance(usage, dict):
+            if isinstance(usage.get("prompt_tokens"), int):
+                evidence["chat_prompt_tokens"] = usage["prompt_tokens"]
+            if isinstance(usage.get("completion_tokens"), int):
+                evidence["chat_completion_tokens"] = usage["completion_tokens"]
         if chat_status != 200:
             evidence["status"] = "failed"
             evidence["error"] = f"POST /chat/completions returned HTTP {chat_status}: {chat_body[:300]}"
@@ -129,7 +151,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--chat",
         action="store_true",
-        help="Also send one short chat completion. This spends tokens and can take tens of seconds.",
+        help="Accepted for compatibility. A chat completion is already the default.",
+    )
+    parser.add_argument(
+        "--no-chat",
+        action="store_true",
+        help="List models only. Do not send the short chat completion.",
     )
     parser.add_argument("--timeout", type=float, default=float(os.getenv("VLLM_TIMEOUT_SECONDS", "90")))
     args = parser.parse_args(argv)
@@ -143,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:
         pass
 
-    evidence = probe(chat=args.chat, timeout=args.timeout)
+    evidence = probe(chat=bool(args.chat or not args.no_chat), timeout=args.timeout)
     os.makedirs(os.path.dirname(os.path.abspath(args.evidence)), exist_ok=True)
     with open(args.evidence, "w", encoding="utf-8") as fh:
         json.dump(evidence, fh, indent=2)
@@ -152,10 +179,16 @@ def main(argv: list[str] | None = None) -> int:
     print(f"status: {evidence['status']}")
     print(f"base_url: {evidence['base_url']}")
     print(f"key_present: {evidence['key_present']}")
+    print(f"model: {evidence['model']}")
     if evidence.get("models_http_status") is not None:
         print(f"models_http_status: {evidence['models_http_status']}")
     if evidence.get("model_count") is not None:
         print(f"model_count: {evidence['model_count']}")
+    print(f"chat_requested: {evidence['chat_requested']}")
+    if evidence.get("chat_http_status") is not None:
+        print(f"chat_http_status: {evidence['chat_http_status']}")
+    if evidence.get("chat_latency_ms") is not None:
+        print(f"chat_latency_ms: {evidence['chat_latency_ms']}")
     if evidence.get("error"):
         print(f"error: {evidence['error']}")
     print(f"evidence: {args.evidence}")

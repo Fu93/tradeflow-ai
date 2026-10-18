@@ -1,4 +1,4 @@
-"""Build the 8-slide deck in results/pitch.pptx from the SUBMISSION.md outline.
+"""Build the deck in results/pitch.pptx and results/pitch.pdf.
 
 Every measured figure is read from a source file at generation time
 (results/*.json, results/*.md, models/onnx_export_metrics.json). The slide
@@ -17,6 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "results" / "pitch.pptx"
+PDF = ROOT / "results" / "pitch.pdf"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -44,22 +45,36 @@ def auction_baseline_lines(text: str) -> list[str]:
     return found
 
 
+def _comparison() -> dict:
+    path = ROOT / "results" / "llm_vs_tradeflow.json"
+    if not path.is_file():
+        raise SystemExit("results/llm_vs_tradeflow.json is missing; run scripts/compare_llm_vs_tradeflow.py")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("ran_on_amd") is not False:
+        raise SystemExit("llm_vs_tradeflow.json must say ran_on_amd false unless a real call was made")
+    return payload
+
+
 def build_slides() -> list[tuple[str, list[str]]]:
-    """Return (title, bullets) for the eight SUBMISSION.md slides."""
+    """Return (title, bullets) for the SUBMISSION.md slides."""
     claims = _claims()
     play = claims["play"]
     llm = json.loads((ROOT / "results" / "real_llm_benchmark_100.json").read_text(encoding="utf-8"))
     bench = json.loads((ROOT / "results" / "bench.json").read_text(encoding="utf-8"))
+    comp = _comparison()
     auction = auction_baseline_lines(_read(ROOT / "results" / "multi_supplier_auction.md"))
     logged_on = str(llm["meta"]["generated_at_utc"])[:10]
     endpoint = str(llm["meta"]["endpoint"])
     gpu_flag = "true" if bench.get("is_gpu_active") else "false"
+    engine = comp["tradeflow"]
+    stand_in = comp["offline_llm"]
 
     return [
         (
             "1. Title",
             [
                 "TradeFlow AI. Track: Reinvent Commerce.",
+                "Small cross-border sellers lose margin negotiating factory quotes alone, or pay an agent to do it.",
                 "One operator. The engine sets the price. A human sends the offer.",
                 "Prototype. No factory has closed a deal through this.",
                 "Public repo: https://github.com/Fu93/tradeflow-ai. License: MIT.",
@@ -74,8 +89,19 @@ def build_slides() -> list[tuple[str, list[str]]]:
             ],
         ),
         (
-            "3. Split",
+            "3. Market, revenue, competition",
             [
+                "Target user: a small cross-border seller who sources from factories and negotiates in chat.",
+                "Revenue model, proposed and not earned: a desk subscription, or a share of savings versus the first-round best quote. No revenue is claimed.",
+                "Competitors: LLM negotiation agents that let the model set the price; sourcing agents who take a commission; marketplace tools built into Alibaba-style sites.",
+                "Roadmap: a public offline demo, AMD live reads only when a key is set, measured extraction accuracy only after a logged run, and the human keeps the send button.",
+                "No market-size number is stated. None was sourced for this pack.",
+            ],
+        ),
+        (
+            "4. Split",
+            [
+                "Hybrid desk. The criteria this workflow is written for are Hybrid, Becreatives, and Vibe Generation.",
                 "Solver decides. The decision core does not ask a language model what to pay.",
                 "Model phrases. An optional call can classify a message or draft wording.",
                 "Human sends. The Chrome extension (Manifest V3) shows a card. It cannot press Send.",
@@ -83,7 +109,7 @@ def build_slides() -> list[tuple[str, list[str]]]:
             ],
         ),
         (
-            "4. Decision core",
+            "5. Decision core",
             [
                 "A belief about the supplier reserve, then a vectorised Expectimax search over openings and concession curves.",
                 "Read the recommended price and the breakdown probability off the dashboard you just captured.",
@@ -91,7 +117,7 @@ def build_slides() -> list[tuple[str, list[str]]]:
             ],
         ),
         (
-            "5. AMD language layer",
+            "6. AMD language layer",
             [
                 f"Sample endpoint: {endpoint}.",
                 (
@@ -100,10 +126,11 @@ def build_slides() -> list[tuple[str, list[str]]]:
                     f"average latency {claims['latency']} s, cost ${claims['cost']}."
                 ),
                 "That file does not store an HTTP status. status: ok from scripts/verify_amd_endpoint.py means that process received HTTP 200. skipped_no_credentials is not a successful check.",
+                "The default model for a new Stage-2 call is Gemma-4-31B-IT. The committed log above is Qwen3.8-Flash-Next, not Gemma. No committed Gemma latency.",
             ],
         ),
         (
-            "6. AMD compute layer",
+            "7. AMD compute layer",
             [
                 "TRADEFLOW_SOLVER_BACKEND selects NumPy (default) or a CuPy/ROCm request.",
                 f"results/bench.json is a CPU measurement (is_gpu_active: {gpu_flag}).",
@@ -113,7 +140,7 @@ def build_slides() -> list[tuple[str, list[str]]]:
             ],
         ),
         (
-            "7. Evidence, with the baseline named",
+            "8. Evidence, with the baseline named",
             [
                 (
                     f"Self-play (results/self_play_benchmark.md): engine savings versus that table's "
@@ -126,14 +153,26 @@ def build_slides() -> list[tuple[str, list[str]]]:
                 f"Held-out intent accuracy on the synthetic set: {claims['held_out_acc']} ({claims['held_out_split']} held out).",
                 "Auction headline is savings versus the first-round best quote. Versus target is shown, including when that figure is negative. The walk-away ceiling figure is secondary.",
                 *auction,
+                (
+                    f"Offline comparison results/llm_vs_tradeflow.json: {comp['episode_count']} episodes, "
+                    f"seed {comp['seed']}, buyer {comp['llm_buyer']}. Not an AMD call. "
+                    f"TradeFlow budget violations {engine['budget_violation_rate_label']}, "
+                    f"deal rate {engine['deal_rate_label']}, "
+                    f"average savings versus the supplier opening {engine['average_savings_label']}. "
+                    f"Stand-in budget violations {stand_in['budget_violation_rate_label']}, "
+                    f"deal rate {stand_in['deal_rate_label']}, "
+                    f"average savings {stand_in['average_savings_label']}. "
+                    "Simulation. Not the auction headline."
+                ),
             ],
         ),
         (
-            "8. Limits and how to run",
+            "9. Limits and roadmap",
             [
-                "cp .env.example .env && docker compose up --build, then open http://localhost:8000.",
-                "Placeholder keys are ignored. /health reports offline_demo and the solver backend.",
-                "No factory deal. No shipped MI300X timing. MIT. Public repo.",
+                "cp .env.example .env && docker compose up --build, then open http://localhost:8000. render.yaml is the public-demo blueprint. No hostname is claimed until a deploy exists.",
+                "Placeholder keys are ignored. /health reports offline_demo and the solver backend. AMD live mode stays off unless a real VLLM_API_KEY is set and the operator turns it on.",
+                "No factory deal. No shipped MI300X timing. No committed Gemma latency. MIT. Public repo.",
+                "Roadmap: keep the human on the send button, log a real Gemma chat only when a key is present, and publish extraction accuracy only after that log exists.",
                 "Working deadline used for this pack: 11:00 London (BST), 18 October 2026. Confirm the form.",
             ],
         ),
@@ -182,12 +221,70 @@ def render(slides: list[tuple[str, list[str]]], out: Path) -> None:
     prs.save(out)
 
 
+def _pdf_escape(text: str) -> str:
+    ascii_text = (
+        text.replace("¥", "CNY ")
+        .replace("−", "-")
+        .replace("—", "-")
+        .encode("latin-1", errors="replace")
+        .decode("latin-1")
+    )
+    return ascii_text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def write_pdf(slides: list[tuple[str, list[str]]], out: Path) -> None:
+    """Text-only PDF. Uncompressed page streams so the titles stay searchable."""
+    pages: list[bytes] = []
+    for title, bullets in slides:
+        lines = [title, ""]
+        lines.extend(f"- {bullet}" for bullet in bullets)
+        commands = ["BT", "/F1 12 Tf", "48 760 Td", "14 TL"]
+        for line in lines:
+            snippet = line[:110]
+            commands.append(f"({_pdf_escape(snippet)}) Tj")
+            commands.append("T*")
+        commands.append("ET")
+        pages.append("\n".join(commands).encode("latin-1", errors="replace"))
+
+    objects: list[bytes] = []
+    objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
+    kids = " ".join(f"{3 + index * 2} 0 R" for index in range(len(pages)))
+    objects.append(f"<< /Type /Pages /Count {len(pages)} /Kids [{kids}] >>".encode("ascii"))
+    font_id = 3 + len(pages) * 2
+    for index, content in enumerate(pages):
+        objects.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            f"/Contents {4 + index * 2} 0 R /Resources << /Font << /F1 {font_id} 0 R >> >> >>".encode("ascii")
+        )
+        objects.append(f"<< /Length {len(content)} >>\nstream\n".encode("ascii") + content + b"\nendstream")
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+
+    blob = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for number, obj in enumerate(objects, start=1):
+        offsets.append(len(blob))
+        blob.extend(f"{number} 0 obj\n".encode("ascii"))
+        blob.extend(obj)
+        blob.extend(b"\nendobj\n")
+    xref = len(blob)
+    blob.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    blob.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        blob.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    blob.extend(
+        f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("ascii")
+    )
+    out.write_bytes(blob)
+
+
 def main() -> None:
     slides = build_slides()
-    if len(slides) != 8:
-        raise SystemExit(f"expected 8 slides, got {len(slides)}")
+    if len(slides) != 9:
+        raise SystemExit(f"expected 9 slides, got {len(slides)}")
     render(slides, OUT)
+    write_pdf(slides, PDF)
     print(f"saved: {OUT} slides: {len(slides)}")
+    print(f"saved: {PDF}")
 
 
 if __name__ == "__main__":

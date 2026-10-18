@@ -44,8 +44,31 @@ class TestAmdEvidenceScripts(unittest.TestCase):
             payload = json.loads(open(out, encoding="utf-8").read())
             self.assertEqual(payload["status"], "skipped_no_credentials")
             self.assertFalse(payload["key_present"])
+            self.assertEqual(payload["model"], "Qwen3.8-Flash-Next")
+            self.assertTrue(payload["chat_requested"])
+            self.assertFalse(payload["chat_attempted"])
+            self.assertIsNone(payload["chat_http_status"])
             blob = json.dumps(payload)
             self.assertNotIn("__FILL_ME__", blob)
+
+    def test_endpoint_probe_defaults_to_gemma_and_can_skip_chat(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "evidence.json")
+            proc = _run(
+                "verify_amd_endpoint.py",
+                ["--evidence", out, "--no-chat"],
+                {
+                    "VLLM_API_KEY": "",
+                    "VLLM_MODEL": "",
+                },
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            payload = json.loads(open(out, encoding="utf-8").read())
+            self.assertEqual(payload["model"], "Gemma-4-31B-IT")
+            self.assertFalse(payload["chat_requested"])
+            self.assertIn("model: Gemma-4-31B-IT", proc.stdout)
 
     def test_gpu_benchmark_does_not_claim_an_amd_run_on_cpu(self):
         import tempfile

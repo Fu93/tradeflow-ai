@@ -56,15 +56,18 @@ def _measure(samples: int, use_gpu: bool) -> dict:
     working_set_mb = peak / (1024 * 1024)
     # tracemalloc sees host allocations. On a GPU run this is not device memory.
     host_only = not use_gpu
+    reported_mb = round(working_set_mb, 2) if host_only else None
     transfer_s = None
-    if host_only and working_set_mb > 0:
-        transfer_s = rounded_lower_bound_seconds(working_set_mb)
+    if reported_mb:
+        # Bound the figure we store, so a reader who only has host_working_set_mb
+        # recomputes the same lower bound.
+        transfer_s = rounded_lower_bound_seconds(reported_mb)
     return {
         "samples": int(samples),
         "grid": int(opens.shape[0] * scheds.shape[0]),
         "elapsed_seconds": round(elapsed, 6),
         "elapsed_kind": "wall_clock",
-        "host_working_set_mb": round(working_set_mb, 2) if host_only else None,
+        "host_working_set_mb": reported_mb,
         "host_working_set_note": (
             "tracemalloc peak during solve(); host allocations only."
             if host_only

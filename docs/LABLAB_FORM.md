@@ -10,13 +10,15 @@ The long description is the same text as [SUBMISSION.md](../SUBMISSION.md). If e
 TradeFlow AI
 ```
 
+12 characters. The form allows 5–50.
+
 ## Short description
 
 ```
 One-person sourcing desk: a Bayesian Expectimax engine sets the price, an AMD-hosted model only phrases it, and a human sends the offer.
 ```
 
-136 characters. If the form wants a shorter line:
+136 characters. The form allows 50–255. If the form wants a shorter line:
 
 ```
 Expectimax prices the offer. An AMD-hosted model only phrases it. A human sends it.
@@ -27,23 +29,13 @@ Expectimax prices the offer. An AMD-hosted model only phrases it. A human sends 
 ## Long description
 
 ~~~
-Cross-border buyers sourcing from Chinese factories either negotiate alone, often with a language penalty, or pay an agent. TradeFlow is a prototype of the third arrangement: one operator, with the software doing the arithmetic and the person keeping the send button.
+Small cross-border sellers lose procurement margin when they negotiate factory quotes alone, often across a language gap, or pay a sourcing agent a commission. TradeFlow is a prototype of a third arrangement: one operator, a Bayesian Expectimax engine that sets the price, an optional AMD-hosted model that only reads a quote and phrases the reply, and a human who sends the offer. No factory deal has closed. A proposed revenue model is a desk subscription or a share of documented savings. No revenue is claimed.
 
-The decision core does not ask a language model what to pay. It keeps a belief about the supplier's reserve price, then runs a vectorised Expectimax search over opening prices and concession curves (`src/engine/solver.py`, `src/engine/multi_solver.py`). A Chrome extension (Manifest V3) shows the card. The buyer copies the text and sends it. The extension cannot press Send.
+The decision core does not ask a language model what to pay (src/engine/solver.py, src/engine/multi_solver.py). A language model is not the forecasting method. The default model for a new call is Gemma-4-31B-IT. Set VLLM_MODEL=Qwen3.8-Flash-Next to select the model in the committed log. That log, results/real_llm_benchmark_100.json, records 348 calls (average latency 16.81 s, cost $0.108444). No HTTP status is stored. python scripts/verify_amd_endpoint.py lists models and, with a real key, sends one chat. status: ok means that process received HTTP 200. skipped_no_credentials is not a successful check. No evidence file is committed. No committed Gemma latency.
 
-An optional second stage can call an OpenAI-compatible model to classify a supplier message or draft wording. The sample environment points that call at AMD's tokenfactory (`https://developer.amd.com.cn/radeon/api/v1`).
+The auction headline is savings versus the first-round best quote. Versus target stays visible, including when that figure is negative. Savings versus the walk-away ceiling are secondary. Self-play (results/self_play_benchmark.md, 20 matches x 5 archetypes, 100 matches, seed 42) runs from 8.8% to 20.0% versus that table's walk-away ceiling. Against a Hard-Bargainer, 8.8% versus a fixed baseline's 9.2%. The real-model log closed at 61.11% of completed matches against a Bluffing Hardliner, with 0 budget violations in 94 completed matches. Held-out intent accuracy is 63.08% (195 of 500 held out). results/bench.json is a CPU measurement (is_gpu_active: false).
 
-**Verified.** A committed log, `results/real_llm_benchmark_100.json`, records 348 calls to `Qwen3.8-Flash-Next` on 15 October 2026 (average latency 16.81 seconds, cost $0.108444). That file does not store an HTTP status code. Re-check with `python scripts/verify_amd_endpoint.py`. `status: ok` means that process received HTTP 200. A run without a key writes `skipped_no_credentials`. That is not a successful check, and no evidence file is committed.
-
-**Estimated.** MI300X figures in `results/bench.json` are a theoretical roofline lower-bound estimate, not measured. Formula: `lower_bound_seconds = (working_set_mb * 1024 * 1024) / (5.3e12)`. `working_set_mb` is the tracemalloc peak already stored on each bench row (`src/engine/benchmark.py:_measure_working_set_mb`). `scripts/regen_mi300x_roofline.py` rebuilds `results/mi300x_roofline.json` from those rows. The denominator is the AMD Instinct MI300X datasheet figure "5.3 TB/s max. peak theoretical" (https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/data-sheets/amd-instinct-mi300x-data-sheet.pdf). The same PDF says "Up to 192 GB HBM3". The product page repeats Peak Memory Bandwidth 5.3 TB/s and Dedicated Memory Size 192 GB (https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html). Footnote MI300-18 (https://www.amd.com/en/products/accelerators/instinct/mi300.html) writes 5.325 TB/s as `8192 bits * 5.2 Gbps / 8`; the estimate uses the datasheet's 5.3 TB/s. No host DDR ratio is stated: the bench file does not name a CPU.
-
-**Not run.** This repository has **not** recorded an AMD GPU run. `results/bench.json` is a CPU measurement (`is_gpu_active: false`). `scripts/benchmark_amd_gpu.py` is the command to time the solver on a GPU box. It sets `ran_on_amd_gpu` only when the visible device name looks like AMD.
-
-On the synthetic self-play table (`results/self_play_benchmark.md`, 20 matches × 5 archetypes, 100 matches, seed 42) the engine's savings versus its walk-away ceiling range from 8.8% to 20.0%. Against a Hard-Bargainer it is slightly behind a fixed 5%-per-round concession (8.8% vs 9.2%). Seed 42 reproduces that table; it is not a variance estimate. The real-model log above is a different experiment: the AMD-hosted model, used as the buyer, closed at a deal rate of 61.11% of completed matches against a Bluffing Hardliner and recorded 0 budget violations in 94 completed matches. Those are sandbox results, not factory results.
-
-The multi-supplier auction uses a different baseline again. Its headline is savings versus the first-round best quote (committed report: ¥13.26 to ¥12.60, 5.0%, ¥6,600). Versus target is shown on the same panel, including when that figure is negative (this run is −5.0% versus ¥12.00). Savings versus the walk-away ceiling, 22.2% and ¥36,000, are secondary and labeled as such. Do not quote 22.2% as the headline, and do not mix it with the self-play range above.
-
-`cp .env.example .env && docker compose up --build` starts the dashboard with no API keys. Placeholder keys are ignored. `/health` reports `offline_demo` and the solver backend.
+The desk runs offline until AMD live mode is on and VLLM_API_KEY is a real secret. The model never sets our price.
 ~~~
 
 ## Track
@@ -72,7 +64,7 @@ commerce
 https://github.com/Fu93/tradeflow-ai
 ```
 
-No public deployment is claimed. Leave a live-demo URL blank unless you have actually deployed one. The video is the demo.
+No public hostname is claimed. `render.yaml` is the Blueprint; leave the live-demo URL blank until Render has assigned one you have opened. The video is the demo.
 
 ## Demo video
 
@@ -86,4 +78,4 @@ Upload the narrated 3–5 minute file you record from [DEMO_RUNBOOK.md](DEMO_RUN
 
 ## Deck
 
-[results/pitch.pptx](../results/pitch.pptx) — 8 slides from the SUBMISSION.md outline. Regenerate with `python scripts/make_pitch.py` after installing `python-pptx`. Every measured figure on the slides is read from a source file when that command runs.
+[results/pitch.pptx](../results/pitch.pptx) and [results/pitch.pdf](../results/pitch.pdf) — 9 slides from the SUBMISSION.md outline. lablab asks for a PDF; the pptx is the source. Regenerate both with `python scripts/make_pitch.py` after installing `python-pptx`. Every measured figure on the slides is read from a source file when that command runs. `python scripts/check_claims.py` checks the title (5–50), the short description (50–255), and the long description (600–2000).

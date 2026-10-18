@@ -22,6 +22,12 @@ _PLACEHOLDER_EXACT = {
 AMD_TOKENFACTORY_BASE = "https://developer.amd.com.cn/radeon/api/v1"
 EVOLUS_CHAT_BASE = "https://api.evolus.ai/v1"
 
+# New Stage-2 calls use Gemma. Qwen3.8-Flash-Next stays available by setting
+# VLLM_MODEL, and it is the model named in results/real_llm_benchmark_100.json.
+# That log is not a Gemma measurement.
+DEFAULT_STAGE2_MODEL = "Gemma-4-31B-IT"
+ALTERNATIVE_STAGE2_MODEL = "Qwen3.8-Flash-Next"
+
 
 def real_secret(value: str | None) -> str | None:
     """Return a usable credential, or None for empty values and placeholders."""
@@ -46,7 +52,7 @@ def _real_url(value: str | None) -> str | None:
     return text.rstrip("/")
 
 
-def resolve_chat_endpoint(default_model: str = "Qwen3.8-Flash-Next") -> dict | None:
+def resolve_chat_endpoint(default_model: str = DEFAULT_STAGE2_MODEL) -> dict | None:
     """OpenAI-compatible chat target, or None when nothing usable is configured.
 
     A real ``VLLM_API_KEY`` wins and is paired with ``VLLM_BASE_URL`` (the AMD
@@ -84,11 +90,19 @@ def evolus_credentials() -> tuple[str, str] | None:
     return None
 
 
+def configured_model() -> str:
+    """Model name a new call would send. Not a measurement, and not a secret."""
+    return (os.getenv("VLLM_MODEL") or DEFAULT_STAGE2_MODEL).strip() or DEFAULT_STAGE2_MODEL
+
+
 def llm_status() -> dict:
     """Non-secret status for /health. Never includes credential values."""
     chat = resolve_chat_endpoint()
     return {
         "configured": chat is not None,
         "provider": None if chat is None else chat["provider"],
+        "model": None if chat is None else chat["model"],
+        "default_model": DEFAULT_STAGE2_MODEL,
         "offline_demo": chat is None,
+        "amd_live_available": chat is not None and chat["provider"] == "amd_vllm",
     }

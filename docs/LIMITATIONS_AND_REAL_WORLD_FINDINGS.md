@@ -393,7 +393,7 @@ This section records **real connection tests** against the hackathon's official 
 | DeepSeek-V4.1-Flash / GLM-5.3-Flash, same task | **52 – 58 s** |
 
 * **Cause**: the tokenfactory models are reasoning models (24+ reasoning tokens per response) behind a shared inference service, not a low-latency dedicated deployment.
-* **Engineering response**: `timeout` raised from 3.0 s to 30.0 s; `max_tokens` from 150 to 500 (the old value truncated reasoning models before they emitted JSON). Default model is `Qwen3.8-Flash-Next`.
+* **Engineering response**: `timeout` raised from 3.0 s to 30.0 s; `max_tokens` from 150 to 500 (the old value truncated reasoning models before they emitted JSON). A new Stage-2 call defaults to `Gemma-4-31B-IT`. The committed 348-call log is still `Qwen3.8-Flash-Next`. Set `VLLM_MODEL` to that name to select it. This file's Gemma latency row is not that log, and the README does not treat it as a committed measurement.
 * **Honest conclusion**: **never claim "end-to-end <3 ms"** while including Stage-2. The correct phrasing is "Stage-1 deterministic path ~1 ms; Stage-2 LLM semantics is a 15–45 s asynchronous enhancement layer".
 
 ### 10.4 Model comparison on the same task

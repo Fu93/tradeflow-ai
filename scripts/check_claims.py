@@ -226,6 +226,8 @@ def main() -> int:
 
     problems.extend(_savings_framing_problems(texts))
     problems.extend(_mi300x_problems())
+    problems.extend(_gemma_and_comparison_problems(texts))
+    problems.extend(_form_length_problems(submission))
 
     if problems:
         print("Documented claims do not match their source files:", file=sys.stderr)
@@ -283,6 +285,76 @@ def _savings_framing_problems(texts: dict[Path, str]) -> list[str]:
                     f"{path.name} quotes 22.2% without calling it a secondary "
                     "walk-away ceiling baseline"
                 )
+    return problems
+
+
+def _sentences(text: str) -> list[str]:
+    return re.split(r"(?<=[.!?])\s+", text)
+
+
+def _gemma_and_comparison_problems(texts: dict[Path, str]) -> list[str]:
+    """Gemma is the configured default. The 348-call log stays Qwen.
+
+    The offline comparison file is the only source for its three rates.
+    A market-size dollar figure or the word TAM is rejected: this pack
+    does not cite one.
+    """
+    problems: list[str] = []
+    comp_path = ROOT / "results" / "llm_vs_tradeflow.json"
+    comp = json.loads(comp_path.read_text(encoding="utf-8"))
+    if comp.get("ran_on_amd") is not False or comp.get("live_endpoint_used") is not False:
+        problems.append("results/llm_vs_tradeflow.json claims an AMD call this script did not verify")
+    if comp.get("llm_buyer") != "offline_accept_opening":
+        problems.append("results/llm_vs_tradeflow.json buyer is not the offline stand-in")
+    labels = []
+    for side in ("tradeflow", "offline_llm"):
+        row = comp[side]
+        labels.append(row["budget_violation_rate_label"])
+        labels.append(row["deal_rate_label"])
+        labels.append(row["average_savings_label"])
+    for path, text in texts.items():
+        if "Gemma-4-31B-IT" not in text:
+            problems.append(f"{path.name} does not name the default Stage-2 model Gemma-4-31B-IT")
+        if "No committed Gemma latency" not in text and "no committed Gemma latency" not in text:
+            problems.append(f"{path.name} does not say there is no committed Gemma latency")
+        for sentence in _sentences(text):
+            if "Gemma-4-31B-IT" in sentence and "348 calls" in sentence:
+                problems.append(f"{path.name} puts Gemma-4-31B-IT in the same sentence as the 348-call log")
+        if "offline_accept_opening" not in text:
+            problems.append(f"{path.name} does not name the offline comparison buyer")
+        if "not an AMD call" not in text:
+            problems.append(f"{path.name} does not say the comparison was not an AMD call")
+        for label in labels:
+            if label not in text:
+                problems.append(f"{path.name} is missing comparison label {label}")
+        if re.search(r"\bTAM\b", text):
+            problems.append(f"{path.name} mentions TAM; this pack does not cite a sourced market size")
+        if re.search(r"\$\s*\d[\d,]*\s*(?:billion|million)\b", text, re.I):
+            problems.append(f"{path.name} states a market dollar size without a fetched source")
+    return problems
+
+
+def _form_length_problems(submission: str) -> list[str]:
+    """lablab field limits: title 5–50, short 50–255, long 600–2000."""
+    problems: list[str] = []
+    form = (ROOT / "docs" / "LABLAB_FORM.md").read_text(encoding="utf-8")
+    title_match = re.search(r"## Title\s+```\s*([^\n`]+)\s*```", form)
+    if title_match is None:
+        problems.append("docs/LABLAB_FORM.md has no fenced title")
+    else:
+        title = title_match.group(1).strip()
+        if not 5 <= len(title) <= 50:
+            problems.append(f"form title is {len(title)} characters; allowed range is 5-50")
+    paras = _section_paragraphs(submission, "## Short description")
+    if paras:
+        short = paras[0]
+        if not 50 <= len(short) <= 255:
+            problems.append(f"short description is {len(short)} characters; allowed range is 50-255")
+    start = submission.index("## Long description") + len("## Long description")
+    end = submission.index("## Demo video script")
+    long_text = submission[start:end].strip()
+    if not 600 <= len(long_text) <= 2000:
+        problems.append(f"long description is {len(long_text)} characters; allowed range is 600-2000")
     return problems
 
 

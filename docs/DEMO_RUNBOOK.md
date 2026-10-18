@@ -1,8 +1,10 @@
 # Demo recording runbook
 
-Use this to record the 3–5 minute narrated video. Speak the lines in quotes. If the screen shows a different number, say the number on the screen. `results/demo_video.mp4` is a short silent clip and is not this video.
+Use this to record the narrated video on the clock below. Speak the lines in quotes. If the screen shows a different number, say the number on the screen. `results/demo_video.mp4` is a short silent clip and is not this video.
 
-The click path below was exercised in headless Chromium (`tests/test_dashboard_smoke.py`). The dashboard has no Approve button. The human-send beat is Copy on the simulated supplier page.
+The public URL is the hostname Render assigns after you apply `render.yaml`. This repository does not record one. On a laptop, http://localhost:8000 is the stand-in. Say which one you opened.
+
+The click path for the auction and the quote box is covered by `tests/test_dashboard_smoke.py`. AMD live mode stays off unless `/health` reports `llm.amd_live_available`. If you turn it on without a key, read the offline fallback label. Do not say a model answered.
 
 ## Pre-flight
 
@@ -25,18 +27,18 @@ Stop a stale server only after `ss` shows it is the process you started:
 kill <pid>
 ```
 
-Then start again and re-run preflight. `/health` should include `offline_demo` and `solver`.
+Then start again and re-run preflight. `/health` should include `offline_demo` and `solver`. `llm.amd_live_available` is true only when `VLLM_API_KEY` is a real secret.
 
 ## Two ways to start
 
-Docker, which is what the narration in the first minute says:
+Docker, for a local take:
 
 ```bash
 cp -n .env.example .env
 docker compose up --build
 ```
 
-Compose starts when `.env` is absent (`env_file` is optional). The image listens as user `tradeflow` (uid 10001) on `0.0.0.0:8000`.
+Compose starts when `.env` is absent (`env_file` is optional). The image listens as user `tradeflow` (uid 10001) on `0.0.0.0:$PORT` (compose publishes 8000).
 
 Without Docker:
 
@@ -47,39 +49,29 @@ python -m src.app.main
 
 If the process says the port is taken, use the `PORT=` command it prints.
 
+A public take uses the Render Blueprint in `render.yaml` (free Docker web service, health check `/health`). Do not put the API key in the Blueprint file. Set `VLLM_API_KEY` in the dashboard. Until that deploy exists, record against localhost and say so.
+
 ## Clock and what to say
 
-**0:00–0:25 — Title.** On camera, the repo and the dashboard masthead.
+**0:00 — Pain.** On camera, the masthead.
 
-> TradeFlow AI. The engine picks the price. The model only phrases it. I send it.
+> Small sellers lose margin negotiating factory quotes alone, or they pay an agent. This desk prices the offer. I still send it.
 
-**0:25–0:55 — Start.** Terminal shows the start command you actually ran. Then:
+**0:20–1:20 — Live demo.** Open the public URL if you have deployed, otherwise http://localhost:8000, and say which.
 
-```bash
-curl -sS localhost:8000/health
-```
+1. Change Commodity if you want a sandbox session. The status line names the session.
+2. Click **Sample 1 — simulation**. The picture is labeled simulation. The text box fills with the transcript.
+3. Leave **AMD live mode** off if `/health` says the key is not configured. Click **Read this quote**.
+4. Point at the status line. Offline, it says the offline fallback. With a real key and the switch on, it says `AMD GPU Cloud`, the model name, the latency, and the token count from that response.
+5. Point at the recommended counter.
 
-Open http://localhost:8000. Read `offline_demo` and `solver.actual` off the JSON.
+> That price is the solver. The reading above does not set it.
 
-> They are NumPy on CPU unless the JSON says otherwise.
+**1:20 — How the price is computed.** Stay on the decision card.
 
-**0:55–1:40 — One decision.**
+> A belief about the supplier reserve, then Expectimax. The model can word the reply. It does not choose the number.
 
-1. On the dashboard, change Commodity to **Aerospace CNC metal case**. The status line names `DEMO_CNC_CASE_01`.
-2. In a second terminal, record one simulated supplier line (this desk has no quote box):
-
-```bash
-curl -sS -X POST localhost:8000/api/v1/sessions/DEMO_CNC_CASE_01/round \
-  -H 'Content-Type: application/json' \
-  -d '{"opponent_raw_text":"原料上涨，最低 14.80","opponent_offer_price":14.80,"mode":"copilot"}'
-```
-
-3. Click **Reload** under Deals, then click `DEMO_CNC_CASE_01`.
-4. Point at the recommended price and the breakdown probability on the decision card.
-
-> Both come from the solver, not from a chat model.
-
-**1:40–2:30 — Auction.** Click **Run auction**. Wait until the summary appears.
+**1:50 — Auction.** Click **Run auction**. Wait until the summary appears.
 
 > The headline is savings versus the first-round best quote.
 
@@ -87,36 +79,34 @@ Read the versus-target figure next, including when that figure is negative. Then
 
 > The walk-away ceiling percent is secondary and labeled on the page.
 
-Do not quote the ceiling figure as the headline. The committed report (`results/multi_supplier_auction.md`) is the source if you need the three labeled lines after the take. Say the numbers the page just showed.
+Do not quote the ceiling figure as the headline. Say the numbers the page just showed.
 
-**2:30–3:10 — Human send.** Open `extension/mock_chat.html` in the browser (the dashboard does not serve that file). Click **Simulate a normal concession**. Show the supplier line. If the extension side panel is loaded, show the decision card and **Copy**.
+**2:30 — LLM versus TradeFlow.** Open `results/llm_vs_tradeflow.json`, or run:
 
-> The extension has no send button.
+```bash
+python scripts/compare_llm_vs_tradeflow.py
+```
 
-Do not paste the text into a live factory chat.
+> This is a simulation. ran_on_amd is false. The stand-in is not Gemma.
 
-**3:10–3:50 — AMD.**
+Read the TradeFlow and stand-in budget-violation rate, deal rate, and average savings from the file. The savings figure is versus the supplier opening on deals, not the auction headline.
+
+**3:10 — Business.**
+
+> The user is a small cross-border seller. The revenue idea is a subscription or a share of savings. Nothing has been earned. The alternatives are LLM negotiators, commission agents, and marketplace tools. I am not stating a market size.
+
+**3:40 — Limits and roadmap.**
+
+> No factory has bought anything through this. There is no committed Gemma latency. The self-play table is a simulator. Held-out intent accuracy on the synthetic set is 63.08 percent, 195 of 500 held out. The MI300X column is a theoretical roofline lower-bound estimate, not measured. Next is a public URL, then a logged Gemma chat, and the human still sends.
+
+## AMD probe, if you show a terminal
 
 ```bash
 python scripts/verify_amd_endpoint.py
 ```
 
-If it prints `status: ok`, show `models_http_status` and stop. If it prints `skipped_no_credentials`, say the language endpoint was not called in this take. Then open `results/mi300x_roofline.json` and read the label on screen: theoretical roofline lower-bound estimate, not measured.
-
-> This column is a theoretical roofline lower-bound estimate, not measured.
-
-On an AMD GPU box only:
-
-```bash
-TRADEFLOW_SOLVER_BACKEND=cupy python scripts/benchmark_amd_gpu.py
-```
-
-Read `ran_on_amd_gpu` exactly as printed. Otherwise do not run it, and do not narrate a speedup.
-
-**3:50–4:20 — Limits.**
-
-> No real factory has bought anything through this. The self-play table is a simulator. The held-out intent accuracy on the synthetic set is 63.08 percent, 195 of 500 held out, not the old training-set figure.
+With a real key this lists models and sends one short chat. The evidence file is gitignored. If it prints `skipped_no_credentials`, say the language endpoint was not called. `--no-chat` skips the completion.
 
 ## After the take
 
-Upload the narrated file on the form. Leave `results/demo_video.mp4` as the short silent clip it is. Form fields are in [LABLAB_FORM.md](LABLAB_FORM.md). The deck is `results/pitch.pptx`.
+Upload the narrated file on the form. Leave `results/demo_video.mp4` as the short silent clip it is. Form fields are in [LABLAB_FORM.md](LABLAB_FORM.md). The deck is `results/pitch.pptx` and `results/pitch.pdf`.

@@ -900,6 +900,10 @@ class RoundActionRequest(BaseModel):
     # Stage-2 LLM 語意推理為同步網路呼叫（實測 2–13 秒）。預設關閉以維持回應速度；
     # 需要更深語意理解時才開啟（例如離線批次分析、或使用者明確願意等待）。
     deep_semantic: bool = False
+    # AMD live mode is a parallel reading. It does not run inside this handler.
+    # The dashboard calls POST /quotes/read beside this round. The solver price
+    # below never reads a model field.
+    amd_live: bool = False
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -1114,8 +1118,38 @@ def get_session(session_id: str):
     return sess
 
 
+class QuoteReadRequest(BaseModel):
+    """Paste or upload a supplier quote. The response never contains our price."""
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(default="", max_length=10_000)
+    amd_live: bool = False
+    image_base64: Optional[str] = Field(default=None, max_length=1_500_000)
+    sample_id: Optional[str] = Field(default=None, max_length=64)
+
+
+@api_v1.post("/quotes/read")
+def read_quote(body: QuoteReadRequest, request: Request):
+    """Parallel AMD reading. Does not create a round and does not set a price."""
+    from ..app.rate_limit import arm_amd_call
+    from ..engine.quote_read import read_supplier_quote
+
+    if body.amd_live:
+        arm_amd_call(request)
+    result = read_supplier_quote(
+        body.text,
+        amd_live=body.amd_live,
+        image_base64=body.image_base64,
+    )
+    if body.sample_id:
+        result["sample_id"] = body.sample_id
+        result["simulated_sample"] = True
+    result["buyer_price"] = None
+    result["decides_price"] = False
+    return result
+
+
 @api_v1.post("/classify/semantic")
-async def classify_semantic_preview(body: SemanticClassifyRequest):
+async def classify_semantic_preview(body: SemanticClassifyRequest, request: Request):
     """Stage-2 語意分類的獨立端點（非同步、不阻塞事件迴圈）。
 
     設計動機：Stage-2 為 2–13 秒的網路呼叫。將其從主談判輪次中拆出後：
@@ -1132,6 +1166,9 @@ async def classify_semantic_preview(body: SemanticClassifyRequest):
     stage2 = None
     stage2_error = None
     if body.enable_stage2:
+        from ..app.rate_limit import arm_amd_call
+
+        arm_amd_call(request)
         deep = await _Clf.classify_with_llm_async(text)
         if deep is not None:
             stage2 = {
@@ -1390,18 +1427,25 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     #    效能說明：Stage-1（正則 + 端側 ONNX）實測 ~1ms。
     #    Stage-2（AMD tokenfactory LLM）實測 2–13 秒，故預設不啟用，避免阻塞同步 HTTP 請求。
     #    呼叫端若需要更深語意理解，可設 deep_semantic=true。
-    inbound_classification = (
-        InboundIntentClassifier.classify(raw_text)
-        if action.deep_semantic
-        else InboundIntentClassifier.classify_stage1_only(raw_text)
-    )
-    if opp_price is None and inbound_classification.mentioned_price is not None:
-        opp_price = inbound_classification.mentioned_price
+    #    The price, MOQ, and lead time the solver sees come from the request or
+    #    from Stage-1. A model mentioned_price is ignored even when Stage-2 runs.
+    from ..engine.quote_fields import price_the_solver_may_use
+
+    stage1 = InboundIntentClassifier.classify_stage1_only(raw_text)
+    if action.deep_semantic:
+        inbound_classification = InboundIntentClassifier.classify(raw_text)
+    else:
+        inbound_classification = stage1
+    explicit_price = opp_price
+    llm_mentioned = None
+    if action.deep_semantic:
+        llm_mentioned = inbound_classification.mentioned_price
+    opp_price = price_the_solver_may_use(explicit_price, stage1.mentioned_price, llm_mentioned)
 
     # 1.5 多目標非價格條款 TCO 影子成本折算 (Total Cost of Ownership Normalization)
     from ..engine.tco import TradeTermsSpec
     terms_spec = TradeTermsSpec(baseline_moq=sess.spec.moq)
-    offered_moq = action.offered_moq or inbound_classification.demanded_moq
+    offered_moq = action.offered_moq or stage1.demanded_moq
     tco_breakdown = None
     effective_opp_price = opp_price
 
@@ -1978,6 +2022,16 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             "recommendation": rec,
             "proposal": prop,
             "recommended_offer_price": auth_price,
+            "price_source": (
+                "explicit_offer" if explicit_price is not None
+                else ("stage1_regex" if stage1.mentioned_price is not None else "none")
+            ),
+            "llm_price_ignored": llm_mentioned if action.deep_semantic else None,
+            "amd_live": {
+                "requested": bool(action.amd_live),
+                "decides_price": False,
+                "note": "POST /api/v1/quotes/read does the parallel AMD reading. This price is the solver's.",
+            },
             "reply_text": auto_reply_text,
             "bayesian_belief_state": v2_belief.model_dump(),
         }
@@ -2063,6 +2117,16 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         "recommendation": rec,
         "proposal": prop,
         "recommended_offer_price": auth_price,
+        "price_source": (
+            "explicit_offer" if explicit_price is not None
+            else ("stage1_regex" if stage1.mentioned_price is not None else "none")
+        ),
+        "llm_price_ignored": llm_mentioned if action.deep_semantic else None,
+        "amd_live": {
+            "requested": bool(action.amd_live),
+            "decides_price": False,
+            "note": "POST /api/v1/quotes/read does the parallel AMD reading. This price is the solver's.",
+        },
         "reply_text": auto_reply_text,
         "bayesian_belief_state": v2_belief.model_dump(),
     }

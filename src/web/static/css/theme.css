@@ -1160,6 +1160,58 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
   .file-title { font-size: var(--step-2); }
 }
 
+.amd-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  margin: 4px 0 8px;
+}
+
+.quote-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--step--1);
+}
+
+.quote-paste {
+  width: 100%;
+  min-height: 7rem;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.quote-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.quote-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.quote-sample-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 8px 0;
+  border: 1px dashed var(--rule);
+}
+
+.amd-callout {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: var(--sheet-sunk);
+  border-radius: 12px;
+  font-size: var(--step--1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }

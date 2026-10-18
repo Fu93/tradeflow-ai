@@ -236,6 +236,23 @@ def test_desk_auction_rounds_and_sandbox(live_server):
                 timeout=15000,
             )
             assert "Traceback" not in page.locator("#cbPanel").inner_text()
+
+            assert page.locator("#amdLiveToggle").is_visible()
+            assert page.locator("#amdLiveToggle").is_checked() is False
+            page.click("#sampleQuote1")
+            page.wait_for_function(
+                "() => document.getElementById('quotePaste').value.includes('SIMULATION')",
+                timeout=15000,
+            )
+            page.click("#readQuoteBtn")
+            page.wait_for_function(
+                "() => document.getElementById('amdCallout').textContent.includes('Offline fallback')",
+                timeout=30000,
+            )
+            callout = page.locator("#amdCallout").inner_text()
+            assert "AMD GPU Cloud" not in callout
+            assert "Traceback" not in callout
+            assert page.locator("#quoteSampleImg").is_visible()
             assert not errors, errors
 
             sandbox = browser.new_page(viewport={"width": 390, "height": 844})

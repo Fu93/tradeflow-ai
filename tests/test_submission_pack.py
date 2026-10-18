@@ -34,6 +34,9 @@ def test_lablab_form_copies_submission_text():
     long_sub = _section(submission, "## Long description", "## Demo video script")
     long_form = _fence(form)
     assert long_form == long_sub
+    assert 600 <= len(long_sub) <= 2000
+    assert 5 <= len("TradeFlow AI") <= 50
+    assert 50 <= len(short) <= 255
     assert "first-round best quote" in long_form
     assert "including when that figure is negative" in long_form
     assert "Reinvent Commerce" in form
@@ -44,7 +47,7 @@ def test_pitch_slides_use_source_claims_and_the_new_savings_order():
     from scripts.make_pitch import auction_baseline_lines, build_slides
 
     slides = build_slides()
-    assert len(slides) == 8
+    assert len(slides) == 9
     body = "\n".join(bullet for _, bullets in slides for bullet in bullets)
     claims = _claims()
     for snippet in (
@@ -97,7 +100,10 @@ def test_committed_deck_matches_the_builder():
     with zipfile.ZipFile(path) as archive:
         names = [name for name in archive.namelist() if re.fullmatch(r"ppt/slides/slide\d+\.xml", name)]
         xml = html.unescape("\n".join(archive.read(name).decode("utf-8") for name in names))
-    assert len(names) == 8
+    assert len(names) == 9
+    pdf = (ROOT / "results" / "pitch.pdf").read_bytes()
+    assert pdf.startswith(b"%PDF")
+    assert b"Market, revenue, competition" in pdf
     # DrawingML keeps one run per bullet. Ampersands are escaped in the XML.
     for _, bullets in slides:
         for bullet in bullets:
