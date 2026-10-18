@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 # [P0 REGRESSION] 這裡原本是 `from ..app.main import require_api_key`，與
@@ -72,6 +72,17 @@ api_v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_api_key)])
 async def dashboard():
     html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
     return HTMLResponse(content=html)
+
+
+_FAVICON_PATH = Path(__file__).resolve().parents[2] / "extension" / "icons" / "icon48.png"
+
+
+@router.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Browsers request this path even when the page sets a data-URI icon."""
+    if not _FAVICON_PATH.is_file():
+        return Response(status_code=204)
+    return Response(content=_FAVICON_PATH.read_bytes(), media_type="image/png")
 
 
 # ---------------------------------------------------------------------------
