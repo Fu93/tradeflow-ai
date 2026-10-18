@@ -25,9 +25,15 @@ from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS
 ROUNDS = 5
 
 
-def breakdown_circuit_tripped(p_break: float) -> bool:
-    """True when a breakdown probability reaches the shared safety threshold."""
-    return float(p_break) >= BREAKDOWN_TRIP_THRESHOLD
+def breakdown_circuit_tripped(p_break: float, risk_tolerance: float | None = None) -> bool:
+    """True when the walk-away hazard reaches the user's cap.
+
+    The default cap is ``BREAKDOWN_TRIP_THRESHOLD``. That number is user
+    policy, not an estimated walk-away rate. A caller who sets
+    ``risk_tolerance`` replaces it.
+    """
+    cap = BREAKDOWN_TRIP_THRESHOLD if risk_tolerance is None else float(risk_tolerance)
+    return float(p_break) >= cap
 
 OPP_TYPES = np.array(OPPONENT_TYPE_ROWS, dtype=float)
 OPP_NAMES = list(OPPONENT_TYPE_NAMES)

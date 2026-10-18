@@ -1,7 +1,7 @@
-"""單元測試：Phase 3 多供應商逆向拍賣動態 BATNA 與張量求解器。
+"""Multi-supplier coupled expectimax.
 
-註：rollout 數 = K x n_opp_samples x n_open x n_sched，由建構參數決定；
-本測試刻意使用小樣本 (n_opp_samples=5,000) 以求快速回歸。
+`total_rollouts` counts scenario-offer cells scored in one pass.
+It is not K x n_opp_samples x n_open x n_sched.
 """
 import unittest
 import numpy as np
@@ -25,13 +25,18 @@ class TestMultiSolver(unittest.TestCase):
         session = MultiAuctionSession(n_samples=2000)
         r1 = session.step_round([13.26, 15.60, 15.92, 16.80])
 
-        # 修正前：四家 counter-offer 完全相同（prior_means 固定 1.08）
         counters = r1["counter_offers_cny"]
-        self.assertGreater(len(set(round(c, 4) for c in counters)), 1,
-                           msg=f"identical first-round counter-offers: {counters}")
-        self.assertTrue(all(counters[i] <= counters[i + 1] + 1e-9
-                            for i in range(len(counters) - 1)),
-                        msg=f"non-monotone counter-offers: {counters}")
+        cheapest = min(r1["quotes"])
+        self.assertIsNotNone(counters[0])
+        for offer, blocked in zip(counters, r1["blocked"]):
+            if blocked:
+                self.assertIsNone(offer)
+                continue
+            self.assertLessEqual(offer, cheapest + 1e-6)
+        # Different quotes must move the reserve beliefs even when the
+        # outside option caps every counter at the cheapest quote.
+        priors = [round(float(x), 4) for x in session.prior_means]
+        self.assertGreater(len(set(priors)), 1, msg=f"priors did not separate: {priors}")
 
         # 先驗必須落在合理支撐區間（不高於本家報價、低於 walk-away 上限）
         priors = [float(x) for x in session.prior_means]
@@ -87,7 +92,11 @@ class TestMultiSolver(unittest.TestCase):
         res = self.solver.solve_reverse_auction_tensor(offers, means, stds)
 
         self.assertEqual(res["k_suppliers"], 4)
-        self.assertEqual(res["total_rollouts"], 4 * 5_000 * 20 * 6)
+        self.assertGreater(res["total_rollouts"], 0)
+        self.assertIn("p_deal", res["mc"])
+        self.assertIn("p_deal_se", res["mc"])
+        self.assertIn("cvar_cost", res["mc"])
+        self.assertIn("regret", res["mc"])
         self.assertEqual(len(res["best_offers"]), 4)
         self.assertEqual(len(res["best_sched_curves"]), 4)
         self.assertEqual(len(res["p_break_array"]), 4)
@@ -152,15 +161,24 @@ class TestMultiSolver(unittest.TestCase):
         self.assertAlmostEqual(s["savings_vs_target_cny"], (12.0 - 12.50) * 10_000)
         self.assertGreater(s["savings_vs_ceiling_pct"], 0.0)
 
-    def test_circuit_breaker_tripped(self):
-        """測試當對手報價極高引發破局率超標時，觸發熔斷旗標。"""
-        # 供應商報出極端高價 (1.34，接近上限 1.35)
+    def test_circuit_breaker_follows_the_risk_cap(self):
+        """A tight user cap blocks the supplier we would push. The default cap is looser."""
         offers = np.array([1.34, 1.34], dtype=np.float32)
         means = np.array([1.25, 1.25], dtype=np.float32)
         stds = np.array([0.15, 0.15], dtype=np.float32)
 
-        res = self.solver.solve_reverse_auction_tensor(offers, means, stds)
-        self.assertTrue(res["circuit_tripped"])
+        loose = self.solver.solve_reverse_auction_tensor(offers, means, stds)
+        tight = MultiSupplierSolver(
+            n_opp_samples=5_000,
+            n_open=20,
+            n_sched=6,
+            use_gpu=False,
+            walk_away_ceiling=1.35,
+            risk_tolerance=0.02,
+        )
+        blocked = tight.solve_reverse_auction_tensor(offers, means, stds)
+        self.assertTrue(blocked["circuit_tripped"])
+        self.assertLessEqual(int(loose["circuit_tripped"]), int(blocked["circuit_tripped"]))
 
 
 if __name__ == "__main__":

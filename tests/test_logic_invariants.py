@@ -39,18 +39,36 @@ from src.engine.multi_solver import MultiAuctionSession  # noqa: E402
 
 
 def _scalar_expectimax(reserve, urgency, bluff, conc, opens, scheds):
-    """Same payoff as solver.solve, one opponent and one cell at a time."""
+    """Same payoff as solver.solve, one opponent and one cell at a time.
+
+    The gap is signed. Walk-away hazard replaces 1 - p_deal.
+    """
+    from src.config.heuristics import (
+        BREAK_PENALTY,
+        CONCESSION_RATE_CAP,
+        DEAL_DECAY_SCALE,
+        DEAL_TOLERANCE,
+        HAZARD_BLUFF,
+        HAZARD_INTERCEPT,
+        HAZARD_LOGIT_CLIP,
+        HAZARD_QUOTE_GAP,
+        HAZARD_RESERVE_GAP,
+        OPPONENT_GAP_SHARE,
+    )
+    from src.engine.hazard import sigmoid
+
     n_open = len(opens)
     n_sched = len(scheds)
     rounds = int(np.asarray(scheds).shape[1])
     margin = np.zeros((n_open, n_sched), dtype=np.float64)
     brk = np.zeros((n_open, n_sched), dtype=np.float64)
+    tiny = float(np.finfo(np.float64).tiny)
     for s in range(len(reserve)):
         for i, open_px in enumerate(opens):
-            first_gap = abs(float(reserve[s]) - float(open_px))
+            first_gap = max(float(reserve[s]) - float(open_px), 0.0)
             react = 1.0 - solver.ANCHORING_BETA * (first_gap - solver.ANCHORING_REF)
             react = min(max(react, solver.ANCHORING_CLIP[0]), solver.ANCHORING_CLIP[1])
-            cr_eff = min(max(float(conc[s]) * react, 0.0), 0.95)
+            cr_eff = min(max(float(conc[s]) * react, 0.0), CONCESSION_RATE_CAP)
             for j in range(n_sched):
                 gap = first_gap
                 paid = float(open_px)
@@ -58,14 +76,17 @@ def _scalar_expectimax(reserve, urgency, bluff, conc, opens, scheds):
                     step_you = float(scheds[j, r]) * gap
                     paid += step_you
                     gap -= step_you
-                    step_opp = cr_eff * float(urgency[s]) * (1.0 - 0.45 * float(bluff[s])) * gap
+                    step_opp = cr_eff * float(urgency[s]) * (1.0 - OPPONENT_GAP_SHARE * float(bluff[s])) * gap
                     gap -= step_opp
                     if gap < 0.0:
                         gap = 0.0
-                p_deal = math.exp(-max(gap - 0.02, 0.0) / 0.05)
-                extra = (0.20 + 0.30 * float(bluff[s])) if first_gap > 0.32 else 0.0
-                p_break = min(max(1.0 - p_deal + extra, 0.0), 1.0)
-                payoff = p_deal * (model.YOUR_CEILING - paid) - p_break * 0.10
+                p_deal = math.exp(-max(gap - DEAL_TOLERANCE, 0.0) / DEAL_DECAY_SCALE)
+                g_reserve = first_gap / max(float(reserve[s]), tiny)
+                logit = HAZARD_INTERCEPT + (HAZARD_RESERVE_GAP + HAZARD_QUOTE_GAP) * g_reserve
+                logit += HAZARD_BLUFF * float(bluff[s]) * g_reserve
+                logit = min(max(logit, -HAZARD_LOGIT_CLIP), HAZARD_LOGIT_CLIP)
+                p_break = float(sigmoid(None, logit))
+                payoff = p_deal * (model.YOUR_CEILING - paid) - p_break * BREAK_PENALTY
                 margin[i, j] += payoff
                 brk[i, j] += p_break
     margin /= len(reserve)
@@ -232,8 +253,17 @@ class TestAuctionOfferBound(unittest.TestCase):
             n_sched=4,
             use_gpu=False,
         )
-        info = session.step_round([15.0, 14.5, 16.0, 13.8])
-        for offer in info["counter_offers_cny"]:
+        info = session.step_round([12.4, 14.5, 16.0, 13.8])
+        self.assertFalse(info["all_quotes_above_ceiling"])
+        self.assertTrue(any(offer is not None for offer in info["counter_offers_cny"]))
+        for offer, blocked, reason in zip(
+            info["counter_offers_cny"], info["blocked"], info["block_reasons"]
+        ):
+            if blocked:
+                self.assertIsNone(offer)
+                self.assertIn("not actionable", reason or "")
+                continue
+            self.assertIsNotNone(offer)
             self.assertLessEqual(offer, 13.0 + 1e-6)
         self.assertLessEqual(info["best_quote"], 16.0)
 
@@ -247,8 +277,9 @@ class TestAuctionOfferBound(unittest.TestCase):
             use_gpu=False,
         )
         info = session.step_round([14.0, 14.0, 14.0, 14.0])
-        for offer in info["counter_offers_cny"]:
-            self.assertAlmostEqual(offer, 11.0, places=6)
+        self.assertTrue(info["all_quotes_above_ceiling"])
+        self.assertTrue(all(offer is None for offer in info["counter_offers_cny"]))
+        self.assertTrue(all("walk-away ceiling" in (reason or "") for reason in info["block_reasons"]))
 
 
 class TestCupyParity(unittest.TestCase):

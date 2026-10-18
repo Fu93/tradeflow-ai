@@ -1,0 +1,20 @@
+[
+  {
+    "date": "2026-10-16",
+    "base": "EUR",
+    "quote": "CNY",
+    "rate": 7.524
+  },
+  {
+    "date": "2026-10-16",
+    "base": "EUR",
+    "quote": "GBP",
+    "rate": 0.84385
+  },
+  {
+    "date": "2026-10-16",
+    "base": "EUR",
+    "quote": "USD",
+    "rate": 1.1253
+  }
+]

@@ -165,10 +165,9 @@ def run_multi_supplier_demo(out_dir="results"):
 
     for round_info in res["trace"]:
         r = round_info["round"]
-        # [誠實措辭] 見 DEEP_DEFECT_AUDIT.md §4.4：`rollouts` 是參數乘積
-        # (K x S x N_open x N_sched) 的**張量元素計數**，不是實際迴圈執行次數。
-        # 舊版寫 "Evaluated {n} Rollouts"，讀起來像量測值。
-        print(f"--- Round {r} (Tensor grid {round_info['rollouts']:,} cells in {round_info['elapsed_seconds']:.2f}s) ---")
+        # Cells scored by the coupled expectimax (scenarios x offers x sweeps).
+        # The old K x S x N_open x N_sched product is not this counter.
+        print(f"--- Round {r} (Scenario-offer cells {round_info['rollouts']:,} in {round_info['elapsed_seconds']:.2f}s) ---")
         for i, supp in enumerate(suppliers):
             q = round_info["quotes"][i]
             tactic = round_info["tactics"][i]
@@ -193,7 +192,7 @@ def run_multi_supplier_demo(out_dir="results"):
         f"  Secondary, ceiling : {res['savings_vs_ceiling_pct']:.1%} vs walk-away ceiling "
         f"¥{res['walk_away_ceiling']:.2f} (¥{res['savings_vs_ceiling_cny']:,.2f})"
     )
-    print(f"  Tensor grid cells  : {res['total_rollouts_accum']:,} (parameterised, not an execution count) in {res['total_compute_seconds']:.2f}s tensor time")
+    print(f"  Scenario-offer cells: {res['total_rollouts_accum']:,} (coupled expectimax, including sweeps) in {res['total_compute_seconds']:.2f}s")
     print(f"  Total Process Time : {total_elapsed:.2f}s\n")
 
     # 產出 Markdown 報表
@@ -208,7 +207,7 @@ def run_multi_supplier_demo(out_dir="results"):
 - Headline savings vs first-round best quote: {res['total_savings_pct']:.1%} (¥{res['total_savings_cny']:,.2f} total)
 - Versus target: {res['savings_vs_target_pct']:.1%} (¥{res['savings_vs_target_cny']:,.2f} total). A negative figure means the settled price is above target.
 - Secondary, versus walk-away ceiling: {res['savings_vs_ceiling_pct']:.1%} (¥{res['savings_vs_ceiling_cny']:,.2f} total)
-- Tensor Grid Cells: {res['total_rollouts_accum']:,} (= K x S x N_open x N_sched parameterised product, NOT a measured rollout/iteration count)
+- Scenario-offer cells: {res['total_rollouts_accum']:,} (coupled expectimax cells scored, including repeated sweeps; not the old K x S x N_open x N_sched product)
 
 | Round | Supplier | Quote (¥) | Tactic Classification | Dynamic BATNA Ceiling (¥) | Risk (%) | Counter-Offer (¥) |
 |---|---|---|---|---|---|---|

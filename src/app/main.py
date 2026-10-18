@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request, Depends, APIRouter
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # [REGRESSION] .env 從未進入 os.environ：repo 內無任何 load_dotenv()，而且要
 # requirements.txt 也沒有 python-dotenv。因此 README 快速開始寫的
@@ -48,6 +48,8 @@ from src.config.heuristics import (
     PRICE_MATCH_RATIO,
     PRIOR_RESERVE_MEAN,
     PRIOR_RESERVE_STD,
+    RISK_TOLERANCE_FLOOR,
+    RISK_TOLERANCE_MAX,
     STAGNATION_PREMIUM,
     SUPERVISOR_MIN_PRICE_RATIO,
     public_payload as heuristics_payload,
@@ -909,6 +911,13 @@ class RoundActionRequest(BaseModel):
     # The dashboard calls POST /quotes/read beside this round. The solver price
     # below never reads a model field.
     amd_live: bool = False
+    # Blank stays None. The default cap in the heuristics module still applies.
+    risk_tolerance: Optional[float] = Field(
+        default=None,
+        ge=RISK_TOLERANCE_FLOOR,
+        le=RISK_TOLERANCE_MAX,
+        allow_inf_nan=False,
+    )
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -1016,6 +1025,12 @@ class MultiAuctionSupplierInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(..., min_length=1, max_length=256)
     profile: Optional[str] = Field(default="Standard", max_length=128)
+    quote: Optional[float] = Field(default=None, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
+    freight: Optional[float] = Field(default=None, ge=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
+    duty_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0, allow_inf_nan=False)
+    fees: Optional[float] = Field(default=None, ge=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
+    currency: Optional[str] = Field(default=None, max_length=8)
+    fx_to_base: Optional[float] = Field(default=None, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
 
 
 class MultiAuctionRunRequest(BaseModel):
@@ -1034,6 +1049,17 @@ class MultiAuctionRunRequest(BaseModel):
     # Context only. simulate_reverse_auction does not receive these fields.
     hs_code: Optional[str] = None
     product_name: Optional[str] = Field(default=None, max_length=512)
+    # Blank stays None so the server policy cap applies. The caller sets it.
+    risk_tolerance: Optional[float] = Field(
+        default=None,
+        ge=RISK_TOLERANCE_FLOOR,
+        le=RISK_TOLERANCE_MAX,
+        allow_inf_nan=False,
+    )
+    base_currency: str = Field(default="CNY", min_length=3, max_length=8)
+    # Fetched ECB and UK tariff figures enter the solve only when this is set.
+    confirm_market_refs: bool = False
+    round_outcomes: Optional[List[List[Optional[str]]]] = Field(default=None, max_length=10)
 
     @field_validator("rounds_quotes")
     @classmethod
@@ -1063,6 +1089,37 @@ class MultiAuctionRunRequest(BaseModel):
                         f"rounds_quotes[{idx}] quote {fq} is outside the allowed range (0, 1e6]."
                     )
         return v
+
+    @field_validator("round_outcomes")
+    @classmethod
+    def _bound_round_outcomes(cls, v):
+        """Outcomes already observed. Row t is applied before deciding round t.
+
+        Row 0 is ignored: nothing has been offered yet. Allowed labels are
+        continue and walk_away. Null means the supplier has not answered.
+        """
+        if v is None:
+            return None
+        if len(v) > 10:
+            raise ValueError("round_outcomes may contain at most 10 rounds.")
+        allowed = {"continue", "walk_away"}
+        for idx, row in enumerate(v):
+            if row is None:
+                continue
+            if len(row) > 32:
+                raise ValueError(f"round_outcomes[{idx}] has {len(row)} entries; max 32 suppliers.")
+            for item in row:
+                if item is not None and item not in allowed:
+                    raise ValueError(
+                        f"round_outcomes[{idx}] has {item!r}; expected continue, walk_away, or null."
+                    )
+        return v
+
+    @model_validator(mode="after")
+    def _target_not_above_ceiling(self):
+        if float(self.target_price) > float(self.walk_away_ceiling):
+            raise ValueError("target_price is above walk_away_ceiling.")
+        return self
 
 
 @api_v1.post("/tco/evaluate")
@@ -1676,10 +1733,15 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     trip_reason = None
     if inbound_classification.requires_escalation:
         trip_reason = f"Security escalation: {inbound_classification.primary_intent.value} ({inbound_classification.tactical_rationale})"
-    elif model.breakdown_circuit_tripped(p_break):
+    elif model.breakdown_circuit_tripped(p_break, action.risk_tolerance):
+        cap = (
+            model.BREAKDOWN_TRIP_THRESHOLD
+            if action.risk_tolerance is None
+            else float(action.risk_tolerance)
+        )
         trip_reason = (
             f"Breakdown risk {p_break:.1%} exceeds "
-            f"{model.BREAKDOWN_TRIP_THRESHOLD:.0%} safety limit."
+            f"{cap:.0%} safety limit."
         )
     elif opp_price and opp_price > ceiling_price:
         trip_reason = f"Opponent offer ¥{opp_price:.2f} breaches ceiling ¥{ceiling_price:.2f}."
@@ -1703,7 +1765,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             estimated_floor_price=floor_price_est,
             tactical_mode=(
                 TacticalModeEnum.FIRM_HOLD
-                if not model.breakdown_circuit_tripped(p_break)
+                if not model.breakdown_circuit_tripped(p_break, action.risk_tolerance)
                 else TacticalModeEnum.WALK_AWAY
             ),
             product_name=sess.spec.product_name,
@@ -1920,7 +1982,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             if p_break < CAUTION_RISK_THRESHOLD
             else (
                 TacticalModeEnum.CROSS_ANCHOR
-                if not model.breakdown_circuit_tripped(p_break)
+                if not model.breakdown_circuit_tripped(p_break, action.risk_tolerance)
                 else TacticalModeEnum.SIDELINE
             )
         )
@@ -2269,6 +2331,60 @@ app.include_router(web_api_v1_router)
 app.include_router(web_open_router)
 
 
+def _official_reference_bundle(suppliers: Optional[List[dict]], req: MultiAuctionRunRequest) -> dict:
+    """ECB and UK tariff, fetched only when a comparison needs them.
+
+    Figures stay reference-only unless ``confirm_market_refs`` is set. A
+    confirmed ECB cross rate may be copied onto a supplier who did not
+    already supply ``fx_to_base``. UK duty is never copied: a third-country
+    rate is not origin-matched to every supplier who left duty blank.
+    Freight and fees are never filled in.
+    """
+    from ..market.official_refs import fx_to_base, reference_bundle
+
+    rows = suppliers or []
+    foreign = []
+    for row in rows:
+        currency = row.get("currency")
+        if not currency:
+            continue
+        if str(currency).strip().upper() == req.base_currency.strip().upper():
+            continue
+        if row.get("fx_to_base") is None:
+            foreign.append(str(currency))
+    needs_tariff = bool(req.hs_code) and any(row.get("duty_rate") is None for row in rows)
+    if not foreign and not needs_tariff:
+        return {
+            "fx": {"status": "no data", "value": None, "reason": "not requested", "used_in_solver": False},
+            "tariff": {"status": "no data", "value": None, "reason": "not requested", "used_in_solver": False},
+            "used_in_solver": False,
+            "note": "No foreign currency or commodity code needed a reference fetch.",
+        }
+    bundle = reference_bundle(foreign, req.base_currency, req.hs_code if needs_tariff else None)
+    if not req.confirm_market_refs:
+        return bundle
+    rates = None
+    fx = bundle.get("fx") or {}
+    if fx.get("status") == "ok" and isinstance(fx.get("value"), dict):
+        rates = fx["value"]
+    fx_used = False
+    for row in rows:
+        currency = row.get("currency")
+        if row.get("fx_to_base") is None and currency:
+            rate = fx_to_base(rates, str(currency), req.base_currency)
+            if rate is not None and str(currency).strip().upper() != req.base_currency.strip().upper():
+                row["fx_to_base"] = rate
+                fx_used = True
+    if fx_used and isinstance(bundle.get("fx"), dict):
+        bundle["fx"]["used_in_solver"] = True
+    bundle["used_in_solver"] = bool(fx_used)
+    bundle["tariff_note"] = (
+        "UK third-country duty stays reference only. It is not copied onto "
+        "suppliers who left duty blank."
+    )
+    return bundle
+
+
 @api_v1.post("/multi-auction/run")
 def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
     """觸發多供應商逆向拍賣。
@@ -2297,6 +2413,7 @@ def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
                     f"mismatched rows (0-based): {bad_rows}",
                 )
         supp_list = [s.model_dump() for s in req.suppliers] if req.suppliers else None
+        official = _official_reference_bundle(supp_list, req)
         res = simulate_reverse_auction(
             target_price=req.target_price,
             walk_away_ceiling=req.walk_away_ceiling,
@@ -2305,15 +2422,21 @@ def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
             suppliers=supp_list,
             rounds_quotes=req.rounds_quotes,
             n_rounds=req.n_rounds,
+            risk_tolerance=req.risk_tolerance,
+            base_currency=req.base_currency,
+            round_outcomes=req.round_outcomes,
         )
         from ..market.trade_data import build_market_context
 
         # Attached after the solver returns. Not an argument of the simulator.
         res["market_context"] = build_market_context(req.hs_code, req.product_name or "")
         res["market_context_reference_only"] = True
+        res["official_references"] = official
         return res
     except HTTPException:
         raise  # [FIX] 上方 422 校驗不得被兜底改寫成 500。
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:
         # [REGRESSION] 舊版 detail=str(exc)：numpy 的配置錯誤訊息（例如
         # "Unable to allocate 59.6 GiB"）會直接洩漏主機能力給呼叫端。

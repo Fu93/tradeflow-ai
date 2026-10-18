@@ -103,6 +103,15 @@
         <button class="btn-primary" type="button" id="runAuctionBtn" onclick="runMultiAuction()" aria-describedby="auctionKicker">Run auction</button>
       </div>
       <p class="fineprint auction-kicker" id="auctionKicker">Simulated suppliers, not live factory quotes. Savings versus the first-round best quote is the headline. Amounts are CNY.</p>
+      <label class="fineprint" for="liveQuotes">Live quotes, one supplier per line: name, unit price, freight, duty rate, fees, currency. Duty rate is a fraction of one. Leave blank to run the simulated auction.</label>
+      <textarea id="liveQuotes" class="quote-paste" rows="5" spellcheck="false"></textarea>
+      <label class="fineprint" for="auctionTarget">Target price in the base currency. Required when you paste live quotes.</label>
+      <input id="auctionTarget" class="input-plain" type="text" inputmode="decimal" autocomplete="off" />
+      <label class="fineprint" for="auctionCeiling">Walk-away ceiling in the base currency. Required when you paste live quotes.</label>
+      <input id="auctionCeiling" class="input-plain" type="text" inputmode="decimal" autocomplete="off" />
+      <label class="fineprint" for="riskTolerance">Risk tolerance. Leave blank to use the server default.</label>
+      <input id="riskTolerance" class="input-plain" type="text" inputmode="decimal" autocomplete="off" />
+      <label class="fineprint" for="confirmRefs"><input id="confirmRefs" type="checkbox" /> Use a fetched ECB rate in the comparison when one is returned. A UK tariff figure stays reference only. Unchecked rates stay reference only.</label>
       <div id="auctionLoader" class="loader hidden" role="status">Comparing four simulated suppliers…</div>
       <div id="supplierCards" class="supplier-cards">
         <div class="empty-state">Run the auction to compare four simulated suppliers.</div>

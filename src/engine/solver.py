@@ -22,11 +22,14 @@ from src.config.heuristics import (
     CONCESSION_RATE_CAP,
     DEAL_DECAY_SCALE,
     DEAL_TOLERANCE,
-    OPENING_BREAK_BASE,
-    OPENING_BREAK_BLUFF,
-    OPENING_GAP_BREAK,
+    HAZARD_BLUFF,
+    HAZARD_INTERCEPT,
+    HAZARD_LOGIT_CLIP,
+    HAZARD_QUOTE_GAP,
+    HAZARD_RESERVE_GAP,
     OPPONENT_GAP_SHARE,
 )
+from .hazard import sigmoid
 from src.sim.scenarios import UMBRELLA
 from . import model
 from .backend import resolve_use_gpu
@@ -118,9 +121,13 @@ def _to_numpy(array):
     return np.asarray(array)
 
 
-def _expectimax_chunk(xp, reserve, urgency, bluff, conc, opens, scheds):
-    """One sample chunk of the vectorised payoff. Same arithmetic as the
-    historical full-tensor broadcast, float64, reduced over the sample axis.
+def _expectimax_chunk(xp, reserve, urgency, bluff, conc, opens, scheds, value_ceiling):
+    """One sample chunk of the vectorised payoff.
+
+    The gap is signed: max(reserve - opening, 0). An offer at or above the
+    reserve is an immediate accept. Walk-away hazard replaces ``1 - p_deal``
+    and rises with that signed gap, so a reserve below our offer is not
+    treated as a breakdown.
     """
     n = int(len(reserve))
     n_open = len(opens)
@@ -132,15 +139,10 @@ def _expectimax_chunk(xp, reserve, urgency, bluff, conc, opens, scheds):
     blf = xp.asarray(bluff, dtype=xp.float64)[:, None, None]
     cr = xp.asarray(conc, dtype=xp.float64)[:, None, None]
 
-    # [誠實揭露] 下列 payoff / 對手讓步常數為編譯時固定之啟發式值，非經資料
-    # 擬合/訓練調出。數值本體在 src/config/heuristics.py：
-    #   OPPONENT_GAP_SHARE, DEAL_TOLERANCE, DEAL_DECAY_SCALE,
-    #   OPENING_GAP_BREAK, OPENING_BREAK_BASE, OPENING_BREAK_BLUFF, BREAK_PENALTY.
-    gap = xp.abs(res - op)
-    gap = xp.broadcast_to(gap, (n, n_open, n_sched)).astype(xp.float64, copy=True)
-    paid = op.copy()
-    # [修正 §3.5] 對手對我方開盤的錨定反應（見檔頭常數區的公式與揭露）。
-    first_gap = xp.abs(res - op)
+    # Signed gap. Coefficients live in src/config/heuristics.py.
+    first_gap = xp.maximum(res - op, 0.0)
+    gap = xp.broadcast_to(first_gap, (n, n_open, n_sched)).astype(xp.float64, copy=True)
+    paid = xp.broadcast_to(op, (n, n_open, n_sched)).astype(xp.float64, copy=True)
     react = anchoring_multiplier(xp, first_gap)
     cr_eff = xp.clip(cr * react, 0.0, CONCESSION_RATE_CAP)
     for r in range(model.ROUNDS):
@@ -152,12 +154,15 @@ def _expectimax_chunk(xp, reserve, urgency, bluff, conc, opens, scheds):
         gap = xp.maximum(gap, 0.0)
 
     p_deal = xp.exp(-xp.maximum(gap - DEAL_TOLERANCE, 0.0) / DEAL_DECAY_SCALE)
-    p_break = xp.clip(
-        1.0 - p_deal + (first_gap > OPENING_GAP_BREAK) * (OPENING_BREAK_BASE + OPENING_BREAK_BLUFF * blf),
-        0.0,
-        1.0,
-    )
-    payoff = p_deal * (model.YOUR_CEILING - paid) - p_break * BREAK_PENALTY
+    # No separate quote in this search: aggressiveness is the reserve gap.
+    denom = xp.maximum(res, xp.asarray(np.finfo(np.float64).tiny))
+    g_reserve = first_gap / denom
+    logit = HAZARD_INTERCEPT + (HAZARD_RESERVE_GAP + HAZARD_QUOTE_GAP) * g_reserve
+    logit = logit + HAZARD_BLUFF * blf * g_reserve
+    logit = xp.clip(logit, -HAZARD_LOGIT_CLIP, HAZARD_LOGIT_CLIP)
+    p_break = sigmoid(xp, logit)
+    p_break = xp.broadcast_to(p_break, (n, n_open, n_sched))
+    payoff = p_deal * (value_ceiling - paid) - p_break * BREAK_PENALTY
     return _to_numpy(payoff.sum(axis=0)), _to_numpy(p_break.sum(axis=0))
 
 
@@ -171,6 +176,7 @@ def solve(
     lambda_break: float = 1.0,
     reserve_mean=None,
     reserve_std=None,
+    value_ceiling: float | None = None,
 ):
     """向量化重解：一次評估 (對手樣本 × 首輪報價 × 讓步曲線) 組合。
 
@@ -202,6 +208,8 @@ def solve(
     )
     n_open = len(opens)
     n_sched = len(scheds)
+    if value_ceiling is None:
+        value_ceiling = float(model.YOUR_CEILING)
     sum_pay = np.zeros((n_open, n_sched), dtype=np.float64)
     sum_brk = np.zeros((n_open, n_sched), dtype=np.float64)
     for start in range(0, int(n_opp_samples), EXPECTIMAX_SAMPLE_CHUNK):
@@ -214,6 +222,7 @@ def solve(
             conc[start:end],
             opens,
             scheds,
+            float(value_ceiling),
         )
         sum_pay += pay_sum
         sum_brk += brk_sum
@@ -318,5 +327,6 @@ def recommend(solve_result, target_price=None, opens=None, scheds=None):
         "expected_margin_norm": float(solve_result["exp_margin"][i_open, i_sched]),
         "expected_margin_price": float(solve_result["exp_margin"][i_open, i_sched] * target_price),
         "breakdown_prob": float(solve_result["exp_break"][i_open, i_sched]),
+        "breakdown_definition": "walk-away hazard of the opening offer",
         "n_samples": solve_result["n_samples"],
     }

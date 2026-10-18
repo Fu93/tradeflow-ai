@@ -6,7 +6,6 @@ Allowed to contain scenario floats:
   src/sim/                   simulated mandates, archetypes, scripted replies
   src/benchmark/adversaries.py, src/benchmark/arena.py, src/benchmark/ood_500_dataset.py
                              the self-play generator
-  src/engine/multi_solver.py the auction simulator
   extension/mock_chat.html   the supplier sandbox
   scripts/generate_ood_500.py synthetic intent generator
   scripts/regen_mi300x_roofline.py datasheet quotes used to rebuild the roofline JSON
@@ -34,7 +33,6 @@ ALLOW_FILES = {
     "src/benchmark/adversaries.py",
     "src/benchmark/arena.py",
     "src/benchmark/ood_500_dataset.py",
-    "src/engine/multi_solver.py",
     # Plot geometry (bar offsets, alphas, line widths). Not prices.
     "src/engine/viz.py",
     # Frozen copies of the early simulator. The live solver does not import them.

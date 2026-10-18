@@ -1119,8 +1119,67 @@ async function sendCommand(cmdCode) {
 }
 
 // ---------------------------------------------------------------------------
-// Multi-Supplier Reverse Auction (28.8M Rollouts Demo)
+// Multi-supplier comparison. Blank paste runs the scripted simulation.
 // ---------------------------------------------------------------------------
+function readAuctionMoney(id) {
+  const el = document.getElementById(id);
+  if (!el) return null;
+  const raw = String(el.value || "").trim();
+  if (raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+async function auctionErrorText(res) {
+  let detail = "";
+  try {
+    const body = await res.json();
+    if (typeof body.detail === "string") detail = body.detail;
+    else if (Array.isArray(body.detail)) {
+      detail = body.detail.map((item) => (item && item.msg) ? String(item.msg) : "").filter(Boolean).join(" ");
+    }
+  } catch (err) {
+    detail = "";
+  }
+  return detail
+    ? `Multi-auction rejected (HTTP ${res.status}). ${detail}`
+    : `Multi-auction rejected (HTTP ${res.status}).`;
+}
+
+function parseLiveQuotes(text) {
+  const lines = String(text || "").split(/\n/).map((s) => s.trim()).filter(Boolean);
+  if (!lines.length) return null;
+  const suppliers = [];
+  const quotes = [];
+  for (const line of lines) {
+    const parts = line.split(",").map((s) => s.trim());
+    if (parts.length < 2 || !parts[0]) return { error: "Each line needs a name and a unit price." };
+    const unit = Number(parts[1]);
+    if (!Number.isFinite(unit) || unit <= 0) return { error: "Unit price must be a positive number." };
+    const supplier = { name: parts[0], quote: unit };
+    if (parts.length > 2 && parts[2] !== "") {
+      const freight = Number(parts[2]);
+      if (!Number.isFinite(freight) || freight < 0) return { error: "Freight must be a number." };
+      supplier.freight = freight;
+    }
+    if (parts.length > 3 && parts[3] !== "") {
+      const duty = Number(parts[3]);
+      if (!Number.isFinite(duty) || duty < 0) return { error: "Duty rate must be a number." };
+      if (duty > 1) return { error: "Duty rate is a fraction of one (not a percent)." };
+      supplier.duty_rate = duty;
+    }
+    if (parts.length > 4 && parts[4] !== "") {
+      const fees = Number(parts[4]);
+      if (!Number.isFinite(fees) || fees < 0) return { error: "Fees must be a number." };
+      supplier.fees = fees;
+    }
+    if (parts.length > 5 && parts[5] !== "") supplier.currency = parts[5];
+    suppliers.push(supplier);
+    quotes.push(unit);
+  }
+  return { suppliers, quotes };
+}
+
 async function runMultiAuction() {
   const loader = document.getElementById("auctionLoader");
   const cardsWrap = document.getElementById("supplierCards");
@@ -1135,6 +1194,62 @@ async function runMultiAuction() {
     const preset = select && categoryPresets ? categoryPresets[select.value] : null;
     const auctionBody = {};
     if (preset && preset.name) auctionBody.product_name = preset.name;
+    const live = parseLiveQuotes(document.getElementById("liveQuotes") && document.getElementById("liveQuotes").value);
+    if (live && live.error) {
+      loader.classList.add("hidden");
+      cardsWrap.innerHTML = `<div class="empty-state is-error">${tfEsc(live.error)}</div>`;
+      return;
+    }
+    const liveRun = !!(live && live.suppliers);
+    loader.textContent = liveRun
+      ? "Comparing your quotes…"
+      : "Comparing four simulated suppliers…";
+    if (liveRun) {
+      auctionBody.suppliers = live.suppliers;
+      auctionBody.rounds_quotes = [live.quotes];
+      auctionBody.n_rounds = 1;
+      const target = readAuctionMoney("auctionTarget");
+      const ceiling = readAuctionMoney("auctionCeiling");
+      if (target === null || ceiling === null) {
+        loader.classList.add("hidden");
+        cardsWrap.innerHTML = `<div class="empty-state is-error">Enter a target and a walk-away ceiling for live quotes.</div>`;
+        return;
+      }
+      if (!Number.isFinite(target) || target <= 0 || !Number.isFinite(ceiling) || ceiling <= 0) {
+        loader.classList.add("hidden");
+        cardsWrap.innerHTML = `<div class="empty-state is-error">Target and walk-away ceiling must be positive numbers.</div>`;
+        return;
+      }
+      if (target > ceiling) {
+        loader.classList.add("hidden");
+        cardsWrap.innerHTML = `<div class="empty-state is-error">Target is above the walk-away ceiling.</div>`;
+        return;
+      }
+      auctionBody.target_price = target;
+      auctionBody.walk_away_ceiling = ceiling;
+    }
+    const riskField = document.getElementById("riskTolerance");
+    if (riskField && String(riskField.value || "").trim() !== "") {
+      const risk = Number(riskField.value);
+      const maxRisk = tfHeuristics && Number(tfHeuristics.risk_tolerance_max);
+      const floorRisk = tfHeuristics && Number(tfHeuristics.risk_tolerance_floor);
+      let riskError = "";
+      if (!Number.isFinite(risk) || risk <= 0) {
+        riskError = "Risk tolerance must be a positive number, or blank.";
+      } else if (Number.isFinite(floorRisk) && risk < floorRisk) {
+        riskError = "Risk tolerance is below the server floor.";
+      } else if (Number.isFinite(maxRisk) && risk > maxRisk) {
+        riskError = "Risk tolerance is above the server maximum.";
+      }
+      if (riskError) {
+        loader.classList.add("hidden");
+        cardsWrap.innerHTML = `<div class="empty-state is-error">${tfEsc(riskError)}</div>`;
+        return;
+      }
+      auctionBody.risk_tolerance = risk;
+    }
+    const confirmRefs = document.getElementById("confirmRefs");
+    if (confirmRefs && confirmRefs.checked) auctionBody.confirm_market_refs = true;
     const res = await fetch("/api/v1/multi-auction/run", {
       method: "POST",
       headers: tfJsonHeaders(),
@@ -1142,7 +1257,7 @@ async function runMultiAuction() {
     });
     if (!res.ok) {
       loader.classList.add("hidden");
-      cardsWrap.innerHTML = `<div class="empty-state is-error">Multi-auction rejected (HTTP ${tfEsc(res.status)}).</div>`;
+      cardsWrap.innerHTML = `<div class="empty-state is-error">${tfEsc(await auctionErrorText(res))}</div>`;
       return;
     }
     const data = await res.json();
@@ -1189,14 +1304,30 @@ async function runMultiAuction() {
       card.className = "supplier-card";
       if (sName === data.winning_supplier) card.classList.add("is-winner");
       const quoteLabel = tfAmount(quoteNum, "CNY");
+      const landedRaw = lastRound.landed_costs ? lastRound.landed_costs[i] : null;
+      const landedNum = tfNum(landedRaw, null);
+      const landedLabel = landedNum === null ? "no data" : tfAmount(landedNum, "CNY");
+      const counterRaw = lastRound.counter_offers_cny ? lastRound.counter_offers_cny[i] : null;
+      const counterNum = tfNum(counterRaw, null);
+      const blocked = !!(lastRound.blocked && lastRound.blocked[i]);
+      const blockReason = (lastRound.block_reasons && lastRound.block_reasons[i]) || "";
+      const counterLabel = blocked
+        ? "not actionable"
+        : (counterNum === null ? "no data" : tfAmount(counterNum, "CNY"));
+      const reasonLine = blockReason
+        ? `<div>Block reason: <span class="metric-val">${tfEsc(blockReason)}</span></div>`
+        : "";
       card.innerHTML = `
         <div class="card-top">
           <span class="supplier-title">${tfEsc(sName)}</span>
           <span class="tactic-tag ${tfEsc(tagClass)}">${tfEsc(plainTactic)}</span>
         </div>
         <div class="card-metrics">
-          <div>Quote: <span class="metric-val">${tfEsc(quoteLabel)}</span></div>
+          <div>Unit price: <span class="metric-val">${tfEsc(quoteLabel)}</span></div>
+          <div>Landed cost: <span class="metric-val">${tfEsc(landedLabel)}</span></div>
           <div>Best alternative: <span class="metric-val">${tfEsc(tfAmount(ceilingNum, "CNY"))}</span></div>
+          <div>Counter: <span class="metric-val">${tfEsc(counterLabel)}</span></div>
+          ${reasonLine}
           <div>Risk: <span class="metric-val">${pBreak === "—" ? "—" : tfEsc(pBreak) + "%"}</span></div>
         </div>
         <div class="meter-row">
@@ -1212,15 +1343,35 @@ async function runMultiAuction() {
     const versusTarget = tfNum(data.savings_vs_target_cny, null);
     const pieceCount = tfNum(data.moq, null);
     const pieceBasis = pieceCount === null ? "" : ` for ${tfAmount(pieceCount, "")} pcs`;
+    const kicker = document.getElementById("auctionKicker");
+    if (kicker) {
+      kicker.textContent = data.simulated
+        ? "Simulated suppliers, not live factory quotes. Savings versus the first-round best quote is the headline. Amounts are CNY."
+        : "Your quotes. Savings versus the first-round best quote is the headline.";
+    }
+    const leadCopy = data.simulated
+      ? `<p class="summary-lead"><strong>Simulated suppliers</strong> These are scripted archetypes, not live factory quotes. Winner: ${tfEsc(data.winning_supplier)} at ${tfEsc(tfAmount(data.winning_price, "CNY"))}. Amounts on this card are CNY.</p>`
+      : `<p class="summary-lead"><strong>Your quotes</strong> Winner: ${tfEsc(data.winning_supplier)} at ${tfEsc(tfAmount(data.winning_price, "CNY"))}. Ranking basis: ${tfEsc(data.ranking_basis || "unit_price")}. Amounts on this card are in the base currency.</p>`;
+    const altCopy = data.simulated
+      ? "Best alternative is the cheapest adjusted offer from the other simulated suppliers, capped by your walk-away ceiling. It can sit above a supplier's own quote when that supplier is the cheaper one. Suppliers who share the same cheapest rival show the same figure. It is not that supplier's private reserve."
+      : "Best alternative is the cheapest adjusted offer from the other quotes you pasted, capped by your walk-away ceiling. It can sit above a supplier's own quote when that supplier is the cheaper one. Suppliers who share the same cheapest rival show the same figure. It is not that supplier's private reserve.";
+    const mc = data.mc || {};
+    const priorNote = data.prior_driven
+      ? "Walk-away hazard is prior-driven until real continue or walk-away events are recorded."
+      : "Walk-away hazard includes recorded continue or walk-away events.";
     summaryEl.innerHTML = `
-      <p class="summary-lead"><strong>Simulated suppliers</strong> These are scripted archetypes, not live factory quotes. Winner: ${tfEsc(data.winning_supplier)} at ${tfEsc(tfAmount(data.winning_price, "CNY"))}. Amounts on this card are CNY.</p>
+      ${leadCopy}
+      ${data.all_quotes_above_ceiling ? `<p class="is-negative">Every quote is above the walk-away ceiling.</p>` : ""}
+      ${data.winner_above_ceiling ? `<p class="is-negative">The winner is above the walk-away ceiling.</p>` : ""}
+      ${data.kappa_note ? `<p class="summary-secondary">${tfEsc(data.kappa_note)}</p>` : ""}
       <p class="summary-headline"><strong>Savings versus the first-round best quote</strong> (${tfEsc(tfAmount(data.first_round_best_quote, "CNY"))}): ${tfEsc(tfAmount(data.total_savings_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.total_savings_pct))})</p>
       <p class="${versusTarget !== null && versusTarget < 0 ? "is-negative" : ""}"><strong>Versus your target</strong> (${tfEsc(tfAmount(data.product_target, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_target_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_target_pct))})</p>
       <p class="summary-secondary"><strong>Versus the walk-away ceiling</strong> (${tfEsc(tfAmount(data.walk_away_ceiling, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_ceiling_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_ceiling_pct))})</p>
-      <p class="summary-secondary">Best alternative is the cheapest adjusted offer from the other simulated suppliers, capped by your walk-away ceiling. It can sit above a supplier's own quote when that supplier is the cheaper one. Suppliers who share the same cheapest rival show the same figure. It is not that supplier's private reserve.</p>
+      <p class="summary-secondary">${tfEsc(altCopy)}</p>
       <details class="dev-details">
         <summary>Engine notes</summary>
-        <p>Search size ${tfEsc(String(tfNum(data.total_rollouts, 0)))} parameter cells. Compute ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}). Engine tactic codes stay in the solver; the cards use plain words.</p>
+        <p>Search size ${tfEsc(String(tfNum(data.total_rollouts, 0)))} scenario-offer cells. Compute ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}). Push first: ${tfEsc(data.push_first || "—")}. Order: ${tfEsc((data.push_order || []).join(", ") || "—")}. ${tfEsc(priorNote)}</p>
+        <p>Monte Carlo: P(deal) ${tfEsc(String(mc.p_deal ?? "no data"))} (SE ${tfEsc(String(mc.p_deal_se ?? "no data"))}), expected surplus ${tfEsc(String(mc.expected_surplus ?? "no data"))} (SE ${tfEsc(String(mc.expected_surplus_se ?? "no data"))}), CVaR cost ${tfEsc(String(mc.cvar_cost ?? "no data"))}, regret ${tfEsc(String(mc.regret ?? "no data"))}.</p>
       </details>
     `;
     const customsNote = document.createElement("p");

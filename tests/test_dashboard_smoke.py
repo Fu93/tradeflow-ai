@@ -301,6 +301,82 @@ def test_desk_auction_rounds_and_sandbox(live_server):
             browser.close()
 
 
+def test_pasted_quotes_compare_unit_and_landed(live_server):
+    port = live_server
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.goto(f"http://127.0.0.1:{port}/", wait_until="networkidle", timeout=60000)
+            page.fill("#auctionTarget", "12")
+            page.fill("#auctionCeiling", "16.2")
+            page.fill(
+                "#liveQuotes",
+                "\n".join([
+                    "Alpha, 13.2, 0.4, 0, 0.1",
+                    "Beta, 14.4, 0.4, 0, 0.1",
+                    "Gamma, 15.1, 0.4, 0, 0.1",
+                    "Delta, 16.0, 0.4, 0, 0.1",
+                ]),
+            )
+            page.click("#runAuctionBtn")
+            page.wait_for_selector("#auctionSummary:not(.hidden)", timeout=120000)
+            summary = page.locator("#auctionSummary").inner_text()
+            cards = page.locator("#supplierCards").inner_text()
+            assert "Your quotes" in summary
+            assert "Simulated suppliers" not in page.locator("#auctionKicker").inner_text()
+            assert "Simulated suppliers" not in summary
+            assert "simulated suppliers" not in summary
+            assert "Savings versus the first-round best quote" in summary
+            assert "Versus your target" in summary
+            assert "Versus the walk-away ceiling" in summary
+            assert "Landed cost" in cards
+            assert "Unit price" in cards
+            assert "no data" not in cards
+            page.locator("#auctionSummary summary").click()
+            notes = page.locator("#auctionSummary").inner_text()
+            assert "prior-driven" in notes
+            assert "P(deal)" in notes
+            page.set_viewport_size({"width": 360, "height": 900})
+            page.wait_for_timeout(150)
+            assert _overflow(page) <= 1
+
+            page.set_viewport_size({"width": 1280, "height": 900})
+            page.fill("#liveQuotes", "Alpha, 13.2\nBeta, 14.4\nGamma, 15.1\nDelta, 16.0")
+            page.click("#runAuctionBtn")
+            page.wait_for_selector("#auctionSummary:not(.hidden)", timeout=120000)
+            cards = page.locator("#supplierCards").inner_text()
+            summary = page.locator("#auctionSummary").inner_text()
+            assert "no data" in cards
+            assert "not treated as a zero adder" in summary
+
+            page.fill("#liveQuotes", "Alpha, 13.2, 0.4, 5, 0.1")
+            page.click("#runAuctionBtn")
+            page.wait_for_function(
+                "() => document.getElementById('supplierCards').innerText.includes('fraction of one')",
+                timeout=15000,
+            )
+
+            page.fill("#riskTolerance", "0.02")
+            page.fill(
+                "#liveQuotes",
+                "\n".join([
+                    "Alpha, 13.2, 0.4, 0, 0.1",
+                    "Beta, 14.4, 0.4, 0, 0.1",
+                ]),
+            )
+            page.click("#runAuctionBtn")
+            page.wait_for_function(
+                "() => document.getElementById('supplierCards').innerText.includes('not actionable')",
+                timeout=120000,
+            )
+            blocked = page.locator("#supplierCards").inner_text()
+            assert "not actionable" in blocked
+            assert "risk-tolerance cap" in blocked
+        finally:
+            browser.close()
+
+
 def test_draft_language_on_the_desk(live_server):
     port = live_server
     english = (

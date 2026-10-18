@@ -11,13 +11,11 @@
 3. 支援單供應商與 4 供應商張量並行拍賣雙維度評測。
 
 [ROLLOUT 計數說明]
-- `simulate_reverse_auction()` 示範路徑（Web「Run Auction」預設）使用
-  (K=4, S=20,000, N_open=20, N_sched=6)，每輪 9.6M，3 輪累計 **28,800,000**。
-- 本模組 `run()` 內的拍賣基準測試改用 S=50,000（見下方 `n_samples=50_000`），
-  故該路徑為每輪 24M、3 輪 **72M**（與 README 所述 72M 一致）。
-- `multi_total_rollouts` 以最大策略網格 (N_open=40, N_sched=12) 計算理論上界
-  96M（S=50,000）；該網格**並未**被示範路徑使用。對外引用請標明所屬路徑。
-- [修正] 舊版此處誤植「示範路徑使用 S=50,000 → 每輪 9.6M」；9.6M 實為 S=20,000。
+- The live auction reports scenario-offer cells scored by the coupled
+  expectimax, including repeated sweeps. It is not the old product
+  K x S x N_open x N_sched. Historical notes that quote 9.6M or 28.8M
+  describe that retired grid.
+- `run()` stores whatever `total_rollouts_accum` the current solver returns.
 """
 from __future__ import annotations
 import json
