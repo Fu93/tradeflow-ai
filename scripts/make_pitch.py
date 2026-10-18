@@ -175,7 +175,7 @@ def build_slides() -> list[tuple[str, list[str]]]:
                 "Placeholder keys are ignored. /health reports offline_demo and the solver backend. AMD live mode stays off unless a real VLLM_API_KEY is set and the operator turns it on.",
                 "No factory deal. No shipped MI300X timing. No committed Gemma latency. MIT. Public repo.",
                 "Roadmap: keep the human on the send button, log a real Gemma chat only when a key is present, and publish extraction accuracy only after that log exists.",
-                "Working deadline used for this pack: 11:00 London (BST), 18 October 2026. Confirm the form.",
+                "Deadline per third-party listing: 18 Oct 2026 23:59 UTC (19 Oct 00:59 BST); on-site Luma pages list 16:00 local on 18 Oct; confirm on lablab.",
             ],
         ),
     ]

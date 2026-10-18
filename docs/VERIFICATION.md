@@ -11,7 +11,7 @@ What was checked in this repository, how, and what was not. Numbers quoted in [R
 - `models/onnx_export_metrics.json` and `data/ood_split_manifest.json` for the held-out intent score and the 195-of-500 split
 - `results/mi300x_roofline.json` (rebuilt by `scripts/regen_mi300x_roofline.py`) for the MI300X figure. It is a theoretical roofline lower-bound estimate, not measured. Formula: `lower_bound_seconds = (working_set_mb * 1024 * 1024) / (5.3e12)`. `working_set_mb` is the tracemalloc peak stored in `results/bench.json`. The denominator is the datasheet quote "5.3 TB/s max. peak theoretical" and the capacity quote is "Up to 192 GB HBM3" (https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/data-sheets/amd-instinct-mi300x-data-sheet.pdf). The same check fails if a doc, `docker-compose.yml`, or `results/bench.json` states a different MI300X bandwidth, capacity, or runtime.
 
-The deadline in SUBMISSION.md is the pack's instruction (11:00 London, BST, 18 October 2026). It is not a measurement. The script only stops that line drifting back to an older clock time.
+The deadline in SUBMISSION.md is not a measurement. It records two public listings and tells a person to confirm on lablab: Deadline per third-party listing: 18 Oct 2026 23:59 UTC (19 Oct 00:59 BST); on-site Luma pages list 16:00 local on 18 Oct; confirm on lablab. `scripts/check_claims.py` requires that sentence and rejects a return to the earlier unverified London morning clock.
 
 `results/bench.json` does not name a CPU model. Judge-facing pages do not name one either.
 

@@ -237,7 +237,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 960 540] /Contents 20 0 R /Resources << /Font << /F1 21 0 R >> >> >>
 endobj
 20 0 obj
-<< /Length 824 >>
+<< /Length 874 >>
 stream
 BT
 /F1 11 Tf
@@ -261,7 +261,7 @@ T*
 T*
 (exists.) Tj
 T*
-(- Working deadline used for this pack: 11:00 London \(BST\), 18 October 2026. Confirm the form.) Tj
+(- Deadline per third-party listing: 18 Oct 2026 23:59 UTC \(19 Oct 00:59 BST\); on-site Luma pages list 16:00 local on 18 Oct; confirm on lablab.) Tj
 T*
 ET
 endstream
@@ -292,8 +292,8 @@ xref
 0000005449 00000 n 
 0000006888 00000 n 
 0000007017 00000 n 
-0000007893 00000 n 
+0000007943 00000 n 
 trailer << /Size 22 /Root 1 0 R >>
 startxref
-7964
+8014
 %%EOF

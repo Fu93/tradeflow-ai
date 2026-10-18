@@ -67,7 +67,7 @@ def test_pitch_slides_use_source_claims_and_the_new_savings_order():
         claims["play"]["hard_fixed"],
         "first-round best quote",
         "including when that figure is negative",
-        "11:00 London (BST), 18 October 2026",
+        "18 Oct 2026 23:59 UTC (19 Oct 00:59 BST)",
     ):
         assert snippet in body, snippet
     baselines = auction_baseline_lines(
@@ -82,6 +82,7 @@ def test_pitch_slides_use_source_claims_and_the_new_savings_order():
         "about $0.108",
         "Intel Core Ultra",
         "15:00 London",
+        "11:00 London",
         "blind held-out",
         "92.00%",
         "332 tests",
