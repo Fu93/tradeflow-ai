@@ -1366,7 +1366,8 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
   color: var(--ink-soft);
 }
 
-.market-suggest-btn:hover { border-color: var(--ink); background: var(--sheet-sunk); }
+.market-suggest-btn:hover,
+.market-suggest-btn.is-active { border-color: var(--ink); background: var(--sheet-sunk); }
 
 .market-skel { display: grid; gap: 4px; }
 
