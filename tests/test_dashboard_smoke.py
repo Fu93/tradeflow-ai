@@ -299,3 +299,149 @@ def test_desk_auction_rounds_and_sandbox(live_server):
             assert _overflow(sandbox) <= 1
         finally:
             browser.close()
+
+
+def test_draft_language_on_the_desk(live_server):
+    port = live_server
+    english = (
+        "Hi, the price is 3.20 USD/pc for 1000 pcs, MOQ 500. "
+        "Lead time 30 days, 30% deposit."
+    )
+    chinese = "最低批發價 14.80 元/把，500個起訂"
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_selector("#decisionReply")
+
+            def open_round(session_id, text):
+                created = _post_json(
+                    page,
+                    "/api/v1/sessions",
+                    {
+                        "session_id": session_id,
+                        "product_name": "Widget",
+                        "target_price": 12,
+                        "ceiling_price": 16.2,
+                        "moq": 1000,
+                        "max_rounds": 5,
+                    },
+                )
+                assert created["status"] == 200, created
+                rounded = _post_json(
+                    page,
+                    f"/api/v1/sessions/{session_id}/round",
+                    {"opponent_raw_text": text, "mode": "copilot"},
+                )
+                assert rounded["status"] == 200, rounded
+                return rounded["body"]
+
+            def show(session_id, english):
+                page.click("text=Reload")
+                page.locator(".session-item", has_text=session_id).click()
+                page.wait_for_function(
+                    """({id, english}) => {
+                        const label = (document.getElementById('sessionLabel') || {}).textContent || '';
+                        const reply = (document.getElementById('decisionReply') || {}).textContent || '';
+                        const cjk = /[\\u4e00-\\u9fff]/.test(reply);
+                        const matches = english
+                          ? reply.includes('Our offer is CNY')
+                          : cjk && !reply.includes('Our offer is CNY');
+                        return label.includes(id) && matches;
+                    }""",
+                    arg={"id": session_id, "english": english},
+                    timeout=15000,
+                )
+
+            english_round = open_round("DRAFT_EN_01", english)
+            price = english_round["recommended_offer_price"]
+            label = f"CNY {price:.2f}"
+            assert label in english_round["reply_text"]
+            show("DRAFT_EN_01", True)
+            reply = page.locator("#decisionReply")
+            assert label in reply.inner_text()
+            assert "Our offer is CNY" in reply.inner_text()
+            page.click("#holdBtn")
+            page.wait_for_function(
+                "() => document.getElementById('decisionResult').textContent.includes('still waiting')",
+                timeout=15000,
+            )
+            assert label in reply.inner_text()
+            page.click("#approveBtn")
+            page.wait_for_function(
+                "() => document.getElementById('decisionResult').textContent.includes('Approved')",
+                timeout=15000,
+            )
+            assert label in reply.inner_text()
+            assert "Our offer is CNY" in reply.inner_text()
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_selector("#decisionReply")
+            show("DRAFT_EN_01", True)
+            assert label in page.locator("#decisionReply").inner_text()
+            assert "Our offer is CNY" in page.locator("#decisionReply").inner_text()
+
+            chinese_round = open_round("DRAFT_ZH_01", chinese)
+            assert "Our offer is CNY" not in chinese_round["reply_text"]
+            show("DRAFT_ZH_01", False)
+            assert "Our offer is CNY" not in page.locator("#decisionReply").inner_text()
+            page.click("#approveBtn")
+            page.wait_for_function(
+                """() => {
+                    const result = document.getElementById('decisionResult').textContent || '';
+                    const reply = document.getElementById('decisionReply').textContent || '';
+                    return result.includes('Approved')
+                      && /[\\u4e00-\\u9fff]/.test(reply)
+                      && !reply.includes('Our offer is CNY');
+                }""",
+                timeout=15000,
+            )
+            assert "Our offer is CNY" not in page.locator("#decisionReply").inner_text()
+            page.reload(wait_until="domcontentloaded")
+            show("DRAFT_ZH_01", False)
+            chinese_reply = page.locator("#decisionReply").inner_text()
+            assert "Our offer is CNY" not in chinese_reply
+            assert any("\u4e00" <= ch <= "\u9fff" for ch in chinese_reply)
+        finally:
+            browser.close()
+
+
+def test_hs_suggestions_are_keyboard_selectable(live_server):
+    port = live_server
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+
+            def market(route):
+                if "keyword=" in route.request.url:
+                    route.fulfill(
+                        status=200,
+                        content_type="application/json",
+                        body=(
+                            '{"status":"needs_confirmation","candidates":['
+                            '{"hs":"660199","text":"660199 Umbrellas"},'
+                            '{"hs":"660110","text":"660110 Garden umbrellas"}]}'
+                        ),
+                    )
+                    return
+                route.continue_()
+
+            page.route("**/api/v1/market**", market)
+            page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded", timeout=60000)
+            page.fill("#marketQuery", "umbrella")
+            page.wait_for_selector("#marketSuggest button", timeout=10000)
+            page.locator("#marketQuery").press("ArrowDown")
+            page.wait_for_function(
+                "() => document.querySelector('#marketSuggest button[aria-selected=\"true\"]')"
+                " && document.querySelector('#marketSuggest button[aria-selected=\"true\"]').textContent.includes('660199')",
+                timeout=5000,
+            )
+            page.locator("#marketQuery").press("Enter")
+            page.wait_for_function(
+                "() => document.getElementById('marketSuggest').hidden"
+                " && document.getElementById('marketQuery').value === '660199'",
+                timeout=10000,
+            )
+        finally:
+            browser.close()

@@ -1192,6 +1192,7 @@ button:focus, .party:focus, .source-badge:focus {
 }
 .market-suggest-btn { width: 100%; }
 .market-suggest-btn:hover,
+.market-suggest-btn.is-active,
 .market-actions button:hover { background: var(--surface-2); }
 .market-skel { display: grid; gap: 4px; }
 .market-skel span {

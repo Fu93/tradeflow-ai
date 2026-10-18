@@ -1227,6 +1227,31 @@ async def classify_semantic_preview(body: SemanticClassifyRequest, request: Requ
     }
 
 
+def _stored_supplier_draft(sess) -> tuple:
+    """Last paste-back draft, its language, the supplier text, and the engine price."""
+    from ..engine.bilingual import supplier_message_language
+
+    reply = None
+    language = None
+    inbound = ""
+    price = None
+    for turn in reversed(getattr(sess, "history", None) or []):
+        meta = dict(getattr(turn, "metadata", None) or {})
+        if reply is None:
+            text = meta.get("generated_reply")
+            if isinstance(text, str) and text.strip():
+                reply = text
+                language = meta.get("draft_language")
+                raw_price = meta.get("recommended_offer_price")
+                if isinstance(raw_price, (int, float)) and not isinstance(raw_price, bool):
+                    price = float(raw_price)
+        if not inbound and getattr(turn, "sender", None) == "opponent" and getattr(turn, "raw_text", None):
+            inbound = str(turn.raw_text)
+    if language not in ("en", "zh"):
+        language = supplier_message_language(inbound)
+    return reply, language, inbound, price
+
+
 @api_v1.post("/sessions/{session_id}/approve")
 def approve_session_decision(session_id: str, body: ApproveActionRequest):
     """採購決策副駕駛 (Copilot) 人工審核與定奪授權端點。
@@ -1331,9 +1356,25 @@ def approve_session_decision(session_id: str, body: ApproveActionRequest):
             detail=f"Approved price ¥{final_price:.2f} breaches walk-away ceiling ¥{sess.spec.ceiling_price:.2f}.",
         )
 
-    final_reply_text = body.custom_reply_text
-    if not final_reply_text:
-        final_reply_text = f"經我方核算，確定意向合作單價為 ¥{final_price:.2f}，現款現結走官方系統，請確認排單。"
+    stored_reply, draft_language, inbound_text, stored_price = _stored_supplier_draft(sess)
+    custom_reply = (body.custom_reply_text or "").strip()
+    if custom_reply:
+        final_reply_text = custom_reply
+        draft_from_supplier = False
+    else:
+        from ..engine.bilingual import draft_for_approval
+
+        final_reply_text = draft_for_approval(
+            float(final_price),
+            language=draft_language,
+            inbound_text=inbound_text,
+            stored_reply=stored_reply,
+            stored_price=stored_price,
+            product_name=sess.spec.product_name,
+            ceiling=float(sess.spec.ceiling_price),
+            moq=int(sess.spec.moq or 500),
+        )
+        draft_from_supplier = True
 
     # 沿用最近一輪的**實測**遙測值，而不是寫入 p_break=0.0。
     # [P0 REGRESSION] 舊版人工核准輪固定 p_break=0.0，於是：
@@ -1369,6 +1410,9 @@ def approve_session_decision(session_id: str, body: ApproveActionRequest):
             "bayesian_confidence": _prev_meta.get("bayesian_confidence"),
             "expected_margin": _prev_meta.get("expected_margin"),
             "estimated_floor_price": _prev_meta.get("estimated_floor_price"),
+            "generated_reply": final_reply_text,
+            "draft_language": draft_language,
+            "draft_from_supplier": draft_from_supplier,
         },
     )
 
@@ -1490,6 +1534,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         ChineseSurfaceRenderer,
         EnglishExecutiveRenderer,
         render_supplier_reply,
+        supplier_message_language,
         CURRENT_SCHEMA_VERSION,
     )
     # 1. 供應商套路意圖分類與潛台詞反編譯
@@ -2065,6 +2110,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                     # 儀表板「Latest Generated Reply (human sends manually)」就變成
                     # 「—」，而這段話正是要人工貼回聊天室的內容。一併持久化。
                     "generated_reply": auto_reply_text,
+                    "draft_language": supplier_message_language(raw_text),
                 },
             )
             # 回傳最新快照（含剛才寫入的 metadata）。

@@ -189,6 +189,7 @@
       root._suggestTimer = 0;
     }
     if (root) root._suggestGen = (root._suggestGen || 0) + 1;
+    if (root) root._suggestIndex = -1;
     const list = q(root, "suggest");
     const query = q(root, "query");
     if (list) {
@@ -227,7 +228,27 @@
       list.appendChild(item);
     });
     list.hidden = false;
+    root._suggestIndex = -1;
     if (query) query.setAttribute("aria-expanded", "true");
+  }
+
+  function suggestButtons(root) {
+    const list = q(root, "suggest");
+    if (!list || list.hidden) return [];
+    return Array.prototype.slice.call(list.querySelectorAll("button"));
+  }
+
+  function highlightSuggest(root, index) {
+    const buttons = suggestButtons(root);
+    buttons.forEach((button, item) => {
+      const on = item === index;
+      button.classList.toggle("is-active", on);
+      button.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    root._suggestIndex = index;
+    if (buttons[index] && buttons[index].scrollIntoView) {
+      buttons[index].scrollIntoView({ block: "nearest" });
+    }
   }
 
   function metric(label, value) {
@@ -447,7 +468,23 @@
         root._suggestTimer = window.setTimeout(() => fetchSuggest(root, value), 250);
       });
       query.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") clearSuggest(root);
+        if (event.key === "Escape") {
+          clearSuggest(root);
+          return;
+        }
+        const buttons = suggestButtons(root);
+        if (!buttons.length) return;
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          const current = typeof root._suggestIndex === "number" ? root._suggestIndex : -1;
+          const next = current + 1 >= buttons.length ? 0 : current + 1;
+          highlightSuggest(root, next);
+          return;
+        }
+        if (event.key === "Enter" && root._suggestIndex >= 0 && buttons[root._suggestIndex]) {
+          event.preventDefault();
+          buttons[root._suggestIndex].click();
+        }
       });
     }
     document.addEventListener("click", (event) => {

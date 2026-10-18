@@ -647,6 +647,45 @@ function paintCustomsReference(ctx) {
   if (root && window.TradeFlowMarket) window.TradeFlowMarket.paint(root, ctx || null);
 }
 
+function draftScript(text) {
+  const value = String(text || "");
+  const cjk = (value.match(/[\u4e00-\u9fff]/g) || []).length;
+  const latin = (value.match(/[A-Za-z]/g) || []).length;
+  if (latin === 0 && cjk === 0) return "";
+  return latin > cjk ? "en" : "zh";
+}
+
+function visibleDraft(turns) {
+  const history = Array.isArray(turns) ? turns : [];
+  let language = null;
+  let generated = null;
+  let approved = null;
+  let approvedMeta = null;
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const turn = history[i] || {};
+    const meta = turn.metadata || {};
+    if (!language && (meta.draft_language === "en" || meta.draft_language === "zh")) {
+      language = meta.draft_language;
+    }
+    if (!generated && typeof meta.generated_reply === "string" && meta.generated_reply.trim()) {
+      generated = meta.generated_reply;
+    }
+    if (!approved && (turn.sender === "buyer_agent" || turn.sender === "buyer_human_approved") && turn.raw_text) {
+      approved = String(turn.raw_text);
+      approvedMeta = meta;
+    }
+  }
+  if (approved && approvedMeta && approvedMeta.draft_from_supplier === false) return approved;
+  if (
+    approved && language && generated
+    && draftScript(approved) && draftScript(approved) !== language
+    && draftScript(generated) === language
+  ) {
+    return generated;
+  }
+  return approved || generated || null;
+}
+
 function renderEngineDecision(session) {
   const el = (id) => document.getElementById(id);
   if (!el("decisionIntent")) return; // 面板不存在時安全退出
@@ -714,23 +753,10 @@ function renderEngineDecision(session) {
     risk === null || tfTrip() === null ? "" : (risk >= tfTrip() ? "is-bad" : "is-ok")
   );
 
-  // 最新生成話術：先找最後一則我方（AI 或人工核准）的發言；copilot 模式不會
-  // 產生我方輪次，話術存在對手輪 metadata.generated_reply（後端持久化），
-  // 否則重新整理頁面後這段「要人工貼回去」的話就消失成 "—"。
-  const lastOurs = [...turns].reverse().find(
-    (t) => t.sender === "buyer_agent" || t.sender === "buyer_human_approved"
-  );
-  let replyText = lastOurs && lastOurs.raw_text ? String(lastOurs.raw_text) : null;
-  if (!replyText) {
-    for (let i = turns.length - 1; i >= 0; i -= 1) {
-      const meta = turns[i].metadata || {};
-      if (typeof meta.generated_reply === "string" && meta.generated_reply.trim()) {
-        replyText = meta.generated_reply;
-        break;
-      }
-    }
-  }
-  el("decisionReply").textContent = replyText || "—";
+  // The paste-back draft follows the supplier's language. Copilot stores it on
+  // the opponent turn; approve copies that same text onto the human turn.
+  // A reload reads those fields and must not swap in a Chinese sentence.
+  el("decisionReply").textContent = visibleDraft(turns) || "—";
   paintCustomsReference((session.spec || {}).market_context);
 }
 

@@ -1439,6 +1439,44 @@ def render_supplier_reply(obj: TacticalActionObject, inbound_text: str) -> str:
     return ChineseSurfaceRenderer.render(obj)
 
 
+def draft_for_approval(
+    price: float,
+    *,
+    language: str,
+    inbound_text: str,
+    stored_reply: Optional[str],
+    stored_price: Optional[float],
+    product_name: str,
+    ceiling: float,
+    moq: int,
+) -> str:
+    """The paste-back draft after a human approves.
+
+    The language is the one stored with the supplier message. When the approved
+    figure is the stored engine price, the stored draft is returned as-is.
+    """
+    lang = language if language in {"en", "zh"} else supplier_message_language(inbound_text)
+    if (
+        isinstance(stored_reply, str)
+        and stored_reply.strip()
+        and stored_price is not None
+        and f"{float(stored_price):.2f}" == f"{float(price):.2f}"
+    ):
+        return stored_reply
+    if lang == "en":
+        probe = "Thank you for the quote."
+    else:
+        probe = inbound_text if supplier_message_language(inbound_text) == "zh" else "最低出廠價"
+    obj = TacticalActionObject(
+        authorized_price=float(price),
+        walk_away_ceiling=float(ceiling),
+        product_name=product_name or "Item",
+        moq=int(moq) if moq else 500,
+        source_round_id="APPROVAL",
+    )
+    return render_supplier_reply(obj, probe)
+
+
 class EnglishExecutiveRenderer:
     """
     英文採購高管與 CPO 遙測警報卡片渲染器 (English Executive Surface Renderer)。
