@@ -109,6 +109,9 @@ def extract_stage1(text: str) -> dict:
         "moq": _moq_from_text(text or "", classification.demanded_moq),
         "lead_time_days": _lead_days(text or ""),
         "deposit_pct": _deposit_fraction_from_text(text or ""),
+        "quoted_amount": classification.quoted_amount,
+        "currency": classification.mentioned_currency,
+        "currency_note": classification.price_currency_note,
     }
 
 

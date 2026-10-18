@@ -60,11 +60,15 @@ def _measure_working_set_mb(n: int, opens, scheds, use_gpu: bool) -> float:
 
     [修正] 舊版以 `n_rollouts * 8` 估算工作集，並在註解中聲稱 float32。
     兩者皆錯：
-      1. `solver.solve()` 內部把張量轉為 float64（見 solver.py 的 astype(xp.float64)），
-         不是 float32；
-      2. 8 bytes/rollout 遠低於實際配置量 —— 實測 9.6M rollouts 的峰值為 666.5 MB，
+      1. 未分塊的 `solver.solve()` 把整張 (samples, openings, schedules) 張量
+         轉成 float64，不是 float32；
+      2. 8 bytes/rollout 遠低於那次配置量 —— 當時 9.6M rollouts 的 tracemalloc
+         峰值是 666.5 MB（`results/bench.json` 同一次測量記為 678.1 MB），
          而舊公式只給 73.2 MB，**低估 9.1 倍**。
     由於工作集是 roofline 下界的分子，低估會直接放大所有推導出的數字。
+    那些數字留在 `results/bench.json`，本函式不再把新測到的峰值寫回去。
+    現在的 `solve()` 沿樣本軸分塊累加，一次呼叫的 tracemalloc 峰值會比
+    666.5 MB 小很多；那是另一個測量，不是 bench.json 那一列。
     """
     import tracemalloc
 

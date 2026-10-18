@@ -87,8 +87,19 @@ def display_line(model: str, latency_ms: int | None, total_tokens: int | None) -
     return f"AMD GPU Cloud · {model} · {latency} · {tokens}"
 
 
+def _currency_view(stage1: dict) -> dict:
+    return {
+        "quoted_amount": stage1.get("quoted_amount"),
+        "currency": stage1.get("currency"),
+        "currency_note": stage1.get("currency_note"),
+    }
+
+
 def _base_result(text: str, *, status: str, label: str) -> dict:
-    fields = validate_fields(extract_stage1(text))
+    stage1 = extract_stage1(text)
+    fields = validate_fields(stage1)
+    shown = {key: fields[key] for key in ("price", "moq", "lead_time_days", "deposit_pct")}
+    shown.update(_currency_view(stage1))
     return {
         "status": status,
         "display": label,
@@ -98,7 +109,7 @@ def _base_result(text: str, *, status: str, label: str) -> dict:
         "prompt_tokens": None,
         "completion_tokens": None,
         "total_tokens": None,
-        "fields": {key: fields[key] for key in ("price", "moq", "lead_time_days", "deposit_pct")},
+        "fields": shown,
         "rejected": fields["rejected"],
         "reading": None,
         "buyer_price": None,
@@ -126,9 +137,14 @@ def _apply_model_fields(result: dict, parsed: dict) -> None:
             result["discarded_buyer_price"] = True
             parsed.pop(banned, None)
     validated = validate_fields(parsed)
-    result["fields"] = {
-        key: validated[key] for key in ("price", "moq", "lead_time_days", "deposit_pct")
-    }
+    stage = result["fields"]
+    # Stage-1 already refused to treat this number as CNY. A model price
+    # must not put it back.
+    if stage.get("currency") not in (None, "CNY") or stage.get("currency_note"):
+        validated["price"] = stage.get("price")
+    shown = {key: validated[key] for key in ("price", "moq", "lead_time_days", "deposit_pct")}
+    shown.update(_currency_view(stage))
+    result["fields"] = shown
     result["rejected"] = validated["rejected"]
     reading = parsed.get("reading") or parsed.get("tactical_rationale")
     if isinstance(reading, str) and reading.strip():

@@ -131,8 +131,8 @@ For a first order of 10,000 umbrellas: open ¥14.80 → the engine's first count
 ## Slide 7 — AMD integration (the honest version)
 
 **We do not say "because it needs 192GB of VRAM" — that would be wrong.**
-The multi-supplier demo path (the Web "Run Auction" default) evaluates **28.8M rollout positions** (9.6M per round × 3 rounds), the **arithmetic product** $K \times S \times N_{open} \times N_{sched}$ — **not a measured execution count**. The rollouts are produced by a single vectorised broadcast; 28.8M is only "how many parameter combinations are evaluated at once".
-**The working set is whatever `src/engine/benchmark.py` measures with tracemalloc: a 9.6M-position run peaks at about 678.1 MB** (`results/bench.json`; the old `n × 8 bytes` formula gives 73.2 MB, an underestimate of roughly 9.3×, and is no longer used). Extrapolating the theoretical 96M upper bound with the same formula still gives only about 384 MB. This is **bandwidth-bound**, not capacity-bound.
+The multi-supplier demo path (the Web "Run Auction" default) evaluates **28.8M rollout positions** (9.6M per round × 3 rounds), the **arithmetic product** $K \times S \times N_{open} \times N_{sched}$ — **not a measured execution count**. The live solver evaluates that product in sample chunks; 28.8M is only "how many parameter combinations are evaluated", not one allocation.
+**The committed working-set row is the pre-chunk measurement in `results/bench.json`: a 9.6M-position run peaked at about 678.1 MB** (the old `n × 8 bytes` formula gives 73.2 MB, an underestimate of roughly 9.3×, and is no longer used). `benchmark.py` still measures with tracemalloc, and that function does not overwrite `bench.json`. Extrapolating the theoretical 96M upper bound with the same formula still gives only about 384 MB. This is **bandwidth-bound**, not capacity-bound.
 
 **Where AMD actually matters:**
 1. **One ROCm abstraction**: `_xp()` in `src/engine/solver.py` lets the same tensor-game code be developed on an x86-64 CPU (NumPy SIMD) and switched to an AMD Instinct GPU (ROCm/CuPy) for production in one line.

@@ -29,7 +29,15 @@ sys.exit(1 if missing else 0)"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONIOENCODING=utf-8
 # Render and other hosts inject PORT. Compose publishes 8000.
+# This image starts one process (`python -m src.app.main`). Do not add a
+# second server command. The process reads $PORT and binds 0.0.0.0:$PORT.
 ENV PORT=8000
+# One CPU thread pool on a 0.5 CPU instance. These must be set before Python
+# starts, or BLAS/OpenMP can spawn workers during the first solve.
+ENV OMP_NUM_THREADS=1
+ENV OPENBLAS_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
+ENV NUMEXPR_NUM_THREADS=1
 
 # The dashboard writes data/sessions.db and may create .env on save.
 # Those paths must be writable by the runtime user.
@@ -40,7 +48,8 @@ USER tradeflow
 
 EXPOSE 8000
 
-# python:3.12-slim has no curl. Hit /health with the stdlib client.
+# python:3.12-slim has no curl. GET /health with the stdlib client.
+# This does not bind a port. It only connects to the one server process.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=25s --retries=8 \
   CMD python -c "import os,urllib.request; p=os.environ.get('PORT','8000'); urllib.request.urlopen('http://127.0.0.1:'+p+'/health', timeout=4).read()"
 

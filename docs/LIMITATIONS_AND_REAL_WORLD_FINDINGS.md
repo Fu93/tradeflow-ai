@@ -25,7 +25,7 @@
 | MI300X HBM3 "5.3 TB/s max. peak theoretical" and "Up to 192 GB HBM3" | **A** | AMD Instinct MI300X datasheet. The transfer time in `results/mi300x_roofline.json` is a theoretical roofline lower-bound estimate, not measured | the quotes are the datasheet's; the bound is not a runtime |
 | Academic literature (NegotiationArena / AgenticPay / Cattle Trade) | **A** | arXiv IDs are searchable | ✅ yes |
 | Expected margin, breakdown rate, tactic labels, BATNA ceilings | **B** | Expectimax grid search + Bayesian update; formulas in §13 | ⚠️ formula real, inputs synthetic |
-| 28.8M / 72M / 96M rollout positions (**arithmetic products, not execution counts**) | **B** | Product of the actual call parameters (K×S×N_open×N_sched) | ⚠️ arithmetic real, **not measured**: the rollouts happen in one vectorised broadcast |
+| 28.8M / 72M / 96M rollout positions (**arithmetic products, not execution counts**) | **B** | Product of the actual call parameters (K×S×N_open×N_sched) | ⚠️ arithmetic real, **not measured**: the live solver evaluates that product in sample chunks |
 | MI300X transfer lower bound | **B** | theoretical roofline lower-bound estimate, not measured. Formula `lower_bound_seconds = (working_set_mb * 1024 * 1024) / (5.3e12)` in `results/mi300x_roofline.json`. `working_set_mb` is the tracemalloc peak stored in `results/bench.json` | derivation, not a measurement |
 | ¥17.91/unit fair should-cost | **C** | Line items in `knowledge/spec_baseline.md` are tagged `[EXPERT]`. The ¥17.91 total is tagged `[DERIVED]` (overhead × 1.08, then margin × 1.10). Not a factory quote | ❌ not a factory quote |
 | Supplier quotes ¥13.26 / ¥15.60 / ¥12.60 etc. | **C** | Generated round by round by `adversaries.py` | ❌ **not real factory quotes** |
@@ -223,7 +223,7 @@ On 2026-10-15 we repeated the experiment with a **real AMD-hosted model** (Qwen3
 ## 4. AMD heterogeneous compute: the bandwidth-bound truth
 
 * **Dropping the 192GB VRAM packaging**:
-  * **Rollout-count correction**: the "96M" used externally is the theoretical bound of the **largest strategy grid** $(4, 50000, 40, 12)$, which **no execution path uses**. That number is the **number of parameter combinations evaluated (tensor elements)**, not loop iterations or kernel launches — the rollouts are produced by a **single vectorised broadcast**, so "28.8M rollouts" must not be read as "28.8M measured executions". Tensor positions depend on the call parameters:
+  * **Rollout-count correction**: the "96M" used externally is the theoretical bound of the **largest strategy grid** $(4, 50000, 40, 12)$, which **no execution path uses**. That number is the **number of parameter combinations evaluated (tensor elements)**, not loop iterations or kernel launches — the rollouts are a vectorised expectimax over **sample chunks**, so "28.8M rollouts" must not be read as "28.8M measured executions" or as one allocation. Tensor positions depend on the call parameters:
 
     | Path | $n_{\text{samples}}$ | Positions per round | 3-round total |
     |---|---|---|---|
