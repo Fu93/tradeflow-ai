@@ -872,8 +872,12 @@ body {
 .auction-summary {
   margin-top: 14px;
   display: grid;
-  grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+.auction-summary .summary-lead {
+  grid-column: 1 / -1;
 }
 
 .auction-summary p {
@@ -890,6 +894,23 @@ body {
   background: rgba(30, 58, 76, 0.06);
   color: var(--ink);
 }
+
+.auction-summary .is-negative {
+  background: var(--seal-tint);
+  color: var(--seal-deep);
+}
+
+.auction-summary .is-negative strong {
+  color: var(--seal-deep);
+}
+
+.auction-summary .summary-secondary {
+  background: transparent;
+  border: 1px dashed var(--rule-strong);
+}
+
+.is-ok { color: var(--moss); }
+.is-bad { color: var(--seal); }
 
 .auction-summary strong {
   display: block;

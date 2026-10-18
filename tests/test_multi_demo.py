@@ -18,19 +18,28 @@ class TestMultiSupplierSimulation(unittest.TestCase):
 
         # [修正 §7.4] 舊版把最終結果寫死（winning_price==12.60），任何合法行為
         # 變動都會誤判失敗，卻測不出結構缺陷。改為鎖定**關係不變量**：
-        # 贏家成交價 = 最後一輪最低報價；節省金額由 (ceiling − price) × moq 導出。
+        # 贏家成交價 = 最後一輪最低報價。Headline 節省相對首輪最低報價；
+        # 相對 walk-away 上限的數字留在 savings_vs_ceiling_*，且仍為正。
         trace = res["trace"]
         final_best = trace[-1]["best_quote"]
+        first_best = trace[0]["best_quote"]
         self.assertAlmostEqual(res["winning_price"], final_best)
         self.assertEqual(trace[-1]["lead_supplier"], res["winning_supplier"])
+        self.assertEqual(res["total_savings_baseline"], "first_round_best_quote")
         self.assertAlmostEqual(
-            res["total_savings_cny"], (16.20 - final_best) * 10000
+            res["total_savings_cny"], (first_best - final_best) * 10000
         )
         self.assertAlmostEqual(
-            res["total_savings_pct"], (16.20 - final_best) / 16.20
+            res["total_savings_pct"], (first_best - final_best) / first_best
         )
-        # 節省率必須為有意義的正值（成交價低於 walk-away 上限）
-        self.assertGreater(res["total_savings_pct"], 0.10)
+        self.assertAlmostEqual(
+            res["savings_vs_ceiling_pct"], (16.20 - final_best) / 16.20
+        )
+        self.assertAlmostEqual(
+            res["savings_vs_target_cny"], (12.0 - final_best) * 10000
+        )
+        # 成交價低於 walk-away 上限；headline 本身可以小於 10%。
+        self.assertGreater(res["savings_vs_ceiling_pct"], 0.10)
         self.assertLess(res["winning_price"], 16.20)
         self.assertGreater(res["total_rollouts_accum"], 5_000_000)
 

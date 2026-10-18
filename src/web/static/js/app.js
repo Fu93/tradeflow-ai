@@ -75,6 +75,13 @@ function tfMoney(value) {
   return n === null ? "—" : `¥${n.toFixed(2)}`;
 }
 
+function tfTone(el, tone) {
+  if (!el) return;
+  el.style.color = "";
+  el.classList.toggle("is-ok", tone === "is-ok");
+  el.classList.toggle("is-bad", tone === "is-bad");
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   // P1-3: SSE 與遙測配置必須先於圖表初始化；圖表失敗（CDN 不可達）不得中止
   // 整個啟動鏈，否則會話清單永遠停在 "Connecting..."。
@@ -219,8 +226,8 @@ function renderSessions(sessions) {
 
     let stateClass = "badge-idle";
     if (s.state === "AUTOPILOT_CRUISING" || s.state === "COPILOT_MONITORING") stateClass = "badge-cruising";
-    else if (s.state === "CIRCUIT_TRIPPED_ESCALATED" || s.state === "AWAITING_HUMAN_DECISION") stateClass = "badge-tripped";
-    else if (s.state === "DEAL_CLOSED") stateClass = "badge-closed";
+    else if (s.state === "CIRCUIT_TRIPPED_ESCALATED" || s.state === "AWAITING_HUMAN_DECISION" || s.state === "WALK_AWAY") stateClass = "badge-tripped";
+    else if (s.state === "DEAL_CLOSED" || s.state === "HUMAN_APPROVED_APPLIED") stateClass = "badge-closed";
 
     // H1: session_id / state / product are free-form strings persisted from
     // the API and pushed over SSE. Every one is escaped before interpolation.
@@ -265,9 +272,25 @@ function selectSession(s) {
     ring.style.setProperty("--risk", cbRisk === null ? "0" : String(Math.max(0, Math.min(100, cbRisk * 100))));
   }
 
-  if (s.state === "AWAITING_HUMAN_DECISION") {
+  if (s.state === "CIRCUIT_TRIPPED_ESCALATED") {
+    badge.className = "cb-badge cb-tripped";
+    badge.textContent = "CIRCUIT TRIPPED (ESCALATED)";
+    ring.className = "cb-ring tripped";
+  } else if (s.state === "WALK_AWAY") {
+    badge.className = "cb-badge cb-tripped";
+    badge.textContent = "WALK AWAY";
+    ring.className = "cb-ring tripped";
+  } else if (s.state === "AWAITING_HUMAN_DECISION") {
     badge.className = "cb-badge cb-warn";
     badge.textContent = "AWAITING HUMAN DECISION";
+    ring.className = "cb-ring";
+  } else if (s.state === "DEAL_CLOSED") {
+    badge.className = "cb-badge cb-safe";
+    badge.textContent = "DEAL CLOSED";
+    ring.className = "cb-ring";
+  } else if (s.state === "HUMAN_APPROVED_APPLIED") {
+    badge.className = "cb-badge cb-safe";
+    badge.textContent = "HUMAN APPROVED";
     ring.className = "cb-ring";
   } else if (cbRisk !== null && tfTrip() !== null && cbRisk >= tfTrip()) {
     badge.className = "cb-badge cb-tripped";
@@ -561,7 +584,10 @@ function renderEngineDecision(session) {
     if (v !== null) { risk = v; break; }
   }
   el("decisionRisk").textContent = risk === null ? "—" : `${(risk * 100).toFixed(1)}%`;
-  el("decisionRisk").style.color = risk === null || tfTrip() === null ? "" : (risk >= tfTrip() ? "#f43f5e" : "#10b981");
+  tfTone(
+    el("decisionRisk"),
+    risk === null || tfTrip() === null ? "" : (risk >= tfTrip() ? "is-bad" : "is-ok")
+  );
 
   // 最新生成話術：先找最後一則我方（AI 或人工核准）的發言；copilot 模式不會
   // 產生我方輪次，話術存在對手輪 metadata.generated_reply（後端持久化），
@@ -717,7 +743,7 @@ async function applyCategoryPreset(cat) {
   if (!p) {
     if (statusEl) {
       statusEl.textContent = "Simulated mandates have not loaded. Refresh the desk.";
-      statusEl.style.color = "#f87171";
+      tfTone(statusEl, "is-bad");
     }
     return;
   }
@@ -748,20 +774,20 @@ async function applyCategoryPreset(cat) {
       document.getElementById("sessionLabel").textContent = `${newSid} (${p.name})`;
       if (statusEl) {
         statusEl.textContent = `Sandbox session ${newSid} created. The engine is bound to this simulated mandate, not a factory quote.`;
-        statusEl.style.color = "#4ade80";
+        tfTone(statusEl, "is-ok");
       }
       fetchSessionDetails(newSid);
     } else {
       const detail = await res.text();
       if (statusEl) {
-        statusEl.textContent = `Could not create session (HTTP ${tfEsc(res.status)}): ${detail.slice(0, 140)}`;
-        statusEl.style.color = "#f87171";
+        statusEl.textContent = `Could not create session (HTTP ${res.status}): ${detail.slice(0, 140)}`;
+        tfTone(statusEl, "is-bad");
       }
     }
   } catch (err) {
     if (statusEl) {
-      statusEl.textContent = `Session creation failed: ${err.message}`;
-      statusEl.style.color = "#f87171";
+      statusEl.textContent = `Session creation failed: ${err.message || "request failed"}`;
+      tfTone(statusEl, "is-bad");
     }
   }
 
@@ -816,25 +842,27 @@ async function sendCommand(cmdCode) {
     }
     if (!resp.ok) {
       const detail = (result && result.detail) || "";
-      resEl.className = "cmd-result";
-      resEl.style.color = "#f87171";
+      resEl.className = "cmd-result is-bad";
+      tfTone(resEl, "is-bad");
       resEl.textContent = `[HTTP ${resp.status}] Command NOT applied: ${detail || resp.statusText || "request rejected"}`;
       return;
     }
     if (result && result.status === "success") {
+      resEl.className = "cmd-result is-ok";
+      tfTone(resEl, "is-ok");
       resEl.textContent = `[SUCCESS] Resolved Action: ${result.action} | Session state updated.`;
     } else {
       // HTTP 200 but the backend did not apply the command (e.g. unknown
       // session with no pending authorization bridge). Do not claim success.
       const reason = (result && (result.detail || result.reason)) || "no action applied";
-      resEl.className = "cmd-result";
-      resEl.style.color = "#f87171";
+      resEl.className = "cmd-result is-bad";
+      tfTone(resEl, "is-bad");
       resEl.textContent = `[NOT APPLIED] ${reason}`;
     }
   } catch (err) {
-    resEl.className = "cmd-result";
-    resEl.style.color = "#f87171";
-    resEl.textContent = `[NETWORK ERROR] ${err.message}`;
+    resEl.className = "cmd-result is-bad";
+    tfTone(resEl, "is-bad");
+    resEl.textContent = `[NETWORK ERROR] ${err.message || "request failed"}`;
   }
 }
 
@@ -916,10 +944,10 @@ async function runMultiAuction() {
     });
 
     summaryEl.innerHTML = `
-      <p class="summary-lead"><strong>Simulated suppliers</strong> Parameterised archetypes, not live factory quotes. Tensor grid cells: ${tfNum(data.total_rollouts, 0).toLocaleString()} (parameterised K×S×N_open×N_sched, not measured iterations). Compute: ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}).</p>
-      <p><strong>Winner:</strong> ${tfEsc(data.winning_supplier)} @ ${tfNum(data.winning_price, null) === null ? "—" : "¥" + tfNum(data.winning_price, 0).toFixed(2)}</p>
-      <p><strong>Savings vs walk-away ceiling</strong> (${tfNum(data.walk_away_ceiling, null) === null ? "—" : "¥" + tfNum(data.walk_away_ceiling, 0).toFixed(2)}): ${tfNum(data.total_savings_cny, null) === null ? "—" : "¥" + tfNum(data.total_savings_cny, 0).toFixed(2)} (${tfNum(data.total_savings_pct, null) === null ? "—" : (tfNum(data.total_savings_pct, 0) * 100).toFixed(1) + "%"})</p>
-      <p><strong>Savings vs first quote</strong> (${tfNum(data.first_round_best_quote, null) === null ? "—" : "¥" + tfNum(data.first_round_best_quote, 0).toFixed(2)}): ${tfNum(data.savings_vs_first_quote_cny, null) === null ? "—" : "¥" + tfNum(data.savings_vs_first_quote_cny, 0).toFixed(2)} (${tfNum(data.savings_vs_first_quote_pct, null) === null ? "—" : (tfNum(data.savings_vs_first_quote_pct, 0) * 100).toFixed(1) + "%"})</p>
+      <p class="summary-lead"><strong>Simulated suppliers</strong> Parameterised archetypes, not live factory quotes. Winner: ${tfEsc(data.winning_supplier)} @ ${tfNum(data.winning_price, null) === null ? "—" : "¥" + tfNum(data.winning_price, 0).toFixed(2)}. Tensor grid cells: ${tfNum(data.total_rollouts, 0).toLocaleString()} (parameterised K×S×N_open×N_sched, not measured iterations). Compute: ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}).</p>
+      <p class="summary-headline"><strong>Headline: savings vs first-round best quote</strong> (${tfNum(data.first_round_best_quote, null) === null ? "—" : "¥" + tfNum(data.first_round_best_quote, 0).toFixed(2)}): ${tfNum(data.total_savings_cny, null) === null ? "—" : "¥" + tfNum(data.total_savings_cny, 0).toFixed(2)} (${tfNum(data.total_savings_pct, null) === null ? "—" : (tfNum(data.total_savings_pct, 0) * 100).toFixed(1) + "%"})</p>
+      <p class="${tfNum(data.savings_vs_target_pct, 0) < 0 ? "is-negative" : ""}"><strong>Versus target</strong> (${tfNum(data.product_target, null) === null ? "—" : "¥" + tfNum(data.product_target, 0).toFixed(2)}): ${tfNum(data.savings_vs_target_cny, null) === null ? "—" : "¥" + tfNum(data.savings_vs_target_cny, 0).toFixed(2)} (${tfNum(data.savings_vs_target_pct, null) === null ? "—" : (tfNum(data.savings_vs_target_pct, 0) * 100).toFixed(1) + "%"})</p>
+      <p class="summary-secondary"><strong>Secondary: versus walk-away ceiling</strong> (${tfNum(data.walk_away_ceiling, null) === null ? "—" : "¥" + tfNum(data.walk_away_ceiling, 0).toFixed(2)}): ${tfNum(data.savings_vs_ceiling_cny, null) === null ? "—" : "¥" + tfNum(data.savings_vs_ceiling_cny, 0).toFixed(2)} (${tfNum(data.savings_vs_ceiling_pct, null) === null ? "—" : (tfNum(data.savings_vs_ceiling_pct, 0) * 100).toFixed(1) + "%"})</p>
     `;
     summaryEl.classList.remove("hidden");
 
@@ -983,21 +1011,22 @@ async function saveConfig() {
       body: JSON.stringify(payload)
     });
     if (!res.ok) {
-      resEl.className = "cmd-result";
-      resEl.style.color = "#f87171";
+      resEl.className = "cmd-result is-bad";
+      tfTone(resEl, "is-bad");
       resEl.textContent = `[SAVE FAILED] HTTP ${res.status}: ${res.statusText || "request rejected"}`;
       resEl.classList.remove("hidden");
       return;
     }
     const d = await res.json();
-    resEl.className = "cmd-result";
+    resEl.className = "cmd-result is-ok";
+    tfTone(resEl, "is-ok");
     const updated = Array.isArray(d.fields_updated) ? d.fields_updated.join(", ") : "";
     resEl.textContent = `[SAVED] Hot reload status: ${d.hot_reload}. Updated: ${updated || "(no allowlisted fields changed)"}`;
     resEl.classList.remove("hidden");
   } catch (err) {
-    resEl.className = "cmd-result";
-    resEl.style.color = "#f87171";
-    resEl.textContent = `[SAVE ERROR] ${err.message}`;
+    resEl.className = "cmd-result is-bad";
+    tfTone(resEl, "is-bad");
+    resEl.textContent = `[SAVE ERROR] ${err.message || "request failed"}`;
     resEl.classList.remove("hidden");
   }
 }
@@ -1005,6 +1034,7 @@ async function saveConfig() {
 async function testPush(ch) {
   const resEl = document.getElementById("configResult");
   resEl.className = "cmd-result";
+  tfTone(resEl, "");
   resEl.textContent = `Sending test message to channel '${ch}'...`;
   resEl.classList.remove("hidden");
 
@@ -1015,16 +1045,25 @@ async function testPush(ch) {
       body: JSON.stringify({ channel: ch })
     });
     if (!res.ok) {
-      resEl.className = "cmd-result";
-      resEl.style.color = "#f87171";
+      resEl.className = "cmd-result is-bad";
+      tfTone(resEl, "is-bad");
       resEl.textContent = `[TEST FAILED] HTTP ${res.status}: ${res.statusText || "request rejected"}`;
       return;
     }
     const d = await res.json();
-    resEl.textContent = `[RESULT] ${JSON.stringify(d.results)}`;
+    let shown = "";
+    try {
+      shown = JSON.stringify(d.results);
+    } catch (_) {
+      shown = "unreadable result";
+    }
+    if (shown.indexOf("Traceback") !== -1) {
+      shown = "A channel reported an internal error. The server log has the detail.";
+    }
+    resEl.textContent = `[RESULT] ${shown}`;
   } catch (err) {
-    resEl.className = "cmd-result";
-    resEl.style.color = "#f87171";
-    resEl.textContent = `[TEST ERROR] ${err.message}`;
+    resEl.className = "cmd-result is-bad";
+    tfTone(resEl, "is-bad");
+    resEl.textContent = `[TEST ERROR] ${err.message || "request failed"}`;
   }
 }

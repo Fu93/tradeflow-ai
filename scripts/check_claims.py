@@ -224,6 +224,7 @@ def main() -> int:
         if shorter is None or int(shorter.group(2)) != len(shorter.group(1)):
             problems.append("the shorter tagline's stated character count disagrees with its text")
 
+    problems.extend(_savings_framing_problems(texts))
     problems.extend(_mi300x_problems())
 
     if problems:
@@ -253,6 +254,36 @@ _UNSOURCED = (
     "531.8",
     "1843.7",
 )
+
+
+def _savings_framing_problems(texts: dict[Path, str]) -> list[str]:
+    """Auction headline is the first-round best quote.
+
+    Versus target must be described as visible when negative. A 22.2% figure,
+    when quoted, has to sit in a paragraph that calls the walk-away ceiling
+    secondary. Self-play percents are a different experiment and are not
+    checked here.
+    """
+    problems: list[str] = []
+    for path, text in texts.items():
+        if "first-round best quote" not in text:
+            problems.append(
+                f"{path.name} does not name the auction headline baseline: first-round best quote"
+            )
+        if "including when that figure is negative" not in text:
+            problems.append(
+                f"{path.name} does not say auction versus-target is shown "
+                "including when that figure is negative"
+            )
+        for para in re.split(r"\n\s*\n", text):
+            if "22.2%" not in para:
+                continue
+            if "walk-away ceiling" not in para or "secondary" not in para.lower():
+                problems.append(
+                    f"{path.name} quotes 22.2% without calling it a secondary "
+                    "walk-away ceiling baseline"
+                )
+    return problems
 
 
 def _near(value: float, targets: list[float]) -> bool:

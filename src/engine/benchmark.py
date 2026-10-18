@@ -155,7 +155,13 @@ def run(n_list=(2_000, 10_000, 20_000, 50_000), force_cpu=False) -> Dict[str, An
             "theoretical_max_rollouts": theoretical_max_rollouts,
             "cpu_seconds": round(dt_multi_cpu, 3),
             "winning_price": multi_res.get("winning_price"),
-            "savings_pct": multi_res.get("total_savings_pct"),
+            # Historical bench.json stores the ceiling ratio in savings_pct.
+            # Keep that key on the ceiling so a later run does not silently
+            # rewrite 0.2222 into the first-quote headline.
+            "savings_pct": multi_res.get("savings_vs_ceiling_pct"),
+            "savings_pct_baseline": "walk_away_ceiling",
+            "headline_savings_pct": multi_res.get("total_savings_pct"),
+            "headline_savings_baseline": multi_res.get("total_savings_baseline"),
         },
         "disclosure": _disclosure(),
     }

@@ -27,6 +27,8 @@ An optional second stage can call an OpenAI-compatible model to classify a suppl
 
 On the synthetic self-play table (`results/self_play_benchmark.md`, 20 matches × 5 archetypes, 100 matches, seed 42) the engine's savings versus its walk-away ceiling range from 8.8% to 20.0%. Against a Hard-Bargainer it is slightly behind a fixed 5%-per-round concession (8.8% vs 9.2%). Seed 42 reproduces that table; it is not a variance estimate. The real-model log above is a different experiment: the AMD-hosted model, used as the buyer, closed at a deal rate of 61.11% of completed matches against a Bluffing Hardliner and recorded 0 budget violations in 94 completed matches. Those are sandbox results, not factory results.
 
+The multi-supplier auction uses a different baseline again. Its headline is savings versus the first-round best quote (committed report: ¥13.26 to ¥12.60, 5.0%, ¥6,600). Versus target is shown on the same panel, including when that figure is negative (this run is −5.0% versus ¥12.00). Savings versus the walk-away ceiling, 22.2% and ¥36,000, are secondary and labeled as such. Do not quote 22.2% as the headline, and do not mix it with the self-play range above.
+
 `cp .env.example .env && docker compose up --build` starts the dashboard with no API keys. Placeholder keys are ignored. `/health` reports `offline_demo` and the solver backend.
 
 ## Demo video script (about 4 minutes)
@@ -39,7 +41,7 @@ Record the screen. Speak only what the screen just showed. If a command prints `
 
 **0:55–1:40 — One decision.** On the dashboard, open a demo session or run the single-supplier walkthrough you prepared. Point at the recommended price and the breakdown probability. Say both come from the solver, not from a chat model.
 
-**1:40–2:30 — Auction.** Click Run Auction. Read the winner and the price the page shows. If you quote a savings percent, say which baseline the page is using (walk-away ceiling, first quote, or target). Do not swap those baselines.
+**1:40–2:30 — Auction.** Click Run auction. Read the winner and the price. The headline is savings versus the first-round best quote. Read versus target next, including when that figure is negative. The walk-away ceiling percent is secondary and labeled on the page. Do not quote the ceiling figure as the headline.
 
 **2:30–3:10 — Human send.** Open `extension/mock_chat.html` or the side panel. Show a supplier line, the decision card, and Copy. Say the extension has no send button. Paste nothing into a live factory chat unless you mean to.
 
@@ -66,3 +68,4 @@ Record the screen. Speak only what the screen just showed. If a command prints `
 - [ ] On an AMD GPU box with ROCm and CuPy, run `scripts/benchmark_amd_gpu.py`. Commit that JSON only if `ran_on_amd_gpu` is true and you have read it.
 - [ ] Rotate the Evolus and AMD keys if they were pasted into chat, tickets, or screenshots during development. A scan of this git history did not find a committed live key; `.env` is gitignored. Rotation is still the right move if the keys were shared outside the repo.
 - [ ] `results/pitch.pptx` was generated from an older pitch. Rebuild it from this outline or do not upload it.
+- [ ] GitHub topics are empty. This pack cannot edit repository settings. Add `procurement`, `negotiation`, `expectimax`, `fastapi`, `amd`, `hackathon`, `commerce`. The description already matches the pitch and can stay. The CI badge in the README points at `.github/workflows/ci.yml`. License on the repo is already MIT.

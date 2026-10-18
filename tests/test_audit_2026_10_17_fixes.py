@@ -185,13 +185,26 @@ class TestAuctionSavingsBaseline(_Isolated):
             "savings_vs_first_quote_pct",
             "savings_vs_first_quote_cny",
             "savings_vs_target_pct",
+            "savings_vs_target_cny",
+            "savings_vs_ceiling_pct",
+            "savings_vs_ceiling_cny",
         ):
             self.assertIn(key, d)
-        self.assertEqual(d["total_savings_baseline"], "walk_away_ceiling")
-        # The two percentages answer different questions and must not be conflated.
+        self.assertEqual(d["total_savings_baseline"], "first_round_best_quote")
+        self.assertAlmostEqual(d["total_savings_pct"], d["savings_vs_first_quote_pct"])
+        # Ceiling and first-quote answer different questions.
         self.assertNotAlmostEqual(
-            d["total_savings_pct"], d["savings_vs_first_quote_pct"], places=3
+            d["total_savings_pct"], d["savings_vs_ceiling_pct"], places=3
         )
+        expected_vs_target = (d["product_target"] - d["winning_price"]) / d["product_target"]
+        self.assertAlmostEqual(d["savings_vs_target_pct"], expected_vs_target)
+        self.assertAlmostEqual(
+            d["savings_vs_target_cny"],
+            (d["product_target"] - d["winning_price"]) * d["moq"],
+        )
+        if expected_vs_target < 0:
+            self.assertLess(d["savings_vs_target_pct"], 0.0)
+            self.assertLess(d["savings_vs_target_cny"], 0.0)
 
 
 class TestStage2FailureIsVisible(_Isolated):

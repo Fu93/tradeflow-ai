@@ -181,8 +181,18 @@ def run_multi_supplier_demo(out_dir="results"):
     print("=== Reverse Auction Settlement Summary ===")
     print(f"  Winning Vendor     : {res['winning_supplier']}")
     print(f"  Settled Unit Price : ¥{res['winning_price']:.2f} (Target ¥{res['product_target']:.2f}, Ceiling ¥{res['walk_away_ceiling']:.2f})")
-    print(f"  Procurement Savings: {res['total_savings_pct']:.1%} (¥{res['walk_away_ceiling'] - res['winning_price']:.2f}/unit)")
-    print(f"  Total Cash Saved   : ¥{res['total_savings_cny']:,.2f} for MOQ {res['moq']:,} units")
+    print(
+        f"  Headline savings   : {res['total_savings_pct']:.1%} vs first-round best quote "
+        f"¥{res['first_round_best_quote']:.2f} (¥{res['total_savings_cny']:,.2f} for MOQ {res['moq']:,})"
+    )
+    print(
+        f"  Versus target      : {res['savings_vs_target_pct']:.1%} "
+        f"(¥{res['savings_vs_target_cny']:,.2f}); a negative figure means the settled price is above target"
+    )
+    print(
+        f"  Secondary, ceiling : {res['savings_vs_ceiling_pct']:.1%} vs walk-away ceiling "
+        f"¥{res['walk_away_ceiling']:.2f} (¥{res['savings_vs_ceiling_cny']:,.2f})"
+    )
     print(f"  Tensor grid cells  : {res['total_rollouts_accum']:,} (parameterised, not an execution count) in {res['total_compute_seconds']:.2f}s tensor time")
     print(f"  Total Process Time : {total_elapsed:.2f}s\n")
 
@@ -192,9 +202,12 @@ def run_multi_supplier_demo(out_dir="results"):
 - Product: Custom Carbon Auto Umbrella (MOQ: 10,000 units)
 - Target Price: ¥{res['product_target']:.2f}
 - Walk-away Ceiling: ¥{res['walk_away_ceiling']:.2f}
+- First-round best quote: ¥{res['first_round_best_quote']:.2f}
 - Winning Supplier: {res['winning_supplier']}
 - Settled Price: ¥{res['winning_price']:.2f}
-- Procurement Savings: {res['total_savings_pct']:.1%} (¥{res['total_savings_cny']:,.2f} total)
+- Headline savings vs first-round best quote: {res['total_savings_pct']:.1%} (¥{res['total_savings_cny']:,.2f} total)
+- Versus target: {res['savings_vs_target_pct']:.1%} (¥{res['savings_vs_target_cny']:,.2f} total). A negative figure means the settled price is above target.
+- Secondary, versus walk-away ceiling: {res['savings_vs_ceiling_pct']:.1%} (¥{res['savings_vs_ceiling_cny']:,.2f} total)
 - Tensor Grid Cells: {res['total_rollouts_accum']:,} (= K x S x N_open x N_sched parameterised product, NOT a measured rollout/iteration count)
 
 | Round | Supplier | Quote (¥) | Tactic Classification | Dynamic BATNA Ceiling (¥) | Risk (%) | Counter-Offer (¥) |
@@ -255,6 +268,11 @@ def run_sandbox_demo(host: str = "127.0.0.1", port: int = 8000):
     t.start()
 
     # 3. 運行伺服器
+    from src.app.main import listen_port_available, port_in_use_message
+
+    if not listen_port_available(host, port):
+        print(port_in_use_message(port), file=sys.stderr)
+        raise SystemExit(1)
     print(f"[Server Starting] Uvicorn running on {host}:{port}. Press Ctrl+C to terminate.")
     uvicorn.run("src.app.main:app", host=host, port=port, log_level="info")
 

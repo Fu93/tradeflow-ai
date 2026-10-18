@@ -1,10 +1,14 @@
 # TradeFlow AI
 
-A one-person cross-border sourcing desk. A Bayesian Expectimax engine chooses the price. An optional language model only phrases the offer. A human sends it.
+[![CI](https://github.com/Fu93/tradeflow-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Fu93/tradeflow-ai/actions/workflows/ci.yml)
 
-This is a hackathon prototype. It has not closed a deal with a real factory. Benchmark numbers below come from this repository's CPU runs or from a parameterised simulator. The full boundary note is [docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md).
+## 30-second pitch
 
-Track: **Reinvent Commerce** (AMD Developer Hackathon ACT III, lablab.ai).
+A one-person cross-border sourcing desk. A Bayesian Expectimax engine chooses the price. An optional language model only phrases the offer. A human sends it. No factory has closed a deal through this prototype.
+
+Benchmark numbers below come from this repository's CPU runs or from a parameterised simulator. The full boundary note is [docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md).
+
+Track: **Reinvent Commerce** (AMD Developer Hackathon ACT III, lablab.ai). License: MIT.
 
 ## Quick start (Docker)
 
@@ -19,14 +23,16 @@ Open http://localhost:8000. `GET /health` is the compose and image healthcheck.
 
 Leave the `__FILL_ME__` keys as they are. The dashboard, the solver, and the supplier-intent regex/ONNX stage run offline. The container listens on `0.0.0.0:$PORT` (compose publishes **8000**). The solver inside this image is **NumPy on CPU**. The compose file does not attach a GPU.
 
-Without Docker:
+Without Docker (use `python3` if `python` is not on your PATH):
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 python -m src.app.main
 ```
 
-Chrome copilot (does not send messages): load `extension/` unpacked, or open `extension/mock_chat.html`.
+Open http://localhost:8000. If port 8000 is already taken, the process prints that and exits. Start on another port with `PORT=8001 python -m src.app.main` (the suggestion in the message names the interpreter you actually ran).
+
+Chrome copilot (does not send messages): load `extension/` unpacked, or open `extension/mock_chat.html`. No API key is required for this offline demo. Placeholder values in `.env.example` stay `__FILL_ME__`.
 
 ```bash
 python -m pytest tests -q
@@ -36,7 +42,9 @@ python -m src.cli --multi    # four-supplier auction
 
 ## Interface
 
-The desk is set in self-hosted Fraunces and Outfit (SIL Open Font License) on a bone-paper palette. The four-supplier auction is the first panel. Each quote is drawn as a share of the walk-away ceiling returned by the auction API. The page still says the suppliers are simulated archetypes, and approval stays with the buyer.
+The desk is set in self-hosted Fraunces and Outfit (SIL Open Font License) on a bone-paper palette. The four-supplier auction is the first panel. Each quote is drawn as a share of the walk-away ceiling returned by the auction API. The page says the suppliers are simulated archetypes, and approval stays with the buyer.
+
+The auction headline is savings versus the first-round best quote. In the committed run ([results/multi_supplier_auction.md](results/multi_supplier_auction.md)) that is ¥13.26 down to ¥12.60, which is 5.0% and ¥6,600 on 10,000 units. Versus target is on the same panel, including when that figure is negative (this run is −5.0% versus the ¥12.00 target, ¥−6,000). Savings versus the walk-away ceiling, 22.2% and ¥36,000, are secondary and labeled as such. Those three baselines are not interchangeable with the self-play range in Honest limits.
 
 `extension/mock_chat.html` is the same desk language used as a sandbox. It is not a live supplier site. The banner on that page says the quotes are simulated.
 
@@ -95,7 +103,7 @@ What is wired in code:
 ## Honest limits
 
 - No closed-loop purchase. Supplier lines in the stress transcript are a script.
-- Synthetic self-play ([results/self_play_benchmark.md](results/self_play_benchmark.md), 20 matches × 5 archetypes, seed 42) is a parameterised simulator. Engine savings in that table run from **8.8% to 20.0%**. Against the Hard-Bargainer the engine's 8.8% is behind the fixed 5%-per-round baseline's 9.2%. Seed 42 reproduces that table; it is not a variance estimate.
+- Synthetic self-play ([results/self_play_benchmark.md](results/self_play_benchmark.md), 20 matches × 5 archetypes, seed 42) is a parameterised simulator. Engine savings in that table run from **8.8% to 20.0%** versus the walk-away ceiling used by that table. Against the Hard-Bargainer the engine's 8.8% is behind the fixed 5%-per-round baseline's 9.2%. Seed 42 reproduces that table; it is not a variance estimate. It is not the auction headline.
 - The real-model log above is a different experiment. Against a Bluffing Hardliner the recorded deal rate is 61.11%, with 0 budget violations in 94 completed matches.
 - Held-out accuracy of the on-device intent model on the synthetic set is **63.08%** (195 of 500 held out). An older 92% figure was a training-set score.
 - Stage-2 is off the request path by default because the recorded AMD calls average 16.81 s.

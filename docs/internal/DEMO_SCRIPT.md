@@ -90,7 +90,7 @@ knowledge-grounded analysis, ending in two human-selectable drafts.
       | Posterior after R1 (mean / std) | **1.132 / 0.055** |
       | Full `/round` HTTP latency | **~2.6 s** |
       | `solve(20_000 samples)` | **1.68 s** (`results/bench.json`) |
-      | Multi-auction | **2.5–2.7 s**, winner ¥12.60, **22.2%** / **¥36,000**, **28,800,000** grid cells |
+      | Multi-auction | winner ¥12.60. Headline **5.0%** / **¥6,600** vs the first-round best quote ¥13.26. Versus target **−5.0%** / **¥−6,000**, including when that figure is negative. Secondary vs the walk-away ceiling: **22.2%** / **¥36,000**. **28,800,000** grid cells |
       | Robustness | 6.7% vs 28.3%, **+¥0.40/unit**; prior×0.5 → **88.1%** breakdown |
 - [ ] Say "**28.8 million tensor grid cells**" for the auction, NOT "rollouts executed".
 - [ ] Say "**MI300X data-movement lower bound**" for the GPU number, never a measured runtime.

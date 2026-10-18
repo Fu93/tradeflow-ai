@@ -61,14 +61,14 @@
     <section class="sheet auction-sheet auction-hero" id="tacticPanel">
       <div class="sheet-head">
         <h2 class="sheet-title">Four-supplier auction</h2>
-        <button class="btn-quiet" type="button" onclick="runMultiAuction()">Run</button>
+        <button class="btn-quiet" type="button" id="runAuctionBtn" onclick="runMultiAuction()" aria-describedby="auctionKicker">Run auction</button>
       </div>
-      <p class="fineprint auction-kicker">Simulated suppliers (parameterised archetypes), not live factory quotes.</p>
+      <p class="fineprint auction-kicker" id="auctionKicker">Simulated suppliers (parameterised archetypes), not live factory quotes. The headline is savings versus the first-round best quote. Versus target stays visible when negative. The walk-away ceiling is secondary.</p>
       <div id="auctionLoader" class="loader hidden" role="status">Computing the parameterised tensor grid…</div>
       <div id="supplierCards" class="supplier-cards">
         <div class="empty-state">Run the auction to compare four simulated suppliers on price, terms and walk-away risk. These are parameterised archetypes, not live factory quotes.</div>
       </div>
-      <div id="auctionSummary" class="auction-summary hidden"></div>
+      <div id="auctionSummary" class="auction-summary hidden" aria-live="polite" aria-label="Auction savings by baseline"></div>
     </section>
 
     <!-- ===================== BODY ===================== -->

@@ -2191,9 +2191,64 @@ def _assert_api_v1_auth_coverage() -> None:
 _assert_api_v1_auth_coverage()
 
 
+def listen_port_available(host: str, port: int) -> bool:
+    """Return True when ``host:port`` can be bound.
+
+    A process that already holds the port returns False. Other socket errors
+    propagate so a bad address is not reported as "already in use".
+    """
+    import errno
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind((host, port))
+    except OSError as exc:
+        # 98 Linux, 48 macOS, 10048 Windows.
+        if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:
+            return False
+        raise
+    else:
+        return True
+    finally:
+        sock.close()
+
+
+def port_in_use_message(port: int) -> str:
+    """Explain that the listen port is taken and how to choose another."""
+    import sys
+    from pathlib import Path
+
+    exe = Path(sys.executable).name or "python3"
+    return (
+        f"Port {port} is already in use. Stop the other process, or start "
+        f"TradeFlow on a free port:\n"
+        f"  PORT=<free-port> {exe} -m src.app.main"
+    )
+
+
 if __name__ == "__main__":
+    import sys
     import uvicorn
+
     # Render and other hosts inject PORT. Local compose and the README use 8000.
-    _port = int(os.environ.get("PORT", "8000"))
+    _raw_port = os.environ.get("PORT", "8000")
+    try:
+        _port = int(_raw_port)
+    except ValueError:
+        print(
+            f"PORT={_raw_port!r} is not an integer. Example: PORT=8001 python3 -m src.app.main",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    if not 0 < _port < 65536:
+        print(
+            f"PORT={_port} is outside 1-65535. Example: PORT=8001 python3 -m src.app.main",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    if not listen_port_available("0.0.0.0", _port):
+        print(port_in_use_message(_port), file=sys.stderr)
+        raise SystemExit(1)
     uvicorn.run(app, host="0.0.0.0", port=_port)
 

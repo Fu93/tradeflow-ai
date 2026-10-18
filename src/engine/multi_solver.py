@@ -489,7 +489,13 @@ class MultiAuctionSession:
         return round_info
 
     def get_summary(self) -> Dict[str, Any]:
-        """結算拍賣結果。"""
+        """Settle the auction and report savings against three baselines.
+
+        ``total_savings_pct`` / ``total_savings_cny`` use the first-round best
+        quote (``total_savings_baseline == "first_round_best_quote"``).
+        ``savings_vs_target_*`` and ``savings_vs_ceiling_*`` are the other two
+        baselines. A negative percent is returned as negative.
+        """
         if not self.trace:
             raise ValueError("No rounds have been executed yet.")
 
@@ -497,16 +503,14 @@ class MultiAuctionSession:
         final_quote = last_round["best_quote"]
         winning_idx = int(np.argmin(last_round["quotes"]))
         winning_supplier = self.suppliers[winning_idx]["name"]
-        # [誠實揭露 — 2026-10-17 深度稽查] 此處的「節省」是**相對我方 walk-away
-        # 上限**（最壞情況下願意付的最高價），不是相對供應商的首輪報價或目標價。
-        # 實測：首輪最低 ¥13.26、成交 ¥12.60、上限 ¥16.20 → total_savings_pct 為
-        # 22.2%（相對上限），但相對首輪報價只省 5.0%、相對目標價則完全沒省到。
-        # 舊版只回「Savings 22.2%」一個數字，儀表板/文件很容易被讀成「比報價省
-        # 22%」。現在同時回三個基準與各自的 baseline，讓任一數字都能被檢驗。
+        # Headline is savings versus the first-round best quote: the price a
+        # buyer could already see before any counter. Versus target is reported
+        # even when negative (settled price above target). Versus the walk-away
+        # ceiling is secondary and labeled; a ceiling of ¥16.20 and a close of
+        # ¥12.60 is 22.2%, which is not "22% off the quote". Signs are never
+        # clamped.
         first_round = self.trace[0]
         first_best_quote = first_round["best_quote"]
-        total_savings_pct = (self.walk_away_ceiling - final_quote) / self.walk_away_ceiling
-        total_savings_cny = (self.walk_away_ceiling - final_quote) * self.moq
         savings_vs_first_quote_pct = (
             (first_best_quote - final_quote) / first_best_quote if first_best_quote else 0.0
         )
@@ -514,6 +518,16 @@ class MultiAuctionSession:
         savings_vs_target_pct = (
             (self.target_price - final_quote) / self.target_price if self.target_price else 0.0
         )
+        savings_vs_target_cny = (self.target_price - final_quote) * self.moq
+        savings_vs_ceiling_pct = (
+            (self.walk_away_ceiling - final_quote) / self.walk_away_ceiling
+            if self.walk_away_ceiling
+            else 0.0
+        )
+        savings_vs_ceiling_cny = (self.walk_away_ceiling - final_quote) * self.moq
+        # Unlabeled readers of total_savings_* see the headline baseline.
+        total_savings_pct = savings_vs_first_quote_pct
+        total_savings_cny = savings_vs_first_quote_cny
 
         return {
             "success": True,
@@ -530,13 +544,15 @@ class MultiAuctionSession:
             "winning_price": final_quote,
             "total_savings_pct": total_savings_pct,
             "total_savings_cny": total_savings_cny,
-            # 明確標示基準與其他對照，避免 22.2% 被誤讀成「比報價省 22%」。
-            "total_savings_baseline": "walk_away_ceiling",
-            "total_savings_baseline_value": self.walk_away_ceiling,
+            "total_savings_baseline": "first_round_best_quote",
+            "total_savings_baseline_value": first_best_quote,
             "first_round_best_quote": first_best_quote,
             "savings_vs_first_quote_pct": savings_vs_first_quote_pct,
             "savings_vs_first_quote_cny": savings_vs_first_quote_cny,
             "savings_vs_target_pct": savings_vs_target_pct,
+            "savings_vs_target_cny": savings_vs_target_cny,
+            "savings_vs_ceiling_pct": savings_vs_ceiling_pct,
+            "savings_vs_ceiling_cny": savings_vs_ceiling_cny,
             "total_rollouts": self.total_rollouts_accum,
             "total_rollouts_accum": self.total_rollouts_accum,
             "total_compute_seconds": round(self.total_compute_seconds, 4),

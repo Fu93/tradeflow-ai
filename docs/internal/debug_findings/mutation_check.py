@@ -58,7 +58,7 @@ PY_MUTATIONS = [
     (
         "auction_savings_constant",
         "src/engine/multi_solver.py",
-        "        total_savings_pct = (self.walk_away_ceiling - final_quote) / self.walk_away_ceiling",
+        "        total_savings_pct = savings_vs_first_quote_pct",
         "        total_savings_pct = 0.222  # MUTANT",
         ["tests/test_multi_solver.py", "tests/test_multi_demo.py"],
     ),

@@ -122,15 +122,35 @@ class TestMultiSolver(unittest.TestCase):
         final = s["winning_price"]
         first = s["first_round_best_quote"]
 
-        self.assertEqual(s["total_savings_baseline"], "walk_away_ceiling")
-        self.assertAlmostEqual(s["total_savings_baseline_value"], ceiling)
-        self.assertAlmostEqual(s["total_savings_pct"], (ceiling - final) / ceiling)
-        self.assertAlmostEqual(s["total_savings_cny"], (ceiling - final) * moq)
-        self.assertAlmostEqual(s["savings_vs_first_quote_pct"], (first - final) / first)
-        self.assertAlmostEqual(s["savings_vs_first_quote_cny"], (first - final) * moq)
+        self.assertEqual(s["total_savings_baseline"], "first_round_best_quote")
+        self.assertAlmostEqual(s["total_savings_baseline_value"], first)
+        self.assertAlmostEqual(s["total_savings_pct"], (first - final) / first)
+        self.assertAlmostEqual(s["total_savings_cny"], (first - final) * moq)
+        self.assertAlmostEqual(s["savings_vs_first_quote_pct"], s["total_savings_pct"])
+        self.assertAlmostEqual(s["savings_vs_first_quote_cny"], s["total_savings_cny"])
         self.assertAlmostEqual(s["savings_vs_target_pct"], (target - final) / target)
-        # 三個基準不可全部等於同一個常數（否則就是同一個數字貼三次標籤）
-        self.assertNotAlmostEqual(s["total_savings_pct"], s["savings_vs_first_quote_pct"])
+        self.assertAlmostEqual(s["savings_vs_target_cny"], (target - final) * moq)
+        self.assertAlmostEqual(s["savings_vs_ceiling_pct"], (ceiling - final) / ceiling)
+        self.assertAlmostEqual(s["savings_vs_ceiling_cny"], (ceiling - final) * moq)
+        # The headline is not the ceiling figure, and a miss versus target stays negative.
+        self.assertNotAlmostEqual(s["total_savings_pct"], s["savings_vs_ceiling_pct"])
+        self.assertLess(s["savings_vs_target_pct"], 0.0)
+        self.assertLess(s["savings_vs_target_cny"], 0.0)
+
+    def test_negative_headline_is_not_clamped(self):
+        """A close above the first quote is a negative headline, not zero."""
+        from src.engine.multi_solver import MultiAuctionSession
+
+        session = MultiAuctionSession(
+            target_price=12.0, walk_away_ceiling=16.2, moq=10_000, n_samples=200,
+        )
+        session.step_round([10.00, 11.00, 12.00, 13.00])
+        session.step_round([12.50, 13.00, 13.40, 14.00])
+        s = session.get_summary()
+        self.assertLess(s["total_savings_pct"], 0.0)
+        self.assertLess(s["savings_vs_first_quote_cny"], 0.0)
+        self.assertAlmostEqual(s["savings_vs_target_cny"], (12.0 - 12.50) * 10_000)
+        self.assertGreater(s["savings_vs_ceiling_pct"], 0.0)
 
     def test_circuit_breaker_tripped(self):
         """測試當對手報價極高引發破局率超標時，觸發熔斷旗標。"""

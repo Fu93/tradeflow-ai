@@ -122,7 +122,7 @@ supplier message ──► Stage 1: deterministic regex ladder (~1ms, 0 tokens)
 | Power to contract | The buyer | **The buyer** (the system proposes, it never issues the offer) |
 
 **Quantified gain** (vs the opening quote): savings **8.8% – 20.0%**; budget violations **0%**.
-For a first order of 10,000 umbrellas: open ¥14.80 → the engine's first counter ¥13.02 (recorded in `results/real_stress_test_log.json` R1), about ¥1.78 per unit, **¥17,800** total. (**A single-supplier worked example**; the multi-supplier auction is a different scenario — 22.2% / ¥36,000 against the walk-away ceiling, 5.0% / ¥6,600 against the first-round quote — different baselines, and the marginal gain over a fixed-concession baseline is about +¥0.40/unit; the three scenarios are not interchangeable.)
+For a first order of 10,000 umbrellas: open ¥14.80 → the engine's first counter ¥13.02 (recorded in `results/real_stress_test_log.json` R1), about ¥1.78 per unit, **¥17,800** total. (**A single-supplier worked example**; the multi-supplier auction is a different scenario — the headline is 5.0% / ¥6,600 against the first-round best quote, versus target is −5.0% and is shown including when that figure is negative, and 22.2% / ¥36,000 against the walk-away ceiling is secondary — and the marginal gain over a fixed-concession baseline is about +¥0.40/unit; the three scenarios are not interchangeable.)
 
 > *Provenance: the figures come from the recorded bids in `results/real_stress_test_log.json`, a single-supplier negotiation vs opening quote worked example. They are not the final contract price of any specific factory, nor a site-wide statistic.*
 

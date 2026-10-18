@@ -5,6 +5,7 @@
   "multi_supplier_auction": {
     "cpu_seconds": 8.223,
     "savings_pct": 0.2222222222222222,
+    "savings_pct_baseline": "walk_away_ceiling",
     "theoretical_max_rollouts": 96000000,
     "total_rollouts": 72000000,
     "winning_price": 12.6
