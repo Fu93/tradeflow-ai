@@ -2,110 +2,172 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TradeFlow Copilot</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="deck-head">
-    <div class="deck-mark">TradeFlow<span class="mark-tick">·</span>AI</div>
-    <div class="deck-sub">Copilot deck</div>
-    <div id="status-badge" class="status-pill">
-      <span class="dot"></span>
-      <span id="status-text">CRUISING</span>
-    </div>
-  </header>
-
-  <section class="block">
-    <div class="block-head">
-      <h2>Deal</h2>
-      <button id="btn-refresh" type="button">Reload</button>
-    </div>
-    <div class="ref-row">
-      <span>Reference</span>
-      <strong id="session-id-display">—</strong>
-    </div>
-    <table class="terms">
-      <tbody>
-        <tr><th>Target price</th><td id="val-target-price">—</td></tr>
-        <tr><th>Reserve ceiling</th><td id="val-reserve-ceiling">—</td></tr>
-      </tbody>
-    </table>
-  </section>
-
-  <section class="block">
-    <div class="block-head">
-      <h2>Opponent belief</h2>
-      <span class="note">Expectimax + Bayesian v2</span>
-    </div>
-    <div class="stat-pair">
-      <div class="stat">
-        <span class="stat-label">Posterior mean (&mu;)</span>
-        <span class="stat-value" id="val-posterior-mean">—</span>
+  <div class="deck" id="deck">
+    <header class="deck-head">
+      <div class="deck-id">
+        <div class="deck-mark">TradeFlow<span class="mark-tick">·</span>AI</div>
+        <div class="deck-sub">Copilot deck</div>
       </div>
-      <div class="stat">
-        <span class="stat-label">Uncertainty (&sigma;)</span>
-        <span class="stat-value" id="val-posterior-std">—</span>
+      <div class="deck-badges">
+        <p id="source-badge" class="source-badge is-unknown" aria-live="polite">
+          <span class="dot" aria-hidden="true"></span>
+          <span id="source-badge-text">--</span>
+        </p>
+        <div id="status-badge" class="status-pill is-idle" aria-live="polite">
+          <span class="dot" aria-hidden="true"></span>
+          <span id="status-text">--</span>
+        </div>
       </div>
-    </div>
-    <div class="risk-row">
-      <span class="stat-label">Breakdown probability</span>
-      <strong id="val-breakdown-risk">—</strong>
-    </div>
-    <div class="bar"><div id="progress-breakdown" class="bar-fill"></div></div>
-    <p class="fineprint" id="riskFineprint">
-      The engine stops proposing at the documented trip threshold and waits for you.
-      The bar shows the measured probability, not a target.
-    </p>
-  </section>
+    </header>
 
-  <section class="block">
-    <div class="block-head">
-      <h2>Rounds</h2>
-      <span id="round-counter" class="note">Round — / —</span>
+    <div id="error-banner" class="banner" hidden>
+      <p id="error-text" role="alert"></p>
+      <button id="btn-retry" type="button">Retry</button>
     </div>
-    <div class="timeline" id="turns-timeline">
-      <p class="empty">Open a 1688, Alibaba or WhatsApp chat to track a deal here.</p>
-    </div>
-  </section>
 
-  <section class="block">
-    <div class="block-head">
-      <h2>Mobile telemetry</h2>
-      <span class="note">alert channels</span>
+    <div id="loading-skeleton" class="skeleton" hidden aria-hidden="true">
+      <span class="sr-only">Loading</span>
+      <span class="skeleton-bar"></span>
+      <span class="skeleton-bar skeleton-short"></span>
+      <span class="skeleton-bar"></span>
     </div>
-    <table class="terms channels">
-      <tbody>
-        <tr><th>WhatsApp (CallMeBot)</th><td class="channel-status" id="status-whatsapp">UNVERIFIED</td></tr>
-        <tr><th>WeChat (ServerChan / PushPlus)</th><td class="channel-status" id="status-wechat">UNVERIFIED</td></tr>
-        <tr><th>Telegram bot</th><td class="channel-status" id="status-telegram">STANDBY</td></tr>
-      </tbody>
-    </table>
-    <p class="fineprint">
-      A channel label is a setting, not proof of delivery. This panel sends no
-      heartbeat, so a saved channel may still be unreachable.
-    </p>
-    <div class="last-signal">
-      Last mobile signal <strong id="val-last-signal">None</strong>
-    </div>
-  </section>
 
-  <section class="block block-last">
-    <div class="block-head">
-      <h2>Manual overrides</h2>
-      <span class="note">same replies as your phone</span>
-    </div>
-    <div class="override-grid">
-      <button id="btn-concede" type="button" class="ov ov-concede">
-        <b>1</b><span>Concede a step</span>
+    <section id="teaching-empty" class="teaching" aria-live="polite">
+      <h2>Nothing is tracked on this tab yet</h2>
+      <p>Open a 1688, Alibaba, or WhatsApp chat. This deck only shows what the engine has already computed.</p>
+      <p id="teaching-send-note">you paste and send; TradeFlow never sends.</p>
+      <p lang="zh-Hant">請開啟一六八八、阿里巴巴國際站或 WhatsApp 的對話。本面板只顯示引擎已經算出的價格與證據。你自行貼上並送出；TradeFlow 不會代填輸入框，也不會代按送出。若後端暫時連不上，這裡會顯示無法連線，而不會編造數字。</p>
+    </section>
+
+    <section id="approval-card" class="block approval" aria-labelledby="approval-heading">
+      <div class="block-head">
+        <h2 id="approval-heading">Approval gate</h2>
+        <span id="approval-state" class="state-chip" aria-live="polite">--</span>
+      </div>
+      <p id="approval-superseded" class="superseded" hidden>Superseded</p>
+      <div class="approval-facts">
+        <div class="fact">
+          <span class="fact-label">Action</span>
+          <strong id="approval-action">--</strong>
+        </div>
+        <div class="fact">
+          <span class="fact-label">Price</span>
+          <strong id="approval-price">--</strong>
+          <span class="fact-note">Engine-computed</span>
+        </div>
+        <div class="fact fact-evidence">
+          <span class="fact-label">Evidence</span>
+          <p id="approval-evidence">--</p>
+        </div>
+      </div>
+      <p id="gate-send-note" class="gate-note">you paste and send; TradeFlow never sends.</p>
+      <div class="override-grid">
+        <button id="btn-concede" type="button" class="ov ov-concede" aria-describedby="gate-send-note">
+          <b>1</b><span>Concede a step</span>
+        </button>
+        <button id="btn-hold" type="button" class="ov ov-hold" aria-describedby="gate-send-note">
+          <b>2</b><span>Hold firm</span>
+        </button>
+      </div>
+      <button id="btn-abort" type="button" class="ov ov-abort ov-wide" aria-describedby="gate-send-note">
+        <b>3</b><span>Walk away</span>
       </button>
-      <button id="btn-hold" type="button" class="ov ov-hold">
-        <b>2</b><span>Hold firm</span>
-      </button>
-    </div>
-    <button id="btn-abort" type="button" class="ov ov-abort ov-wide">
-      <b>3</b><span>Walk away</span>
-    </button>
-  </section>
+    </section>
+
+    <section class="block">
+      <div class="block-head">
+        <h2>Deal</h2>
+        <button id="btn-refresh" type="button">Reload</button>
+      </div>
+      <div class="ref-row">
+        <span>Reference</span>
+        <strong id="session-id-display">--</strong>
+      </div>
+      <table class="terms">
+        <tbody>
+          <tr><th>Target price</th><td id="val-target-price">--</td></tr>
+          <tr><th>Reserve ceiling</th><td id="val-reserve-ceiling">--</td></tr>
+        </tbody>
+      </table>
+      <div class="range" id="price-range" role="img" aria-label="Target to reserve range">
+        <div class="range-track">
+          <span id="range-engine" class="range-marker" hidden></span>
+          <span id="range-supplier" class="range-marker range-marker-supplier" hidden></span>
+        </div>
+        <div class="range-labels">
+          <span>Target <b id="range-target">--</b></span>
+          <span>Reserve <b id="range-reserve">--</b></span>
+        </div>
+      </div>
+      <p class="savings-line">
+        <span>Savings</span>
+        <strong id="val-savings">--</strong>
+        <span id="savings-basis"></span>
+      </p>
+    </section>
+
+    <section class="block">
+      <div class="block-head">
+        <h2>Opponent belief</h2>
+        <span class="note">Expectimax + Bayesian v2</span>
+      </div>
+      <div class="stat-pair">
+        <div class="stat">
+          <span class="stat-label">Posterior mean (μ)</span>
+          <span class="stat-value" id="val-posterior-mean">--</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Uncertainty (σ)</span>
+          <span class="stat-value" id="val-posterior-std">--</span>
+        </div>
+      </div>
+      <div class="risk-row">
+        <span class="stat-label">Breakdown probability</span>
+        <strong id="val-breakdown-risk">--</strong>
+      </div>
+      <div class="bar"><div id="progress-breakdown" class="bar-fill"></div></div>
+      <p class="fineprint" id="riskFineprint">
+        The engine stops proposing at the documented trip threshold and waits for you.
+        The bar shows the measured probability, not a target.
+      </p>
+    </section>
+
+    <section class="block">
+      <div class="block-head">
+        <h2>Rounds</h2>
+        <span id="round-counter" class="note">Round — / —</span>
+      </div>
+      <div class="timeline" id="turns-timeline">
+        <p class="empty">No rounds yet.</p>
+      </div>
+    </section>
+
+    <section class="block block-last">
+      <div class="block-head">
+        <h2>Mobile telemetry</h2>
+        <span class="note">alert channels</span>
+      </div>
+      <table class="terms channels">
+        <tbody>
+          <tr><th>WhatsApp (CallMeBot)</th><td class="channel-status" id="status-whatsapp">UNVERIFIED</td></tr>
+          <tr><th>WeChat (ServerChan / PushPlus)</th><td class="channel-status" id="status-wechat">UNVERIFIED</td></tr>
+          <tr><th>Telegram bot</th><td class="channel-status" id="status-telegram">STANDBY</td></tr>
+        </tbody>
+      </table>
+      <p class="fineprint">
+        A channel label is a setting, not proof of delivery. This panel sends no
+        heartbeat, so a saved channel may still be unreachable.
+      </p>
+      <div class="last-signal">
+        Last mobile signal <strong id="val-last-signal" aria-live="polite">--</strong>
+      </div>
+    </section>
+  </div>
 
   <script src="sidepanel.js"></script>
 </body>
