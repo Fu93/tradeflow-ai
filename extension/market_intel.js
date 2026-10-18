@@ -136,7 +136,8 @@
     text(q(root, "submit"), labels.lookUp);
     text(q(root, "refresh"), labels.refresh);
     text(q(root, "retry"), labels.retry);
-    text(q(root, "caveat"), labels.caveat + " " + labels.notQuote);
+    const sep = langOf(root) === "zh-Hant" ? "。" : ". ";
+    text(q(root, "caveat"), labels.caveat + sep + labels.notQuote);
     const theme = q(root, "theme");
     const dark = document.documentElement.dataset.theme === "dark";
     text(theme, dark ? labels.themeLight : labels.themeDark);
