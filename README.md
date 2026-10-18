@@ -49,15 +49,17 @@ Hybrid desk. The workflow is written for the Hybrid, Becreatives, and Vibe Gener
 
 ## Market and business
 
-Target user: a small cross-border seller who sources from factories and negotiates in chat.
+Target user is a hypothesis: a small cross-border seller who sources from factories and negotiates in chat.
+
+HMRC counted 334,294 UK goods importers in 2025. The non-EU SAM proxy is 132,484 to 239,616. UK goods imports from China were GBP 69.7 billion in 2025 (ONS/DBT), including precious metals and large corporates. The savings-pool ceiling of GBP 1.05 billion to GBP 2.09 billion uses a large-buyer 1.5 percent to 3 percent band. It is not a TradeFlow result. Citations, the formula, and the HS snapshot are in [docs/MARKET_ANALYSIS.md](docs/MARKET_ANALYSIS.md).
+
+Umbrellas (HS 6601) are the demo wedge. `scripts/market_data.py` and `GET /api/v1/market` read the UN Comtrade preview for other codes. Creating a session attaches `market_context` (or an explicit unavailable state). The engine-decision card, the extension Evidence tab, and the auction summary show it as reference only: an implied customs unit value, not a price quote. The solver, the recommended price, and the circuit breaker do not read it. `tests/test_market_data.py` checks that the recommended price is identical with and without a caller-supplied block, and that a model JSON cannot set the price.
 
 Revenue model, proposed and not earned: a desk subscription, or a share of savings versus the first-round best quote. No revenue is claimed.
 
-Competitors: LLM negotiation agents that let the model set the price; sourcing agents who take a commission; marketplace tools built into Alibaba-style sites.
+Competitors with a public price: Accio and Alibaba RFQ (free for buyers). Pactum, Keelvar, Fairmarkit, Jaggaer, Zycus, and Globality are quote-based.
 
 Roadmap: deploy the offline demo, turn on AMD live mode only when `VLLM_API_KEY` is a real secret, publish extraction accuracy only after a logged Gemma run, and keep the human on the send button.
-
-No market-size number is stated. None was sourced for this pack.
 
 ## Public demo
 

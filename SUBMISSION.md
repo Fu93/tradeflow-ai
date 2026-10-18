@@ -13,9 +13,9 @@ One-person sourcing desk: a Bayesian Expectimax engine sets the price, an AMD-ho
 
 ## Long description
 
-Small cross-border sellers lose procurement margin when they negotiate factory quotes alone, often across a language gap, or pay a sourcing agent a commission. TradeFlow is a prototype of a third arrangement: one operator, a Bayesian Expectimax engine that sets the price, an optional AMD-hosted model that only reads a quote and phrases the reply, and a human who sends the offer. No factory deal has closed. A proposed revenue model is a desk subscription or a share of documented savings. No revenue is claimed.
+Small cross-border sellers lose margin when they negotiate factory quotes alone, or pay a sourcing agent a commission. TradeFlow is a prototype: one operator, a Bayesian Expectimax engine that sets the price, an optional AMD-hosted model that only reads a quote and phrases the reply, and a human who sends the offer. No factory deal has closed. No revenue is claimed. Umbrellas (HS 6601) are the demo wedge. Other codes use the same UN Comtrade preview route. A customs figure is reference only and does not set the price.
 
-The decision core does not ask a language model what to pay (src/engine/solver.py, src/engine/multi_solver.py). A language model is not the forecasting method. The default model for a new call is Gemma-4-31B-IT. Set VLLM_MODEL=Qwen3.8-Flash-Next to select the model in the committed log. That log, results/real_llm_benchmark_100.json, records 348 calls (average latency 16.81 s, cost $0.108444). No HTTP status is stored. python scripts/verify_amd_endpoint.py lists models and, with a real key, sends one chat. status: ok means that process received HTTP 200. skipped_no_credentials is not a successful check. No evidence file is committed. No committed Gemma latency.
+The decision core does not ask a language model what to pay (src/engine/solver.py, src/engine/multi_solver.py). The default model for a new call is Gemma-4-31B-IT. Set VLLM_MODEL=Qwen3.8-Flash-Next to select the model in the committed log. That log, results/real_llm_benchmark_100.json, records 348 calls (average latency 16.81 s, cost $0.108444). No HTTP status is stored. python scripts/verify_amd_endpoint.py lists models and, with a real key, sends one chat. status: ok means that process received HTTP 200. skipped_no_credentials is not a successful check. No evidence file is committed. No committed Gemma latency.
 
 The auction headline is savings versus the first-round best quote. Versus target stays visible, including when that figure is negative. Savings versus the walk-away ceiling are secondary. Self-play (results/self_play_benchmark.md, 20 matches x 5 archetypes, 100 matches, seed 42) runs from 8.8% to 20.0% versus that table's walk-away ceiling. Against a Hard-Bargainer, 8.8% versus a fixed baseline's 9.2%. The real-model log closed at 61.11% of completed matches against a Bluffing Hardliner, with 0 budget violations in 94 completed matches. Held-out intent accuracy is 63.08% (195 of 500 held out). results/bench.json is a CPU measurement (is_gpu_active: false).
 
@@ -35,21 +35,23 @@ Record the screen. Speak only what the screen just showed. If AMD live mode show
 
 **2:30 — LLM versus TradeFlow.** Open `results/llm_vs_tradeflow.json`. Say it is a simulation, `ran_on_amd` is false, and read the budget-violation rate, deal rate, and average savings the file prints.
 
-**3:10 — Business.** Target user, the proposed subscription or savings share, and the three competitor types. No market-size number.
+**3:10 — Business.** Target user (a hypothesis), the proposed subscription or savings share, and competitors with a public price. HS 6601 is the demo wedge. Customs figures are reference only.
 
 **3:40 — Limits and roadmap.** No factory deal. No committed Gemma latency. No shipped MI300X timing. Human send stays. Held-out intent accuracy is 63.08% (195 of 500 held out).
 
 ## Market and business
 
-Target user: a small cross-border seller who sources from factories and negotiates in chat.
+Target user is a hypothesis: a small cross-border seller who sources from factories and negotiates in chat. It is not interview data.
+
+HMRC counted 334,294 UK goods importers in 2025. A SAM proxy for non-EU sourcing is 132,484 to 239,616: 126,488 + 5,996 = 132,484, and adding 29,463 + 77,669 = 239,616. UK goods imports from China were GBP 69.7 billion in 2025 (ONS/DBT). That total includes precious metals and large corporates, so it overstates sourcing spend. The savings-pool ceiling is GBP 1.05 billion to GBP 2.09 billion (GBP 69.7 billion times 1.5 percent and 3 percent). Those rates are large-buyer Walmart/Pactum reports, an upper bound, not a TradeFlow result. SOM scenarios use assumed take rates and an Accio Pro public price as an anchor, not willingness to pay. Do not read them as data. Full citations and the formula are in [docs/MARKET_ANALYSIS.md](docs/MARKET_ANALYSIS.md).
+
+Umbrellas (HS 6601) are the demo wedge, not a large market. Other codes use `scripts/market_data.py` and `GET /api/v1/market` (UN Comtrade preview). The committed fetch is [results/market_snapshot_6601.json](results/market_snapshot_6601.json). On session create, the dashboard, the API, and the extension's session read attach `market_context` (HS code, UK-from-China value, quantity, implied unit value only when both exist, year, source, fetched_at, caveats, or an explicit unavailable state). The engine-decision card and the extension Evidence tab show it as reference only, next to the supplier quote, labelled implied customs unit value. CIF customs valuation is not a price quote. The auction summary attaches the same block after the simulator returns. It never influences the solver, the recommended price, or the circuit breaker.
 
 Revenue model, proposed and not earned: a desk subscription, or a share of savings versus the first-round best quote. No revenue is claimed, because no factory deal has closed.
 
-Competitors: LLM negotiation agents that let the model set the price; sourcing agents who take a commission; marketplace tools built into Alibaba-style sites. TradeFlow keeps the price on the solver.
+Competitors with a public price: Accio (free tier and a published Pro price) and Alibaba RFQ / Trade Assurance (free for buyers). Pactum, Keelvar, Fairmarkit, Jaggaer, Zycus, and Globality are quote-based; third-party ranges are not official prices. TradeFlow keeps the price on the solver.
 
 Roadmap: a public offline demo from `render.yaml`, AMD live reads only when `VLLM_API_KEY` is set, a logged Gemma chat before any extraction-accuracy number, and the human keeps the send button.
-
-No market-size number is stated. None was sourced for this pack.
 
 ## Human + AI workflow
 
@@ -67,7 +69,7 @@ MI300X figures in `results/bench.json` are a theoretical roofline lower-bound es
 
 1. **Title.** Procurement margin. Reinvent Commerce. Human send.
 2. **Problem.** Negotiate alone, or pay an agent. Prototype, not a company.
-3. **Market, revenue, competition.** No market-size number.
+3. **Market, revenue, competition.** HMRC importer count, the non-EU SAM formula, GBP 69.7 billion of UK goods from China with the precious-metals caveat, and a savings-pool ceiling that is not a TradeFlow result. HS 6601 is the demo wedge. Customs data is reference only.
 4. **Split.** Hybrid, Becreatives, Vibe Generation. Solver decides. Model phrases. Human sends.
 5. **Decision core.** Belief update plus Expectimax. Do not invent a latency.
 6. **AMD language layer.** Gemma-4-31B-IT is the default for a new call. The committed log is Qwen3.8-Flash-Next (348 calls, cost $0.108444). No committed Gemma latency.

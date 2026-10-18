@@ -25,7 +25,7 @@ The paid Qwen log was not re-run. No key is in this environment, and a re-run wo
 | `is_gpu_active: false` | `results/bench.json` | `check_claims.py` | Yes. Wall-clock `cpu_seconds` was not re-timed. |
 | HS 6601 $5.01/kg, YoY −5.8%; steel −9.2%; fabric −8.8%; ABS −12.4%; aluminium +3.3%; USD/CNY 6.7050 | `knowledge/market_data.json` fetched 2026-10-14 (`usd_cny` 6.705025; 6601 `usd_per_kg` 5.0138) | YoY recomputed from the stored 2024 and 2025 rows | Yes, against the stored fetch. Not re-fetched. |
 | ¥17.91 should-cost | `knowledge/spec_baseline.md` | Line items tagged `[EXPERT]`; the total tagged `[DERIVED]` | Not a factory quote. |
-| Deck and form: no market-size dollar figure, no narrated GPU speedup, no factory deal | `scripts/make_pitch.py` and SUBMISSION long description | `tests/test_submission_pack.py` requires the committed pptx to match `build_slides()` and the form fence to match the long description | Yes. The PDF truncates lines at 110 characters; the pptx holds the full bullets. |
+| Deck and form: sourced GBP and HS figures are labelled, no narrated GPU speedup, no factory deal | `scripts/make_pitch.py` and SUBMISSION long description | `tests/test_submission_pack.py` requires the committed pptx to match `build_slides()` and the form fence to match the long description | Yes. The PDF wraps lines onto the widescreen page. It does not cut a line at 110 characters. |
 | Dashboard version | `GET /health` field `version` `0.4.0` | The masthead used to show a canned `v5.0` | Fixed. The masthead now shows `API 0.4.0` from `/health`. |
 | Local round timings | `results/real_stress_test_log.json` five `latency_ms` values: 2606.97, 2252.06, 2281.22, 2294.83, 2273.78 | Mean 2.342 s, median 2.281 s | The limitations note previously cited three rounds and called the mean about 2.4 s. It now cites all five. Micro-step notes (0.6 ms and similar) have no result file and are labeled as such. |
 
@@ -38,7 +38,7 @@ The paid Qwen log was not re-run. No key is in this environment, and a re-run wo
 | Gemma-4-31B-IT | Configured default for a new Stage-2 call. No committed Gemma latency. Not in the 348-call log. |
 | Live dashboard reading | Opt-in. Offline fallback is the default. A failed, timed-out, or unparsable live call stays `status` `failed` or `timeout` and the display starts with `Offline fallback`. `status: ok` and the `AMD GPU Cloud ·` line are set only after HTTP 200 and parsable JSON. The UI adds the success tone only when both are true. |
 | GPU solve on the accelerator named in the roofline note | Not run. `is_gpu_active` is false. |
-| Public hosted URL, factory transaction, market-size dollar total | Not run, and not stated. |
+| Public hosted URL, factory transaction, unsourced market-size dollar total | Not run. Sourced GBP totals and the Comtrade snapshot are labelled in docs/MARKET_ANALYSIS.md. |
 
 The roofline column is a theoretical roofline lower-bound estimate, not measured. `python scripts/regen_mi300x_roofline.py --check` passed against `results/bench.json` working sets and `results/mi300x_roofline.json`. This audit does not restate a bandwidth figure. No AMD GPU measurement is claimed.
 

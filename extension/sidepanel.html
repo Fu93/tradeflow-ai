@@ -233,6 +233,44 @@
           <p class="fineprint">Parsed by the engine. Unparsed fields are shown as --.</p>
         </article>
 
+        <section class="card market-intel" id="marketEvidence" aria-labelledby="marketEvidenceTitle">
+          <div class="row-between">
+            <h2 id="marketEvidenceTitle" data-market="title">Market intel</h2>
+            <span class="eyebrow" data-market="note">reference only</span>
+          </div>
+          <form class="market-form" data-market="form" role="search">
+            <label class="market-search" for="marketEvidenceQuery">
+              <span data-market="searchLabel">Product or HS code</span>
+              <input id="marketEvidenceQuery" data-market="query" type="text" maxlength="80" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="marketEvidenceSuggest" />
+            </label>
+            <button class="market-hit" type="submit" data-market="submit">Look up</button>
+          </form>
+          <ul id="marketEvidenceSuggest" class="market-suggest" data-market="suggest" role="listbox" hidden></ul>
+          <div data-market="live" aria-live="polite" aria-busy="false">
+            <div class="market-skel" data-market="skel" hidden>
+              <span></span><span></span><span></span>
+            </div>
+            <p class="market-kicker" data-market="heroLabel">UK imports from China</p>
+            <p class="market-hero" data-market="hero"></p>
+            <p class="market-year" data-market="heroYear"></p>
+            <p class="market-desc" data-market="desc"></p>
+            <div class="market-metrics" data-market="metrics"></div>
+            <div class="market-spark" data-market="spark"></div>
+            <p class="market-state" data-market="state"></p>
+          </div>
+          <p class="fineprint market-caveat" data-market="caveat">Customs codes can't separate automatic/carbon/custom items. Implied customs unit value is not a price quote.</p>
+          <footer class="market-foot">
+            <p class="fineprint" data-market="prov"></p>
+            <a data-market="sourceLink" rel="noopener noreferrer" hidden>Source</a>
+            <div class="market-actions">
+              <button type="button" class="market-hit" data-market="refresh">Refresh</button>
+              <button type="button" class="market-hit" data-market="retry" hidden>Retry</button>
+              <button type="button" class="market-hit" data-market="theme">Dark</button>
+              <button type="button" class="market-hit" data-market="lang">繁</button>
+            </div>
+          </footer>
+        </section>
+
         <section class="card fold is-closed" id="fold-tco">
           <button type="button" class="fold-toggle" aria-expanded="false" aria-controls="tco-body">
             Terms
@@ -312,6 +350,7 @@
     </footer>
     <div id="toast" class="toast" hidden role="status"></div>
   </div>
+  <script src="market_intel.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

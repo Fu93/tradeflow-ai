@@ -237,6 +237,23 @@
     return Number.isFinite(n) ? n : fallback;
   }
 
+  function customsReferenceLine(ctx) {
+    if (!ctx || typeof ctx !== "object") {
+      return "REFERENCE ONLY. Customs reference: not available. Implied customs unit value is not a price quote.";
+    }
+    const pick = (value) => (value === null || value === undefined || value === "" ? "not available" : String(value));
+    const provenance = ctx.provenance || {};
+    return (
+      "REFERENCE ONLY. Implied customs unit value is not a price quote. HS " + pick(ctx.hs) +
+      ". Year " + pick(ctx.year) +
+      ". UK imports from China " + pick(ctx.value_usd) + " USD. Quantity " + pick(ctx.qty) +
+      ". Implied customs unit value " + pick(ctx.unit_value_usd) + " USD. Source " + pick(provenance.source) +
+      ". Fetched " + pick(provenance.fetched_at) +
+      ". Status " + pick(ctx.status) +
+      ". CIF customs valuation is not a supplier offer and does not set the counter."
+    );
+  }
+
   function extractPriceFromText(text) {
     if (!text) return null;
     const patterns = [
@@ -644,6 +661,8 @@
       // single escaped copy (card1Safe/card2Safe/card3Safe) so the same string is
       // safe in both the visible body and the data-text attribute.
       const counterSafe = tfEsc(tfNum(counterOffer, 0).toFixed(2));
+      const marketCtx = (data.session && data.session.spec && data.session.spec.market_context) || null;
+      const marketLine = customsReferenceLine(marketCtx);
 
       const card1 = `【採購預算核定施壓 (推薦)】感謝報價。我方本期專案採購核定單價為 ¥${counterSafe}，現款現結走官方系統，若可配合將可立即簽核首批 PO。`;
       // [修正] 舊版硬寫「保證 15 天交期」「定金提升至 35%」，這些 15/35 是
@@ -669,6 +688,7 @@
             <span class="tf-deal-figure tf-deal-counter">¥${counterSafe}</span>
           </div>
         </div>
+        <div class="tf-deck-note">${tfEsc(marketLine)}</div>
         <div class="tf-deck-note">${TF_SVG.cards}Three reply scripts, written in Chinese for the supplier — copy one and paste it into the chat yourself</div>
 
         <div class="tf-card">

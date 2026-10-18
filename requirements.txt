@@ -32,6 +32,8 @@ python-multipart>=0.0.9
 # Only needed to run the test suite; the application itself does not import them.
 pytest>=8.0
 httpx>=0.27
+# Comtrade preview retries (429/5xx only). The key, if any, stays in COMTRADE_API_KEY.
+tenacity>=8.2
 # Parses .github/workflows/*.yml in tests/test_ci_workflow_validity.py. That
 # guard exists because an `if: ${{ secrets.X != '' }}` expression made GitHub
 # reject the whole workflow, producing runs with zero jobs that no test could

@@ -291,6 +291,50 @@ async def update_telemetry_config(request: Request):
 # One-click test push
 # ---------------------------------------------------------------------------
 
+@api_v1.get("/market")
+async def market_reference(
+    hs: str | None = None,
+    keyword: str | None = None,
+    q: str | None = None,
+    year: int | None = None,
+    reporter: int = 826,
+    partner: int = 156,
+    flow: str = "M",
+    view: str | None = None,
+    refresh: bool = False,
+):
+    """UK-from-China (or another reporter/partner) customs reference.
+
+    A keyword does not pick an HS code. Pass hs (2-6 digits) to fetch.
+    view=card adds the world total and earlier years for the dashboard card.
+    The payload is reference data. It is not a price and not a solver input.
+    """
+    from ..market.trade_data import lookup_market, lookup_market_card
+
+    if view == "card":
+        result = await asyncio.to_thread(
+            lookup_market_card,
+            hs=hs,
+            keyword=keyword or q,
+            reporter=reporter,
+            partner=partner,
+            flow=flow,
+            refresh=refresh,
+        )
+    else:
+        result = await asyncio.to_thread(
+            lookup_market,
+            hs=hs,
+            keyword=keyword or q,
+            year=year,
+            reporter=reporter,
+            partner=partner,
+            flow=flow,
+        )
+    status = 422 if result.get("reason") == "bad_request" else 200
+    return JSONResponse(status_code=status, content=result)
+
+
 @api_v1.post("/telemetry/test-push")
 async def test_push(request: Request):
     body = await request.json()

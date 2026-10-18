@@ -83,6 +83,17 @@ function tfTone(el, tone) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  try {
+    const marketRoot = document.getElementById("marketIntel");
+    if (marketRoot && window.TradeFlowMarket) {
+      window.TradeFlowMarket.mount(marketRoot, {
+        endpoint: "/api/v1/market",
+        headers: tfAuthHeaders,
+      });
+    }
+  } catch (err) {
+    console.warn("[TradeFlow] market intel init failed (continuing):", err);
+  }
   // P1-3: SSE 與遙測配置必須先於圖表初始化；圖表失敗（CDN 不可達）不得中止
   // 整個啟動鏈，否則會話清單永遠停在 "Connecting..."。
   initSSE();
@@ -399,6 +410,8 @@ async function fetchSessionDetails(sid) {
     if (!res.ok) return;
     const data = await res.json();
     const sessObj = data.session || data;
+    const spec = (sessObj && sessObj.spec) || {};
+    paintCustomsReference(spec.market_context);
     if (sessObj && (sessObj.history || sessObj.turns)) {
       renderPriceLadder(sessObj);
       updateBeliefChartWithTurns(sessObj);
@@ -536,6 +549,30 @@ function renderPriceLadder(session) {
   );
 }
 
+function customsReferenceLine(ctx) {
+  if (!ctx || typeof ctx !== "object") {
+    return "REFERENCE ONLY. Customs reference: not available. Implied customs unit value is not a price quote.";
+  }
+  const pick = (value) => (value === null || value === undefined || value === "" ? "not available" : String(value));
+  const provenance = ctx.provenance || {};
+  return (
+    "REFERENCE ONLY. Implied customs unit value is not a price quote. HS " + pick(ctx.hs) +
+    ". Year " + pick(ctx.year) +
+    ". UK imports from China " + pick(ctx.value_usd) + " USD. Quantity " + pick(ctx.qty) +
+    ". Implied customs unit value " + pick(ctx.unit_value_usd) + " USD. Source " + pick(provenance.source) +
+    ". Fetched " + pick(provenance.fetched_at) +
+    ". Status " + pick(ctx.status) +
+    ". CIF customs valuation is not a supplier offer and does not set the counter."
+  );
+}
+
+function paintCustomsReference(ctx) {
+  const el = document.getElementById("marketReference");
+  if (el) el.textContent = customsReferenceLine(ctx);
+  const root = document.getElementById("marketIntel");
+  if (root && window.TradeFlowMarket) window.TradeFlowMarket.paint(root, ctx || null);
+}
+
 function renderEngineDecision(session) {
   const el = (id) => document.getElementById(id);
   if (!el("decisionIntent")) return; // 面板不存在時安全退出
@@ -607,6 +644,7 @@ function renderEngineDecision(session) {
     }
   }
   el("decisionReply").textContent = replyText || "—";
+  paintCustomsReference((session.spec || {}).market_context);
 }
 
 // The draft is meant to be pasted into the supplier chat by a human. Until now
@@ -880,9 +918,14 @@ async function runMultiAuction() {
   summaryEl.classList.add("hidden");
 
   try {
+    const select = document.getElementById("presetCategorySelect");
+    const preset = select && categoryPresets ? categoryPresets[select.value] : null;
+    const auctionBody = {};
+    if (preset && preset.name) auctionBody.product_name = preset.name;
     const res = await fetch("/api/v1/multi-auction/run", {
       method: "POST",
-      headers: tfAuthHeaders()
+      headers: tfJsonHeaders(),
+      body: JSON.stringify(auctionBody)
     });
     if (!res.ok) {
       loader.classList.add("hidden");
@@ -950,6 +993,10 @@ async function runMultiAuction() {
       <p class="${tfNum(data.savings_vs_target_pct, 0) < 0 ? "is-negative" : ""}"><strong>Versus target</strong> (${tfNum(data.product_target, null) === null ? "—" : "¥" + tfNum(data.product_target, 0).toFixed(2)}): ${tfNum(data.savings_vs_target_cny, null) === null ? "—" : "¥" + tfNum(data.savings_vs_target_cny, 0).toFixed(2)} (${tfNum(data.savings_vs_target_pct, null) === null ? "—" : (tfNum(data.savings_vs_target_pct, 0) * 100).toFixed(1) + "%"})</p>
       <p class="summary-secondary"><strong>Secondary: versus walk-away ceiling</strong> (${tfNum(data.walk_away_ceiling, null) === null ? "—" : "¥" + tfNum(data.walk_away_ceiling, 0).toFixed(2)}): ${tfNum(data.savings_vs_ceiling_cny, null) === null ? "—" : "¥" + tfNum(data.savings_vs_ceiling_cny, 0).toFixed(2)} (${tfNum(data.savings_vs_ceiling_pct, null) === null ? "—" : (tfNum(data.savings_vs_ceiling_pct, 0) * 100).toFixed(1) + "%"})</p>
     `;
+    const customsNote = document.createElement("p");
+    customsNote.className = "summary-secondary";
+    customsNote.textContent = customsReferenceLine(data.market_context);
+    summaryEl.appendChild(customsNote);
     summaryEl.classList.remove("hidden");
 
   } catch (err) {

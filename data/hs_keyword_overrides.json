@@ -1,0 +1,26 @@
+{
+  "classification": "HS",
+  "source": "Local copy of UN Comtrade HS.json retrieved 2026-10-18. These rows name a heading. They are not trade values.",
+  "overrides": [
+    {
+      "keywords": ["umbrella", "umbrellas", "sun umbrella", "parasol", "雨傘"],
+      "hs": "6601",
+      "note": "Heading 6601. Customs data cannot separate automatic, carbon, or custom umbrellas."
+    },
+    {
+      "keywords": ["garden umbrella"],
+      "hs": "660110",
+      "note": "HS 660110 garden or similar umbrellas."
+    },
+    {
+      "keywords": ["telescopic umbrella", "telescopic shaft"],
+      "hs": "660191",
+      "note": "HS 660191 telescopic shaft, excluding garden umbrellas."
+    },
+    {
+      "keywords": ["lifepo4", "battery pack"],
+      "hs": "8507",
+      "note": "Heading 8507 electric accumulators. Confirm the 6-digit code before using it as an anchor."
+    }
+  ]
+}

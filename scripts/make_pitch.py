@@ -91,11 +91,13 @@ def build_slides() -> list[tuple[str, list[str]]]:
         (
             "3. Market, revenue, competition",
             [
-                "Target user: a small cross-border seller who sources from factories and negotiates in chat.",
+                "Target user is a hypothesis: a small cross-border seller who sources from factories and negotiates in chat.",
+                "HMRC 2025: 334,294 UK goods importers. SAM proxy 132,484 to 239,616 (formula in docs/MARKET_ANALYSIS.md).",
+                "UK goods from China, 2025: GBP 69.7 billion (ONS/DBT). Includes precious metals and large corporates.",
+                "Savings-pool ceiling GBP 1.05 billion to GBP 2.09 billion. Large-buyer 1.5 to 3 percent band. Not a TradeFlow result.",
+                "Umbrellas (HS 6601) are the demo wedge. Other codes use the Comtrade preview script. Customs unit value is reference only and does not set the price.",
                 "Revenue model, proposed and not earned: a desk subscription, or a share of savings versus the first-round best quote. No revenue is claimed.",
-                "Competitors: LLM negotiation agents that let the model set the price; sourcing agents who take a commission; marketplace tools built into Alibaba-style sites.",
-                "Roadmap: a public offline demo, AMD live reads only when a key is set, measured extraction accuracy only after a logged run, and the human keeps the send button.",
-                "No market-size number is stated. None was sourced for this pack.",
+                "Public prices: Accio, and Alibaba RFQ free for buyers. Pactum, Keelvar, Fairmarkit, Jaggaer, Zycus, Globality are quote-based.",
             ],
         ),
         (
@@ -232,16 +234,44 @@ def _pdf_escape(text: str) -> str:
     return ascii_text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
+def _wrap_line(text: str, width: int) -> list[str]:
+    """Break on spaces so a bullet is not cut off mid-sentence."""
+    words = text.split()
+    if not words:
+        return [""]
+    lines: list[str] = []
+    current = words[0]
+    for word in words[1:]:
+        candidate = f"{current} {word}"
+        if len(candidate) <= width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return lines
+
+
 def write_pdf(slides: list[tuple[str, list[str]]], out: Path) -> None:
-    """Text-only PDF. Uncompressed page streams so the titles stay searchable."""
+    """Text-only PDF. One widescreen page per slide, lines wrapped, not truncated."""
+    page_width = 960
+    page_height = 540
     pages: list[bytes] = []
     for title, bullets in slides:
-        lines = [title, ""]
-        lines.extend(f"- {bullet}" for bullet in bullets)
-        commands = ["BT", "/F1 12 Tf", "48 760 Td", "14 TL"]
+        raw = [title, ""]
+        raw.extend(f"- {bullet}" for bullet in bullets)
+        # 9pt Helvetica is about 5 units wide. 900pt of text fits well under 160 chars.
+        lines: list[str] = []
+        for raw_line in raw:
+            lines.extend(_wrap_line(raw_line, 150))
+        font = 11
+        leading = 13
+        if len(lines) > 36:
+            font = 8
+            leading = 10
+        commands = ["BT", f"/F1 {font} Tf", f"36 {page_height - 36} Td", f"{leading} TL"]
         for line in lines:
-            snippet = line[:110]
-            commands.append(f"({_pdf_escape(snippet)}) Tj")
+            commands.append(f"({_pdf_escape(line)}) Tj")
             commands.append("T*")
         commands.append("ET")
         pages.append("\n".join(commands).encode("latin-1", errors="replace"))
@@ -253,7 +283,7 @@ def write_pdf(slides: list[tuple[str, list[str]]], out: Path) -> None:
     font_id = 3 + len(pages) * 2
     for index, content in enumerate(pages):
         objects.append(
-            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_width} {page_height}] "
             f"/Contents {4 + index * 2} 0 R /Resources << /Font << /F1 {font_id} 0 R >> >> >>".encode("ascii")
         )
         objects.append(f"<< /Length {len(content)} >>\nstream\n".encode("ascii") + content + b"\nendstream")

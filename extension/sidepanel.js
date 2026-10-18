@@ -49,6 +49,19 @@ function tfEsc(value) {
     .replace(/'/g, "&#39;");
 }
 
+function paintMarketReference(ctx) {
+  const root = document.getElementById("marketEvidence");
+  if (root && window.TradeFlowMarket) window.TradeFlowMarket.paint(root, ctx || null);
+}
+
+function syncMarketChrome() {
+  const root = document.getElementById("marketEvidence");
+  if (!root || !window.TradeFlowMarket) return;
+  const lang = document.documentElement.lang === "zh-Hant" ? "zh-Hant" : "en";
+  root.dataset.lang = lang;
+  window.TradeFlowMarket.paint(root, root._last || null);
+}
+
 // Missing values return the fallback. 0 is a real measurement.
 function tfNum(value, fallback) {
   if (value === null || value === undefined || value === "") return fallback;
@@ -1050,6 +1063,7 @@ function clearFigures() {
   if (count) count.textContent = "";
   paintGateAvailability(null);
   gateMemory = { key: "", decision: "" };
+  paintMarketReference(null);
 }
 
 function paintAll(data, session) {
@@ -1136,6 +1150,7 @@ function paintAll(data, session) {
   const roundsCount = document.getElementById("rounds-count");
   if (roundsCount) roundsCount.textContent = turns.length ? String(turns.length) : "";
   paintGateAvailability(enginePrice);
+  paintMarketReference(spec.market_context || null);
   lastPaintAt = Date.now();
 
   if (turns.length) {
@@ -1475,6 +1490,7 @@ function applyTheme(mode) {
   const label = mode === "dark" ? "Dark" : (mode === "light" ? "Light" : "System");
   if (btn) btn.textContent = `Appearance: ${label}`;
   try { chrome.storage.local.set({ tfTheme: mode || "system" }); } catch (err) { /* optional */ }
+  syncMarketChrome();
 }
 
 function applyLang(lang) {
@@ -1483,6 +1499,7 @@ function applyLang(lang) {
   const btn = document.getElementById("btn-lang");
   if (btn) btn.textContent = next === "zh-Hant" ? "Language: 繁中" : "Language: English";
   try { chrome.storage.local.set({ tfLang: next }); } catch (err) { /* optional */ }
+  syncMarketChrome();
 }
 
 async function copyText(text, ok, fail) {
@@ -1660,6 +1677,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 document.addEventListener("DOMContentLoaded", () => {
+  const marketRoot = document.getElementById("marketEvidence");
+  if (marketRoot && window.TradeFlowMarket) {
+    window.TradeFlowMarket.mount(marketRoot, {
+      endpoint: API_BASE_URL + "/api/v1/market",
+      headers: tfAuthHeaders,
+    });
+  }
   bindChrome();
   paintDeltas(null, null, null, []);
   paintGateAvailability(null);

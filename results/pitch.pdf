@@ -6,15 +6,15 @@ endobj
 << /Type /Pages /Count 9 /Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R 15 0 R 17 0 R 19 0 R] >>
 endobj
 3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 21 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 960 540] /Contents 4 0 R /Resources << /Font << /F1 21 0 R >> >> >>
 endobj
 4 0 obj
 << /Length 431 >>
 stream
 BT
-/F1 12 Tf
-48 760 Td
-14 TL
+/F1 11 Tf
+36 504 Td
+13 TL
 (1. Title) Tj
 T*
 () Tj
@@ -33,22 +33,22 @@ ET
 endstream
 endobj
 5 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 21 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 960 540] /Contents 6 0 R /Resources << /Font << /F1 21 0 R >> >> >>
 endobj
 6 0 obj
-<< /Length 362 >>
+<< /Length 383 >>
 stream
 BT
-/F1 12 Tf
-48 760 Td
-14 TL
+/F1 11 Tf
+36 504 Td
+13 TL
 (2. Problem) Tj
 T*
 () Tj
 T*
 (- Cross-border buyers either negotiate alone, often with a language penalty, or pay an agent.) Tj
 T*
-(- TradeFlow is a prototype of a third arrangement: one operator, software doing the arithmetic, the person kee) Tj
+(- TradeFlow is a prototype of a third arrangement: one operator, software doing the arithmetic, the person keeping the send button.) Tj
 T*
 (- It is not a deployed company and it has not bought from a real factory.) Tj
 T*
@@ -56,42 +56,48 @@ ET
 endstream
 endobj
 7 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 8 0 R /Resources << /Font << /F1 21 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 960 540] /Contents 8 0 R /Resources << /Font << /F1 21 0 R >> >> >>
 endobj
 8 0 obj
-<< /Length 614 >>
+<< /Length 1016 >>
 stream
 BT
-/F1 12 Tf
-48 760 Td
-14 TL
+/F1 11 Tf
+36 504 Td
+13 TL
 (3. Market, revenue, competition) Tj
 T*
 () Tj
 T*
-(- Target user: a small cross-border seller who sources from factories and negotiates in chat.) Tj
+(- Target user is a hypothesis: a small cross-border seller who sources from factories and negotiates in chat.) Tj
 T*
-(- Revenue model, proposed and not earned: a desk subscription, or a share of savings versus the first-round be) Tj
+(- HMRC 2025: 334,294 UK goods importers. SAM proxy 132,484 to 239,616 \(formula in docs/MARKET_ANALYSIS.md\).) Tj
 T*
-(- Competitors: LLM negotiation agents that let the model set the price; sourcing agents who take a commission;) Tj
+(- UK goods from China, 2025: GBP 69.7 billion \(ONS/DBT\). Includes precious metals and large corporates.) Tj
 T*
-(- Roadmap: a public offline demo, AMD live reads only when a key is set, measured extraction accuracy only aft) Tj
+(- Savings-pool ceiling GBP 1.05 billion to GBP 2.09 billion. Large-buyer 1.5 to 3 percent band. Not a TradeFlow result.) Tj
 T*
-(- No market-size number is stated. None was sourced for this pack.) Tj
+(- Umbrellas \(HS 6601\) are the demo wedge. Other codes use the Comtrade preview script. Customs unit value is reference only and does not set the) Tj
+T*
+(price.) Tj
+T*
+(- Revenue model, proposed and not earned: a desk subscription, or a share of savings versus the first-round best quote. No revenue is claimed.) Tj
+T*
+(- Public prices: Accio, and Alibaba RFQ free for buyers. Pactum, Keelvar, Fairmarkit, Jaggaer, Zycus, Globality are quote-based.) Tj
 T*
 ET
 endstream
 endobj
 9 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 10 0 R /Resources << /Font << /F1 21 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 960 540] /Contents 10 0 R /Resources << /Font << /F1 21 0 R >> >> >>
 endobj
 10 0 obj
 << /Length 512 >>
 stream
 BT
-/F1 12 Tf
-48 760 Td
-14 TL
+/F1 11 Tf
+36 504 Td
+13 TL
 (4. Split) Tj
 T*
 () Tj
@@ -110,20 +116,20 @@ ET
 endstream
 endobj
 11 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 12 0 R /Resources << /Font << /F1 21 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 960 540] /Contents 12 0 R /Resources << /Font << /F1 21 0 R >> >> >>
 endobj
 12 0 obj
-<< /Length 365 >>
+<< /Length 366 >>
 stream
 BT
-/F1 12 Tf
-48 760 Td
-14 TL
+/F1 11 Tf
+36 504 Td
+13 TL
 (5. Decision core) Tj
 T*
 () Tj
 T*
-(- A belief about the supplier reserve, then a vectorised Expectimax search over openings and concession curves) Tj
+(- A belief about the supplier reserve, then a vectorised Expectimax search over openings and concession curves.) Tj
 T*
 (- Read the recommended price and the breakdown probability off the dashboard you just captured.) Tj
 T*
@@ -133,40 +139,42 @@ ET
 endstream
 endobj
 13 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 14 0 R /Resources << /Font << /F1 21 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 960 540] /Contents 14 0 R /Resources << /Font << /F1 21 0 R >> >> >>
 endobj
 14 0 obj
-<< /Length 500 >>
+<< /Length 645 >>
 stream
 BT
-/F1 12 Tf
-48 760 Td
-14 TL
+/F1 11 Tf
+36 504 Td
+13 TL
 (6. AMD language layer) Tj
 T*
 () Tj
 T*
 (- Sample endpoint: https://developer.amd.com.cn/radeon/api/v1.) Tj
 T*
-(- Committed log results/real_llm_benchmark_100.json \(2026-10-15\): model Qwen3.8-Flash-Next, 348 calls, average) Tj
+(- Committed log results/real_llm_benchmark_100.json \(2026-10-15\): model Qwen3.8-Flash-Next, 348 calls, average latency 16.81 s, cost $0.108444.) Tj
 T*
-(- That file does not store an HTTP status. status: ok from scripts/verify_amd_endpoint.py means that process r) Tj
+(- That file does not store an HTTP status. status: ok from scripts/verify_amd_endpoint.py means that process received HTTP 200. skipped_no_credentials) Tj
 T*
-(- The default model for a new Stage-2 call is Gemma-4-31B-IT. The committed log above is Qwen3.8-Flash-Next, n) Tj
+(is not a successful check.) Tj
+T*
+(- The default model for a new Stage-2 call is Gemma-4-31B-IT. The committed log above is Qwen3.8-Flash-Next, not Gemma. No committed Gemma latency.) Tj
 T*
 ET
 endstream
 endobj
 15 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 16 0 R /Resources << /Font << /F1 21 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 960 540] /Contents 16 0 R /Resources << /Font << /F1 21 0 R >> >> >>
 endobj
 16 0 obj
-<< /Length 527 >>
+<< /Length 541 >>
 stream
 BT
-/F1 12 Tf
-48 760 Td
-14 TL
+/F1 11 Tf
+36 504 Td
+13 TL
 (7. AMD compute layer) Tj
 T*
 () Tj
@@ -179,32 +187,36 @@ T*
 T*
 (- Formula: lower_bound_seconds = \(working_set_mb * 1024 * 1024\) / \(5.3e12\).) Tj
 T*
-(- No AMD GPU measurement is in the repo unless a sibling benchmark JSON says ran_on_amd_gpu: true. Do not narr) Tj
+(- No AMD GPU measurement is in the repo unless a sibling benchmark JSON says ran_on_amd_gpu: true. Do not narrate a speedup.) Tj
 T*
 ET
 endstream
 endobj
 17 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 18 0 R /Resources << /Font << /F1 21 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 960 540] /Contents 18 0 R /Resources << /Font << /F1 21 0 R >> >> >>
 endobj
 18 0 obj
-<< /Length 926 >>
+<< /Length 1386 >>
 stream
 BT
-/F1 12 Tf
-48 760 Td
-14 TL
+/F1 11 Tf
+36 504 Td
+13 TL
 (8. Evidence, with the baseline named) Tj
 T*
 () Tj
 T*
-(- Self-play \(results/self_play_benchmark.md\): engine savings versus that table's walk-away ceiling run from 8.) Tj
+(- Self-play \(results/self_play_benchmark.md\): engine savings versus that table's walk-away ceiling run from 8.8% to 20.0%. Hard-Bargainer 8.8% versus) Tj
 T*
-(- Real-model log, different experiment: Bluffing Hardliner deal rate 61.11%. 0 budget violations in 94 complet) Tj
+(the fixed baseline 9.2%. 20 matches, 5 archetypes, seed 42. Not the auction headline.) Tj
+T*
+(- Real-model log, different experiment: Bluffing Hardliner deal rate 61.11%. 0 budget violations in 94 completed matches.) Tj
 T*
 (- Held-out intent accuracy on the synthetic set: 63.08% \(195 of 500 held out\).) Tj
 T*
-(- Auction headline is savings versus the first-round best quote. Versus target is shown, including when that f) Tj
+(- Auction headline is savings versus the first-round best quote. Versus target is shown, including when that figure is negative. The walk-away ceiling) Tj
+T*
+(figure is secondary.) Tj
 T*
 (- Headline savings vs first-round best quote: 5.0% \(CNY 6,600.00 total\)) Tj
 T*
@@ -212,32 +224,42 @@ T*
 T*
 (- Secondary, versus walk-away ceiling: 22.2% \(CNY 36,000.00 total\)) Tj
 T*
-(- Offline comparison results/llm_vs_tradeflow.json: 24 episodes, seed 42, buyer offline_accept_opening. Not an) Tj
+(- Offline comparison results/llm_vs_tradeflow.json: 24 episodes, seed 42, buyer offline_accept_opening. Not an AMD call. TradeFlow budget violations) Tj
+T*
+(0.00%, deal rate 50.00%, average savings versus the supplier opening 22.24%. Stand-in budget violations 100.00%, deal rate 100.00%, average savings) Tj
+T*
+(0.00%. Simulation. Not the auction headline.) Tj
 T*
 ET
 endstream
 endobj
 19 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 20 0 R /Resources << /Font << /F1 21 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 960 540] /Contents 20 0 R /Resources << /Font << /F1 21 0 R >> >> >>
 endobj
 20 0 obj
-<< /Length 630 >>
+<< /Length 824 >>
 stream
 BT
-/F1 12 Tf
-48 760 Td
-14 TL
+/F1 11 Tf
+36 504 Td
+13 TL
 (9. Limits and roadmap) Tj
 T*
 () Tj
 T*
-(- cp .env.example .env && docker compose up --build, then open http://localhost:8000. render.yaml is the publi) Tj
+(- cp .env.example .env && docker compose up --build, then open http://localhost:8000. render.yaml is the public-demo blueprint. No hostname is claimed) Tj
 T*
-(- Placeholder keys are ignored. /health reports offline_demo and the solver backend. AMD live mode stays off u) Tj
+(until a deploy exists.) Tj
+T*
+(- Placeholder keys are ignored. /health reports offline_demo and the solver backend. AMD live mode stays off unless a real VLLM_API_KEY is set and the) Tj
+T*
+(operator turns it on.) Tj
 T*
 (- No factory deal. No shipped MI300X timing. No committed Gemma latency. MIT. Public repo.) Tj
 T*
-(- Roadmap: keep the human on the send button, log a real Gemma chat only when a key is present, and publish ex) Tj
+(- Roadmap: keep the human on the send button, log a real Gemma chat only when a key is present, and publish extraction accuracy only after that log) Tj
+T*
+(exists.) Tj
 T*
 (- Working deadline used for this pack: 11:00 London \(BST\), 18 October 2026. Confirm the form.) Tj
 T*
@@ -256,22 +278,22 @@ xref
 0000000295 00000 n 
 0000000777 00000 n 
 0000000904 00000 n 
-0000001317 00000 n 
-0000001444 00000 n 
-0000002109 00000 n 
-0000002237 00000 n 
-0000002801 00000 n 
-0000002930 00000 n 
-0000003347 00000 n 
-0000003476 00000 n 
-0000004028 00000 n 
-0000004157 00000 n 
-0000004736 00000 n 
-0000004865 00000 n 
-0000005843 00000 n 
-0000005972 00000 n 
-0000006654 00000 n 
+0000001338 00000 n 
+0000001465 00000 n 
+0000002533 00000 n 
+0000002661 00000 n 
+0000003225 00000 n 
+0000003354 00000 n 
+0000003772 00000 n 
+0000003901 00000 n 
+0000004598 00000 n 
+0000004727 00000 n 
+0000005320 00000 n 
+0000005449 00000 n 
+0000006888 00000 n 
+0000007017 00000 n 
+0000007893 00000 n 
 trailer << /Size 22 /Root 1 0 R >>
 startxref
-6725
+7964
 %%EOF

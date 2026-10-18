@@ -1,0 +1,565 @@
+{
+  "label": "live UN Comtrade preview fetch",
+  "source_url": "https://comtradeapi.un.org/public/v1/preview/C/A/HS",
+  "fetched_at": "2026-10-18T09:44:14+01:00",
+  "example_query": "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=826&partnerCode=156&period=2024&cmdCode=660199&flowCode=M",
+  "rows": [
+    {
+      "flow": "import",
+      "flow_code": "M",
+      "hs": "6601",
+      "hs_desc": "Umbrellas; sun umbrellas (including walking stick umbrellas, garden umbrellas and similar umbrellas)",
+      "is_aggregate": true,
+      "net_weight_kg": "21467978",
+      "partner": {
+        "code": 156,
+        "name": "China"
+      },
+      "provenance": {
+        "cache": "fresh",
+        "caveats": [
+          "mirror data not used",
+          "qty 0 means unreported, not a zero quantity",
+          "customs data cannot separate automatic, carbon, or custom goods",
+          "HMRC GBP figures are a different source and are not merged into this value",
+          "quantity was unreported, so no unit value was computed"
+        ],
+        "currency": "USD",
+        "fetched_at": "2026-10-18T09:42:19+01:00",
+        "params": {
+          "cmdCode": "6601",
+          "flowCode": "M",
+          "partnerCode": 156,
+          "period": 2024,
+          "reporterCode": 826
+        },
+        "reporter_basis": "reporter-declared",
+        "source": "UN Comtrade preview",
+        "url": "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=826&partnerCode=156&period=2024&cmdCode=6601&flowCode=M"
+      },
+      "provisional": false,
+      "qty": "not available",
+      "qty_unit": "not available",
+      "reason": null,
+      "reporter": {
+        "code": 826,
+        "name": "United Kingdom"
+      },
+      "stale_value": null,
+      "status": "ok",
+      "tried": [
+        2024
+      ],
+      "unit_value_usd": "not available",
+      "valuation": "CIF",
+      "value_usd": "83330323.481",
+      "year": 2024
+    },
+    {
+      "flow": "import",
+      "flow_code": "M",
+      "hs": "6601",
+      "hs_desc": "Umbrellas; sun umbrellas (including walking stick umbrellas, garden umbrellas and similar umbrellas)",
+      "is_aggregate": true,
+      "net_weight_kg": "11718789",
+      "partner": {
+        "code": 156,
+        "name": "China"
+      },
+      "provenance": {
+        "cache": "fresh",
+        "caveats": [
+          "mirror data not used",
+          "qty 0 means unreported, not a zero quantity",
+          "customs data cannot separate automatic, carbon, or custom goods",
+          "HMRC GBP figures are a different source and are not merged into this value",
+          "this period is inside the usual revision window and is flagged provisional"
+        ],
+        "currency": "USD",
+        "fetched_at": "2026-10-18T09:42:20+01:00",
+        "params": {
+          "cmdCode": "6601",
+          "flowCode": "M",
+          "partnerCode": 156,
+          "period": 2025,
+          "reporterCode": 826
+        },
+        "reporter_basis": "reporter-declared",
+        "source": "UN Comtrade preview",
+        "unit_value_formula": "primaryValue / qty, rounded half-up to 0.01 USD",
+        "url": "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=826&partnerCode=156&period=2025&cmdCode=6601&flowCode=M"
+      },
+      "provisional": true,
+      "qty": "12049357",
+      "qty_unit": "not available",
+      "reason": null,
+      "reporter": {
+        "code": 826,
+        "name": "United Kingdom"
+      },
+      "stale_value": null,
+      "status": "ok",
+      "tried": [
+        2025
+      ],
+      "unit_value_usd": "6.06",
+      "valuation": "CIF",
+      "value_usd": "73071378.761",
+      "year": 2025
+    },
+    {
+      "flow": "import",
+      "flow_code": "M",
+      "hs": "660110",
+      "hs_desc": "Umbrellas and sun umbrellas; garden or similar umbrellas",
+      "is_aggregate": true,
+      "net_weight_kg": "6952801",
+      "partner": {
+        "code": 156,
+        "name": "China"
+      },
+      "provenance": {
+        "cache": "fresh",
+        "caveats": [
+          "mirror data not used",
+          "qty 0 means unreported, not a zero quantity",
+          "customs data cannot separate automatic, carbon, or custom goods",
+          "HMRC GBP figures are a different source and are not merged into this value"
+        ],
+        "currency": "USD",
+        "fetched_at": "2026-10-18T09:42:21+01:00",
+        "params": {
+          "cmdCode": "660110",
+          "flowCode": "M",
+          "partnerCode": 156,
+          "period": 2024,
+          "reporterCode": 826
+        },
+        "reporter_basis": "reporter-declared",
+        "source": "UN Comtrade preview",
+        "unit_value_formula": "primaryValue / qty, rounded half-up to 0.01 USD",
+        "url": "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=826&partnerCode=156&period=2024&cmdCode=660110&flowCode=M"
+      },
+      "provisional": false,
+      "qty": "1514935",
+      "qty_unit": "u",
+      "reason": null,
+      "reporter": {
+        "code": 826,
+        "name": "United Kingdom"
+      },
+      "stale_value": null,
+      "status": "ok",
+      "tried": [
+        2024
+      ],
+      "unit_value_usd": "20.22",
+      "valuation": "CIF",
+      "value_usd": "30625465.075",
+      "year": 2024
+    },
+    {
+      "flow": "import",
+      "flow_code": "M",
+      "hs": "660191",
+      "hs_desc": "Umbrellas and sun umbrellas; having a telescopic shaft, (excluding garden or similar umbrellas)",
+      "is_aggregate": true,
+      "net_weight_kg": "10498772",
+      "partner": {
+        "code": 156,
+        "name": "China"
+      },
+      "provenance": {
+        "cache": "fresh",
+        "caveats": [
+          "mirror data not used",
+          "qty 0 means unreported, not a zero quantity",
+          "customs data cannot separate automatic, carbon, or custom goods",
+          "HMRC GBP figures are a different source and are not merged into this value",
+          "quantity was unreported, so no unit value was computed"
+        ],
+        "currency": "USD",
+        "fetched_at": "2026-10-18T09:42:25+01:00",
+        "params": {
+          "cmdCode": "660191",
+          "flowCode": "M",
+          "partnerCode": 156,
+          "period": 2024,
+          "reporterCode": 826
+        },
+        "reporter_basis": "reporter-declared",
+        "source": "UN Comtrade preview",
+        "url": "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=826&partnerCode=156&period=2024&cmdCode=660191&flowCode=M"
+      },
+      "provisional": false,
+      "qty": "not available",
+      "qty_unit": "not available",
+      "reason": null,
+      "reporter": {
+        "code": 826,
+        "name": "United Kingdom"
+      },
+      "stale_value": null,
+      "status": "ok",
+      "tried": [
+        2024
+      ],
+      "unit_value_usd": "not available",
+      "valuation": "CIF",
+      "value_usd": "23713294.758",
+      "year": 2024
+    },
+    {
+      "flow": "import",
+      "flow_code": "M",
+      "hs": "660199",
+      "hs_desc": "Umbrellas and sun umbrellas; n.e.c. in heading no. 6601 (including walking stick umbrellas)",
+      "is_aggregate": true,
+      "net_weight_kg": "4016405",
+      "partner": {
+        "code": 156,
+        "name": "China"
+      },
+      "provenance": {
+        "cache": "fresh",
+        "caveats": [
+          "mirror data not used",
+          "qty 0 means unreported, not a zero quantity",
+          "customs data cannot separate automatic, carbon, or custom goods",
+          "HMRC GBP figures are a different source and are not merged into this value"
+        ],
+        "currency": "USD",
+        "fetched_at": "2026-10-18T09:42:28+01:00",
+        "params": {
+          "cmdCode": "660199",
+          "flowCode": "M",
+          "partnerCode": 156,
+          "period": 2024,
+          "reporterCode": 826
+        },
+        "reporter_basis": "reporter-declared",
+        "source": "UN Comtrade preview",
+        "unit_value_formula": "primaryValue / qty, rounded half-up to 0.01 USD",
+        "url": "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=826&partnerCode=156&period=2024&cmdCode=660199&flowCode=M"
+      },
+      "provisional": false,
+      "qty": "8436132",
+      "qty_unit": "u",
+      "reason": null,
+      "reporter": {
+        "code": 826,
+        "name": "United Kingdom"
+      },
+      "stale_value": null,
+      "status": "ok",
+      "tried": [
+        2024
+      ],
+      "unit_value_usd": "3.44",
+      "valuation": "CIF",
+      "value_usd": "28991563.648",
+      "year": 2024
+    },
+    {
+      "flow": "import",
+      "flow_code": "M",
+      "hs": "6601",
+      "hs_desc": "Umbrellas; sun umbrellas (including walking stick umbrellas, garden umbrellas and similar umbrellas)",
+      "is_aggregate": true,
+      "net_weight_kg": "22026746.724",
+      "partner": {
+        "code": 0,
+        "name": "World"
+      },
+      "provenance": {
+        "cache": "fresh",
+        "caveats": [
+          "mirror data not used",
+          "qty 0 means unreported, not a zero quantity",
+          "customs data cannot separate automatic, carbon, or custom goods",
+          "HMRC GBP figures are a different source and are not merged into this value",
+          "quantity was unreported, so no unit value was computed",
+          "isNetWgtEstimated was true on the preview row"
+        ],
+        "currency": "USD",
+        "fetched_at": "2026-10-18T09:42:29+01:00",
+        "params": {
+          "cmdCode": "6601",
+          "flowCode": "M",
+          "partnerCode": 0,
+          "period": 2024,
+          "reporterCode": 826
+        },
+        "reporter_basis": "reporter-declared",
+        "source": "UN Comtrade preview",
+        "url": "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=826&partnerCode=0&period=2024&cmdCode=6601&flowCode=M"
+      },
+      "provisional": false,
+      "qty": "not available",
+      "qty_unit": "not available",
+      "reason": null,
+      "reporter": {
+        "code": 826,
+        "name": "United Kingdom"
+      },
+      "stale_value": null,
+      "status": "ok",
+      "tried": [
+        2024
+      ],
+      "unit_value_usd": "not available",
+      "valuation": "CIF",
+      "value_usd": "93076531.709",
+      "year": 2024
+    },
+    {
+      "flow": "import",
+      "flow_code": "M",
+      "hs": "6601",
+      "hs_desc": "Umbrellas; sun umbrellas (including walking stick umbrellas, garden umbrellas and similar umbrellas)",
+      "is_aggregate": true,
+      "net_weight_kg": "88922005.65",
+      "partner": {
+        "code": 156,
+        "name": "China"
+      },
+      "provenance": {
+        "cache": "fresh",
+        "caveats": [
+          "mirror data not used",
+          "qty 0 means unreported, not a zero quantity",
+          "customs data cannot separate automatic, carbon, or custom goods",
+          "HMRC GBP figures are a different source and are not merged into this value",
+          "isNetWgtEstimated was true on the preview row"
+        ],
+        "currency": "USD",
+        "fetched_at": "2026-10-18T09:42:34+01:00",
+        "params": {
+          "cmdCode": "6601",
+          "flowCode": "M",
+          "partnerCode": 156,
+          "period": 2024,
+          "reporterCode": 842
+        },
+        "reporter_basis": "reporter-declared",
+        "source": "UN Comtrade preview",
+        "unit_value_formula": "primaryValue / qty, rounded half-up to 0.01 USD",
+        "url": "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=842&partnerCode=156&period=2024&cmdCode=6601&flowCode=M"
+      },
+      "provisional": false,
+      "qty": "124186704",
+      "qty_unit": "not available",
+      "reason": null,
+      "reporter": {
+        "code": 842,
+        "name": "USA"
+      },
+      "stale_value": null,
+      "status": "ok",
+      "tried": [
+        2024
+      ],
+      "unit_value_usd": "4.26",
+      "valuation": "CIF",
+      "value_usd": "528731204",
+      "year": 2024
+    },
+    {
+      "flow": "import",
+      "flow_code": "M",
+      "hs": "6601",
+      "hs_desc": "Umbrellas; sun umbrellas (including walking stick umbrellas, garden umbrellas and similar umbrellas)",
+      "is_aggregate": true,
+      "net_weight_kg": "113252257",
+      "partner": {
+        "code": 156,
+        "name": "China"
+      },
+      "provenance": {
+        "cache": "fresh",
+        "caveats": [
+          "mirror data not used",
+          "qty 0 means unreported, not a zero quantity",
+          "customs data cannot separate automatic, carbon, or custom goods",
+          "HMRC GBP figures are a different source and are not merged into this value"
+        ],
+        "currency": "USD",
+        "fetched_at": "2026-10-18T09:42:35+01:00",
+        "params": {
+          "cmdCode": "6601",
+          "flowCode": "M",
+          "partnerCode": 156,
+          "period": 2024,
+          "reporterCode": 97
+        },
+        "reporter_basis": "reporter-declared",
+        "source": "UN Comtrade preview",
+        "unit_value_formula": "primaryValue / qty, rounded half-up to 0.01 USD",
+        "url": "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=97&partnerCode=156&period=2024&cmdCode=6601&flowCode=M"
+      },
+      "provisional": false,
+      "qty": "131804117",
+      "qty_unit": "not available",
+      "reason": null,
+      "reporter": {
+        "code": 97,
+        "name": "European Union"
+      },
+      "stale_value": null,
+      "status": "ok",
+      "tried": [
+        2024
+      ],
+      "unit_value_usd": "4.23",
+      "valuation": "CIF",
+      "value_usd": "557319351.045",
+      "year": 2024
+    },
+    {
+      "flow": "export",
+      "flow_code": "X",
+      "hs": "6601",
+      "hs_desc": "Umbrellas; sun umbrellas (including walking stick umbrellas, garden umbrellas and similar umbrellas)",
+      "is_aggregate": true,
+      "net_weight_kg": "542942135.726",
+      "partner": {
+        "code": 0,
+        "name": "World"
+      },
+      "provenance": {
+        "cache": "fresh",
+        "caveats": [
+          "mirror data not used",
+          "qty 0 means unreported, not a zero quantity",
+          "customs data cannot separate automatic, carbon, or custom goods",
+          "HMRC GBP figures are a different source and are not merged into this value",
+          "isNetWgtEstimated was true on the preview row"
+        ],
+        "currency": "USD",
+        "fetched_at": "2026-10-18T09:42:36+01:00",
+        "params": {
+          "cmdCode": "6601",
+          "flowCode": "X",
+          "partnerCode": 0,
+          "period": 2024,
+          "reporterCode": 156
+        },
+        "reporter_basis": "reporter-declared",
+        "source": "UN Comtrade preview",
+        "unit_value_formula": "primaryValue / qty, rounded half-up to 0.01 USD",
+        "url": "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=156&partnerCode=0&period=2024&cmdCode=6601&flowCode=X"
+      },
+      "provisional": false,
+      "qty": "961450981",
+      "qty_unit": "not available",
+      "reason": null,
+      "reporter": {
+        "code": 156,
+        "name": "China"
+      },
+      "stale_value": null,
+      "status": "ok",
+      "tried": [
+        2024
+      ],
+      "unit_value_usd": "3.01",
+      "valuation": "FOB",
+      "value_usd": "2890313937",
+      "year": 2024
+    },
+    {
+      "flow": "import",
+      "flow_code": "M",
+      "hs": "660199",
+      "hs_desc": "Umbrellas and sun umbrellas; n.e.c. in heading no. 6601 (including walking stick umbrellas)",
+      "is_aggregate": "not available",
+      "net_weight_kg": "not available",
+      "partner": {
+        "code": 156,
+        "name": "China"
+      },
+      "provenance": {
+        "cache": "fresh",
+        "caveats": [
+          "mirror data not used",
+          "qty 0 means unreported, not a zero quantity",
+          "customs data cannot separate automatic, carbon, or custom goods",
+          "HMRC GBP figures are a different source and are not merged into this value"
+        ],
+        "currency": "USD",
+        "fetched_at": "2026-10-18T09:42:37+01:00",
+        "params": {
+          "cmdCode": "660199",
+          "flowCode": "M",
+          "partnerCode": 156,
+          "period": 1990,
+          "reporterCode": 826
+        },
+        "reporter_basis": "reporter-declared",
+        "source": "UN Comtrade preview",
+        "url": "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=826&partnerCode=156&period=1990&cmdCode=660199&flowCode=M"
+      },
+      "provisional": false,
+      "qty": "not available",
+      "qty_unit": "not available",
+      "reason": "no_data",
+      "reporter": {
+        "code": 826,
+        "name": "United Kingdom"
+      },
+      "stale_value": null,
+      "status": "unavailable",
+      "tried": [
+        1990
+      ],
+      "unit_value_usd": "not available",
+      "valuation": "not available",
+      "value_usd": "not available",
+      "year": 1990
+    }
+  ],
+  "derived": {
+    "label": "estimate",
+    "children_hs": [
+      "660110",
+      "660191",
+      "660199"
+    ],
+    "children_sum_usd": "83330323.481",
+    "parent_usd": "83330323.481",
+    "children_equal_parent": true,
+    "savings_pool": [
+      {
+        "label": "estimate",
+        "upper_bound": true,
+        "not_a_tradeflow_result": true,
+        "formula": "category import value x s, s in {1.5%, 3%}",
+        "rate_source": "large-buyer Walmart/Pactum reported range, not small-buyer China sourcing",
+        "year": 2024,
+        "low_usd": "1249954.85",
+        "high_usd": "2499909.7",
+        "base_usd": "83330323.481"
+      },
+      {
+        "label": "estimate",
+        "upper_bound": true,
+        "not_a_tradeflow_result": true,
+        "formula": "category import value x s, s in {1.5%, 3%}",
+        "rate_source": "large-buyer Walmart/Pactum reported range, not small-buyer China sourcing",
+        "year": 2025,
+        "low_usd": "1096070.68",
+        "high_usd": "2192141.36",
+        "base_usd": "73071378.761"
+      }
+    ],
+    "uk_china_share_of_uk_world_2024": "0.8953",
+    "children_minus_parent_usd": "0",
+    "uk_world_6601_2024_usd": "93076531.709"
+  },
+  "notes": [
+    "Recorded by scripts/market_data.py from the public preview. Not hand-typed.",
+    "Quantity 0 on a preview row is stored as not available.",
+    "WITS was not called.",
+    "HMRC GBP figures are not merged into these USD rows."
+  ]
+}
