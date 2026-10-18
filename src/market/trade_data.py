@@ -351,7 +351,7 @@ class MarketCache:
     def make_key(reporter: int, partner: int, flow: str, hs: str, year: int) -> str:
         return f"comtrade|{reporter}|{partner}|{flow}|{hs}|{year}"
 
-    def lookup(self, key: str, now: float | None = None) -> tuple[dict[str, Any] | None, str]:
+    def lookup_meta(self, key: str, now: float | None = None) -> tuple[dict[str, Any] | None, str, float | None]:
         clock = time.time() if now is None else now
         with self._lock, self._connect() as conn:
             row = conn.execute(
@@ -359,10 +359,14 @@ class MarketCache:
                 (key,),
             ).fetchone()
         if row is None:
-            return None, "miss"
+            return None, "miss", None
         stored_at, ttl, payload = row
         state = "fresh" if clock - float(stored_at) <= int(ttl) else "stale"
-        return json.loads(payload), state
+        return json.loads(payload), state, float(stored_at)
+
+    def lookup(self, key: str, now: float | None = None) -> tuple[dict[str, Any] | None, str]:
+        payload, state, _stored = self.lookup_meta(key, now)
+        return payload, state
 
     def store(self, key: str, payload: dict[str, Any], ttl_seconds: int) -> None:
         text = json.dumps(payload, separators=(",", ":"), sort_keys=True)
@@ -441,9 +445,13 @@ def default_http_get(url: str, headers: dict[str, str], timeout: int) -> HttpRes
     return HttpResult(response.status_code, response.text, retry_after)
 
 
-def _mark_cache(result: dict[str, Any], state: str) -> dict[str, Any]:
+def _mark_cache(result: dict[str, Any], state: str, stored_at: float | None = None) -> dict[str, Any]:
     result = json.loads(json.dumps(result))
-    result.setdefault("provenance", {})["cache"] = state
+    provenance = result.setdefault("provenance", {})
+    provenance["cache"] = state
+    if stored_at is not None and state in {"fresh", "stale"}:
+        age = int(time.time() - float(stored_at))
+        provenance["cache_age_seconds"] = age if age > 0 else 0
     return result
 
 
@@ -463,6 +471,7 @@ def fetch_period(
     timeout: int = DEFAULT_TIMEOUT,
     deadline: float | None = None,
     attempts: int = 3,
+    refresh: bool = False,
 ) -> dict[str, Any]:
     """Fetch one reporter/partner/year/HS/flow. Serves a fresh cache hit first."""
     url = preview_url(reporter, partner, year, hs, flow)
@@ -491,14 +500,14 @@ def fetch_period(
     }
     store = cache if cache is not None else MarketCache()
     key = MarketCache.make_key(reporter, partner, flow, hs, year)
-    cached, state = store.lookup(key)
-    if cached is not None and state == "fresh":
-        return _mark_cache(cached, "fresh")
+    cached, state, stored_at = store.lookup_meta(key)
+    if cached is not None and state == "fresh" and not refresh:
+        return _mark_cache(cached, "fresh", stored_at)
 
     gate = breaker if breaker is not None else Breaker()
     if not gate.allow():
         if cached is not None:
-            return _mark_cache(cached, "stale")
+            return _mark_cache(cached, "stale", stored_at)
         meta["cache"] = "miss"
         blocked = parse_comtrade_payload({"error": "circuit open"}, meta)
         blocked["reason"] = "upstream_error"
@@ -529,12 +538,12 @@ def fetch_period(
         failed["reason"] = "upstream_error"
         failed["detail"] = "HTTP 400 (not retried). Preview accepts one period per call."
         if cached is not None:
-            failed["stale_value"] = _mark_cache(cached, "stale")
+            failed["stale_value"] = _mark_cache(cached, "stale", stored_at)
         return failed
     except Retryable as exc:
         gate.fail()
         if cached is not None:
-            return _mark_cache(cached, "stale")
+            return _mark_cache(cached, "stale", stored_at)
         failed = parse_comtrade_payload({"error": "upstream failed"}, meta)
         failed["reason"] = "rate_limited" if getattr(exc, "status", 0) == 429 else "upstream_error"
         failed["stale_value"] = None
@@ -543,7 +552,7 @@ def fetch_period(
     if result.status != 200:
         gate.fail()
         if cached is not None:
-            return _mark_cache(cached, "stale")
+            return _mark_cache(cached, "stale", stored_at)
         failed = parse_comtrade_payload({"error": f"HTTP {result.status}"}, meta)
         failed["reason"] = "upstream_error"
         failed["stale_value"] = None
@@ -553,7 +562,7 @@ def fetch_period(
     except json.JSONDecodeError:
         gate.fail()
         if cached is not None:
-            return _mark_cache(cached, "stale")
+            return _mark_cache(cached, "stale", stored_at)
         failed = parse_comtrade_payload({"error": "response was not JSON"}, meta)
         failed["reason"] = "upstream_error"
         return failed
@@ -585,13 +594,14 @@ def fetch_latest(
     budget_seconds: int = CALL_BUDGET_SECONDS,
     attempts: int = 3,
     timeout: int = DEFAULT_TIMEOUT,
+    refresh: bool = False,
 ) -> dict[str, Any]:
     """Try the requested year, or walk newest-to-older until a row exists."""
     if year is not None:
         return fetch_period(
             reporter=reporter, partner=partner, year=year, hs=hs, flow=flow,
             client=client, cache=cache, pace=pace, breaker=breaker, today=today,
-            immediate=immediate, attempts=attempts, timeout=timeout,
+            immediate=immediate, attempts=attempts, timeout=timeout, refresh=refresh,
         )
     deadline = time.monotonic() + budget_seconds
     tried: list[int] = []
@@ -602,6 +612,7 @@ def fetch_latest(
             reporter=reporter, partner=partner, year=candidate, hs=hs, flow=flow,
             client=client, cache=cache, pace=pace, breaker=breaker, today=today,
             immediate=immediate, deadline=deadline, attempts=attempts, timeout=timeout,
+            refresh=refresh,
         )
         last["tried"] = list(tried)
         if last.get("status") == "ok":
@@ -648,6 +659,16 @@ def search_hs(keyword: str, limit: int = 5) -> list[dict[str, Any]]:
     words = re.findall(r"[A-Za-z0-9]+", text)[:8]
     found: list[dict[str, Any]] = []
     seen: set[str] = set()
+    if HS_RE.fullmatch(text):
+        seen.add(text)
+        found.append({
+            "hs": text,
+            "text": hs_description(text),
+            "score": NOT_AVAILABLE,
+            "score_note": "the typed code; not a BM25 score",
+            "source": "typed code",
+            "note": "Confirm this code to fetch. Typing it does not fetch.",
+        })
     hay = text.lower()
     ranked: list[tuple[int, dict[str, Any]]] = []
     for entry in _overrides():
@@ -784,6 +805,125 @@ def lookup_market(
         "detail": "Keyword search does not pick an HS code. Confirm one candidate and call again with hs.",
         "stale_value": None,
         "tried": [],
+    }
+
+
+def _series_point(row: dict[str, Any]) -> dict[str, Any] | None:
+    if row.get("status") != "ok":
+        return None
+    value = row.get("value_usd")
+    if value in (None, NOT_AVAILABLE):
+        return None
+    return {"year": row.get("year"), "value_usd": value}
+
+
+def lookup_market_card(
+    *,
+    hs: str | None = None,
+    keyword: str | None = None,
+    reporter: int = 826,
+    partner: int = 156,
+    flow: str = FLOW_IMPORT,
+    client: Callable[[str, dict[str, str], int], HttpResult] | None = None,
+    cache: MarketCache | None = None,
+    pace: Pace | None = None,
+    today: date | None = None,
+    refresh: bool = False,
+) -> dict[str, Any]:
+    """Card payload. A keyword still does not fetch. An HS code does.
+
+    The hero is UK-from-China (or the requested reporter/partner) for the
+    latest year that has a row. World total is the same reporter and year
+    with partner World. The series keeps only years that actually returned
+    a value. This payload is reference data. It is not a solver input.
+    """
+    code = (hs or "").strip()
+    if not code:
+        listed = lookup_market(keyword=keyword, client=client, cache=cache, pace=pace, today=today)
+        listed["view"] = "card"
+        return listed
+    offline = os.environ.get("TRADEFLOW_MARKET_OFFLINE", "").strip().lower() in {"1", "true", "yes"}
+    if offline or not HS_RE.fullmatch(code):
+        screened = lookup_market(
+            hs=code, reporter=reporter, partner=partner, flow=flow,
+            client=client, cache=cache, pace=pace, today=today,
+        )
+        screened["view"] = "card"
+        screened["series"] = []
+        screened["hero"] = {
+            "value_usd": screened.get("value_usd") or NOT_AVAILABLE,
+            "year": screened.get("year"),
+        }
+        screened["world"] = {
+            "value_usd": NOT_AVAILABLE,
+            "status": "unavailable",
+            "reason": screened.get("reason"),
+        }
+        screened["reference_only"] = True
+        screened["influences_solver"] = False
+        screened["caveat"] = "Customs codes can't separate automatic/carbon/custom items"
+        return screened
+    latest = fetch_latest(
+        reporter=reporter, partner=partner, hs=code, flow=flow,
+        client=client, cache=cache, pace=pace, today=today, refresh=refresh,
+    )
+    year = latest.get("year") if latest.get("status") == "ok" else None
+    world: dict[str, Any] = {"value_usd": NOT_AVAILABLE, "status": "unavailable", "reason": "not_fetched", "year": year}
+    series: list[dict[str, Any]] = []
+    if isinstance(year, int):
+        world_row = fetch_period(
+            reporter=reporter, partner=WORLD_CODE, year=year, hs=code, flow=flow,
+            client=client, cache=cache, pace=pace, today=today, refresh=refresh,
+        )
+        if world_row.get("status") == "ok":
+            world = {
+                "value_usd": world_row.get("value_usd"),
+                "year": world_row.get("year"),
+                "status": "ok",
+                "reason": None,
+            }
+        else:
+            world = {
+                "value_usd": NOT_AVAILABLE,
+                "year": year,
+                "status": world_row.get("status"),
+                "reason": world_row.get("reason"),
+            }
+        # The latest year plus three earlier years. Only real rows are kept.
+        for offset in range(0, 4):
+            point_year = year - offset
+            if offset == 0:
+                row = latest
+            else:
+                row = fetch_period(
+                    reporter=reporter, partner=partner, year=point_year, hs=code, flow=flow,
+                    client=client, cache=cache, pace=pace, today=today, refresh=refresh,
+                )
+            point = _series_point(row)
+            if point is not None:
+                series.append(point)
+        series.sort(key=lambda item: int(item["year"]))
+    provenance = dict(latest.get("provenance") or {})
+    return {
+        "view": "card",
+        "status": latest.get("status") or "unavailable",
+        "reason": latest.get("reason"),
+        "reference_only": True,
+        "influences_solver": False,
+        "label": REFERENCE_LABEL,
+        "hs": code,
+        "hs_desc": latest.get("hs_desc") or NOT_AVAILABLE,
+        "hero": {"value_usd": latest.get("value_usd") or NOT_AVAILABLE, "year": latest.get("year")},
+        "world": world,
+        "qty": latest.get("qty") or NOT_AVAILABLE,
+        "qty_unit": latest.get("qty_unit") or NOT_AVAILABLE,
+        "unit_value_usd": latest.get("unit_value_usd") or NOT_AVAILABLE,
+        "valuation": latest.get("valuation") or NOT_AVAILABLE,
+        "series": series,
+        "reporter": latest.get("reporter") or {"code": reporter, "name": reporter_name(reporter)},
+        "partner": latest.get("partner") or {"code": partner, "name": reporter_name(partner)},
+        "provenance": provenance,
+        "caveat": "Customs codes can't separate automatic/carbon/custom items",
     }
 
 

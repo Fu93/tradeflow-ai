@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -19,6 +21,7 @@ from src.market.trade_data import (
     build_market_context,
     fetch_period,
     lookup_market,
+    lookup_market_card,
     parse_comtrade_payload,
     search_hs,
 )
@@ -313,6 +316,156 @@ def test_offline_context_is_explicit(monkeypatch):
     assert ctx["value_usd"] == "not available"
     assert ctx["reference_only"] is True
     assert ctx["influences_solver"] is False
+
+
+def _preview_body(hs: str, value: int, qty: int) -> str:
+    return json.dumps({
+        "data": [{
+            "cmdCode": hs,
+            "primaryValue": value,
+            "cifvalue": value,
+            "fobvalue": None,
+            "qty": qty,
+            "netWgt": 1,
+            "isAggregate": False,
+        }]
+    })
+
+
+def _query(url: str) -> dict[str, str]:
+    parsed = parse_qs(urlparse(url).query)
+    return {key: values[0] for key, values in parsed.items()}
+
+
+def test_card_series_keeps_only_years_that_returned(monkeypatch, tmp_path):
+    monkeypatch.delenv("TRADEFLOW_MARKET_OFFLINE", raising=False)
+
+    def client(url, headers, timeout):
+        query = _query(url)
+        year = int(query["period"])
+        partner = int(query["partnerCode"])
+        hs = query["cmdCode"]
+        if partner == 0 and year == 2024:
+            return HttpResult(200, _preview_body(hs, 20, 4))
+        if partner == 156 and year in {2024, 2023, 2022}:
+            return HttpResult(200, _preview_body(hs, 10 + (year - 2022), 2))
+        return HttpResult(200, json.dumps({"data": []}))
+
+    result = lookup_market_card(
+        hs="660199",
+        client=client,
+        cache=_cache(tmp_path),
+        pace=_pace(),
+        today=date(2026, 10, 18),
+    )
+    assert [point["year"] for point in result["series"]] == [2022, 2023, 2024]
+    assert result["hero"]["year"] == 2024
+    assert result["world"]["status"] == "ok"
+    assert result["world"]["value_usd"] == "20"
+    assert result["unit_value_usd"] != "not available"
+    assert result["qty"] != "not available"
+    assert result["valuation"] == "CIF"
+    assert result["influences_solver"] is False
+    assert result["caveat"] == "Customs codes can't separate automatic/carbon/custom items"
+
+
+def test_card_with_one_year_has_no_sparkline_series(monkeypatch, tmp_path):
+    monkeypatch.delenv("TRADEFLOW_MARKET_OFFLINE", raising=False)
+
+    def client(url, headers, timeout):
+        query = _query(url)
+        year = int(query["period"])
+        partner = int(query["partnerCode"])
+        if partner == 156 and year == 2024:
+            return HttpResult(200, _preview_body(query["cmdCode"], 10, 0))
+        if partner == 0 and year == 2024:
+            return HttpResult(200, _preview_body(query["cmdCode"], 30, 0))
+        return HttpResult(200, json.dumps({"data": []}))
+
+    result = lookup_market_card(
+        hs="6601",
+        client=client,
+        cache=_cache(tmp_path),
+        pace=_pace(),
+        today=date(2024, 6, 1),
+    )
+    assert result["hero"]["value_usd"] == "10"
+    assert result["qty"] == "not available"
+    assert result["unit_value_usd"] == "not available"
+    assert len(result["series"]) == 1
+
+
+def test_refresh_bypasses_a_fresh_cache_entry(monkeypatch, tmp_path):
+    monkeypatch.delenv("TRADEFLOW_MARKET_OFFLINE", raising=False)
+    calls = {"n": 0}
+
+    def client(url, headers, timeout):
+        calls["n"] += 1
+        return HttpResult(200, _preview_body("6601", 10, 2))
+
+    cache = _cache(tmp_path)
+    kwargs = dict(
+        reporter=826, partner=156, year=2024, hs="6601", flow="M",
+        client=client, cache=cache, pace=_pace(), attempts=1, timeout=1,
+        today=date(2026, 10, 18),
+    )
+    first = fetch_period(**kwargs)
+    assert first["status"] == "ok"
+    assert calls["n"] == 1
+    second = fetch_period(**kwargs)
+    assert calls["n"] == 1
+    assert second["provenance"]["cache"] == "fresh"
+    assert second["provenance"]["cache_age_seconds"] == 0
+    third = fetch_period(**kwargs, refresh=True)
+    assert calls["n"] == 2
+    assert third["status"] == "ok"
+
+
+def test_card_keyword_does_not_fetch(monkeypatch):
+    monkeypatch.delenv("TRADEFLOW_MARKET_OFFLINE", raising=False)
+
+    def client(url, headers, timeout):
+        raise AssertionError("a keyword card must not call Comtrade")
+
+    result = lookup_market_card(keyword="umbrella", client=client)
+    assert result["view"] == "card"
+    assert result["status"] == "needs_confirmation"
+    assert result["candidates"][0]["hs"] == "6601"
+
+
+def test_card_offline_route_has_no_invented_number():
+    client = TestClient(api_main.app)
+    response = client.get("/api/v1/market", params={"hs": "6601", "view": "card"})
+    if response.status_code == 401:
+        return
+    body = response.json()
+    assert body["status"] == "unavailable"
+    assert body["reason"] == "offline"
+    assert body["series"] == []
+    assert body["hero"]["value_usd"] == "not available"
+    assert body["world"]["value_usd"] == "not available"
+    assert "73071378" not in json.dumps(body)
+    assert "28991563" not in json.dumps(body)
+
+
+def test_market_card_sources_carry_the_caveat_and_no_snapshot_figures():
+    dashboard = ROOT / "src" / "web" / "static" / "js" / "market_intel.js"
+    panel = ROOT / "extension" / "market_intel.js"
+    assert dashboard.read_text(encoding="utf-8") == panel.read_text(encoding="utf-8")
+    blob = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            dashboard,
+            panel,
+            ROOT / "src" / "web" / "templates" / "index.html",
+            ROOT / "extension" / "sidepanel.html",
+            ROOT / "src" / "web" / "static" / "js" / "app.js",
+        )
+    )
+    assert "Customs codes can't separate automatic/carbon/custom items" in blob
+    assert "73071378" not in blob
+    assert "28991563" not in blob
+    assert 'aria-live="polite"' in blob
 
 
 def _cache(tmp_path: Path):

@@ -81,8 +81,8 @@ Honest exceptions the scanner does not treat as scenario data:
 Wiring:
 
 - `POST /api/v1/sessions` resolves an HS code from `hs_code` or the product name and stores `market_context`.
-- `GET /api/v1/market` is the same lookup. A keyword returns candidates and does not fetch.
-- The dashboard engine-decision card, the extension Evidence tab, and the content-script decision deck render the block as reference only.
+- `GET /api/v1/market` is the same lookup. A keyword returns candidates and does not fetch. `view=card` adds the world total and earlier years for the Market intel card, and only after an HS code is confirmed.
+- The dashboard engine-decision line, the Market intel card, the extension Evidence tab, and the content-script decision deck render the block as reference only.
 - `POST /api/v1/multi-auction/run` calls `simulate_reverse_auction` first, then attaches `market_context`.
 
 Invariant: the block does not influence the solver, the recommended price, or the circuit breaker. `tests/test_market_data.py` posts the same offer to two sessions, one with a caller-supplied unit value, and requires the same `recommended_offer_price`. It also checks that a model JSON containing `recommended_price` leaves `buyer_price` null, and that two auction calls with and without an HS code return the same winning price. `solver.py` and `multi_solver.py` do not mention `market_context`.

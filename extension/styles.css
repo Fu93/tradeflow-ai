@@ -310,6 +310,190 @@ body {
 .ov-hold b { color: var(--ochre); }
 .ov-abort b { color: var(--seal); }
 
+/* ------------------------------------------------------------- market intel */
+
+.market-intel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: Inter, var(--text);
+  min-width: 0;
+}
+
+.market-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.market-search {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.market-search span { font-size: 11px; color: var(--ink-faint); }
+
+.market-intel .market-hit,
+.market-intel input,
+.market-suggest-btn { min-height: 44px; }
+
+.market-intel input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--sheet);
+  border: 1px solid var(--rule-strong);
+  color: var(--ink);
+  font: inherit;
+}
+
+.market-suggest:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.market-suggest-note { font-size: 11px; color: var(--ink-faint); padding: 4px 0; }
+
+.market-suggest-btn {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  background: var(--sheet-sunk);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.market-skel { display: grid; gap: 4px; }
+.market-skel[hidden] { display: none; }
+
+.market-skel span {
+  display: block;
+  height: 12px;
+  background: linear-gradient(90deg, var(--sheet-sunk), var(--rule), var(--sheet-sunk));
+  background-size: 200% 100%;
+  animation: market-shimmer 1.2s ease-in-out infinite;
+}
+
+.market-skel span:first-child { height: 28px; width: 70%; }
+
+@keyframes market-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+.market-kicker { font-size: 11px; color: var(--ink-faint); }
+
+.market-hero {
+  font-family: var(--display);
+  font-size: 28px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.market-year,
+.market-desc,
+.market-state,
+.market-spark-years {
+  font-size: 11px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.market-metrics {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.market-metric {
+  min-width: 0;
+  padding: 8px;
+  background: var(--paper);
+}
+
+.market-metric-label { display: block; font-size: 10px; color: var(--ink-faint); }
+
+.market-metric-value {
+  display: block;
+  font-family: var(--display);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.market-spark svg { display: block; width: 100%; height: 32px; color: var(--steel); }
+
+.market-intel[data-loading="1"] [data-market="hero"],
+.market-intel[data-loading="1"] [data-market="heroYear"],
+.market-intel[data-loading="1"] [data-market="desc"],
+.market-intel[data-loading="1"] [data-market="metrics"],
+.market-intel[data-loading="1"] [data-market="spark"] { visibility: hidden; }
+
+.market-caveat { margin: 0; }
+
+.market-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--rule);
+}
+
+.market-intel a:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--steel);
+}
+
+.market-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.market-actions button {
+  padding: 8px 12px;
+  background: var(--sheet-sunk);
+  border: 1px solid var(--rule-strong);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+html[data-theme="dark"] {
+  --paper: #1b2622;
+  --sheet: #24302b;
+  --sheet-sunk: #1a2420;
+  --ink: #f2f2ec;
+  --ink-soft: #d5ddd6;
+  --ink-faint: #b7c2b8;
+  --rule: #3d4a44;
+  --rule-strong: #7d8c82;
+  --steel: #c5d4df;
+  --moss: #b7d4c8;
+  --ochre: #e6c98a;
+  --seal-tint: #3a241f;
+  color-scheme: dark;
+}
+
+html[data-theme="dark"] body {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(242, 242, 236, 0.05) 0,
+    rgba(242, 242, 236, 0.05) 1px,
+    transparent 1px,
+    transparent 26px
+  );
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }

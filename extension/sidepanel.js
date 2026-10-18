@@ -81,9 +81,8 @@ function customsReferenceLine(ctx) {
 }
 
 function paintMarketReference(ctx) {
-  const el = document.getElementById("market-reference");
-  if (!el) return;
-  el.textContent = customsReferenceLine(ctx);
+  const root = document.getElementById("marketEvidence");
+  if (root && window.TradeFlowMarket) window.TradeFlowMarket.paint(root, ctx || null);
 }
 
 function tfNum(value, fallback) {
@@ -488,44 +487,32 @@ btnRefresh?.addEventListener("click", () => {
   }
 });
 
-document.getElementById("btn-hs-refresh")?.addEventListener("click", async () => {
-  const input = document.getElementById("hs-override");
-  const code = (input && input.value ? input.value : "").trim();
-  if (!/^\d{2,6}$/.test(code)) {
-    paintMarketReference({ status: "unavailable", reason: "bad_request", hs: "not available" });
-    return;
-  }
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/market?hs=${encodeURIComponent(code)}`, {
-      headers: tfAuthHeaders(),
-    });
-    if (!res.ok) {
-      paintMarketReference({ status: "unavailable", reason: "bad_request", hs: code });
-      return;
-    }
-    paintMarketReference(await res.json());
-  } catch (err) {
-    paintMarketReference({ status: "unavailable", reason: "offline", hs: code });
-  }
-});
-
 document.getElementById("btn-concede")?.addEventListener("click", () => dispatchCommand("1"));
 document.getElementById("btn-hold")?.addEventListener("click", () => dispatchCommand("2"));
 document.getElementById("btn-abort")?.addEventListener("click", () => dispatchCommand("3"));
 
-// Active Tab listeners (auto-switch view when user switches tabs)
-chrome.tabs.onActivated.addListener(() => {
-  syncWithActiveTab();
-});
-
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (tab.active && changeInfo.status === "complete") {
+// Active Tab listeners (auto-switch view when user switches tabs).
+// A plain browser tab used to screenshot the Evidence card has no chrome.tabs.
+if (typeof chrome !== "undefined" && chrome.tabs && chrome.tabs.onActivated) {
+  chrome.tabs.onActivated.addListener(() => {
     syncWithActiveTab();
-  }
-});
+  });
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (tab.active && changeInfo.status === "complete") {
+      syncWithActiveTab();
+    }
+  });
+}
 
 // Initialize on DOM load
 document.addEventListener("DOMContentLoaded", () => {
+  const marketRoot = document.getElementById("marketEvidence");
+  if (marketRoot && window.TradeFlowMarket) {
+    window.TradeFlowMarket.mount(marketRoot, {
+      endpoint: API_BASE_URL + "/api/v1/market",
+      headers: tfAuthHeaders,
+    });
+  }
   loadHeuristics();
   initPortConnection();
 });

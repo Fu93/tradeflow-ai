@@ -184,33 +184,42 @@
           </div>
         </section>
 
-        <section class="sheet market-sheet" id="marketIntel">
+        <section class="sheet market-intel" id="marketIntel" aria-labelledby="marketIntelTitle">
           <div class="sheet-head">
-            <h2 class="sheet-title">Market intel</h2>
-            <span class="sheet-note">reference only</span>
+            <h2 class="sheet-title" id="marketIntelTitle" data-market="title">Market intel</h2>
+            <span class="sheet-note" data-market="note">reference only</span>
           </div>
-          <p class="fineprint">Implied customs unit value is not a price quote. CIF customs valuation does not set the counter.</p>
-          <div class="market-grid">
-            <div class="field"><span class="field-label">Status</span><span class="field-value" id="marketStatus">not available</span></div>
-            <div class="field"><span class="field-label">HS code</span><span class="field-value" id="marketHs">not available</span></div>
-            <div class="field"><span class="field-label">Year</span><span class="field-value" id="marketYear">not available</span></div>
-            <div class="field"><span class="field-label">UK from China, USD</span><span class="field-value" id="marketValue">not available</span></div>
-            <div class="field"><span class="field-label">Quantity</span><span class="field-value" id="marketQty">not available</span></div>
-            <div class="field"><span class="field-label">Implied customs unit value, USD</span><span class="field-value" id="marketUnit">not available</span></div>
-            <div class="field"><span class="field-label">Source</span><span class="field-value" id="marketSource">not available</span></div>
-            <div class="field"><span class="field-label">Fetched at</span><span class="field-value" id="marketFetched">not available</span></div>
+          <form class="market-form" data-market="form" role="search">
+            <label class="market-search" for="marketQuery">
+              <span data-market="searchLabel">Product or HS code</span>
+              <input id="marketQuery" class="input-plain market-hit" data-market="query" type="text" maxlength="80" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="marketSuggest" />
+            </label>
+            <button class="btn-quiet market-hit" type="submit" data-market="submit">Look up</button>
+          </form>
+          <ul id="marketSuggest" class="market-suggest" data-market="suggest" role="listbox" hidden></ul>
+          <div data-market="live" aria-live="polite" aria-busy="false">
+            <div class="market-skel" data-market="skel" hidden>
+              <span></span><span></span><span></span>
+            </div>
+            <p class="market-kicker" data-market="heroLabel">UK imports from China</p>
+            <p class="market-hero" data-market="hero"></p>
+            <p class="market-year" data-market="heroYear"></p>
+            <p class="market-desc" data-market="desc"></p>
+            <div class="market-metrics" data-market="metrics"></div>
+            <div class="market-spark" data-market="spark"></div>
+            <p class="market-state" data-market="state"></p>
           </div>
-          <p class="fineprint" id="marketCaveat">Customs reference: not available.</p>
-          <label class="select-row" for="marketKeyword">
-            <span>Keyword</span>
-            <input id="marketKeyword" class="input-plain" type="text" maxlength="80" autocomplete="off" />
-          </label>
-          <label class="select-row" for="marketHsInput">
-            <span>HS code</span>
-            <input id="marketHsInput" class="input-plain" type="text" maxlength="6" autocomplete="off" />
-          </label>
-          <button class="btn-quiet" type="button" id="marketLookupBtn" onclick="lookupMarketIntel()">Look up customs reference</button>
-          <p class="fineprint" id="marketCandidates">A keyword lists candidates and does not pick one. Enter an HS code to fetch.</p>
+          <p class="fineprint market-caveat" data-market="caveat">Customs codes can't separate automatic/carbon/custom items. Implied customs unit value is not a price quote.</p>
+          <footer class="market-foot">
+            <p class="fineprint" data-market="prov"></p>
+            <a data-market="sourceLink" rel="noopener noreferrer" hidden>Source</a>
+            <div class="market-actions">
+              <button type="button" class="btn-quiet market-hit" data-market="refresh">Refresh</button>
+              <button type="button" class="btn-quiet market-hit" data-market="retry" hidden>Retry</button>
+              <button type="button" class="btn-quiet market-hit" data-market="theme">Dark</button>
+              <button type="button" class="btn-quiet market-hit" data-market="lang">繁</button>
+            </div>
+          </footer>
         </section>
 
         <!-- Belief: the model behind the counter, kept subordinate to the decision. -->
@@ -369,6 +378,7 @@
     </footer>
   </main>
 
+  <script src="/static/js/market_intel.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>
