@@ -372,7 +372,8 @@ class MultiAuctionSession:
         blocked_out: List[bool] = []
         above_reason = "every quote is above the walk-away ceiling"
         hazard_reason = (
-            "not actionable: every offer to this supplier exceeds the risk-tolerance cap"
+            "not actionable: the upper bound on walk-away hazard for every "
+            "tested offer, including the least aggressive, exceeds the risk-tolerance cap"
         )
         for i in range(self.k):
             if i not in active:

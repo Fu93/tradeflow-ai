@@ -331,11 +331,6 @@ CVAR_WEIGHT = 0.35
 # conventional tail, not a fitted walk-away rate.
 CVAR_TAIL_FRACTION = 0.05
 
-# Rationale: bootstrap resamples used only for the reported CVaR standard
-# error of the chosen offer vector. Not used inside the offer search.
-# A numerical budget.
-CVAR_BOOTSTRAP_DRAWS = 400
-
 # Rationale: smallest accepted user risk tolerance. Below this the hazard
 # cap is not a meaningful policy. A bound, not a measured rate.
 RISK_TOLERANCE_FLOOR = 0.01

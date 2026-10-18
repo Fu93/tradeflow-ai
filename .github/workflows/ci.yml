@@ -48,16 +48,10 @@ jobs:
 
       # Gate on the honesty checks this project relies on.
       #
-      # [FAIL-CLOSED] secret_scan.py reads the credential VALUES from .env and
-      # greps the tree for them. A CI runner has no .env, so before this fix it
-      # scanned for zero credentials and printed "[PASS] No credential value
-      # found" unconditionally — the gate could never fail.
-      #
-      # CI has no .env, so the scanner is now invoked with
-      # --allow-missing-env, which makes it print an explicit
-      # "NOT a security verification" warning and never claim a PASS it did not
-      # earn. To make this gate meaningful in CI, populate the credential values
-      # from repository secrets first; see the optional step below.
+      # No .env in CI. The scanner still reads tracked files and fails on
+      # private-key and token patterns. It says credential values were not
+      # compared. --allow-missing-env keeps that pattern scan; it is not a
+      # skip. The optional step below adds real needles when secrets exist.
       - name: Scan for committed credentials (no .env in CI)
         run: python scripts/secret_scan.py --allow-missing-env
 
