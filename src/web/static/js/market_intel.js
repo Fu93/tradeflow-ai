@@ -11,6 +11,7 @@
       qty: "Quantity",
       unit: "Implied customs unit value",
       unavailable: "No data from source",
+      noData: "No customs figures for this code.",
       prompt: "Enter an HS code or item keyword",
       sparkCaption: "UK import value from China, USD",
       offline: "Offline",
@@ -45,6 +46,7 @@
       qty: "數量",
       unit: "海關隱含單價",
       unavailable: "來源沒有資料",
+      noData: "這個編碼沒有海關數字。",
       prompt: "輸入 HS 編碼或品名",
       sparkCaption: "英國自中國進口金額，美元",
       offline: "離線",
@@ -158,6 +160,12 @@
     if (query) query.setAttribute("aria-label", labels.search);
   }
 
+  function setHero(root, value, plain) {
+    const hero = q(root, "hero");
+    text(hero, value);
+    if (hero) hero.classList.toggle("is-plain", !!plain);
+  }
+
   function setBusy(root, busy) {
     const live = q(root, "live");
     const skel = q(root, "skel");
@@ -166,7 +174,7 @@
     root.dataset.loading = busy ? "1" : "0";
     if (busy) {
       const labels = copy(root);
-      text(q(root, "hero"), labels.loading);
+      setHero(root, labels.loading, true);
       text(q(root, "heroYear"), "");
       text(q(root, "prov"), "");
       const metrics = q(root, "metrics");
@@ -176,6 +184,11 @@
   }
 
   function clearSuggest(root) {
+    if (root && root._suggestTimer) {
+      window.clearTimeout(root._suggestTimer);
+      root._suggestTimer = 0;
+    }
+    if (root) root._suggestGen = (root._suggestGen || 0) + 1;
     const list = q(root, "suggest");
     const query = q(root, "query");
     if (list) {
@@ -240,6 +253,8 @@
     if (nums.length < 3) return;
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 100 32");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("overflow", "visible");
     svg.setAttribute("role", "img");
     const ariaCaption = series.map((point) => String(point.year) + " " + String(point.value_usd)).join(", ");
     svg.setAttribute("aria-label", ariaCaption);
@@ -256,6 +271,7 @@
     poly.setAttribute("fill", "none");
     poly.setAttribute("stroke", "currentColor");
     poly.setAttribute("stroke-width", "2");
+    poly.setAttribute("vector-effect", "non-scaling-stroke");
     svg.appendChild(poly);
     const caption = document.createElement("p");
     caption.className = "market-spark-caption";
@@ -289,7 +305,7 @@
     if (metrics) metrics.replaceChildren();
     if (!payload) {
       text(q(root, "heroLabel"), "");
-      text(q(root, "hero"), labels.prompt);
+      setHero(root, labels.prompt, true);
       text(q(root, "heroYear"), "");
       text(q(root, "desc"), "");
       text(state, "");
@@ -311,14 +327,15 @@
     const offline = payload.reason === "offline" || payload.reason === "upstream_error" || payload.reason === "rate_limited";
     text(q(root, "heroLabel"), labels.hero);
     text(q(root, "desc"), missing(payload.hs_desc) ? "" : String(payload.hs_desc));
-    if (failed || missing(hero.value_usd)) {
-      text(q(root, "hero"), payload.reason === "offline" ? labels.offline : labels.unavailable);
+    const noFigures = failed || missing(hero.value_usd);
+    if (noFigures) {
+      setHero(root, payload.reason === "offline" ? labels.offline : labels.noData, true);
       text(q(root, "heroYear"), "");
     } else {
-      text(q(root, "hero"), groupAmount(hero.value_usd) + " " + labels.usd);
+      setHero(root, groupAmount(hero.value_usd) + " " + labels.usd, false);
       text(q(root, "heroYear"), hero.year == null ? "" : String(hero.year));
     }
-    if (metrics && !failed) {
+    if (metrics && !noFigures) {
       const world = payload.world || {};
       const worldValue = world.status === "ok" && !missing(world.value_usd)
         ? groupAmount(world.value_usd) + " " + labels.usd
@@ -345,12 +362,13 @@
 
     const reporter = (payload.reporter && payload.reporter.name) || "";
     const partner = (payload.partner && payload.partner.name) || "";
+    const gap = noFigures ? "—" : labels.unavailable;
     const provBits = [
-      labels.hs + " " + (missing(payload.hs) ? labels.unavailable : payload.hs),
+      labels.hs + " " + (missing(payload.hs) ? gap : payload.hs),
       reporter && partner ? reporter + " / " + partner : "",
       hero.year == null ? "" : String(hero.year),
-      labels.valuation + " " + (missing(payload.valuation) ? labels.unavailable : payload.valuation),
-      labels.fetched + " " + (missing(provenance.fetched_at) ? labels.unavailable : provenance.fetched_at),
+      labels.valuation + " " + (missing(payload.valuation) ? gap : payload.valuation),
+      labels.fetched + " " + (missing(provenance.fetched_at) ? gap : provenance.fetched_at),
     ].filter(Boolean);
     text(q(root, "prov"), provBits.join(" · "));
     const link = q(root, "sourceLink");
@@ -387,10 +405,12 @@
 
   async function fetchSuggest(root, keyword) {
     const endpoint = root.dataset.endpoint || "/api/v1/market";
+    const generation = root._suggestGen || 0;
     try {
       const headers = root._marketHeaders ? root._marketHeaders() : {};
       const res = await fetch(endpoint + "?keyword=" + encodeURIComponent(keyword), { headers: headers });
       const data = await res.json();
+      if ((root._suggestGen || 0) !== generation) return;
       if (data.status === "needs_confirmation") showSuggest(root, data.candidates || []);
       else {
         clearSuggest(root);
@@ -415,18 +435,24 @@
     paint(root, null);
     const query = q(root, "query");
     const form = q(root, "form");
-    let timer = 0;
+    root._suggestTimer = 0;
     if (query) {
       query.addEventListener("input", () => {
-        window.clearTimeout(timer);
+        window.clearTimeout(root._suggestTimer);
         const value = query.value.trim();
         if (value.length < 2) {
           clearSuggest(root);
           return;
         }
-        timer = window.setTimeout(() => fetchSuggest(root, value), 250);
+        root._suggestTimer = window.setTimeout(() => fetchSuggest(root, value), 250);
+      });
+      query.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") clearSuggest(root);
       });
     }
+    document.addEventListener("click", (event) => {
+      if (!root.contains(event.target)) clearSuggest(root);
+    });
     if (form) {
       form.addEventListener("submit", (event) => {
         event.preventDefault();

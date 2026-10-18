@@ -153,12 +153,28 @@ body {
 
 .feed-dot.active { background: var(--moss); }
 
+.masthead-about { position: relative; }
+
+.masthead-about summary {
+  cursor: pointer;
+  list-style: none;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+}
+
+.masthead-about summary::-webkit-details-marker { display: none; }
+
 .feed-ver {
-  margin-left: 8px;
+  margin: 6px 0 0;
   padding: 1px 6px;
   border: 1px solid var(--rule-strong);
   color: var(--ink-soft);
   font-family: var(--display);
+  white-space: nowrap;
 }
 
 /* ----------------------------------------------------------------- dossier */
@@ -388,6 +404,9 @@ body {
   font-size: var(--step--1);
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .track-marker { position: absolute; left: 14px; right: 12px; }
@@ -855,8 +874,17 @@ body {
   font-weight: 600;
 }
 
+.meter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .quote-meter {
   position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 22px;
   border-radius: 999px;
   background: rgba(28, 23, 18, 0.08);
@@ -1228,19 +1256,16 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
 }
 
 .quote-meter-num {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 8px;
+  position: static;
+  flex: 0 0 auto;
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
-  color: var(--sheet);
-  text-shadow: 0 0 2px rgba(28, 23, 18, 0.9), 0 1px 1px rgba(28, 23, 18, 0.9);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  pointer-events: none;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .amd-callout {
@@ -1248,6 +1273,14 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
   padding: 10px 12px;
   background: var(--sheet-sunk);
   border-radius: 12px;
+  font-size: var(--step--1);
+}
+
+.amd-callout[hidden],
+#quoteAbout[hidden] { display: none; }
+
+#quoteAbout {
+  margin-top: 8px;
   font-size: var(--step--1);
 }
 
@@ -1369,6 +1402,14 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
   min-width: 0;
 }
 
+.market-hero.is-plain {
+  font-family: var(--text);
+  font-size: var(--step-0);
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
 .market-year,
 .market-desc,
 .market-state,
@@ -1409,6 +1450,7 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
   width: 100%;
   height: 32px;
   color: var(--steel);
+  overflow: visible;
 }
 
 .market-intel[data-loading="1"] [data-market="hero"],

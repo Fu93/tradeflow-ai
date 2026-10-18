@@ -307,15 +307,23 @@ function renderSessions(sessions) {
       </div>
       <div class="session-item-row session-item-sub">
         <span>${tfEsc(s.product)} (target ${tfEsc(tfAmount(s.target, "CNY"))})</span>
-        <span>${tfEsc(s.rounds)} rounds</span>
+        <span>${tfEsc(s.rounds)} ${Number(s.rounds) === 1 ? "round" : "rounds"}</span>
       </div>
     `;
     listEl.appendChild(item);
   });
 }
 
+function clearStaleDecisionPrompt() {
+  const result = document.getElementById("decisionResult");
+  if (result && result.textContent.indexOf("Open a sandbox deal first") === 0) {
+    result.textContent = "";
+  }
+}
+
 function selectSession(s) {
   currentSessionId = s.session_id;
+  clearStaleDecisionPrompt();
   document.getElementById("cmdSessionId").value = s.session_id;
   document.getElementById("sessionLabel").textContent = s.session_id;
   const titleEl = document.getElementById("dealTitle");
@@ -578,10 +586,14 @@ function renderPriceLadder(session) {
       if (!Number.isFinite(step) || step <= 0 || !Number.isFinite(edgeLo) || !Number.isFinite(edgeHi)) {
         ticksEl.innerHTML = "";
       } else {
+      let lastTickPct = -1;
       for (let v = Math.ceil(target / step) * step; v < ceiling; v += step) {
         const frac = (ceiling - v) / span;
         // Keep clear of the two end labels (ceiling at 0, target at 1).
         if (v <= target || frac < edgeLo || frac > edgeHi) continue;
+        const tickPct = Math.round(frac * 100);
+        if (lastTickPct >= 0 && Math.abs(tickPct - lastTickPct) < 8) continue;
+        lastTickPct = tickPct;
         const row = document.createElement("div");
         row.className = "track-tick";
         row.style.top = `${frac * 100}%`;
@@ -648,7 +660,8 @@ function renderEngineDecision(session) {
   if (curRound === null) {
     el("decisionRound").textContent = "—";
   } else if (maxRounds !== null && curRound > maxRounds) {
-    el("decisionRound").textContent = `${curRound} rounds (limit ${maxRounds})`;
+    const roundWord = curRound === 1 ? "round" : "rounds";
+    el("decisionRound").textContent = `${curRound} ${roundWord} (limit ${maxRounds})`;
   } else {
     el("decisionRound").textContent = `Round ${curRound} / ${maxRounds === null ? "—" : maxRounds}`;
   }
@@ -730,7 +743,6 @@ async function decide(action) {
     if (result) result.textContent = "Open a sandbox deal first. Nothing was recorded.";
     return;
   }
-  const sent = action === "hold" ? "approve" : action;
   const rationale = action === "hold"
     ? "Hold firm at the engine price."
     : action === "reject"
@@ -741,25 +753,25 @@ async function decide(action) {
     const res = await fetch(`/api/v1/sessions/${encodeURIComponent(sid)}/approve`, {
       method: "POST",
       headers: tfJsonHeaders(),
-      body: JSON.stringify({ action: sent, tactical_rationale: rationale }),
+      body: JSON.stringify({ action: action, tactical_rationale: rationale }),
     });
     let body = null;
     try { body = await res.json(); } catch (_) { body = null; }
     if (!res.ok) {
-      const detail = (body && (body.detail || body.reason)) || "the desk could not record it";
-      if (result) result.textContent = `Not recorded. ${typeof detail === "string" ? detail : "Try again after the supplier replies."}`;
+      const detail = (body && (body.detail || body.reason)) || "The desk could not record that decision.";
+      if (result) result.textContent = typeof detail === "string" ? detail : "Try again after the supplier replies.";
       return;
     }
     if (action === "reject") {
       if (result) result.textContent = "Rejected. The deal is closed on our side. Nothing was sent to the supplier.";
     } else if (action === "hold") {
-      if (result) result.textContent = "Held the engine price. A person approved that number. Paste the draft yourself if you want to send it.";
+      if (result) result.textContent = (body && body.message) || "Held the engine price. The deal is still waiting for you to approve or reject. Nothing was sent.";
     } else if (result) {
       result.textContent = "Approved the engine price. Paste the draft yourself. Nothing was sent automatically.";
     }
     await fetchSessionDetails(sid);
   } catch (err) {
-    if (result) result.textContent = `Not recorded. ${err.message || "request failed"}`;
+    if (result) result.textContent = err.message || "The desk could not record that decision.";
   }
 }
 
@@ -980,6 +992,7 @@ async function applyCategoryPreset(cat) {
         statusEl.textContent = `Sandbox session ${newSid} created. The engine is bound to this simulated mandate, not a factory quote.`;
         tfTone(statusEl, "is-ok");
       }
+      clearStaleDecisionPrompt();
       fetchSessionDetails(newSid);
     } else {
       const detail = await res.text();
@@ -1160,21 +1173,24 @@ async function runMultiAuction() {
           <div>Best alternative: <span class="metric-val">${tfEsc(tfAmount(ceilingNum, "CNY"))}</span></div>
           <div>Risk: <span class="metric-val">${pBreak === "—" ? "—" : tfEsc(pBreak) + "%"}</span></div>
         </div>
-        <div class="quote-meter" role="img" aria-label="Quote is ${quotePct.toFixed(0)} percent of the walk-away ceiling">
-          <span class="quote-meter-fill" style="width: ${quotePct.toFixed(1)}%"></span>
+        <div class="meter-row">
+          <div class="quote-meter" role="img" aria-label="Quote is ${quotePct.toFixed(0)} percent of the walk-away ceiling">
+            <span class="quote-meter-fill" style="width: ${quotePct.toFixed(1)}%"></span>
+          </div>
           <span class="quote-meter-num">${tfEsc(quoteLabel)}</span>
         </div>
-        <div class="quote-meter-scale"><span>0 CNY</span><span>walk-away ceiling</span></div>
       `;
       cardsWrap.appendChild(card);
     });
 
     const versusTarget = tfNum(data.savings_vs_target_cny, null);
+    const pieceCount = tfNum(data.moq, null);
+    const pieceBasis = pieceCount === null ? "" : ` for ${tfAmount(pieceCount, "")} pcs`;
     summaryEl.innerHTML = `
       <p class="summary-lead"><strong>Simulated suppliers</strong> These are scripted archetypes, not live factory quotes. Winner: ${tfEsc(data.winning_supplier)} at ${tfEsc(tfAmount(data.winning_price, "CNY"))}. Amounts on this card are CNY.</p>
-      <p class="summary-headline"><strong>Savings versus the first-round best quote</strong> (${tfEsc(tfAmount(data.first_round_best_quote, "CNY"))}): ${tfEsc(tfAmount(data.total_savings_cny, "CNY"))} (${tfEsc(tfPct(data.total_savings_pct))})</p>
-      <p class="${versusTarget !== null && versusTarget < 0 ? "is-negative" : ""}"><strong>Versus your target</strong> (${tfEsc(tfAmount(data.product_target, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_target_cny, "CNY"))} (${tfEsc(tfPct(data.savings_vs_target_pct))})</p>
-      <p class="summary-secondary"><strong>Versus the walk-away ceiling</strong> (${tfEsc(tfAmount(data.walk_away_ceiling, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_ceiling_cny, "CNY"))} (${tfEsc(tfPct(data.savings_vs_ceiling_pct))})</p>
+      <p class="summary-headline"><strong>Savings versus the first-round best quote</strong> (${tfEsc(tfAmount(data.first_round_best_quote, "CNY"))}): ${tfEsc(tfAmount(data.total_savings_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.total_savings_pct))})</p>
+      <p class="${versusTarget !== null && versusTarget < 0 ? "is-negative" : ""}"><strong>Versus your target</strong> (${tfEsc(tfAmount(data.product_target, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_target_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_target_pct))})</p>
+      <p class="summary-secondary"><strong>Versus the walk-away ceiling</strong> (${tfEsc(tfAmount(data.walk_away_ceiling, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_ceiling_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_ceiling_pct))})</p>
       <p class="summary-secondary">Best alternative is the cheapest adjusted offer from the other simulated suppliers, capped by your walk-away ceiling. It can sit above a supplier's own quote when that supplier is the cheaper one. Suppliers who share the same cheapest rival show the same figure. It is not that supplier's private reserve.</p>
       <details class="dev-details">
         <summary>Engine notes</summary>
@@ -1319,7 +1335,7 @@ function onQuoteFile(input) {
   quoteImagePayload = "";
   if (!file) return;
   if (note) {
-    note.textContent = "Picture received. Offline mode cannot read pixels, so paste the supplier's words or open Sample 1, 2, or 3. Those samples are labeled simulations.";
+    note.textContent = "Picture received. Offline mode cannot read pixels, so paste the supplier's words or open Sample 1, 2, or 3.";
   }
   const reader = new FileReader();
   reader.onload = () => {
@@ -1339,6 +1355,7 @@ function paintQuoteReading(payload) {
   const fields = document.getElementById("quoteFields");
   const accuracy = document.getElementById("quoteAccuracy");
   if (callout) {
+    callout.hidden = false;
     const status = payload && payload.status;
     let text = (payload && payload.display) || "No reading returned.";
     const liveLine = typeof text === "string" && text.indexOf("AMD GPU Cloud ·") === 0;
@@ -1347,6 +1364,13 @@ function paintQuoteReading(payload) {
       text = "AMD reading was not applied. The response was not a confirmed live call.";
     } else if (status !== "ok" && liveLine) {
       text = "AMD live call failed. The offline fallback is shown instead.";
+    }
+    // The health line already says live reading is off, and the sample note
+    // already says the pictures are simulations. Don't repeat either here.
+    if (typeof text === "string" && text.indexOf("Offline fallback") === 0 && text.indexOf("Live reading is off") !== -1) {
+      text = "Offline fallback. These fields are the supplier's numbers, not our price.";
+    } else if (typeof text === "string" && text.indexOf("labeled simulations") !== -1) {
+      text = "Offline mode cannot read a picture by itself. Paste the supplier's words, or open Sample 1, 2, or 3.";
     }
     callout.textContent = text;
     tfTone(callout, liveOk ? "is-ok" : "");
@@ -1357,10 +1381,24 @@ function paintQuoteReading(payload) {
     const currency = f.currency ? String(f.currency) : "";
     const price = quoted === null ? "missing" : tfAmount(quoted, currency);
     const moq = f.moq === null || f.moq === undefined ? "missing" : String(f.moq);
-    const lead = f.lead_time_days === null || f.lead_time_days === undefined ? "—" : String(f.lead_time_days);
-    const deposit = f.deposit_pct === null || f.deposit_pct === undefined ? "—" : String(f.deposit_pct);
-    const unit = f.currency_note ? ` ${f.currency_note}` : "";
-    fields.textContent = `Extracted supplier fields (not our price): price ${price}, MOQ ${moq}, lead time days ${lead}, deposit fraction ${deposit}.${unit}`;
+    const lead = f.lead_time_days === null || f.lead_time_days === undefined
+      ? "Lead time —"
+      : `Lead time ${f.lead_time_days} days`;
+    const depositRaw = f.deposit_pct;
+    let deposit = "Deposit —";
+    const depositNum = Number(depositRaw);
+    if (depositRaw !== null && depositRaw !== undefined && depositRaw !== "" && Number.isFinite(depositNum)) {
+      const depositPct = depositNum <= 1 ? Math.round(depositNum * 100) : Math.round(depositNum);
+      deposit = `${depositPct}% deposit`;
+    }
+    fields.textContent = `Extracted supplier fields (not our price): price ${price}, MOQ ${moq}, ${lead}, ${deposit}.`;
+    const about = document.getElementById("quoteAbout");
+    const note = document.getElementById("quoteCurrencyNote");
+    if (about && note) {
+      const currencyNote = f.currency_note ? String(f.currency_note) : "";
+      note.textContent = currencyNote;
+      about.hidden = !currencyNote;
+    }
   }
   if (accuracy) {
     const reading = payload && payload.reading ? ` Model wording: ${payload.reading}` : "";
@@ -1381,6 +1419,7 @@ async function readSupplierQuote() {
   const text = paste ? paste.value : "";
   const sid = currentSessionId || (document.getElementById("cmdSessionId") || {}).value || "";
   if (callout) {
+    callout.hidden = false;
     callout.textContent = live ? "Asking AMD GPU Cloud…" : "Reading with the offline extractor…";
     tfTone(callout, "");
   }

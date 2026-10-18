@@ -1214,6 +1214,13 @@ button:focus, .party:focus, .source-badge:focus {
   overflow-wrap: anywhere;
   min-width: 0;
 }
+.market-hero.is-plain {
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
 .market-year,
 .market-desc,
 .market-state,

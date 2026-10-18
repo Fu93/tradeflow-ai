@@ -252,28 +252,36 @@ class InboundIntentClassifier:
     _CURRENCY_SUFFIX = (
         r"USD|US\$|RMB|CNY|EUR|HKD|NTD|TWD|GBP|JPY|美元|美金|元|块|塊"
     )
+    # Thousands separators and a decimal comma. Alternation is left-first and
+    # bounded, so "1,000" is not read as 1 and "3,20" is not read as 3.
+    _NUMBER = (
+        r"(?:\d{1,3}(?:[,，]\d{3})+(?:\.\d{1,2})?"
+        r"|\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?"
+        r"|\d+[.,]\d{1,2}"
+        r"|\d+)"
+    )
     PRICE_PATTERN = SafeLinearRegexEngine.compile(
         r"(?:"
         r"(?:unit\s*price|price|報價|报价|單價|单价|價格|价格|給您|算您|出廠價|出厂价|特價|低至)"
-        r"\s*[:：=]?\s*(?:" + _CURRENCY_WORD + r")?\s*\d+(?:\.\d{1,2})?"
-        r"|(?:" + _CURRENCY_WORD + r")\s*\d+(?:\.\d{1,2})?"
-        r"|\d+(?:\.\d{1,2})?\s*(?:" + _CURRENCY_SUFFIX + r")"
+        r"\s*[:：=]?\s*(?:" + _CURRENCY_WORD + r")?\s*" + _NUMBER +
+        r"|(?:" + _CURRENCY_WORD + r")\s*" + _NUMBER +
+        r"|" + _NUMBER + r"\s*(?:" + _CURRENCY_SUFFIX + r")"
         r"(?:\s*/\s*(?:pc|pcs|piece)|\s+per\s+piece)?"
         r")",
         re.IGNORECASE,
     )
     _PRICE_LABEL = SafeLinearRegexEngine.compile(
         r"(unit\s*price|price|報價|报价|單價|单价|價格|价格|給您|算您|出廠價|出厂价|特價|低至)"
-        r"\s*[:：=]?\s*(" + _CURRENCY_WORD + r")?\s*(\d+(?:\.\d{1,2})?)"
+        r"\s*[:：=]?\s*(" + _CURRENCY_WORD + r")?\s*(" + _NUMBER + r")"
         r"(?:\s*(" + _CURRENCY_SUFFIX + r"))?",
         re.IGNORECASE,
     )
     _PRICE_PREFIX = SafeLinearRegexEngine.compile(
-        r"(" + _CURRENCY_WORD + r")\s*(\d+(?:\.\d{1,2})?)",
+        r"(" + _CURRENCY_WORD + r")\s*(" + _NUMBER + r")",
         re.IGNORECASE,
     )
     _PRICE_SUFFIX = SafeLinearRegexEngine.compile(
-        r"(\d+(?:\.\d{1,2})?)\s*(" + _CURRENCY_SUFFIX + r")"
+        r"(" + _NUMBER + r")\s*(" + _CURRENCY_SUFFIX + r")"
         r"(?:\s*/\s*(?:pc|pcs|piece)|\s+per\s+piece)?",
         re.IGNORECASE,
     )
@@ -297,7 +305,7 @@ class InboundIntentClassifier:
     )
     MOQ_PATTERN = SafeLinearRegexEngine.compile(r"(\d{3,7})\s*(?:個|把|件|套|pcs)", re.IGNORECASE)
     _EXPLICIT_MOQ = SafeLinearRegexEngine.compile(
-        r"(?:MOQ|min(?:imum)?\s+order|起订量|起訂量)\s*[:：]?\s*(\d{1,7})",
+        r"(?:MOQ|min(?:imum)?\s+order(?:\s+quantity)?|起订量|起訂量)\s*[:：]?\s*(" + _NUMBER + r")",
         re.IGNORECASE,
     )
     _QTY_BEFORE_MOQ_WORD = SafeLinearRegexEngine.compile(
@@ -345,6 +353,37 @@ class InboundIntentClassifier:
         if cls.MIN_MENTIONED_PRICE <= val <= cls.MAX_MENTIONED_PRICE:
             return val
         return None
+
+    @staticmethod
+    def parse_locale_number(token: Optional[str]) -> Optional[float]:
+        """Read 3.20, 3,20, and 1,000. A comma with 1–2 digits is the decimal mark."""
+        if token is None:
+            return None
+        text = str(token).strip().replace("，", ",").replace(" ", "")
+        if not text:
+            return None
+        if "," in text and "." in text:
+            if text.rfind(",") > text.rfind("."):
+                text = text.replace(".", "").replace(",", ".")
+            else:
+                text = text.replace(",", "")
+        elif "," in text:
+            parts = text.split(",")
+            if len(parts) == 2 and 1 <= len(parts[1]) <= 2:
+                text = parts[0] + "." + parts[1]
+            elif parts[0] and len(parts[0]) <= 3 and all(len(part) == 3 for part in parts[1:]):
+                text = "".join(parts)
+            else:
+                text = text.replace(",", "")
+        elif re.fullmatch(r"\d{1,3}(?:\.\d{3})+", text):
+            text = text.replace(".", "")
+        try:
+            value = float(text)
+        except ValueError:
+            return None
+        if not math.isfinite(value):
+            return None
+        return value
 
     @staticmethod
     def _currency_code(token: Optional[str]) -> Optional[str]:
@@ -418,7 +457,7 @@ class InboundIntentClassifier:
         try:
             if kind == "label":
                 label_word = match.group(1) or ""
-                amount = float(match.group(3))
+                amount = cls.parse_locale_number(match.group(3))
                 token = match.group(2) or match.group(4)
                 if token:
                     currency = cls._currency_code(token)
@@ -426,14 +465,14 @@ class InboundIntentClassifier:
                     compact = re.sub(r"\s+", " ", label_word).strip().lower()
                     currency = None if compact in {"price", "unit price"} else "CNY"
             elif kind == "prefix":
-                amount = float(match.group(2))
+                amount = cls.parse_locale_number(match.group(2))
                 currency = cls._currency_code(match.group(1))
             else:
-                amount = float(match.group(1))
+                amount = cls.parse_locale_number(match.group(1))
                 currency = cls._currency_code(match.group(2))
         except (TypeError, ValueError):
             return QuotedPrice(None, None, None, None)
-        if not math.isfinite(amount):
+        if amount is None or not math.isfinite(amount):
             return QuotedPrice(None, None, None, None)
         return cls._settle_quote(amount, currency)
 
@@ -467,13 +506,17 @@ class InboundIntentClassifier:
             return None
         explicit = cls._EXPLICIT_MOQ.search(raw_text)
         if explicit and explicit.group(1):
-            return cls._clamp_moq(explicit.group(1))
+            return cls._clamp_moq(cls.parse_locale_number(explicit.group(1)))
         attached = cls._QTY_BEFORE_MOQ_WORD.search(raw_text)
         if attached and attached.group(1):
             return cls._clamp_moq(attached.group(1))
         for match in cls.MOQ_PATTERN.finditer(raw_text):
-            prefix = raw_text[max(0, match.start() - 16):match.start()]
-            if re.search(r"(?:for|order(?:\s+qty)?|订|訂)\s*$", prefix, re.IGNORECASE):
+            prefix = raw_text[max(0, match.start() - 24):match.start()]
+            if re.search(
+                r"(?:for|order(?:\s+(?:of|qty|quantity))?|订|訂)\s*$",
+                prefix,
+                re.IGNORECASE,
+            ):
                 continue
             return cls._clamp_moq(match.group(1))
         return None

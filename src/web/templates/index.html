@@ -34,7 +34,10 @@
     <div class="masthead-feed">
       <span class="feed-dot" id="sseStatus"></span>
       <span class="feed-label" id="sseLabel">Live feed</span>
-      <span class="feed-ver" id="feedVer">—</span>
+      <details class="masthead-about">
+        <summary>About</summary>
+        <p class="feed-ver" id="feedVer">—</p>
+      </details>
       <button class="btn-quiet masthead-btn" type="button" id="langToggle">繁</button>
       <button class="btn-quiet masthead-btn" type="button" id="themeToggle">Dark</button>
     </div>
@@ -83,8 +86,12 @@
           </div>
           <img id="quoteSampleImg" class="quote-sample-img" alt="Labeled simulation, not a real supplier screenshot" hidden />
           <p class="fineprint" id="quoteSampleNote">Samples are labeled simulations. Offline mode cannot read a picture, so use the transcript or paste the chat.</p>
-          <p class="amd-callout" id="amdCallout" role="status" aria-live="polite">Live reading is off. The next read uses the offline reader.</p>
+          <p class="amd-callout" id="amdCallout" role="status" aria-live="polite" hidden></p>
           <p class="fineprint" id="quoteFields"></p>
+          <details class="dev-details" id="quoteAbout" hidden>
+            <summary>About this reading</summary>
+            <p id="quoteCurrencyNote"></p>
+          </details>
           <p class="fineprint" id="quoteAccuracy"></p>
         </section>
 

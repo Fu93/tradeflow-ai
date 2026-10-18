@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import tempfile
 import unittest
 
 from fastapi.testclient import TestClient
@@ -11,6 +13,7 @@ from src.engine.quote_fields import describe_supplier_price, extract_stage1
 from src.engine.quote_read import read_supplier_quote
 from src.engine.bilingual import render_supplier_reply, supplier_message_language
 from src.engine.bilingual import TacticalActionObject, CURRENT_SCHEMA_VERSION
+from src.session.schema import AutopilotState, SessionSpec
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WALKTHROUGH = (
@@ -42,6 +45,16 @@ class TestEnglishQuoteReader(unittest.TestCase):
             ("RMB 15.60 per piece, MOQ 800", "15.60 CNY", 800, 15.6),
             ("CNY 12.00 per piece, minimum order 200", "12.00 CNY", 200, 12.0),
             ("for 1000 pcs", "missing", None, None),
+            ("an order of 2000 pcs", "missing", None, None),
+            (
+                "an order of 2000 pcs. Minimum order quantity: 500",
+                "missing",
+                500,
+                None,
+            ),
+            ("3,20 EUR, MOQ 1,000 pcs", "3.20 EUR", 1000, None),
+            ("GBP 4,50 per piece, MOQ 2.000 pcs", "4.50 GBP", 2000, None),
+            ("1.000,50 EUR, MOQ 1,000", "1000.50 EUR", 1000, None),
         )
         for text, label, moq, cny in cases:
             with self.subTest(text=text):
@@ -144,3 +157,130 @@ class TestDeskCopy(unittest.TestCase):
         self.assertIn("Enter an HS code or item keyword", market)
         self.assertIn("sparkCaption", market)
         self.assertNotIn("shown.slice(0, 96)", market)
+        self.assertNotIn('action === "hold" ? "approve"', js)
+        self.assertIn("clearStaleDecisionPrompt", js)
+        self.assertIn("Lead time", js)
+        self.assertIn("% deposit", js)
+        self.assertNotIn("deposit fraction", js)
+        self.assertNotIn("lead time days", js)
+        self.assertIn("These fields are the supplier's numbers, not our price.", js)
+        self.assertNotIn("Not recorded.", js)
+        self.assertIn("for ${tfAmount(pieceCount, \"\")} pcs", js)
+        self.assertNotIn("walk-away ceiling</span>", js)
+        self.assertIn('Number(s.rounds) === 1 ? "round" : "rounds"', js)
+        self.assertIn("white-space: nowrap", css)
+        self.assertIn(".market-hero.is-plain", css)
+        self.assertIn(".meter-row", css)
+        self.assertIn('class="masthead-about"', html)
+        self.assertIn('id="quoteAbout"', html)
+        self.assertIn('id="amdCallout"', html)
+        self.assertIn("hidden", html[html.index('id="amdCallout"'):html.index('id="amdCallout"') + 120])
+        self.assertIn('preserveAspectRatio", "none"', market)
+        self.assertIn("No customs figures for this code.", market)
+        self.assertIn("Escape", market)
+        self.assertIn("root._suggestTimer", market)
+        self.assertIn("is-plain", market)
+
+
+class TestHumanDecisionApi(unittest.TestCase):
+    def setUp(self):
+        self.orig_db_path = api_main.session_mgr.db_path
+        self.orig_store_dir = api_main.session_mgr.store_dir
+        self.temp_dir = tempfile.mkdtemp()
+        api_main.session_mgr.__init__(
+            db_path=os.path.join(self.temp_dir, "sessions.db"),
+            store_dir=os.path.join(self.temp_dir, "json"),
+        )
+        self.client = TestClient(api_main.app)
+        self.headers = {"X-API-Key": api_main.SANDBOX_DEMO_TOKEN}
+
+    def tearDown(self):
+        api_main.session_mgr.__init__(
+            db_path=self.orig_db_path,
+            store_dir=self.orig_store_dir,
+        )
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _awaiting(self, session_id: str) -> None:
+        spec = SessionSpec(
+            session_id=session_id,
+            product_name="Widget",
+            target_price=12.0,
+            ceiling_price=16.2,
+            moq=1000,
+            max_rounds=5,
+        )
+        api_main.session_mgr.create_session(spec)
+        opened = self.client.post(
+            f"/api/v1/sessions/{session_id}/round",
+            json={"opponent_raw_text": "最低 14.80 元，500個起訂", "mode": "copilot"},
+            headers=self.headers,
+        )
+        self.assertEqual(opened.status_code, 200, opened.text[:400])
+        self.assertEqual(opened.json()["autopilot_state"], "AWAITING_HUMAN_DECISION")
+
+    def test_approve_then_second_approve_is_conflict(self):
+        self._awaiting("UX_APPROVE_01")
+        first = self.client.post(
+            "/api/v1/sessions/UX_APPROVE_01/approve",
+            json={"action": "approve"},
+            headers=self.headers,
+        )
+        self.assertEqual(first.status_code, 200, first.text[:400])
+        self.assertEqual(first.json()["autopilot_state"], "COPILOT_MONITORING")
+        self.assertIsNotNone(first.json()["applied_price"])
+        second = self.client.post(
+            "/api/v1/sessions/UX_APPROVE_01/approve",
+            json={"action": "approve"},
+            headers=self.headers,
+        )
+        self.assertEqual(second.status_code, 409, second.text[:400])
+        self.assertNotEqual(second.status_code, 500)
+        self.assertIn("not waiting for a decision", second.json()["detail"])
+        stored = api_main.session_mgr.get_session("UX_APPROVE_01")
+        self.assertEqual(stored.state, AutopilotState.COPILOT_MONITORING)
+
+    def test_hold_keeps_the_deal_waiting(self):
+        self._awaiting("UX_HOLD_01")
+        held = self.client.post(
+            "/api/v1/sessions/UX_HOLD_01/approve",
+            json={"action": "hold"},
+            headers=self.headers,
+        )
+        self.assertEqual(held.status_code, 200, held.text[:400])
+        body = held.json()
+        self.assertEqual(body["status"], "held")
+        self.assertIsNone(body["applied_price"])
+        self.assertEqual(body["autopilot_state"], "AWAITING_HUMAN_DECISION")
+        self.assertIn("still waiting", body["message"])
+        stored = api_main.session_mgr.get_session("UX_HOLD_01")
+        self.assertEqual(stored.state, AutopilotState.AWAITING_HUMAN_DECISION)
+        senders = [turn.sender for turn in stored.history]
+        self.assertNotIn("buyer_human_approved", senders)
+        self.assertEqual(stored.history[-1].metadata.get("human_decision"), "hold")
+        approved = self.client.post(
+            "/api/v1/sessions/UX_HOLD_01/approve",
+            json={"action": "approve"},
+            headers=self.headers,
+        )
+        self.assertEqual(approved.status_code, 200, approved.text[:400])
+        self.assertEqual(approved.json()["autopilot_state"], "COPILOT_MONITORING")
+
+    def test_reject_then_another_reject_is_conflict(self):
+        self._awaiting("UX_REJECT_01")
+        rejected = self.client.post(
+            "/api/v1/sessions/UX_REJECT_01/approve",
+            json={"action": "reject"},
+            headers=self.headers,
+        )
+        self.assertEqual(rejected.status_code, 200, rejected.text[:400])
+        self.assertEqual(rejected.json()["autopilot_state"], "WALK_AWAY")
+        again = self.client.post(
+            "/api/v1/sessions/UX_REJECT_01/approve",
+            json={"action": "reject"},
+            headers=self.headers,
+        )
+        self.assertEqual(again.status_code, 409, again.text[:400])
+        self.assertIn("cannot be rejected", again.json()["detail"])
+        stored = api_main.session_mgr.get_session("UX_REJECT_01")
+        self.assertEqual(stored.state, AutopilotState.WALK_AWAY)
