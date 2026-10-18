@@ -3,172 +3,316 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TradeFlow Copilot</title>
+  <meta name="color-scheme" content="light dark">
+  <title>TradeFlow AI</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="deck" id="deck">
-    <header class="deck-head">
-      <div class="deck-id">
-        <div class="deck-mark">TradeFlow<span class="mark-tick">·</span>AI</div>
-        <div class="deck-sub">Copilot deck</div>
+  <div class="app" id="deck" role="complementary" aria-label="TradeFlow AI">
+    <header class="topbar">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+          <rect x="1" y="1" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M6 14V6.8h1.7l2.3 3.3V6.8H12V14h-1.7L8 10.7V14H6z" fill="currentColor"/>
+        </svg>
+        <span class="wordmark">TradeFlow<span class="wordmark-ai"> AI</span></span>
       </div>
-      <div class="deck-badges">
-        <p id="source-badge" class="source-badge is-unknown" aria-live="polite">
-          <span class="dot" aria-hidden="true"></span>
-          <span id="source-badge-text">--</span>
-        </p>
-        <div id="status-badge" class="status-pill is-idle" aria-live="polite">
-          <span class="dot" aria-hidden="true"></span>
-          <span id="status-text">--</span>
-        </div>
+      <span class="top-spacer"></span>
+      <button type="button" id="source-badge" class="source-badge is-unknown" aria-live="polite" aria-expanded="false" aria-controls="source-popover">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="source-badge-text">--</span>
+      </button>
+      <button type="button" id="btn-refresh" class="icon-btn" aria-label="Reload" title="Reload">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/><path d="M13.5 2.5V6H10" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button type="button" id="btn-menu" class="icon-btn" aria-label="Menu" aria-expanded="false" aria-controls="menu-popover" title="Menu">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="3.25" r="1.15" fill="currentColor"/><circle cx="8" cy="8" r="1.15" fill="currentColor"/><circle cx="8" cy="12.75" r="1.15" fill="currentColor"/></svg>
+      </button>
+      <div id="party-popover" class="popover" hidden>
+        <p class="popover-k">Supplier channel</p>
+        <p id="party-channel">--</p>
+      </div>
+      <div id="source-popover" class="popover" hidden>
+        <p class="popover-k">Endpoint</p>
+        <p id="source-endpoint" class="mono"></p>
+        <p class="popover-k">Last health check</p>
+        <p id="source-checked">--</p>
+        <p class="popover-k">What this means</p>
+        <p id="source-meaning">--</p>
+      </div>
+      <div id="menu-popover" class="popover popover-menu" hidden>
+        <button type="button" id="btn-theme" class="menu-item">Appearance: System</button>
+        <button type="button" id="btn-lang" class="menu-item">Language: English</button>
+        <button type="button" id="btn-copy-session" class="menu-item">Copy session id</button>
+        <button type="button" id="btn-jump-telemetry" class="menu-item">Mobile telemetry</button>
       </div>
     </header>
 
-    <div id="error-banner" class="banner" hidden>
-      <p id="error-text" role="alert"></p>
-      <button id="btn-retry" type="button">Retry</button>
-    </div>
-
-    <div id="loading-skeleton" class="skeleton" hidden aria-hidden="true">
-      <span class="sr-only">Loading</span>
-      <span class="skeleton-bar"></span>
-      <span class="skeleton-bar skeleton-short"></span>
-      <span class="skeleton-bar"></span>
-    </div>
-
-    <section id="teaching-empty" class="teaching" aria-live="polite">
-      <h2>Nothing is tracked on this tab yet</h2>
-      <p>Open a 1688, Alibaba, or WhatsApp chat. This deck only shows what the engine has already computed.</p>
-      <p id="teaching-send-note">you paste and send; TradeFlow never sends.</p>
-      <p lang="zh-Hant">請開啟一六八八、阿里巴巴國際站或 WhatsApp 的對話。本面板只顯示引擎已經算出的價格與證據。你自行貼上並送出；TradeFlow 不會代填輸入框，也不會代按送出。若後端暫時連不上，這裡會顯示無法連線，而不會編造數字。</p>
-    </section>
-
-    <section id="approval-card" class="block approval" aria-labelledby="approval-heading">
-      <div class="block-head">
-        <h2 id="approval-heading">Approval gate</h2>
-        <span id="approval-state" class="state-chip" aria-live="polite">--</span>
+    <div class="context" id="context-strip">
+      <button type="button" id="btn-party" class="party" aria-expanded="false" aria-controls="party-popover">
+        <span id="ctx-party">--</span>
+      </button>
+      <div class="context-main">
+        <span id="round-counter">Round — / —</span>
+        <span class="sep" aria-hidden="true">·</span>
+        <span id="ctx-moq">MOQ --</span>
+        <span class="sep" aria-hidden="true">·</span>
+        <span id="session-id-display" class="session-id" title="Not provided by engine">--</span>
       </div>
-      <p id="approval-superseded" class="superseded" hidden>Superseded</p>
-      <div class="approval-facts">
-        <div class="fact">
-          <span class="fact-label">Action</span>
-          <strong id="approval-action">--</strong>
+    </div>
+
+    <div id="error-banner" class="banner" hidden>
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.5v4.2M8 11.2h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <div class="banner-copy">
+        <p id="error-text" role="alert"></p>
+        <p id="stale-note" class="banner-meta"></p>
+      </div>
+      <button id="btn-retry" type="button" class="text-btn">Retry</button>
+    </div>
+
+    <div class="tabbar" role="tablist" aria-label="Sections">
+      <button type="button" role="tab" id="tab-decide" aria-selected="true" aria-controls="panel-decide" tabindex="0" data-tab="decide">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 12.5V8M8 12.5V3.5M13 12.5V6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+        <span>Decide</span>
+      </button>
+      <button type="button" role="tab" id="tab-evidence" aria-selected="false" aria-controls="panel-evidence" tabindex="-1" data-tab="evidence">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 2.5h5.2L13 6.2V13.5H4z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9 2.8V6.2H12.4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        <span>Evidence</span>
+        <span id="evidence-dot" class="tab-dot" hidden></span>
+      </button>
+      <button type="button" role="tab" id="tab-rounds" aria-selected="false" aria-controls="panel-rounds" tabindex="-1" data-tab="rounds">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="4" cy="4" r="1.4" fill="currentColor"/><circle cx="4" cy="8" r="1.4" fill="currentColor"/><circle cx="4" cy="12" r="1.4" fill="currentColor"/><path d="M7 4h6M7 8h6M7 12h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span>Rounds</span>
+        <span id="rounds-count" class="tab-count"></span>
+      </button>
+    </div>
+
+    <main class="scroll" id="scroll">
+      <div id="status-badge" class="status-pill is-idle" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="status-text">--</span>
+      </div>
+      <div id="loading-skeleton" class="skeleton" hidden aria-hidden="true">
+        <span class="sr-only">Loading</span>
+        <span class="skeleton-price"></span>
+        <span class="skeleton-bar"></span>
+        <span class="skeleton-bar skeleton-short"></span>
+        <span class="skeleton-meter"></span>
+        <span class="skeleton-bar"></span>
+      </div>
+
+      <section id="teaching-empty" class="teaching" aria-live="polite">
+        <svg class="empty-art" viewBox="0 0 40 40" width="40" height="40" aria-hidden="true">
+          <rect x="4" y="7" width="22" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M10 27l4-4h8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M26 18l8 4-8 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h2>No negotiation open</h2>
+        <p class="teaching-lead">Open a supplier chat (Alibaba, 1688, or WhatsApp) to start.</p>
+        <ol class="steps">
+          <li><span>1</span>Open a supplier chat</li>
+          <li><span>2</span>TradeFlow reads the latest quote</li>
+          <li><span>3</span>You decide, then paste and send yourself</li>
+        </ol>
+        <p id="teaching-send-note">you paste and send; TradeFlow never sends.</p>
+        <p lang="zh-Hant">請開啟一六八八、阿里巴巴國際站或 WhatsApp 的對話。本面板只顯示引擎已經算出的價格與證據。你自行貼上並送出；TradeFlow 不會代填輸入框，也不會代按送出。若後端暫時連不上，這裡會顯示無法連線，而不會編造數字。</p>
+        <button type="button" id="btn-sandbox" class="text-btn sandbox-btn">Open sample sandbox</button>
+      </section>
+
+      <div id="panel-decide" role="tabpanel" aria-labelledby="tab-decide" tabindex="0">
+        <article id="approval-card" class="card hero">
+          <div class="hero-top">
+            <span class="eyebrow">Engine counter</span>
+            <span class="eyebrow-tag">Engine-computed</span>
+            <button type="button" id="btn-copy-price" class="icon-btn copy-btn" aria-label="Copy price and rationale" title="Copy price">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 10.5v-7h7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+          <p id="approval-price" class="hero-price" title="Not provided by engine">--</p>
+          <div id="delta-chips" class="chips" aria-label="Price deltas"></div>
+          <div class="quote-grid">
+            <div class="quote-cell">
+              <span class="eyebrow">Supplier quote</span>
+              <strong id="val-inbound" class="quote-num">--</strong>
+            </div>
+            <div class="quote-cell">
+              <span class="eyebrow">Target</span>
+              <strong id="val-target-price" class="quote-num">--</strong>
+            </div>
+            <div class="quote-cell">
+              <span class="eyebrow">Reserve</span>
+              <strong id="val-reserve-ceiling" class="quote-num">--</strong>
+            </div>
+          </div>
+          <div class="range" id="price-range" role="img" aria-label="Target to reserve range">
+            <div class="range-track">
+              <span id="range-engine" class="range-marker" hidden></span>
+              <span id="range-supplier" class="range-marker range-marker-supplier" hidden></span>
+            </div>
+            <div class="range-labels">
+              <span>Target <b id="range-target">--</b></span>
+              <span>Reserve <b id="range-reserve">--</b></span>
+            </div>
+          </div>
+          <p id="range-flag" class="flag" hidden>Above reserve</p>
+          <p class="savings-line">
+            <span>Savings</span>
+            <strong id="val-savings">--</strong>
+            <span id="savings-basis"></span>
+          </p>
+        </article>
+
+        <section class="card" id="risk-card">
+          <div class="row-between">
+            <h2>Breakdown risk</h2>
+            <strong id="val-breakdown-risk" class="risk-num">--</strong>
+          </div>
+          <div id="risk-meter" class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Not provided by engine">
+            <div class="meter-track">
+              <div id="progress-breakdown" class="meter-fill"></div>
+              <span id="risk-trip" class="meter-tick" hidden></span>
+            </div>
+          </div>
+          <p id="risk-word" class="risk-word">--</p>
+          <p id="risk-driver" class="driver" hidden></p>
+          <p class="fineprint" id="riskFineprint">The engine stops proposing at the documented trip threshold and waits for you. The bar shows the measured probability, not a target.</p>
+        </section>
+
+        <section class="card" id="belief-card">
+          <h2>Supplier's likely floor</h2>
+          <p class="estimate">Estimate, not the supplier's actual floor</p>
+          <p class="belief-line">
+            <span id="val-posterior-mean" class="belief-num">--</span>
+            <span class="belief-sigma">± <span id="val-posterior-std">--</span></span>
+          </p>
+          <svg id="belief-spark" class="spark" viewBox="0 0 120 28" width="120" height="28" role="img" aria-label="Density around the estimate" hidden></svg>
+          <div class="fold is-closed" id="fold-belief">
+            <button type="button" class="fold-toggle" aria-expanded="false" aria-controls="belief-detail">
+              Details
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div id="belief-detail" class="fold-body">
+              <div class="fold-inner">
+                <p class="detail-line">Observations <span id="val-obs" class="mono">--</span></p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card fold" id="fold-why">
+          <button type="button" class="fold-toggle" aria-expanded="true" aria-controls="why-body">
+            Why this price
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div id="why-body" class="fold-body">
+            <div class="fold-inner">
+              <p id="approval-evidence">--</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div id="panel-evidence" role="tabpanel" aria-labelledby="tab-evidence" tabindex="0" hidden>
+        <article class="card">
+          <div class="row-between">
+            <h2>Inbound quote</h2>
+            <span id="evidence-when" class="eyebrow" title="">--</span>
+          </div>
+          <p id="evidence-quote" class="quote-body">--</p>
+          <table class="terms">
+            <tbody>
+              <tr><th>Unit price</th><td id="evidence-unit">--</td></tr>
+              <tr><th>MOQ</th><td id="evidence-moq">--</td></tr>
+              <tr><th>Lead time</th><td id="evidence-lead">--</td></tr>
+              <tr><th>Incoterm</th><td id="evidence-incoterm">--</td></tr>
+              <tr><th>Payment</th><td id="evidence-payment">--</td></tr>
+            </tbody>
+          </table>
+          <p class="fineprint">Parsed by the engine. Unparsed fields are shown as --.</p>
+        </article>
+
+        <section class="card fold is-closed" id="fold-tco">
+          <button type="button" class="fold-toggle" aria-expanded="false" aria-controls="tco-body">
+            Terms
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div id="tco-body" class="fold-body">
+            <div class="fold-inner">
+              <p id="terms-note" class="fineprint">Engine hasn't computed an extra terms breakdown for this round.</p>
+              <p id="terms-body" class="quote-body">--</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="card fold is-closed" id="fold-engine">
+          <button type="button" class="fold-toggle" aria-expanded="false" aria-controls="engine-body">
+            Engine and source
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div id="engine-body" class="fold-body">
+            <div class="fold-inner">
+              <p id="engine-detail" class="quote-body">--</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" id="telemetry">
+          <h2>Mobile telemetry</h2>
+          <table class="terms">
+            <tbody>
+              <tr><th>WhatsApp (CallMeBot)</th><td class="channel-status" id="status-whatsapp">UNVERIFIED</td></tr>
+              <tr><th>WeChat (ServerChan / PushPlus)</th><td class="channel-status" id="status-wechat">UNVERIFIED</td></tr>
+              <tr><th>Telegram bot</th><td class="channel-status" id="status-telegram">STANDBY</td></tr>
+            </tbody>
+          </table>
+          <p class="fineprint">A channel label is a setting, not proof of delivery. This panel sends no heartbeat, so a saved channel may still be unreachable.</p>
+        </section>
+      </div>
+
+      <div id="panel-rounds" role="tabpanel" aria-labelledby="tab-rounds" tabindex="0" hidden>
+        <svg id="rounds-spark" class="rounds-spark" viewBox="0 0 360 56" role="img" aria-label="Quote and counter over rounds" hidden></svg>
+        <div class="timeline" id="turns-timeline">
+          <p class="empty">No rounds yet.</p>
         </div>
-        <div class="fact">
-          <span class="fact-label">Price</span>
-          <strong id="approval-price">--</strong>
-          <span class="fact-note">Engine-computed</span>
-        </div>
-        <div class="fact fact-evidence">
-          <span class="fact-label">Evidence</span>
-          <p id="approval-evidence">--</p>
-        </div>
+      </div>
+
+      <p id="live-summary" class="sr-only" aria-live="polite"></p>
+    </main>
+
+    <footer class="action-bar" role="region" aria-label="Approval gate">
+      <div class="gate-line">
+        <span id="approval-state" class="state-chip" aria-live="polite">--</span>
+        <span id="approval-superseded" class="superseded" hidden>Superseded</span>
+        <span id="approval-suggest" class="suggest-line">Engine suggests: <span id="approval-action">--</span></span>
       </div>
       <p id="gate-send-note" class="gate-note">you paste and send; TradeFlow never sends.</p>
-      <div class="override-grid">
-        <button id="btn-concede" type="button" class="ov ov-concede" aria-describedby="gate-send-note">
-          <b>1</b><span>Concede a step</span>
+      <p id="gate-reason" class="gate-reason" hidden></p>
+      <div id="gate-buttons" class="gate-buttons">
+        <button id="btn-concede" type="button" class="gate-btn gate-btn-primary" aria-keyshortcuts="1" aria-describedby="gate-send-note" aria-disabled="true" disabled title="Concede (1)">
+          <span class="suggested-tag">Suggested</span>
+          <span class="gate-label">Concede</span>
+          <kbd>1</kbd>
         </button>
-        <button id="btn-hold" type="button" class="ov ov-hold" aria-describedby="gate-send-note">
-          <b>2</b><span>Hold firm</span>
+        <button id="btn-hold" type="button" class="gate-btn" aria-keyshortcuts="2" aria-describedby="gate-send-note" aria-disabled="true" disabled title="Hold (2)">
+          <span class="suggested-tag">Suggested</span>
+          <span class="gate-label">Hold</span>
+          <kbd>2</kbd>
+        </button>
+        <button id="btn-abort" type="button" class="gate-btn gate-btn-walk" aria-keyshortcuts="3" aria-describedby="gate-send-note" aria-disabled="true" disabled title="Walk away (3)">
+          <span class="suggested-tag">Suggested</span>
+          <span class="gate-label">Walk away</span>
+          <kbd>3</kbd>
         </button>
       </div>
-      <button id="btn-abort" type="button" class="ov ov-abort ov-wide" aria-describedby="gate-send-note">
-        <b>3</b><span>Walk away</span>
-      </button>
-    </section>
-
-    <section class="block">
-      <div class="block-head">
-        <h2>Deal</h2>
-        <button id="btn-refresh" type="button">Reload</button>
+      <div id="gate-confirm" class="gate-confirm" hidden>
+        <p>Confirm Walk away?</p>
+        <button type="button" id="btn-confirm-walk" class="gate-btn gate-btn-walk">Confirm</button>
+        <button type="button" id="btn-undo-walk" class="gate-btn">Undo</button>
       </div>
-      <div class="ref-row">
-        <span>Reference</span>
-        <strong id="session-id-display">--</strong>
-      </div>
-      <table class="terms">
-        <tbody>
-          <tr><th>Target price</th><td id="val-target-price">--</td></tr>
-          <tr><th>Reserve ceiling</th><td id="val-reserve-ceiling">--</td></tr>
-        </tbody>
-      </table>
-      <div class="range" id="price-range" role="img" aria-label="Target to reserve range">
-        <div class="range-track">
-          <span id="range-engine" class="range-marker" hidden></span>
-          <span id="range-supplier" class="range-marker range-marker-supplier" hidden></span>
-        </div>
-        <div class="range-labels">
-          <span>Target <b id="range-target">--</b></span>
-          <span>Reserve <b id="range-reserve">--</b></span>
-        </div>
-      </div>
-      <p class="savings-line">
-        <span>Savings</span>
-        <strong id="val-savings">--</strong>
-        <span id="savings-basis"></span>
-      </p>
-    </section>
-
-    <section class="block">
-      <div class="block-head">
-        <h2>Opponent belief</h2>
-        <span class="note">Expectimax + Bayesian v2</span>
-      </div>
-      <div class="stat-pair">
-        <div class="stat">
-          <span class="stat-label">Posterior mean (μ)</span>
-          <span class="stat-value" id="val-posterior-mean">--</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Uncertainty (σ)</span>
-          <span class="stat-value" id="val-posterior-std">--</span>
-        </div>
-      </div>
-      <div class="risk-row">
-        <span class="stat-label">Breakdown probability</span>
-        <strong id="val-breakdown-risk">--</strong>
-      </div>
-      <div class="bar"><div id="progress-breakdown" class="bar-fill"></div></div>
-      <p class="fineprint" id="riskFineprint">
-        The engine stops proposing at the documented trip threshold and waits for you.
-        The bar shows the measured probability, not a target.
-      </p>
-    </section>
-
-    <section class="block">
-      <div class="block-head">
-        <h2>Rounds</h2>
-        <span id="round-counter" class="note">Round — / —</span>
-      </div>
-      <div class="timeline" id="turns-timeline">
-        <p class="empty">No rounds yet.</p>
-      </div>
-    </section>
-
-    <section class="block block-last">
-      <div class="block-head">
-        <h2>Mobile telemetry</h2>
-        <span class="note">alert channels</span>
-      </div>
-      <table class="terms channels">
-        <tbody>
-          <tr><th>WhatsApp (CallMeBot)</th><td class="channel-status" id="status-whatsapp">UNVERIFIED</td></tr>
-          <tr><th>WeChat (ServerChan / PushPlus)</th><td class="channel-status" id="status-wechat">UNVERIFIED</td></tr>
-          <tr><th>Telegram bot</th><td class="channel-status" id="status-telegram">STANDBY</td></tr>
-        </tbody>
-      </table>
-      <p class="fineprint">
-        A channel label is a setting, not proof of delivery. This panel sends no
-        heartbeat, so a saved channel may still be unreachable.
-      </p>
-      <div class="last-signal">
-        Last mobile signal <strong id="val-last-signal" aria-live="polite">--</strong>
-      </div>
-    </section>
+      <p id="val-last-signal" class="signal" aria-live="polite" hidden>--</p>
+    </footer>
+    <div id="toast" class="toast" hidden role="status"></div>
   </div>
-
   <script src="sidepanel.js"></script>
 </body>
 </html>

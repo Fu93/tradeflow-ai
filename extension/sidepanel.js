@@ -119,6 +119,9 @@ const rangeTarget = document.getElementById("range-target");
 const rangeReserve = document.getElementById("range-reserve");
 const valSavings = document.getElementById("val-savings");
 const savingsBasis = document.getElementById("savings-basis");
+const deltaChips = document.getElementById("delta-chips");
+const valInbound = document.getElementById("val-inbound");
+const rangeFlag = document.getElementById("range-flag");
 
 // State
 let currentTabId = null;
@@ -131,6 +134,32 @@ let tabMeta = { url: "", mode: "", platform: "" };
 let lastRoundPayload = null;
 let gateMemory = { key: "", decision: "" };
 let sourceForced = null;
+let localDecisionKey = "";
+let seenRoundKey = "";
+let currentTabName = "decide";
+let walkArmed = false;
+let popoverReturn = null;
+let healthCheckedAt = null;
+let lastPaintAt = 0;
+let skeletonShowTimer = 0;
+let skeletonHideTimer = 0;
+let skeletonShownAt = 0;
+let toastTimer = 0;
+const scrollMem = {};
+
+const SOURCE_MEANING = {
+  "amd-live": "A live AMD reading was requested and the health check says it is available.",
+  offline: "Cached heuristic — lower confidence.",
+  simulator: "This tab is the simulator, not a live supplier chat.",
+  unreachable: "The TradeFlow backend could not be read.",
+  unknown: "Source has not been checked yet.",
+};
+
+const SUGGESTED_BUTTON = {
+  LEAN_IN: "btn-concede",
+  FIRM_HOLD: "btn-hold",
+  WALK_AWAY: "btn-abort",
+};
 
 function tfTone(el, tone) {
   if (!el) return;
@@ -139,39 +168,88 @@ function tfTone(el, tone) {
 }
 
 function showSkeleton() {
-  if (!loadingSkeleton) return;
-  loadingSkeleton.hidden = false;
-  loadingSkeleton.setAttribute("aria-hidden", "false");
-  const deck = document.getElementById("deck");
-  if (deck) deck.setAttribute("aria-busy", "true");
+  window.clearTimeout(skeletonHideTimer);
+  if (loadingSkeleton && !loadingSkeleton.hidden) return;
+  window.clearTimeout(skeletonShowTimer);
+  skeletonShowTimer = window.setTimeout(() => {
+    if (!loadingSkeleton) return;
+    loadingSkeleton.hidden = false;
+    loadingSkeleton.setAttribute("aria-hidden", "false");
+    skeletonShownAt = Date.now();
+    const deck = document.getElementById("deck");
+    if (deck) deck.setAttribute("aria-busy", "true");
+  }, 150);
 }
 
 function hideSkeleton() {
-  if (!loadingSkeleton) return;
-  loadingSkeleton.hidden = true;
-  loadingSkeleton.setAttribute("aria-hidden", "true");
-  const deck = document.getElementById("deck");
-  if (deck) deck.removeAttribute("aria-busy");
+  window.clearTimeout(skeletonShowTimer);
+  const wait = skeletonShownAt ? Math.max(0, 300 - (Date.now() - skeletonShownAt)) : 0;
+  window.clearTimeout(skeletonHideTimer);
+  skeletonHideTimer = window.setTimeout(() => {
+    if (!loadingSkeleton) return;
+    loadingSkeleton.hidden = true;
+    loadingSkeleton.setAttribute("aria-hidden", "true");
+    const deck = document.getElementById("deck");
+    if (deck) deck.removeAttribute("aria-busy");
+    skeletonShownAt = 0;
+  }, wait);
 }
 
 function showTeaching() {
   if (teachingEmpty) teachingEmpty.hidden = false;
+  document.body.classList.add("is-dormant");
 }
 
 function hideTeaching() {
   if (teachingEmpty) teachingEmpty.hidden = true;
+  document.body.classList.remove("is-dormant");
 }
 
 function showError(message) {
   if (errorText) errorText.textContent = message || "The TradeFlow backend is unreachable.";
   if (errorBanner) errorBanner.hidden = false;
+  document.body.classList.add("is-error");
+  const note = document.getElementById("stale-note");
+  if (note) {
+    if (!lastPaintAt) {
+      note.textContent = "";
+    } else {
+      const sec = Math.max(0, Math.round((Date.now() - lastPaintAt) / 1000));
+      note.textContent = sec < 60
+        ? `Last updated ${sec}s ago`
+        : `Last updated ${Math.round(sec / 60)}m ago`;
+    }
+  }
   sourceForced = "unreachable";
   paintSourceBadge();
+  paintGateAvailability(null);
 }
 
 function hideError() {
   if (errorBanner) errorBanner.hidden = true;
+  document.body.classList.remove("is-error");
   sourceForced = null;
+}
+
+function setSignal(text, tone) {
+  if (!valLastSignal) return;
+  valLastSignal.textContent = text;
+  valLastSignal.hidden = !text || text === "--";
+  tfTone(valLastSignal, tone || "");
+}
+
+function showToast(text) {
+  const toast = document.getElementById("toast");
+  if (!toast) return;
+  toast.textContent = text;
+  toast.hidden = false;
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => { toast.hidden = true; }, 2400);
+}
+
+function markBlank(id, blank) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle("is-blank", !!blank);
 }
 
 function tfStatusPill(state) {
@@ -251,6 +329,13 @@ function paintSourceBadge() {
   else if (kind === "unreachable") sourceBadge.classList.add("is-down");
   else sourceBadge.classList.add("is-unknown");
   sourceBadgeText.textContent = SOURCE_LABELS[kind] || "--";
+  document.body.dataset.source = kind;
+  const meaning = document.getElementById("source-meaning");
+  if (meaning) meaning.textContent = SOURCE_MEANING[kind] || "--";
+  const checked = document.getElementById("source-checked");
+  if (checked) checked.textContent = healthCheckedAt ? healthCheckedAt.toLocaleString() : "--";
+  const endpoint = document.getElementById("source-endpoint");
+  if (endpoint) endpoint.textContent = `${API_BASE_URL}/health`;
 }
 
 async function loadHealth() {
@@ -259,9 +344,11 @@ async function loadHealth() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     tfHealth = await res.json();
     tfHealthError = null;
+    healthCheckedAt = new Date();
   } catch (err) {
     tfHealth = null;
     tfHealthError = err;
+    healthCheckedAt = new Date();
   }
   paintSourceBadge();
 }
@@ -489,20 +576,45 @@ function paintRange(target, ceiling, enginePrice, supplierPrice) {
 function paintRisk(risk) {
   valBreakdownRisk.classList.remove("is-high", "is-ok");
   progressBreakdown.classList.remove("is-high");
+  const meter = document.getElementById("risk-meter");
+  const word = document.getElementById("risk-word");
+  const tick = document.getElementById("risk-trip");
+  const trip = tfTrip();
+  if (tick) {
+    if (trip === null) {
+      tick.hidden = true;
+    } else {
+      tick.hidden = false;
+      tick.style.left = `${Math.min(100, Math.max(0, trip * 100))}%`;
+    }
+  }
   if (risk === null) {
     valBreakdownRisk.textContent = "--";
     progressBreakdown.style.width = "0%";
+    if (word) word.textContent = "--";
+    if (meter) {
+      meter.removeAttribute("aria-valuenow");
+      meter.setAttribute("aria-valuetext", "Not provided by engine");
+    }
+    markBlank("risk-card", true);
     return;
   }
-  valBreakdownRisk.textContent = `${(risk * 100).toFixed(1)}%`;
-  progressBreakdown.style.width = `${Math.min(100, Math.max(0, risk * 100))}%`;
-  const trip = tfTrip();
-  if (trip !== null && risk >= trip) {
+  const pct = risk * 100;
+  valBreakdownRisk.textContent = `${pct.toFixed(1)}%`;
+  progressBreakdown.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+  const high = trip !== null && risk >= trip;
+  if (high) {
     valBreakdownRisk.classList.add("is-high");
     progressBreakdown.classList.add("is-high");
   } else if (trip !== null) {
     valBreakdownRisk.classList.add("is-ok");
   }
+  if (word) word.textContent = trip === null ? "Measured" : (high ? "High" : "Under trip");
+  if (meter) {
+    meter.setAttribute("aria-valuenow", String(Math.round(pct)));
+    meter.setAttribute("aria-valuetext", `${word ? word.textContent : "Measured"}, ${pct.toFixed(1)} percent`);
+  }
+  markBlank("risk-card", false);
 }
 
 function paintRoundCounter(roundNo, maxRounds, turnCount) {
@@ -518,19 +630,325 @@ function paintRoundCounter(roundNo, maxRounds, turnCount) {
   roundCounter.textContent = `Round ${shown} / ${maxRounds === null ? "—" : maxRounds}`;
 }
 
-function turnRow(roundLabel, counter, supplier, risk) {
+function tfWho(turn) {
+  if (!turn || !turn.sender) return "";
+  if (turn.sender === "opponent") return "Supplier";
+  if (turn.sender === "buyer_human_approved" || turn.sender === "human") return "You (via human)";
+  if (turn.sender === "buyer_agent") return "Engine";
+  return String(turn.sender);
+}
+
+function turnRow(roundLabel, counter, supplier, risk, flags) {
   const counterText = counter === null ? "Counter: --" : `¥${counter.toFixed(2)} Counter`;
   const supplierText = supplier === null ? "--" : `¥${supplier.toFixed(2)}`;
   const riskText = risk === null ? "--" : `${(risk * 100).toFixed(1)}%`;
+  const who = flags && flags.who ? tfEsc(flags.who) : "";
+  const cls = `timeline-turn${flags && flags.current ? " is-current" : ""}`;
   return `
-    <div class="timeline-turn">
+    <div class="${cls}">
       <div class="turn-head">
-        <strong>Round ${tfEsc(roundLabel)}</strong>
+        <strong>R${tfEsc(roundLabel)}</strong>
+        ${who ? `<span>${who}</span>` : ""}
         <span class="turn-price">${tfEsc(counterText)}</span>
       </div>
       <div class="turn-meta">Supplier: ${tfEsc(supplierText)} | Risk: ${tfEsc(riskText)}</div>
     </div>
   `;
+}
+
+function tfSignedPct(pct) {
+  if (pct === null || Number.isNaN(pct)) return null;
+  const tenths = Math.round(pct * 10);
+  const body = `${Math.abs(tenths / 10).toFixed(1)}%`;
+  if (tenths > 0) return `+${body}`;
+  if (tenths < 0) return `−${body}`;
+  return body;
+}
+
+function tfFavour(engine, inbound, ceiling) {
+  if (engine === null) return "";
+  if (ceiling !== null && engine > ceiling) return "is-bad";
+  if (ceiling !== null && ceiling !== 0) {
+    const gap = (ceiling - engine) / ceiling;
+    if (gap >= 0 && gap <= (3 / 100)) return "is-warn";
+  }
+  if (inbound !== null && engine < inbound) return "is-good";
+  if (inbound !== null && engine > inbound) return "is-bad";
+  return "";
+}
+
+function makeChip(pct, label, favour) {
+  const chip = document.createElement("span");
+  chip.className = `chip${favour ? ` ${favour}` : ""}`;
+  if (pct === null) {
+    chip.textContent = `-- ${label}`;
+    return chip;
+  }
+  const tenths = Math.round(pct * 10);
+  if (tenths < 0) chip.classList.add("is-down");
+  else if (tenths === 0) chip.classList.add("is-flat");
+  const mark = document.createElement("span");
+  mark.className = "chip-mark";
+  mark.setAttribute("aria-hidden", "true");
+  const text = document.createElement("b");
+  text.textContent = `${tfSignedPct(pct)} ${label}`;
+  const word = tenths < 0 ? "Down" : (tenths > 0 ? "Up" : "Flat");
+  const lean = favour === "is-good" ? "favourable" : (favour === "is-bad" ? "unfavourable" : "neutral");
+  chip.setAttribute("aria-label", `${word} ${Math.abs(tenths / 10).toFixed(1)} percent ${label}, ${lean}`);
+  chip.title = chip.getAttribute("aria-label");
+  chip.appendChild(mark);
+  chip.appendChild(text);
+  return chip;
+}
+
+function tfPreviousCounter(turns, current) {
+  const prices = [];
+  for (const turn of turns || []) {
+    const n = tfNum(
+      turn.buyer_counter_offer ?? (turn.sender === "buyer_agent" ? turn.parsed_price : null),
+      null,
+    );
+    if (n !== null) prices.push(n);
+  }
+  if (!prices.length || current === null) return null;
+  const last = prices[prices.length - 1];
+  if (last === current && prices.length > 1) return prices[prices.length - 2];
+  if (last !== current) return last;
+  return null;
+}
+
+function paintDeltas(engine, inbound, ceiling, turns) {
+  if (!deltaChips) return;
+  deltaChips.textContent = "";
+  const vsQuote = engine !== null && inbound !== null && inbound !== 0
+    ? ((engine - inbound) / inbound) * 100
+    : null;
+  const prev = tfPreviousCounter(turns, engine);
+  const vsPrev = engine !== null && prev !== null && prev !== 0
+    ? ((engine - prev) / prev) * 100
+    : null;
+  deltaChips.appendChild(makeChip(vsQuote, "vs quote", vsQuote === null ? "" : tfFavour(engine, inbound, ceiling)));
+  deltaChips.appendChild(makeChip(vsPrev, "vs last round", vsPrev === null ? "" : tfFavour(engine, prev, ceiling)));
+}
+
+function paintSuggested(mode) {
+  ["btn-concede", "btn-hold", "btn-abort"].forEach((id) => {
+    document.getElementById(id)?.classList.remove("is-suggested");
+  });
+  const id = SUGGESTED_BUTTON[mode];
+  if (id) document.getElementById(id)?.classList.add("is-suggested");
+}
+
+function paintGateAvailability(enginePrice) {
+  const unreachable = sourceForced === "unreachable" || !!tfHealthError;
+  const chip = approvalState ? approvalState.textContent.trim() : "";
+  const noPrice = enginePrice === null || enginePrice === undefined;
+  const decided = chip === "Approved" || chip === "Rejected" || chip === "Superseded";
+  const locked = unreachable || noPrice || decided || !!localDecisionKey;
+  ["btn-concede", "btn-hold", "btn-abort"].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.disabled = locked;
+    btn.setAttribute("aria-disabled", locked ? "true" : "false");
+  });
+  const reason = document.getElementById("gate-reason");
+  if (!reason) return;
+  let text = "";
+  if (unreachable) text = "Engine unreachable — Retry";
+  else if (chip === "Superseded") text = "A newer quote arrived — review";
+  else if (noPrice) text = "Engine has not computed a counter yet";
+  else if (localDecisionKey && decided) text = "Decision recorded. Waiting for the next round.";
+  reason.textContent = text;
+  reason.hidden = !text;
+}
+
+function paintContext(spec) {
+  const party = document.getElementById("ctx-party");
+  const moq = document.getElementById("ctx-moq");
+  const channel = document.getElementById("party-channel");
+  const name = (spec && (spec.product_name || spec.supplier_id)) || "";
+  const partyBtn = document.getElementById("btn-party");
+  if (party) {
+    party.textContent = name || "--";
+    if (party.parentElement) party.parentElement.title = name || "Not provided by engine";
+  }
+  if (partyBtn) partyBtn.hidden = !name;
+  if (moq) {
+    const n = tfNum(spec && spec.moq, null);
+    moq.textContent = n === null ? "MOQ --" : `MOQ ${n}`;
+  }
+  if (channel) channel.textContent = spec && spec.supplier_channel ? String(spec.supplier_channel) : "--";
+}
+
+function paintEvidence(data, session, supplierPrice) {
+  const turns = session && Array.isArray(session.history) ? session.history : [];
+  let opp = null;
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    if (turns[i] && turns[i].sender === "opponent") { opp = turns[i]; break; }
+  }
+  const quote = document.getElementById("evidence-quote");
+  if (quote) quote.textContent = (opp && opp.raw_text) ? String(opp.raw_text) : "--";
+  const when = document.getElementById("evidence-when");
+  if (when) {
+    const raw = opp && opp.timestamp;
+    const d = raw ? new Date(raw) : null;
+    if (d && !Number.isNaN(d.getTime())) {
+      when.textContent = d.toLocaleString();
+      when.title = d.toISOString();
+    } else {
+      when.textContent = "--";
+      when.title = "Not provided by engine";
+    }
+  }
+  const unit = document.getElementById("evidence-unit");
+  if (unit) unit.textContent = tfMoney(supplierPrice);
+  const emoq = document.getElementById("evidence-moq");
+  if (emoq) {
+    const n = tfNum(session && session.spec && session.spec.moq, null);
+    emoq.textContent = n === null ? "--" : String(n);
+  }
+  const meta = (opp && opp.metadata) || {};
+  const pick = (elId, keys) => {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    let found = "";
+    for (const key of keys) {
+      if (meta[key] != null && String(meta[key]).trim() && typeof meta[key] !== "object") {
+        found = String(meta[key]);
+        break;
+      }
+    }
+    el.textContent = found || "--";
+  };
+  pick("evidence-lead", ["lead_time", "lead_time_days", "delivery"]);
+  pick("evidence-incoterm", ["incoterm", "incoterms"]);
+  pick("evidence-payment", ["payment", "payment_terms"]);
+  const terms = document.getElementById("terms-body");
+  if (terms) {
+    const mandate = session && session.spec && session.spec.corporate_mandate;
+    if (mandate && typeof mandate === "object") {
+      const bits = [];
+      Object.keys(mandate).forEach((key) => {
+        const value = mandate[key];
+        if (value === null || value === undefined || typeof value === "object") return;
+        bits.push(`${key}: ${value}`);
+      });
+      terms.textContent = bits.length ? bits.join(" · ") : "--";
+    } else {
+      terms.textContent = "--";
+    }
+  }
+  const engine = document.getElementById("engine-detail");
+  if (engine) engine.textContent = data && data.price_source ? String(data.price_source) : "--";
+  const obs = document.getElementById("val-obs");
+  if (obs) {
+    if (!turns.length) obs.textContent = "--";
+    else obs.textContent = String(turns.filter((t) => t && (t.posterior_mean != null || t.sender === "opponent")).length);
+  }
+}
+
+function paintBeliefSpark(mean, std) {
+  const svg = document.getElementById("belief-spark");
+  if (!svg) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  if (mean === null || std === null || std === 0) {
+    svg.hidden = true;
+    return;
+  }
+  svg.hidden = false;
+  const ns = "http://www.w3.org/2000/svg";
+  const bins = 24;
+  const shade = document.createElementNS(ns, "rect");
+  shade.setAttribute("class", "spark-shade");
+  shade.setAttribute("x", "30");
+  shade.setAttribute("y", "2");
+  shade.setAttribute("width", "60");
+  shade.setAttribute("height", "24");
+  svg.appendChild(shade);
+  let d = "";
+  for (let i = 0; i < bins; i += 1) {
+    const z = (i / (bins - 1)) * 4 - 2;
+    const x = Math.round((i / (bins - 1)) * 120);
+    const y = Math.round(26 - Math.exp((-z * z) / 2) * 22);
+    d += `${i === 0 ? "M" : "L"}${x} ${y}`;
+  }
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("class", "spark-line");
+  path.setAttribute("d", d);
+  svg.appendChild(path);
+  const mid = document.createElementNS(ns, "line");
+  mid.setAttribute("class", "spark-median");
+  mid.setAttribute("x1", "60");
+  mid.setAttribute("x2", "60");
+  mid.setAttribute("y1", "2");
+  mid.setAttribute("y2", "26");
+  svg.appendChild(mid);
+}
+
+function paintRoundsSpark(turns) {
+  const svg = document.getElementById("rounds-spark");
+  if (!svg) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const quotes = [];
+  const counters = [];
+  (turns || []).forEach((turn) => {
+    const quote = tfNum(turn && turn.sender === "opponent" ? (turn.parsed_price ?? turn.supplier_offer) : null, null);
+    const counter = tfNum(
+      turn && (turn.buyer_counter_offer ?? (turn.sender === "buyer_agent" ? turn.parsed_price : null)),
+      null,
+    );
+    if (quote !== null) quotes.push(quote);
+    if (counter !== null) counters.push(counter);
+  });
+  const all = quotes.concat(counters);
+  if (all.length < 2) {
+    svg.hidden = true;
+    return;
+  }
+  svg.hidden = false;
+  const min = Math.min.apply(null, all);
+  const max = Math.max.apply(null, all);
+  const span = max - min || 1;
+  const ns = "http://www.w3.org/2000/svg";
+  const draw = (values, cls) => {
+    if (values.length < 2) return;
+    const path = document.createElementNS(ns, "path");
+    const d = values.map((value, i) => {
+      const x = Math.round((i / (values.length - 1)) * 360);
+      const y = Math.round(48 - ((value - min) / span) * 40);
+      return `${i ? "L" : "M"}${x} ${y}`;
+    }).join("");
+    path.setAttribute("class", cls);
+    path.setAttribute("d", d);
+    svg.appendChild(path);
+  };
+  draw(quotes, "spark-quote");
+  draw(counters, "spark-counter");
+}
+
+function noteRoundChange(data, session, supplierPrice) {
+  const key = tfRoundKey(data, session);
+  if (seenRoundKey && key && key !== seenRoundKey) {
+    if (localDecisionKey && key !== localDecisionKey) localDecisionKey = "";
+    const dot = document.getElementById("evidence-dot");
+    if (dot && currentTabName !== "evidence") dot.hidden = false;
+    const summary = document.getElementById("live-summary");
+    if (summary && supplierPrice !== null) summary.textContent = `New quote ${tfMoney(supplierPrice)} from supplier`;
+  }
+  if (key) seenRoundKey = key;
+}
+
+function paintDriver(action) {
+  const driverEl = document.getElementById("risk-driver");
+  if (!driverEl) return;
+  const driver = action && (action.risk_driver || action.breakdown_driver);
+  if (typeof driver === "string" && driver.trim()) {
+    driverEl.hidden = false;
+    driverEl.textContent = driver.trim();
+  } else {
+    driverEl.hidden = true;
+    driverEl.textContent = "";
+  }
 }
 
 function clearFigures() {
@@ -550,7 +968,21 @@ function clearFigures() {
   if (approvalSuperseded) approvalSuperseded.hidden = true;
   if (valSavings) valSavings.textContent = "--";
   if (savingsBasis) savingsBasis.textContent = "";
+  if (valInbound) valInbound.textContent = "--";
+  if (rangeFlag) rangeFlag.hidden = true;
   paintRange(null, null, null, null);
+  paintDeltas(null, null, null, []);
+  paintSuggested("");
+  paintContext(null);
+  paintEvidence(null, null, null);
+  paintBeliefSpark(null, null);
+  paintRoundsSpark([]);
+  paintDriver(null);
+  markBlank("approval-card", true);
+  markBlank("belief-card", true);
+  const count = document.getElementById("rounds-count");
+  if (count) count.textContent = "";
+  paintGateAvailability(null);
   gateMemory = { key: "", decision: "" };
 }
 
@@ -604,6 +1036,12 @@ function paintAll(data, session) {
     null,
   );
   paintRange(target, ceiling, enginePrice, supplierPrice);
+  if (valInbound) {
+    valInbound.textContent = tfMoney(supplierPrice);
+    valInbound.title = supplierPrice === null ? "Not provided by engine" : "";
+  }
+  if (rangeFlag) rangeFlag.hidden = !(enginePrice !== null && ceiling !== null && enginePrice > ceiling);
+  paintDeltas(enginePrice, supplierPrice, ceiling, turns);
 
   const savings = tfSavings(data, session);
   if (valSavings) valSavings.textContent = savings ? savings.shown : "--";
@@ -611,21 +1049,38 @@ function paintAll(data, session) {
 
   paintGate(data, session);
   if (approvalAction) approvalAction.textContent = tfActionLabel(data) || "--";
-  if (approvalPrice) approvalPrice.textContent = tfMoney(enginePrice);
+  if (approvalPrice) {
+    approvalPrice.textContent = tfMoney(enginePrice);
+    approvalPrice.title = enginePrice === null ? "Not provided by engine" : "Engine-computed";
+  }
   if (approvalEvidence) approvalEvidence.textContent = tfEvidence(data, session) || "--";
+  markBlank("approval-card", enginePrice === null);
+  markBlank("belief-card", postMean === null);
+  paintSuggested(action.tactical_mode);
+  paintContext(spec);
+  paintEvidence(data, session, supplierPrice);
+  paintBeliefSpark(postMean, postStd);
+  paintDriver(action);
+  paintRoundsSpark(turns);
+  noteRoundChange(data, session, supplierPrice);
+  const roundsCount = document.getElementById("rounds-count");
+  if (roundsCount) roundsCount.textContent = turns.length ? String(turns.length) : "";
+  paintGateAvailability(enginePrice);
+  lastPaintAt = Date.now();
 
   if (turns.length) {
-    turnsTimeline.innerHTML = turns.slice().reverse().map((t) => {
+    const ordered = turns.slice().reverse();
+    turnsTimeline.innerHTML = ordered.map((t, index) => {
       const tRisk = tfNum(t.p_break ?? t.breakdown_risk, null);
       const tCounter = tfNum(t.buyer_counter_offer ?? (t.sender === "buyer_agent" ? t.parsed_price : null), null);
       const tSupplier = tfNum(t.sender === "opponent" ? (t.parsed_price ?? t.supplier_offer) : (t.supplier_offer ?? null), null);
       const tRound = t.round_index ?? t.round_number ?? "—";
-      return turnRow(tRound, tCounter, tSupplier, tRisk);
+      return turnRow(tRound, tCounter, tSupplier, tRisk, { current: index === 0, who: tfWho(t) });
     }).join("");
   } else if (roundNo !== null || enginePrice !== null || supplierPrice !== null) {
     const counter = tfNum(data.recommended_offer_price ?? action.authorized_price ?? turn.buyer_counter_offer, null);
     const supplier = tfNum(data.effective_opp_price ?? action.counterpart_offered_price ?? turn.parsed_price, null);
-    turnsTimeline.innerHTML = turnRow(roundNo === null ? "—" : roundNo, counter, supplier, risk);
+    turnsTimeline.innerHTML = turnRow(roundNo === null ? "—" : roundNo, counter, supplier, risk, { current: true, who: "Engine" });
   } else {
     turnsTimeline.innerHTML = `<p class="empty">No rounds yet.</p>`;
   }
@@ -649,8 +1104,8 @@ async function initPortConnection() {
       if (msg.type === "COMMAND_RESULT") {
         const statusSuffix = msg.httpStatus ? ` [HTTP ${msg.httpStatus}]` : "";
         if (msg.success) {
-          valLastSignal.textContent = `Command dispatched (${msg.result?.action || "OK"})${statusSuffix}`;
-          tfTone(valLastSignal, "tone-ok");
+          setSignal(`Command dispatched (${msg.result?.action || "OK"})${statusSuffix}`, "tone-ok");
+          localDecisionKey = gateMemory.key || "local";
           if (msg.result && msg.result.action === "walk_away") {
             gateMemory.decision = "rejected";
             if (approvalState) {
@@ -664,15 +1119,15 @@ async function initPortConnection() {
               approvalState.className = "state-chip is-approved";
             }
           }
+          const session = (lastRoundPayload && lastRoundPayload.session) || {};
+          paintGateAvailability(tfEnginePrice(lastRoundPayload || {}, session));
         } else if (
           msg.result?.status === "ignored" ||
           /ignored/i.test(String(msg.error || ""))
         ) {
-          valLastSignal.textContent = `Command received — applies once the circuit breaker arms the session${statusSuffix}`;
-          tfTone(valLastSignal, "tone-warn");
+          setSignal(`Command received — applies once the circuit breaker arms the session${statusSuffix}`, "tone-warn");
         } else {
-          valLastSignal.textContent = `Command NOT applied${statusSuffix}: ${msg.error || "unknown error"}`;
-          tfTone(valLastSignal, "tone-bad");
+          setSignal(`Command NOT applied${statusSuffix}: ${msg.error || "unknown error"}`, "tone-bad");
         }
       }
     });
@@ -852,9 +1307,11 @@ function renderSession(session) {
 }
 
 function dispatchCommand(cmd) {
+  const map = { "1": "btn-concede", "2": "btn-hold", "3": "btn-abort" };
+  const btn = document.getElementById(map[cmd] || "");
+  if (btn && btn.disabled) return;
   if (!currentSessionId) {
-    valLastSignal.textContent = "No active session to dispatch command.";
-    tfTone(valLastSignal, "tone-warn");
+    setSignal("No active session to dispatch command.", "tone-warn");
     return;
   }
 
@@ -863,9 +1320,231 @@ function dispatchCommand(cmd) {
       type: "DISPATCH_OVERRIDE_COMMAND",
       payload: { sessionId: currentSessionId, command: cmd },
     });
-    valLastSignal.textContent = `Dispatching command '${cmd}'...`;
-    tfTone(valLastSignal, "tone-info");
+    setSignal(`Dispatching command '${cmd}'...`, "tone-info");
   }
+}
+
+function selectTab(name) {
+  const scroll = document.getElementById("scroll");
+  if (scroll && currentTabName) scrollMem[currentTabName] = scroll.scrollTop;
+  currentTabName = name;
+  document.querySelectorAll("[data-tab]").forEach((tab) => {
+    const on = tab.dataset.tab === name;
+    tab.setAttribute("aria-selected", on ? "true" : "false");
+    tab.tabIndex = on ? 0 : -1;
+    const panel = document.getElementById(tab.getAttribute("aria-controls"));
+    if (panel) {
+      panel.hidden = !on;
+      if (on) panel.classList.add("panel-in");
+    }
+  });
+  if (name === "evidence") {
+    const dot = document.getElementById("evidence-dot");
+    if (dot) dot.hidden = true;
+  }
+  if (scroll) scroll.scrollTop = scrollMem[name] || 0;
+  try { chrome.storage.session.set({ tfTab: name }); } catch (err) { /* optional */ }
+}
+
+function closePopovers(restore) {
+  ["menu-popover", "source-popover", "party-popover"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = true;
+  });
+  ["btn-menu", "source-badge", "btn-party"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.setAttribute("aria-expanded", "false");
+  });
+  if (restore && popoverReturn && typeof popoverReturn.focus === "function") popoverReturn.focus();
+  popoverReturn = null;
+}
+
+function togglePopover(id, opener) {
+  const el = document.getElementById(id);
+  if (!el || !opener) return;
+  const willOpen = el.hidden;
+  closePopovers(false);
+  if (!willOpen) return;
+  popoverReturn = opener;
+  el.hidden = false;
+  opener.setAttribute("aria-expanded", "true");
+  const focusable = el.querySelector("button, [href], input");
+  if (focusable) focusable.focus();
+}
+
+function armWalk() {
+  const btn = document.getElementById("btn-abort");
+  if (btn && btn.disabled) return;
+  walkArmed = true;
+  const buttons = document.getElementById("gate-buttons");
+  const confirm = document.getElementById("gate-confirm");
+  if (buttons) buttons.hidden = true;
+  if (confirm) confirm.hidden = false;
+  document.getElementById("btn-confirm-walk")?.focus();
+}
+
+function disarmWalk() {
+  walkArmed = false;
+  const buttons = document.getElementById("gate-buttons");
+  const confirm = document.getElementById("gate-confirm");
+  if (buttons) buttons.hidden = false;
+  if (confirm) confirm.hidden = true;
+}
+
+function setFold(fold, open) {
+  if (!fold) return;
+  fold.classList.toggle("is-closed", !open);
+  const toggle = fold.querySelector(".fold-toggle");
+  if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function applyTheme(mode) {
+  if (mode === "light" || mode === "dark") document.documentElement.dataset.theme = mode;
+  else delete document.documentElement.dataset.theme;
+  const btn = document.getElementById("btn-theme");
+  const label = mode === "dark" ? "Dark" : (mode === "light" ? "Light" : "System");
+  if (btn) btn.textContent = `Appearance: ${label}`;
+  try { chrome.storage.local.set({ tfTheme: mode || "system" }); } catch (err) { /* optional */ }
+}
+
+function applyLang(lang) {
+  const next = lang === "zh-Hant" ? "zh-Hant" : "en";
+  document.documentElement.lang = next;
+  const btn = document.getElementById("btn-lang");
+  if (btn) btn.textContent = next === "zh-Hant" ? "Language: 繁中" : "Language: English";
+  try { chrome.storage.local.set({ tfLang: next }); } catch (err) { /* optional */ }
+}
+
+async function copyText(text, ok, fail) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(ok);
+  } catch (err) {
+    showToast(fail);
+  }
+}
+
+function copyPrice() {
+  const price = approvalPrice ? approvalPrice.textContent : "--";
+  const why = approvalEvidence ? approvalEvidence.textContent : "";
+  copyText(
+    `${price}\n${why}\nyou paste and send; TradeFlow never sends.`,
+    "Copied — paste into chat yourself",
+    "Could not copy. Select the price and copy it yourself.",
+  );
+}
+
+function bindChrome() {
+  document.querySelectorAll("[data-tab]").forEach((tab) => {
+    tab.addEventListener("click", () => selectTab(tab.dataset.tab));
+  });
+  document.querySelector(".tabbar")?.addEventListener("keydown", (event) => {
+    const tabs = Array.from(document.querySelectorAll("[data-tab]"));
+    const index = tabs.indexOf(document.activeElement);
+    if (index < 0) return;
+    let next = -1;
+    if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+    else if (event.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    tabs[next].focus();
+    selectTab(tabs[next].dataset.tab);
+  });
+  document.querySelectorAll(".fold").forEach((fold) => {
+    const toggle = fold.querySelector(".fold-toggle");
+    if (!toggle) return;
+    toggle.addEventListener("click", () => {
+      const open = fold.classList.contains("is-closed");
+      setFold(fold, open);
+      try { chrome.storage.local.set({ [`tfFold_${fold.id}`]: open }); } catch (err) { /* optional */ }
+    });
+  });
+  document.getElementById("btn-menu")?.addEventListener("click", () => {
+    togglePopover("menu-popover", document.getElementById("btn-menu"));
+  });
+  document.getElementById("source-badge")?.addEventListener("click", () => {
+    togglePopover("source-popover", document.getElementById("source-badge"));
+  });
+  document.getElementById("btn-party")?.addEventListener("click", () => {
+    togglePopover("party-popover", document.getElementById("btn-party"));
+  });
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest(".popover, #btn-menu, #source-badge, #btn-party")) return;
+    closePopovers(false);
+  });
+  document.getElementById("btn-copy-price")?.addEventListener("click", () => copyPrice());
+  document.getElementById("btn-copy-session")?.addEventListener("click", () => {
+    const id = sessionIdDisplay ? sessionIdDisplay.textContent : "";
+    if (!id || id === "--" || id === "No active tab") {
+      showToast("No session id yet.");
+      return;
+    }
+    copyText(id, "Session id copied.", "Could not copy the session id.");
+  });
+  document.getElementById("btn-jump-telemetry")?.addEventListener("click", () => {
+    closePopovers(false);
+    selectTab("evidence");
+    document.getElementById("telemetry")?.scrollIntoView({ block: "nearest" });
+  });
+  document.getElementById("btn-theme")?.addEventListener("click", () => {
+    const current = document.documentElement.dataset.theme || "system";
+    const next = current === "system" ? "light" : (current === "light" ? "dark" : "system");
+    applyTheme(next);
+  });
+  document.getElementById("btn-lang")?.addEventListener("click", () => {
+    applyLang(document.documentElement.lang === "zh-Hant" ? "en" : "zh-Hant");
+  });
+  document.getElementById("btn-sandbox")?.addEventListener("click", () => {
+    try {
+      chrome.tabs.create({ url: chrome.runtime.getURL("mock_chat.html") });
+    } catch (err) {
+      showToast("Could not open the sample sandbox.");
+    }
+  });
+  document.getElementById("btn-confirm-walk")?.addEventListener("click", () => {
+    disarmWalk();
+    dispatchCommand("3");
+  });
+  document.getElementById("btn-undo-walk")?.addEventListener("click", () => disarmWalk());
+  document.addEventListener("keydown", (event) => {
+    const tag = event.target && event.target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || (event.target && event.target.isContentEditable)) return;
+    if (event.key === "Escape") {
+      if (walkArmed) { disarmWalk(); return; }
+      closePopovers(true);
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && walkArmed) {
+      event.preventDefault();
+      disarmWalk();
+      dispatchCommand("3");
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && (event.key === "c" || event.key === "C")) {
+      const hero = document.getElementById("approval-card");
+      const selected = window.getSelection ? window.getSelection().toString() : "";
+      if (hero && hero.contains(document.activeElement) && !selected) {
+        event.preventDefault();
+        copyPrice();
+      }
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === "Enter" && walkArmed) {
+      event.preventDefault();
+      disarmWalk();
+      dispatchCommand("3");
+      return;
+    }
+    if (walkArmed) return;
+    if (event.key === "1") dispatchCommand("1");
+    else if (event.key === "2") dispatchCommand("2");
+    else if (event.key === "3") armWalk();
+  });
 }
 
 btnRefresh?.addEventListener("click", () => {
@@ -885,7 +1564,7 @@ btnRetry?.addEventListener("click", () => {
 
 document.getElementById("btn-concede")?.addEventListener("click", () => dispatchCommand("1"));
 document.getElementById("btn-hold")?.addEventListener("click", () => dispatchCommand("2"));
-document.getElementById("btn-abort")?.addEventListener("click", () => dispatchCommand("3"));
+document.getElementById("btn-abort")?.addEventListener("click", () => armWalk());
 
 chrome.tabs.onActivated.addListener(() => {
   syncWithActiveTab();
@@ -898,6 +1577,9 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 document.addEventListener("DOMContentLoaded", () => {
+  bindChrome();
+  paintDeltas(null, null, null, []);
+  paintGateAvailability(null);
   showSkeleton();
   Promise.all([loadHeuristics(), loadHealth()]).finally(() => {
     hideSkeleton();
