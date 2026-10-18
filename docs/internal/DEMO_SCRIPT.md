@@ -36,7 +36,7 @@ the omission as a bait-and-switch.
 > Read the formula in results/mi300x_roofline.json. This machine did not run that solve."
 
 **Visual**: `results/benchmark.png` / demo_video frames 140+.
-**Key line**: "The engine's batched rollouts run as one vectorized broadcast on CPU — not chat tokens."
+**Key line**: "The engine's batched rollouts run as sample chunks of a vectorized expectimax on CPU — not chat tokens."
 
 ## Scene 3 — Wow #3: Robustness (1:45–2:35)
 > "Here's the honest part. The opponent model is an assumption, so we tested what happens when

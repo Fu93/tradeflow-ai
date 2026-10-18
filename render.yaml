@@ -1,6 +1,9 @@
 # TradeFlow public demo. Offline until a real VLLM_API_KEY is set in the dashboard.
 # Apply from the Render Blueprint screen. This file does not assign a hostname.
 # PORT is injected by Render; the process binds 0.0.0.0:$PORT. Do not set PORT here.
+# Do not set a dockerCommand. The image CMD is the only server process.
+# A second command, or WEB_CONCURRENCY above 1, binds the same port twice
+# and the restart loop prints "Port 10000 is already in use".
 services:
   - type: web
     name: tradeflow-ai

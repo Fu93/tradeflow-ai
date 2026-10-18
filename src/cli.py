@@ -230,7 +230,6 @@ def run_sandbox_demo(host: str = "127.0.0.1", port: int = 8000):
     3. 自動在瀏覽器開啟 Web 戰情大屏
     """
     import webbrowser
-    import uvicorn
     from .session.manager import SessionManager
     from .session.schema import SessionSpec, AutopilotState
 
@@ -267,14 +266,12 @@ def run_sandbox_demo(host: str = "127.0.0.1", port: int = 8000):
     t = threading.Thread(target=open_browser, daemon=True)
     t.start()
 
-    # 3. 運行伺服器
-    from src.app.main import listen_port_available, port_in_use_message
+    # 3. 運行伺服器。與 `python -m src.app.main` 同一條啟動路徑：連線探測、
+    #    單進程、不做第二次 bind。
+    from src.app.main import app, serve_http
 
-    if not listen_port_available(host, port):
-        print(port_in_use_message(port), file=sys.stderr)
-        raise SystemExit(1)
     print(f"[Server Starting] Uvicorn running on {host}:{port}. Press Ctrl+C to terminate.")
-    uvicorn.run("src.app.main:app", host=host, port=port, log_level="info")
+    serve_http(app, host, port)
 
 
 def run_benchmark():

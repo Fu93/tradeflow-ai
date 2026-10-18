@@ -28,7 +28,7 @@ from typing import Optional, List, Dict, Any, Tuple
 import numpy as np
 from . import model
 from .backend import resolve_use_gpu
-from .solver import anchoring_multiplier
+from .solver import EXPECTIMAX_SAMPLE_CHUNK, anchoring_multiplier
 
 
 def _get_xp(use_gpu: bool):
@@ -208,47 +208,53 @@ class MultiSupplierSolver:
             bluffs[i] = b.astype(np.float32)
             concs[i] = c.astype(np.float32)
 
-        # 2. 轉移至張量後端 (CuPy GPU 或 NumPy CPU) - 使用 float32 顯存緊湊化
-        res_t = xp.asarray(reserves)[:, :, None, None]      # (K, S, 1, 1)
-        urg_t = xp.asarray(urgencies)[:, :, None, None]     # (K, S, 1, 1)
-        blf_t = xp.asarray(bluffs)[:, :, None, None]        # (K, S, 1, 1)
-        cnc_t = xp.asarray(concs)[:, :, None, None]         # (K, S, 1, 1)
-
+        # 2. 樣本軸分塊。float32 與舊版全張量廣播相同；累加用 float64，
+        #    再除以 S，避免一次配置 (K, S, O, C)。
         op_t = xp.asarray(opens, dtype=xp.float32)[None, None, :, None]       # (1, 1, O, 1)
         sc_t = xp.asarray(scheds, dtype=xp.float32)[None, None, None, :, :]   # (1, 1, 1, C, ROUNDS)
+        sum_pay = np.zeros((k, n_open, n_sched), dtype=np.float64)
+        sum_brk = np.zeros((k, n_open, n_sched), dtype=np.float64)
+        for start in range(0, s, EXPECTIMAX_SAMPLE_CHUNK):
+            end = min(start + EXPECTIMAX_SAMPLE_CHUNK, s)
+            width = end - start
+            res_t = xp.asarray(reserves[:, start:end])[:, :, None, None]
+            urg_t = xp.asarray(urgencies[:, start:end])[:, :, None, None]
+            blf_t = xp.asarray(bluffs[:, start:end])[:, :, None, None]
+            cnc_t = xp.asarray(concs[:, start:end])[:, :, None, None]
 
-        # 初始價差張量廣播 -> (K, S, O, C)
-        gap = xp.abs(res_t - op_t)
-        gap = xp.broadcast_to(gap, (k, s, n_open, n_sched)).copy()
-        paid = xp.broadcast_to(op_t, (k, s, n_open, n_sched)).copy()
+            gap = xp.abs(res_t - op_t)
+            gap = xp.broadcast_to(gap, (k, width, n_open, n_sched)).astype(xp.float32, copy=True)
+            paid = xp.broadcast_to(op_t, (k, width, n_open, n_sched)).astype(xp.float32, copy=True)
 
-        # [修正 §3.5] 與單供應商 solver 同源的「對手對我方開盤的錨定反應」：
-        # 開盤越硬（first_gap 越大）→ 對手讓步率越低。此項把開盤價真正帶進目標函式，
-        # 使 per-open 最佳分數不再是單調上升後崩塌的退化解。係數揭露見 solver.py
-        # 檔頭的 ANCHORING_REF / ANCHORING_BETA / ANCHORING_CLIP（皆為選定值）。
-        first_gap_t = xp.abs(res_t - op_t)
-        react_t = anchoring_multiplier(xp, first_gap_t)
-        cnc_eff = xp.clip(cnc_t * react_t, 0.0, 0.95)
+            # [修正 §3.5] 與單供應商 solver 同源的「對手對我方開盤的錨定反應」。
+            first_gap_t = xp.abs(res_t - op_t)
+            react_t = anchoring_multiplier(xp, first_gap_t)
+            cnc_eff = xp.clip(cnc_t * react_t, 0.0, 0.95)
 
-        # 3. 5 輪向量化併發 Rollout
-        for r_idx in range(self.rounds):
-            step_buyer = sc_t[..., r_idx] * gap
-            paid = paid + step_buyer
-            gap = gap - step_buyer
-            step_opp = cnc_eff * urg_t * (1.0 - 0.45 * blf_t) * gap
-            gap = gap - step_opp
-            gap = xp.maximum(gap, 0.0)
+            for r_idx in range(self.rounds):
+                step_buyer = sc_t[..., r_idx] * gap
+                paid = paid + step_buyer
+                gap = gap - step_buyer
+                step_opp = cnc_eff * urg_t * (1.0 - 0.45 * blf_t) * gap
+                gap = gap - step_opp
+                gap = xp.maximum(gap, 0.0)
 
-        # 4. 結算成交機率與破局率
-        tol = 0.02
-        p_deal = xp.exp(-xp.maximum(gap - tol, 0.0) / 0.05)
-        first_gap = xp.abs(res_t - op_t)
-        p_break = xp.clip(1.0 - p_deal + (first_gap > 0.32) * (0.20 + 0.30 * blf_t), 0.0, 1.0)
+            tol = 0.02
+            p_deal = xp.exp(-xp.maximum(gap - tol, 0.0) / 0.05)
+            p_break = xp.clip(
+                1.0 - p_deal + (first_gap_t > 0.32) * (0.20 + 0.30 * blf_t), 0.0, 1.0
+            )
+            payoff = p_deal * (self.walk_away_ceiling - paid) - p_break * 0.10
+            pay_sum = payoff.sum(axis=1)
+            brk_sum = p_break.sum(axis=1)
+            if hasattr(pay_sum, "get"):
+                pay_sum = pay_sum.get()
+                brk_sum = brk_sum.get()
+            sum_pay += np.asarray(pay_sum, dtype=np.float64)
+            sum_brk += np.asarray(brk_sum, dtype=np.float64)
 
-        # 5. 計算期望邊際與破局機率 (沿 S 樣本軸平均) -> (K, O, C)
-        payoff = p_deal * (self.walk_away_ceiling - paid) - p_break * 0.10
-        exp_margin = payoff.mean(axis=1)    # (K, O, C)
-        exp_break = p_break.mean(axis=1)     # (K, O, C)
+        exp_margin = sum_pay / s
+        exp_break = sum_brk / s
 
         # 6. 為每家供應商做**純量選取**：邊際 − 1.0 · 破局之 argmax
         # [修正 §3.4] 舊版註解稱此為「帕累托最優」，但加權和標量化的 argmax

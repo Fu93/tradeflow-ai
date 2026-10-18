@@ -104,6 +104,63 @@ def _xp(use_gpu: bool):
     return np
 
 
+# Sample axis of the expectimax. The default grid is 40 openings × 12 schedules.
+# One float64 tensor of (EXPECTIMAX_SAMPLE_CHUNK, 40, 12) is
+# EXPECTIMAX_SAMPLE_CHUNK * 40 * 12 * 8 bytes. The full 20_000-sample
+# broadcast is what pushed the Render process from an idle ~95 MB RSS into
+# an OOM kill. Means are still taken over every sample.
+EXPECTIMAX_SAMPLE_CHUNK = 512
+
+
+def _to_numpy(array):
+    if hasattr(array, "get"):
+        return np.asarray(array.get())
+    return np.asarray(array)
+
+
+def _expectimax_chunk(xp, reserve, urgency, bluff, conc, opens, scheds):
+    """One sample chunk of the vectorised payoff. Same arithmetic as the
+    historical full-tensor broadcast, float64, reduced over the sample axis.
+    """
+    n = int(len(reserve))
+    n_open = len(opens)
+    n_sched = len(scheds)
+    op = xp.asarray(opens, dtype=xp.float64)[None, :, None]
+    cf = xp.asarray(scheds, dtype=xp.float64)[None, None, :, :]
+    res = xp.asarray(reserve, dtype=xp.float64)[:, None, None]
+    urg = xp.asarray(urgency, dtype=xp.float64)[:, None, None]
+    blf = xp.asarray(bluff, dtype=xp.float64)[:, None, None]
+    cr = xp.asarray(conc, dtype=xp.float64)[:, None, None]
+
+    # [誠實揭露] 下列 payoff / 對手讓步常數為編譯時固定之啟發式值，非經資料
+    # 擬合/訓練調出。數值本體在 src/config/heuristics.py：
+    #   OPPONENT_GAP_SHARE, DEAL_TOLERANCE, DEAL_DECAY_SCALE,
+    #   OPENING_GAP_BREAK, OPENING_BREAK_BASE, OPENING_BREAK_BLUFF, BREAK_PENALTY.
+    gap = xp.abs(res - op)
+    gap = xp.broadcast_to(gap, (n, n_open, n_sched)).astype(xp.float64, copy=True)
+    paid = op.copy()
+    # [修正 §3.5] 對手對我方開盤的錨定反應（見檔頭常數區的公式與揭露）。
+    first_gap = xp.abs(res - op)
+    react = anchoring_multiplier(xp, first_gap)
+    cr_eff = xp.clip(cr * react, 0.0, CONCESSION_RATE_CAP)
+    for r in range(model.ROUNDS):
+        step_you = cf[..., r] * gap
+        paid = paid + step_you
+        gap = gap - step_you
+        step_opp = cr_eff * urg * (1.0 - OPPONENT_GAP_SHARE * blf) * gap
+        gap = gap - step_opp
+        gap = xp.maximum(gap, 0.0)
+
+    p_deal = xp.exp(-xp.maximum(gap - DEAL_TOLERANCE, 0.0) / DEAL_DECAY_SCALE)
+    p_break = xp.clip(
+        1.0 - p_deal + (first_gap > OPENING_GAP_BREAK) * (OPENING_BREAK_BASE + OPENING_BREAK_BLUFF * blf),
+        0.0,
+        1.0,
+    )
+    payoff = p_deal * (model.YOUR_CEILING - paid) - p_break * BREAK_PENALTY
+    return _to_numpy(payoff.sum(axis=0)), _to_numpy(p_break.sum(axis=0))
+
+
 def solve(
     n_opp_samples: int = 20_000,
     opens=None,
@@ -116,6 +173,9 @@ def solve(
     reserve_std=None,
 ):
     """向量化重解：一次評估 (對手樣本 × 首輪報價 × 讓步曲線) 組合。
+
+    樣本軸分塊累加，避免一次配置完整 (samples, openings, schedules) 張量。
+    回傳的期望值仍是全部樣本的平均。
 
     回傳 dict：
       exp_margin : (n_open, n_sched) 期望邊際（歸一化）
@@ -140,52 +200,25 @@ def solve(
         rng, n_opp_samples, prior_mix,
         reserve_mean=reserve_mean, reserve_std=reserve_std,
     )
-    # 轉後端
-    reserve = xp.asarray(reserve); urgency = xp.asarray(urgency)
-    bluff = xp.asarray(bluff); conc = xp.asarray(conc)
-
-    op = xp.asarray(opens)[None, :, None]            # (1, n_open, 1)
-    cf = xp.asarray(scheds)[None, None, :, :]         # (1, 1, n_sched, ROUNDS=5)
-    res = reserve[:, None, None]                       # (S, 1, 1)
-    urg = urgency[:, None, None]
-    blf = bluff[:, None, None]
-    cr = conc[:, None, None]
-
-    # [誠實揭露] 下列 payoff / 對手讓步常數為編譯時固定之啟發式值，非經資料
-    # 擬合/訓練調出：
-    #   - 0.45  : 對手每輪吃掉的剩餘差距比例（bluff 越高吃越少）；
-    #   - 0.02  : 成交容差閾值（差距 ≤ 2% 視為成交）；
-    #   - 0.05  : p_deal 的指數衰減尺度（差距每多 5% 成交機率 e^-1）；
-    #   - 0.32  : 首輪差距超過此值判定「開盤過高」；
-    #   - 0.20/0.30*blf : 開盤過高時的破局額外懲罰（bluff 加重）；
-    #   - 0.10  : 破局懲罰權重（payoff 中扣 0.10）。
-    gap = xp.abs(res - op)
-    gap = xp.broadcast_to(gap, (n_opp_samples, len(opens), len(scheds))).astype(xp.float64)
-    paid = op.copy()
-    # [修正 §3.5] 對手對我方開盤的錨定反應（見檔頭常數區的公式與揭露）。
-    # first_gap 是固定量（隨 op 變、與輪次無關），所以乘數可逐 (n_open) 預算。
-    first_gap = xp.abs(res - op)
-    react = anchoring_multiplier(xp, first_gap)
-    cr_eff = xp.clip(cr * react, 0.0, CONCESSION_RATE_CAP)
-    for r in range(model.ROUNDS):
-        step_you = cf[..., r] * gap
-        paid = paid + step_you
-        gap = gap - step_you
-        step_opp = cr_eff * urg * (1.0 - OPPONENT_GAP_SHARE * blf) * gap
-        gap = gap - step_opp
-        gap = xp.maximum(gap, 0.0)
-
-    final_gap = gap
-    tol = DEAL_TOLERANCE
-    p_deal = xp.exp(-xp.maximum(final_gap - tol, 0.0) / DEAL_DECAY_SCALE)
-    p_break = xp.clip(
-        1.0 - p_deal + (first_gap > OPENING_GAP_BREAK) * (OPENING_BREAK_BASE + OPENING_BREAK_BLUFF * blf),
-        0.0,
-        1.0,
-    )
-    payoff = p_deal * (model.YOUR_CEILING - paid) - p_break * BREAK_PENALTY
-    exp_margin = payoff.mean(axis=0)
-    exp_break = p_break.mean(axis=0)
+    n_open = len(opens)
+    n_sched = len(scheds)
+    sum_pay = np.zeros((n_open, n_sched), dtype=np.float64)
+    sum_brk = np.zeros((n_open, n_sched), dtype=np.float64)
+    for start in range(0, int(n_opp_samples), EXPECTIMAX_SAMPLE_CHUNK):
+        end = min(start + EXPECTIMAX_SAMPLE_CHUNK, int(n_opp_samples))
+        pay_sum, brk_sum = _expectimax_chunk(
+            xp,
+            reserve[start:end],
+            urgency[start:end],
+            bluff[start:end],
+            conc[start:end],
+            opens,
+            scheds,
+        )
+        sum_pay += pay_sum
+        sum_brk += brk_sum
+    exp_margin = sum_pay / n_opp_samples
+    exp_break = sum_brk / n_opp_samples
 
     # [修正 §3.4] 純量選取：邊際 − λ·破局 之 argmax（**非**帕雷托選擇）
     score = exp_margin - lambda_break * exp_break

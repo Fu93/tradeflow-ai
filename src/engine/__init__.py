@@ -1,12 +1,24 @@
+import importlib
+
 from . import model
 from . import solver
 from . import robustness
-from . import viz
-from . import benchmark
 from . import proposal
 from . import multi_solver
 from . import bayesian_v2
 from . import tco
+
+# viz pulls matplotlib and benchmark pulls the plotting path. The web process
+# does not need either at import, so they load on first attribute access.
+_LAZY_MODULES = {"viz", "benchmark"}
+
+
+def __getattr__(name):
+    if name in _LAZY_MODULES:
+        module = importlib.import_module(f".{name}", __name__)
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 from .solver import solve, recommend, bayes_update, compute_belief_confidence
 from .multi_solver import MultiSupplierSolver

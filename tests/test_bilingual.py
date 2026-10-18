@@ -233,6 +233,12 @@ class TestBilingualCognitiveBridge(unittest.TestCase):
         )
         zh = ChineseSurfaceRenderer.render(action_obj)
         en = EnglishExecutiveRenderer.render_executive_card(action_obj)
+        # The card's price is the solver's recommended counter, not the user's target.
+        self.assertIn("Recommended Counter", en)
+        self.assertNotIn("Authorized Target", en)
+        summary = EnglishExecutiveRenderer.render_telemetry_summary(action_obj)
+        self.assertIn("Recommended Counter", summary)
+        self.assertNotIn("vs Target:", summary)
         # 正常配對必須放行
         self.assertTrue(
             NumericGuardrailValidator.validate_bilingual(

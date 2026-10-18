@@ -23,9 +23,10 @@ import ast
 import json
 import logging
 import math
+import os
 import re
 from enum import Enum
-from typing import Optional, Dict, Any, List, Tuple, Iterable
+from typing import NamedTuple, Optional, Dict, Any, List, Tuple, Iterable
 from pydantic import BaseModel, Field
 
 from src.config.heuristics import (
@@ -161,12 +162,27 @@ class InboundTacticalClassification(BaseModel):
     primary_intent: VendorTacticEnum
     confidence: float = Field(default=FIELD_DEFAULT_CONFIDENCE, ge=0.0, le=1.0)
     mentioned_price: Optional[float] = None
+    # Amount as written, before any currency conversion. mentioned_price is the
+    # CNY figure the solver may use, and stays None when a non-CNY quote was
+    # not converted.
+    quoted_amount: Optional[float] = None
+    mentioned_currency: Optional[str] = None
+    price_currency_note: Optional[str] = None
     demanded_moq: Optional[int] = None
     demanded_mold_fee: Optional[float] = None
     is_mixed_signal: bool = Field(default=False, description="是否同時包含商務報價與非商務試探/雜訊")
     mixed_signal_note: Optional[str] = None
     tactical_rationale: str = ""
     requires_escalation: bool = False
+
+
+class QuotedPrice(NamedTuple):
+    """Amount as written, its currency, and the CNY figure the solver may use."""
+
+    amount: Optional[float]
+    currency: Optional[str]
+    cny_amount: Optional[float]
+    note: Optional[str]
 
 
 # ---------------------------------------------------------------------------
@@ -227,9 +243,57 @@ class InboundIntentClassifier:
         ),
     ]
 
+    # Detects a price. Structured currency capture is extract_quoted_price.
+    # Linear alternation, no nested quantifiers, so RE2 can compile it.
+    # Longer currency words (美元) stay before 元 so a USD quote is not read as CNY.
+    _CURRENCY_WORD = (
+        r"USD|US\$|RMB|CNY|EUR|HKD|NTD|TWD|GBP|JPY|美元|美金|[¥￥$]"
+    )
+    _CURRENCY_SUFFIX = (
+        r"USD|US\$|RMB|CNY|EUR|HKD|NTD|TWD|GBP|JPY|美元|美金|元|块|塊"
+    )
     PRICE_PATTERN = SafeLinearRegexEngine.compile(
-        r"(?:(?:[¥￥$]|RMB)\s*(\d+(?:\.\d{1,2})?)|(?:報價|單價|價格|給您|算您|出廠價|特價|低至)\s*[:：=]?\s*(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:元|塊)(?:/件|/把|/個|/套|/pcs)?)",
+        r"(?:"
+        r"(?:unit\s*price|price|報價|报价|單價|单价|價格|价格|給您|算您|出廠價|出厂价|特價|低至)"
+        r"\s*[:：=]?\s*(?:" + _CURRENCY_WORD + r")?\s*\d+(?:\.\d{1,2})?"
+        r"|(?:" + _CURRENCY_WORD + r")\s*\d+(?:\.\d{1,2})?"
+        r"|\d+(?:\.\d{1,2})?\s*(?:" + _CURRENCY_SUFFIX + r")"
+        r"(?:\s*/\s*(?:pc|pcs|piece)|\s+per\s+piece)?"
+        r")",
         re.IGNORECASE,
+    )
+    _PRICE_LABEL = SafeLinearRegexEngine.compile(
+        r"(unit\s*price|price|報價|报价|單價|单价|價格|价格|給您|算您|出廠價|出厂价|特價|低至)"
+        r"\s*[:：=]?\s*(" + _CURRENCY_WORD + r")?\s*(\d+(?:\.\d{1,2})?)"
+        r"(?:\s*(" + _CURRENCY_SUFFIX + r"))?",
+        re.IGNORECASE,
+    )
+    _PRICE_PREFIX = SafeLinearRegexEngine.compile(
+        r"(" + _CURRENCY_WORD + r")\s*(\d+(?:\.\d{1,2})?)",
+        re.IGNORECASE,
+    )
+    _PRICE_SUFFIX = SafeLinearRegexEngine.compile(
+        r"(\d+(?:\.\d{1,2})?)\s*(" + _CURRENCY_SUFFIX + r")"
+        r"(?:\s*/\s*(?:pc|pcs|piece)|\s+per\s+piece)?",
+        re.IGNORECASE,
+    )
+    _CNY_LABELS = frozenset({
+        "報價", "报价", "單價", "单价", "價格", "价格", "給您", "算您", "出廠價", "出厂价", "特價", "低至",
+    })
+    _USD_UNCONVERTED_NOTE = (
+        "Non-CNY quote was not converted and is not used as CNY. "
+        "Set TRADEFLOW_USD_CNY_RATE to a CNY-per-USD rate you sourced to convert USD."
+    )
+    _OTHER_UNCONVERTED_NOTE = (
+        "Non-CNY quote was not converted and is not used as CNY. "
+        "Only a caller-supplied TRADEFLOW_USD_CNY_RATE converts USD."
+    )
+    _USD_CONVERTED_NOTE = (
+        "USD converted to CNY using TRADEFLOW_USD_CNY_RATE from the environment. "
+        "This repository does not supply that rate."
+    )
+    _CURRENCY_MISSING_NOTE = (
+        "No currency was stated, so the number was not treated as CNY."
     )
     MOQ_PATTERN = SafeLinearRegexEngine.compile(r"(\d{3,7})\s*(?:個|把|件|套|pcs)", re.IGNORECASE)
     LEAD_DAYS_PATTERN = SafeLinearRegexEngine.compile(r"(\d{1,3})\s*(?:天|工作日|days?)", re.IGNORECASE)
@@ -273,6 +337,116 @@ class InboundIntentClassifier:
         if cls.MIN_MENTIONED_PRICE <= val <= cls.MAX_MENTIONED_PRICE:
             return val
         return None
+
+    @staticmethod
+    def _currency_code(token: Optional[str]) -> Optional[str]:
+        if not token:
+            return None
+        compact = token.strip().upper()
+        if compact in {"RMB", "CNY", "元", "块", "塊", "¥", "￥"}:
+            return "CNY"
+        if compact in {"USD", "US$", "$", "美元", "美金"}:
+            return "USD"
+        return compact
+
+    @staticmethod
+    def configured_usd_cny_rate() -> Optional[float]:
+        """CNY per 1 USD from the environment. No rate is shipped in this repo."""
+        raw = os.environ.get("TRADEFLOW_USD_CNY_RATE", "").strip()
+        if not raw:
+            return None
+        try:
+            rate = float(raw)
+        except ValueError:
+            return None
+        if not math.isfinite(rate) or rate <= 0:
+            return None
+        return rate
+
+    @classmethod
+    def _settle_quote(cls, amount: float, currency: Optional[str]) -> "QuotedPrice":
+        if currency == "CNY":
+            return QuotedPrice(amount, "CNY", cls._clamp_price(amount), None)
+        if currency == "USD":
+            rate = cls.configured_usd_cny_rate()
+            if rate is None:
+                return QuotedPrice(amount, "USD", None, cls._USD_UNCONVERTED_NOTE)
+            converted = cls._clamp_price(amount * rate)
+            note = cls._USD_CONVERTED_NOTE
+            if converted is None:
+                note = (
+                    note
+                    + " The converted amount was outside the price bounds and was not used."
+                )
+            return QuotedPrice(amount, "USD", converted, note)
+        if currency is None:
+            return QuotedPrice(amount, None, None, cls._CURRENCY_MISSING_NOTE)
+        return QuotedPrice(amount, currency, None, cls._OTHER_UNCONVERTED_NOTE)
+
+    @classmethod
+    def extract_quoted_price(cls, raw_text: str) -> "QuotedPrice":
+        """First price in the text, with currency kept separate from the CNY figure.
+
+        ``cny_amount`` is what the solver may use. It stays None for a non-CNY
+        quote unless ``TRADEFLOW_USD_CNY_RATE`` converts USD. English ``price``
+        with no currency is not treated as CNY. Chinese price labels still are.
+        """
+        if not raw_text:
+            return QuotedPrice(None, None, None, None)
+        found: list[tuple[int, int, str, Any]] = []
+        label = cls._PRICE_LABEL.search(raw_text)
+        if label and label.group(3):
+            found.append((label.start(), 0, "label", label))
+        prefix = cls._PRICE_PREFIX.search(raw_text)
+        if prefix and prefix.group(2):
+            found.append((prefix.start(), 1, "prefix", prefix))
+        suffix = cls._PRICE_SUFFIX.search(raw_text)
+        if suffix and suffix.group(1):
+            found.append((suffix.start(), 2, "suffix", suffix))
+        if not found:
+            return QuotedPrice(None, None, None, None)
+        found.sort()
+        _start, _rank, kind, match = found[0]
+        try:
+            if kind == "label":
+                label_word = match.group(1) or ""
+                amount = float(match.group(3))
+                token = match.group(2) or match.group(4)
+                if token:
+                    currency = cls._currency_code(token)
+                else:
+                    compact = re.sub(r"\s+", " ", label_word).strip().lower()
+                    currency = None if compact in {"price", "unit price"} else "CNY"
+            elif kind == "prefix":
+                amount = float(match.group(2))
+                currency = cls._currency_code(match.group(1))
+            else:
+                amount = float(match.group(1))
+                currency = cls._currency_code(match.group(2))
+        except (TypeError, ValueError):
+            return QuotedPrice(None, None, None, None)
+        if not math.isfinite(amount):
+            return QuotedPrice(None, None, None, None)
+        return cls._settle_quote(amount, currency)
+
+    @staticmethod
+    def _quoted_kwargs(quote: "QuotedPrice") -> dict:
+        return {
+            "mentioned_price": quote.cny_amount,
+            "quoted_amount": quote.amount,
+            "mentioned_currency": quote.currency,
+            "price_currency_note": quote.note,
+        }
+
+    @staticmethod
+    def _mixed_price_phrases(quote: "QuotedPrice") -> list:
+        if quote.amount is None:
+            return []
+        if quote.cny_amount is not None and quote.currency in (None, "CNY"):
+            return [f"Price ¥{quote.cny_amount:.2f}"]
+        if quote.currency:
+            return [f"Price {quote.amount:.2f} {quote.currency}"]
+        return [f"Price {quote.amount:.2f}"]
 
     @classmethod
     def _clamp_moq(cls, value: Any) -> Optional[int]:
@@ -566,18 +740,9 @@ class InboundIntentClassifier:
         if len(raw_text) > MAX_INPUT_LEN:
             raw_text = raw_text[:MAX_INPUT_LEN]
 
-        # 1. 抽取報價
-        price_val = None
-        p_match = cls.PRICE_PATTERN.search(raw_text)
-        if p_match:
-            try:
-                matched_str = p_match.group(1) or p_match.group(2) or p_match.group(3)
-                if matched_str:
-                    candidate = float(matched_str)
-                    if MIN_MENTIONED_PRICE <= candidate <= MAX_MENTIONED_PRICE:
-                        price_val = candidate
-            except ValueError:
-                pass
+        # 1. 抽取報價。mentioned_price 只放可給求解器的人民幣；外幣另記。
+        quote = cls.extract_quoted_price(raw_text)
+        quoted = cls._quoted_kwargs(quote)
 
         # 2. 抽取 MOQ 需求
         moq_val = None
@@ -615,12 +780,12 @@ class InboundIntentClassifier:
             return InboundTacticalClassification(
                 primary_intent=VendorTacticEnum.OFFLINE_BYPASS_DIVERT,
                 confidence=divert_conf,
-                mentioned_price=price_val,
                 demanded_moq=moq_val,
                 demanded_mold_fee=mold_fee_val,
                 is_mixed_signal=False,
                 tactical_rationale="Matched hard offline divert pattern in Stage 1",
                 requires_escalation=True,
+                **quoted,
             )
 
         # 4. Stage 2: 端側 ONNX 深度語意推理 (0.02ms 本地神經分類，覆蓋行話/反諷/複合句)
@@ -635,14 +800,12 @@ class InboundIntentClassifier:
 
             # 若 ONNX 高確信度 (>=0.70) 識別為專門套路 (行話黑話、階梯勒索、反諷哭窮、終局成交等)
             if onnx_conf >= ONNX_ACCEPT_CONFIDENCE and onnx_intent != VendorTacticEnum.NORMAL_COUNTER_OFFER:
-                is_mixed = (price_val is not None or mold_fee_val is not None) and onnx_intent in (
+                is_mixed = (quote.amount is not None or mold_fee_val is not None) and onnx_intent in (
                     VendorTacticEnum.IDENTITY_PROBE_TEST,
                     VendorTacticEnum.CRY_POVERTY_COST_HIKE,
                     VendorTacticEnum.TIER_VOLUME_BLACKMAIL,
                 )
-                mixed_parts = []
-                if price_val:
-                    mixed_parts.append(f"Price ¥{price_val:.2f}")
+                mixed_parts = cls._mixed_price_phrases(quote)
                 if mold_fee_val:
                     mixed_parts.append(f"Mold Fee ¥{mold_fee_val:.0f}")
                 mixed_note = (
@@ -656,13 +819,13 @@ class InboundIntentClassifier:
                 return InboundTacticalClassification(
                     primary_intent=onnx_intent,
                     confidence=onnx_conf,
-                    mentioned_price=price_val,
                     demanded_moq=moq_val,
                     demanded_mold_fee=mold_fee_val,
                     is_mixed_signal=is_mixed,
                     mixed_signal_note=mixed_note,
                     tactical_rationale=f"On-Device ONNX semantic inference (conf={onnx_conf:.2f})",
                     requires_escalation=escalate,
+                    **quoted,
                 )
 
         # 5. Stage 1.5: 確定性正則階梯保底
@@ -680,14 +843,12 @@ class InboundIntentClassifier:
 
             if pattern.search(raw_text):
                 rationale = "Matched deterministic pattern in inbound text"
-                is_mixed = (price_val is not None or mold_fee_val is not None) and intent in (
+                is_mixed = (quote.amount is not None or mold_fee_val is not None) and intent in (
                     VendorTacticEnum.IDENTITY_PROBE_TEST,
                     VendorTacticEnum.CRY_POVERTY_COST_HIKE,
                     VendorTacticEnum.TIER_VOLUME_BLACKMAIL,
                 )
-                mixed_parts = []
-                if price_val:
-                    mixed_parts.append(f"Price ¥{price_val:.2f}")
+                mixed_parts = cls._mixed_price_phrases(quote)
                 if mold_fee_val:
                     mixed_parts.append(f"Mold Fee ¥{mold_fee_val:.0f}")
                 mixed_note = (
@@ -697,21 +858,28 @@ class InboundIntentClassifier:
                 return InboundTacticalClassification(
                     primary_intent=intent,
                     confidence=conf,
-                    mentioned_price=price_val,
                     demanded_moq=moq_val,
                     demanded_mold_fee=mold_fee_val,
                     is_mixed_signal=is_mixed,
                     mixed_signal_note=mixed_note,
                     tactical_rationale=rationale,
                     requires_escalation=escalate,
+                    **quoted,
                 )
 
         # 4. Stage 2: 若正則未命中且啟用 LLM，進行深度語意推理
         if enable_llm_fallback:
             llm_res = cls.classify_with_llm(raw_text)
             if llm_res:
-                if price_val and llm_res.mentioned_price is None:
-                    llm_res.mentioned_price = price_val
+                # A model figure must not become the CNY price when stage-1
+                # already saw a quote it refused to convert.
+                if quote.amount is not None and quote.cny_amount is None:
+                    llm_res.mentioned_price = None
+                elif quote.cny_amount is not None and llm_res.mentioned_price is None:
+                    llm_res.mentioned_price = quote.cny_amount
+                llm_res.quoted_amount = quote.amount
+                llm_res.mentioned_currency = quote.currency
+                llm_res.price_currency_note = quote.note
                 return llm_res
 
         # 5. 常規報價對話保底
@@ -722,7 +890,6 @@ class InboundIntentClassifier:
         return InboundTacticalClassification(
             primary_intent=VendorTacticEnum.NORMAL_COUNTER_OFFER,
             confidence=REGEX_CONF_UNRECOGNIZED,
-            mentioned_price=price_val,
             demanded_moq=moq_val,
             # [假資料修正 §5.5] 舊版此處**漏傳** demanded_mold_fee，於是「未識別、
             # 暫按正常處理」這條最高頻路徑會把已成功抽取的模具費靜默丟棄 ——
@@ -731,6 +898,7 @@ class InboundIntentClassifier:
             demanded_mold_fee=mold_fee_val,
             tactical_rationale="No pattern/LLM matched; unclassified message treated as normal",
             requires_escalation=False,
+            **quoted,
         )
 
 
@@ -1216,7 +1384,7 @@ class EnglishExecutiveRenderer:
             f"=== [TradeFlow CPO Executive Telemetry] ===\n"
             f"{round_tag}"
             f"• Target Product: {obj.product_name}\n"
-            f"• Inbound Offer: {offer_str} vs Authorized Target: {t_price_str}\n"
+            f"• Inbound Offer: {offer_str} vs Recommended Counter: {t_price_str}\n"
             f"• Walk-Away Ceiling: {ceiling_str}\n"
             f"• Bayesian Belief: Estimated Floor: {floor_str} (Confidence: {obj.bayesian_confidence:.1%})\n"
             f"• Risk Telemetry: Breakdown Risk: {obj.breakdown_risk:.1%} | Expected Margin: ¥{obj.expected_margin:.2f}\n"
@@ -1268,7 +1436,7 @@ class EnglishExecutiveRenderer:
         floor_str = f"¥{obj.estimated_floor_price:.2f}" if obj.estimated_floor_price else "N/A"
         return (
             f"[SUPPLIER TELEMETRY] Intent: {obj.counterpart_intent.value} | "
-            f"Quote: {quote_str} vs Target: ¥{obj.authorized_price:.2f} | "
+            f"Quote: {quote_str} vs Recommended Counter: ¥{obj.authorized_price:.2f} | "
             f"Floor Est: {floor_str} (Conf: {obj.bayesian_confidence:.1%}) | "
             f"Breakdown Risk: {obj.breakdown_risk:.1%}"
         )

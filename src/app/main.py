@@ -2291,9 +2291,58 @@ def port_in_use_message(port: int) -> str:
     )
 
 
+def port_has_listener(host: str, port: int) -> bool:
+    """True when something accepts TCP connections on ``host:port``.
+
+    Uses connect, then closes. It does not bind, so a free port stays free
+    for the single server process that starts afterwards.
+    """
+    import socket
+
+    probe = "127.0.0.1" if host in {"0.0.0.0", "::", ""} else host
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.settimeout(1)
+        return sock.connect_ex((probe, int(port))) == 0
+    finally:
+        sock.close()
+
+
+def wait_for_free_port(host: str, port: int, attempts: int = 8, pause=None) -> None:
+    """Wait out a predecessor that still holds the port after an OOM restart.
+
+    An immediate exit is what turned Render's restart into a loop that printed
+    ``Port 10000 is already in use``. A few seconds is enough for the old
+    socket to close. The last failure still prints that message and exits.
+    """
+    import sys
+    import time
+
+    sleeper = time.sleep if pause is None else pause
+    for attempt in range(1, attempts + 1):
+        if not port_has_listener(host, port):
+            return
+        if attempt == attempts:
+            print(port_in_use_message(port), file=sys.stderr)
+            raise SystemExit(1)
+        sleeper(1)
+
+
+def serve_http(application, host: str, port: int) -> None:
+    """Start the one HTTP server for this process.
+
+    ``workers`` is pinned to 1. Uvicorn otherwise reads ``WEB_CONCURRENCY``
+    and can fork a second process that binds the same port. ``reload`` stays
+    off so a file watcher cannot start another server.
+    """
+    import uvicorn
+
+    wait_for_free_port(host, port)
+    uvicorn.run(application, host=host, port=port, reload=False, workers=1)
+
+
 if __name__ == "__main__":
     import sys
-    import uvicorn
 
     # Render and other hosts inject PORT. Local compose and the README use 8000.
     _raw_port = os.environ.get("PORT", "8000")
@@ -2311,8 +2360,5 @@ if __name__ == "__main__":
             file=sys.stderr,
         )
         raise SystemExit(2)
-    if not listen_port_available("0.0.0.0", _port):
-        print(port_in_use_message(_port), file=sys.stderr)
-        raise SystemExit(1)
-    uvicorn.run(app, host="0.0.0.0", port=_port)
+    serve_http(app, "0.0.0.0", _port)
 
