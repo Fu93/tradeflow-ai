@@ -21,7 +21,6 @@ import numpy as np
 from src.config.heuristics import (
     BREAKDOWN_TRIP_THRESHOLD,
     COUPLED_SWEEPS,
-    CVAR_BOOTSTRAP_DRAWS,
     CVAR_TAIL_FRACTION,
     CVAR_WEIGHT,
     DEFAULT_SOLVER_SEED,
@@ -120,46 +119,65 @@ def _mean_se(values: np.ndarray) -> tuple[float, float]:
     return mean, se
 
 
-def _cvar_upper(costs: np.ndarray, tail_fraction: float) -> float:
-    """Mean of the worst tail of a cost sample."""
+def _cvar_tail(costs: np.ndarray, tail_fraction: float) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``(full sample, worst tail)`` using the same cut as the CVaR mean."""
     flat = np.asarray(costs, dtype=np.float64).ravel()
     n = int(flat.size)
     if n == 0:
-        return 0.0
+        empty = np.asarray([], dtype=np.float64)
+        return empty, empty
     fraction = min(max(float(tail_fraction), float(np.finfo(np.float64).tiny)), 1.0)
     tail_n = max(1, int(math.ceil(fraction * n)))
+    if tail_n >= n:
+        return flat, flat
     worst = np.partition(flat, n - tail_n)[n - tail_n :]
+    return flat, worst
+
+
+def _cvar_upper(costs: np.ndarray, tail_fraction: float) -> float:
+    """Mean of the worst tail of a cost sample."""
+    _, worst = _cvar_tail(costs, tail_fraction)
+    if worst.size == 0:
+        return 0.0
     return float(np.mean(worst))
 
 
-def _cvar_bootstrap_se(costs: np.ndarray, tail_fraction: float) -> float:
-    """Standard error of the upper-tail CVaR, by resampling the full sample.
+def _cvar_se(costs: np.ndarray, tail_fraction: float) -> float:
+    """Influence-function standard error of the upper-tail CVaR.
 
-    The standard deviation of the tail alone ignores uncertainty in the
-    VaR threshold and is too small. This estimator is used for the reported
-    metric only, not for every column of the offer search.
+    ``sd(tail) / sqrt(tail_n)`` ignores uncertainty in which observations
+    fall in the tail and runs about a third low against the sampling
+    standard deviation of this estimator. The asymptotic variance
+    ``Var((X - q)_+) / (n τ²)`` uses the same tail cut as ``_cvar_upper``
+    and is one pass, so the reported figure stays cheap. It is computed
+    for the chosen offer vector only, not on every cell of the search.
     """
-    flat = np.asarray(costs, dtype=np.float64).ravel()
+    flat, worst = _cvar_tail(costs, tail_fraction)
     n = int(flat.size)
-    if n < 2:
+    if n < 2 or worst.size == 0:
         return 0.0
-    fraction = min(max(float(tail_fraction), float(np.finfo(np.float64).tiny)), 1.0)
-    tail_n = max(1, int(math.ceil(fraction * n)))
-    draws = int(CVAR_BOOTSTRAP_DRAWS)
-    rng = np.random.default_rng(int(DEFAULT_SOLVER_SEED))
-    estimates = np.empty(draws, dtype=np.float64)
-    width = 8
-    done = 0
-    while done < draws:
-        take = min(width, draws - done)
-        idx = rng.integers(0, n, size=(take, n), dtype=np.int32)
-        sample = flat[idx]
-        part = np.partition(sample, n - tail_n, axis=1)[:, n - tail_n :]
-        estimates[done : done + take] = part.mean(axis=1)
-        done += take
-    if draws < 2:
+    if worst.size >= n:
+        return float(np.std(flat, ddof=1) / math.sqrt(n))
+    tau = worst.size / n
+    threshold = float(np.min(worst))
+    excess = np.maximum(flat - threshold, 0.0)
+    var = float(np.var(excess, ddof=1))
+    if var <= 0.0:
         return 0.0
-    return float(np.std(estimates, ddof=1))
+    return math.sqrt(var / (n * tau * tau))
+
+
+def _tail_saturated_at_ceiling(costs: np.ndarray, ceiling: float, tail_fraction: float) -> bool:
+    """True when the whole reported tail sits on the walk-away ceiling.
+
+    That CVaR is the ceiling because at least the tail fraction of scenarios
+    paid the ceiling. It is not a measured loss inside the tradable range.
+    """
+    _, worst = _cvar_tail(costs, tail_fraction)
+    if worst.size == 0:
+        return False
+    span = max(abs(float(ceiling)), 1.0)
+    return bool(np.max(np.abs(worst - float(ceiling))) <= span * 1e-8)
 
 
 def sample_joint_scenarios(
@@ -431,7 +449,8 @@ def evaluate_vector(
     tail = float(CVAR_TAIL_FRACTION)
     cost = float(ceiling) - surplus
     cvar = _cvar_upper(cost, tail)
-    cvar_se = _cvar_bootstrap_se(cost, tail)
+    cvar_se = _cvar_se(cost, tail)
+    saturated = _tail_saturated_at_ceiling(cost, float(ceiling), tail)
     hazards = []
     for i in range(k):
         pred = beliefs[i].predictive(
@@ -449,6 +468,7 @@ def evaluate_vector(
         "expected_surplus_se": expected_se,
         "cvar_cost": cvar,
         "cvar_se": cvar_se,
+        "tail_saturated_at_ceiling": saturated,
         "cvar_alpha": 1.0 - tail,
         "tail_fraction": tail,
         "regret": regret_mean,

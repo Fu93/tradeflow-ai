@@ -1,16 +1,9 @@
-"""Fail-closed pre-push secret scan 回歸測試 (tests/test_secret_scan.py).
+"""Pre-push secret scan.
 
-對應 DEEP_DEFECT_AUDIT.md §6.3：
-`scripts/secret_scan.py` 從 `.env` 讀取要搜尋的憑證字串，再掃描工作樹。
-在 CI 上沒有 `.env`，於是 `secrets` 為空，它掃描 0 個憑證後仍印出
-`[PASS] No credential value found` 並 return 0 —— 這個閘門**從不可能失敗**。
-
-本測試固定修正後的行為：
-  * 有 .env + 有洩漏  -> exit 1
-  * 有 .env + 乾淨    -> exit 0
-  * 無 .env + 無 flag -> exit 1（fail-closed）
-  * 無 .env + 有 flag -> exit 0（明確接受）
-  * 有 .env 但解析不出憑證 -> exit 1（沒有針的掃描器不能宣稱 PASS）
+With a .env file, credential values are the needles. Without one, the
+scanner still reads tracked files (or the tree, when this is not a
+checkout) for private-key and token patterns and says that credential
+values were not compared. An empty needle set still refuses to pass.
 """
 from __future__ import annotations
 
@@ -80,28 +73,79 @@ class TestSecretScanFailClosed(unittest.TestCase):
         self.assertEqual(r.returncode, 0, f"expected clean pass, got:\n{r.stdout}\n{r.stderr}")
         self.assertIn("[PASS]", r.stdout)
 
-    def test_env_absent_without_flag_fails_closed(self):
-        """核心回歸：這就是 CI 上實際發生的情況（沒有 .env）。"""
+    def test_env_absent_scans_files_and_reports_what_it_did(self):
+        """No .env is a real pattern scan, with an explicit report."""
         missing = os.path.join(self.tmp, "does-not-exist.env")
         tree = self._make_tree()
 
         r = _run(["--env", missing, "--root", tree])
-        self.assertEqual(
-            r.returncode, 1,
-            "缺 .env 時必須 fail-closed；修正前這裡會回 0 並印 PASS",
-        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("No .env", r.stdout)
+        self.assertIn("Credential values were not compared", r.stdout)
+        self.assertIn("[PASS] No secret pattern", r.stdout)
+        self.assertIn("not a credential-value verification", r.stdout)
+        self.assertNotIn("Refusing to report PASS", r.stdout)
         self.assertNotIn("[PASS] No credential value found", r.stdout)
-        self.assertIn("Refusing to report PASS", r.stdout)
 
-    def test_env_absent_with_flag_passes_but_does_not_claim_verification(self):
+    def test_env_absent_with_flag_still_scans(self):
         missing = os.path.join(self.tmp, "does-not-exist.env")
         tree = self._make_tree()
 
         r = _run(["--env", missing, "--root", tree, "--allow-missing-env"])
-        self.assertEqual(r.returncode, 0, f"flag should tolerate absence:\n{r.stdout}")
-        # 必須明確說明這不是安全驗證，不得印出誤導性的 PASS。
-        self.assertIn("NOT a security verification", r.stdout)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("allow-missing-env", r.stdout)
+        self.assertIn("[PASS] No secret pattern", r.stdout)
+        self.assertIn("Credential values were not compared", r.stdout)
         self.assertNotIn("[PASS] No credential value found", r.stdout)
+
+    def test_private_key_pattern_fails_without_an_env(self):
+        missing = os.path.join(self.tmp, "does-not-exist.env")
+        tree = self._make_tree()
+        # Split so this test file is not itself a pattern hit.
+        marker = "-----BEGIN " + "PRIVATE KEY-----"
+        with open(os.path.join(tree, "leaked.py"), "w", encoding="utf-8") as f:
+            f.write(marker + "\n")
+
+        r = _run(["--env", missing, "--root", tree])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("Secret pattern found", r.stdout)
+        self.assertIn("private key", r.stdout)
+        self.assertIn("leaked.py", r.stdout)
+
+    def test_pattern_hit_fails_even_when_env_needles_are_absent_from_the_tree(self):
+        env = os.path.join(self.tmp, ".env")
+        self._make_env(env)
+        tree = self._make_tree()
+        marker = "-----BEGIN " + "PRIVATE KEY-----"
+        with open(os.path.join(tree, "leaked.py"), "w", encoding="utf-8") as f:
+            f.write(marker + "\n")
+
+        r = _run(["--env", env, "--root", tree])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("private key", r.stdout)
+
+    def test_git_index_ignores_an_untracked_secret_and_fails_once_tracked(self):
+        missing = os.path.join(self.tmp, "does-not-exist.env")
+        repo = os.path.join(self.tmp, "repo")
+        os.makedirs(repo)
+        subprocess.run(["git", "init", "-q", repo], check=True)
+        with open(os.path.join(repo, "ok.txt"), "w", encoding="utf-8") as f:
+            f.write("clean\n")
+        subprocess.run(["git", "-C", repo, "add", "ok.txt"], check=True)
+        marker = "-----BEGIN " + "PRIVATE KEY-----"
+        with open(os.path.join(repo, "secret.pem"), "w", encoding="utf-8") as f:
+            f.write(marker + "\n")
+
+        clean = _run(["--env", missing, "--root", repo])
+        self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+        self.assertIn("tracked", clean.stdout)
+        self.assertIn("[PASS] No secret pattern", clean.stdout)
+
+        subprocess.run(["git", "-C", repo, "add", "secret.pem"], check=True)
+        leaked = _run(["--env", missing, "--root", repo])
+        self.assertEqual(leaked.returncode, 1, leaked.stdout + leaked.stderr)
+        self.assertIn("secret.pem", leaked.stdout)
+        self.assertIn("private key", leaked.stdout)
 
     def test_empty_needle_set_fails(self):
         """.env 存在但沒有任何 >=12 字元的憑證值 -> 不能宣稱 PASS。"""
@@ -126,6 +170,15 @@ class TestSecretScanFailClosed(unittest.TestCase):
 
         r = _run(["--env", env, "--root", tree])
         self.assertEqual(r.returncode, 0, f"public config must not fail:\n{r.stdout}")
+
+    def test_this_checkout_without_env_reports_a_pattern_scan(self):
+        missing = os.path.join(self.tmp, "does-not-exist.env")
+        r = _run(["--env", missing, "--root", ROOT])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("tracked", r.stdout)
+        self.assertIn("No .env", r.stdout)
+        self.assertIn("[PASS] No secret pattern", r.stdout)
+        self.assertIn("not a credential-value verification", r.stdout)
 
     def test_real_repo_env_still_scans(self):
         """真實 repo 的 .env 存在時，掃描本身仍應可執行（本機開發者流程）。"""

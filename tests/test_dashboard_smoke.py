@@ -373,6 +373,71 @@ def test_pasted_quotes_compare_unit_and_landed(live_server):
             blocked = page.locator("#supplierCards").inner_text()
             assert "not actionable" in blocked
             assert "risk-tolerance cap" in blocked
+            assert "upper bound" in blocked
+            assert "least aggressive" in blocked
+
+            page.fill("#riskTolerance", "0.08")
+            page.fill(
+                "#liveQuotes",
+                "\n".join([
+                    "Alpha, 13.26, 0, 0, 0",
+                    "Beta, 15.60, 0, 0, 0",
+                    "Gamma, 15.92, 0, 0, 0",
+                    "Delta, 16.80, 0, 0, 0",
+                ]),
+            )
+            page.click("#runAuctionBtn")
+            page.wait_for_function(
+                "() => document.getElementById('supplierCards').innerText.includes('upper bound')",
+                timeout=120000,
+            )
+            shown = page.evaluate(
+                """() => {
+                    const card = document.querySelector("#supplierCards .supplier-card");
+                    const text = card ? card.innerText : "";
+                    const match = text.match(/Risk:\\s*([0-9.]+)% upper bound/);
+                    return match ? Number(match[1]) : null;
+                }"""
+            )
+            assert shown is not None and shown >= 8, shown
+        finally:
+            browser.close()
+
+
+def test_preset_prefills_the_auction_mandate(live_server):
+    port = live_server
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.goto(f"http://127.0.0.1:{port}/", wait_until="networkidle", timeout=60000)
+            page.wait_for_function(
+                "() => document.getElementById('auctionTarget').value === '12'"
+                " && document.getElementById('auctionCeiling').value === '16.2'",
+                timeout=15000,
+            )
+            umbrella = page.locator("#mandatePrice").inner_text()
+            assert "12 CNY" in umbrella
+            assert "16.20 CNY" in umbrella
+
+            page.select_option("#presetCategorySelect", "cnc_case")
+            page.wait_for_function(
+                "() => document.getElementById('auctionTarget').value === '28'"
+                " && document.getElementById('auctionCeiling').value === '36.5'",
+                timeout=15000,
+            )
+            mandate = page.locator("#mandatePrice").inner_text()
+            assert "28 CNY" in mandate
+            assert "36.50 CNY" in mandate
+
+            page.fill("#liveQuotes", "")
+            page.click("#runAuctionBtn")
+            page.wait_for_selector("#auctionSummary:not(.hidden)", timeout=120000)
+            summary = page.locator("#auctionSummary").inner_text()
+            assert "Versus your target" in summary
+            assert "28 CNY" in summary
+            assert "36.50 CNY" in summary
+            assert "Simulated suppliers" in summary
         finally:
             browser.close()
 

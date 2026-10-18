@@ -919,6 +919,10 @@ function paintMandate(p) {
   document.getElementById("mandateLead").textContent = p.lead;
   document.getElementById("mandateDeposit").textContent = p.deposit;
   document.getElementById("mandateTooling").textContent = p.tooling;
+  const target = document.getElementById("auctionTarget");
+  const ceiling = document.getElementById("auctionCeiling");
+  if (target && p && p.target != null) target.value = String(p.target);
+  if (ceiling && p && p.ceiling != null) ceiling.value = String(p.ceiling);
 }
 
 async function loadDeskConfig() {
@@ -1208,11 +1212,21 @@ async function runMultiAuction() {
       auctionBody.suppliers = live.suppliers;
       auctionBody.rounds_quotes = [live.quotes];
       auctionBody.n_rounds = 1;
-      const target = readAuctionMoney("auctionTarget");
-      const ceiling = readAuctionMoney("auctionCeiling");
+    }
+    let target = readAuctionMoney("auctionTarget");
+    let ceiling = readAuctionMoney("auctionCeiling");
+    if (target === null && ceiling === null && preset && preset.target != null && preset.ceiling != null) {
+      target = Number(preset.target);
+      ceiling = Number(preset.ceiling);
+      const targetEl = document.getElementById("auctionTarget");
+      const ceilingEl = document.getElementById("auctionCeiling");
+      if (targetEl) targetEl.value = String(preset.target);
+      if (ceilingEl) ceilingEl.value = String(preset.ceiling);
+    }
+    if (liveRun || target !== null || ceiling !== null) {
       if (target === null || ceiling === null) {
         loader.classList.add("hidden");
-        cardsWrap.innerHTML = `<div class="empty-state is-error">Enter a target and a walk-away ceiling for live quotes.</div>`;
+        cardsWrap.innerHTML = `<div class="empty-state is-error">Enter a target and a walk-away ceiling. Live quotes need both, and a selected mandate fills them in.</div>`;
         return;
       }
       if (!Number.isFinite(target) || target <= 0 || !Number.isFinite(ceiling) || ceiling <= 0) {
@@ -1284,7 +1298,6 @@ async function runMultiAuction() {
       const tactic = lastRound.tactics[i];
       const ceiling = lastRound.effective_ceilings_cny[i];
       const pBreakNum = tfNum(lastRound.p_break_array[i], null);
-      const pBreak = pBreakNum === null ? "—" : (pBreakNum * 100).toFixed(1);
       const quoteNum = tfNum(quote, null);
       const ceilingNum = tfNum(ceiling, null);
       const scale = walkAway !== null && walkAway > 0 ? walkAway : (quoteNum === null ? 1 : Math.max(quoteNum, 1));
@@ -1311,6 +1324,12 @@ async function runMultiAuction() {
       const counterNum = tfNum(counterRaw, null);
       const blocked = !!(lastRound.blocked && lastRound.blocked[i]);
       const blockReason = (lastRound.block_reasons && lastRound.block_reasons[i]) || "";
+      const capBlock = blockReason.indexOf("upper bound") !== -1;
+      const hazardUpper = tfNum(lastRound.hazard_upper && lastRound.hazard_upper[i], null);
+      const riskShown = capBlock && hazardUpper !== null ? hazardUpper : pBreakNum;
+      const riskText = riskShown === null
+        ? "—"
+        : ((riskShown * 100).toFixed(1) + "%" + (capBlock ? " upper bound" : ""));
       const counterLabel = blocked
         ? "not actionable"
         : (counterNum === null ? "no data" : tfAmount(counterNum, "CNY"));
@@ -1328,7 +1347,7 @@ async function runMultiAuction() {
           <div>Best alternative: <span class="metric-val">${tfEsc(tfAmount(ceilingNum, "CNY"))}</span></div>
           <div>Counter: <span class="metric-val">${tfEsc(counterLabel)}</span></div>
           ${reasonLine}
-          <div>Risk: <span class="metric-val">${pBreak === "—" ? "—" : tfEsc(pBreak) + "%"}</span></div>
+          <div>Risk: <span class="metric-val">${tfEsc(riskText)}</span></div>
         </div>
         <div class="meter-row">
           <div class="quote-meter" role="img" aria-label="Quote is ${quotePct.toFixed(0)} percent of the walk-away ceiling">
@@ -1371,7 +1390,7 @@ async function runMultiAuction() {
       <details class="dev-details">
         <summary>Engine notes</summary>
         <p>Search size ${tfEsc(String(tfNum(data.total_rollouts, 0)))} scenario-offer cells. Compute ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}). Push first: ${tfEsc(data.push_first || "—")}. Order: ${tfEsc((data.push_order || []).join(", ") || "—")}. ${tfEsc(priorNote)}</p>
-        <p>Monte Carlo: P(deal) ${tfEsc(String(mc.p_deal ?? "no data"))} (SE ${tfEsc(String(mc.p_deal_se ?? "no data"))}), expected surplus ${tfEsc(String(mc.expected_surplus ?? "no data"))} (SE ${tfEsc(String(mc.expected_surplus_se ?? "no data"))}), CVaR cost ${tfEsc(String(mc.cvar_cost ?? "no data"))}, regret ${tfEsc(String(mc.regret ?? "no data"))}.</p>
+        <p>Monte Carlo: P(deal) ${tfEsc(String(mc.p_deal ?? "no data"))} (SE ${tfEsc(String(mc.p_deal_se ?? "no data"))}), expected surplus ${tfEsc(String(mc.expected_surplus ?? "no data"))} (SE ${tfEsc(String(mc.expected_surplus_se ?? "no data"))}), CVaR cost ${mc.tail_saturated_at_ceiling ? "tail saturated at ceiling" : tfEsc(String(mc.cvar_cost ?? "no data"))}, regret ${tfEsc(String(mc.regret ?? "no data"))}.</p>
       </details>
     `;
     const customsNote = document.createElement("p");

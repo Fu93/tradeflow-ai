@@ -17,12 +17,14 @@ from src.config.heuristics import (  # noqa: E402
     WEITZMAN_SEARCH_COST,
 )
 from src.engine.coupled import (  # noqa: E402
-    _cvar_bootstrap_se,
+    _cvar_se,
     _cvar_upper,
     _expected_improvement,
+    evaluate_vector,
     solve_coupled,
     weitzman_reservation,
 )
+from src.engine.hazard import HazardBelief  # noqa: E402
 from src.engine.multi_solver import MultiAuctionSession  # noqa: E402
 from src.market.official_refs import fetch_ecb_rates, fx_to_base  # noqa: E402
 
@@ -166,6 +168,31 @@ class TestAuctionValidation(unittest.TestCase):
         })
         self.assertEqual(duty.status_code, 422, duty.text)
 
+    def test_duplicate_supplier_names_are_a_readable_422(self):
+        from fastapi.testclient import TestClient
+        from src.app.main import app
+
+        client = TestClient(app)
+        duplicated = client.post("/api/v1/multi-auction/run", json={
+            "n_samples": 8,
+            "n_rounds": 1,
+            "suppliers": [{"name": "Ningbo"}, {"name": "Ningbo "}, {"name": "Shenzhen"}],
+            "rounds_quotes": [[13.0, 14.0, 15.0]],
+        })
+        self.assertEqual(duplicated.status_code, 422, duplicated.text)
+        self.assertIn("Duplicate supplier name: Ningbo", duplicated.text)
+        self.assertIn("Each supplier needs its own name", duplicated.text)
+
+        distinct = client.post("/api/v1/multi-auction/run", json={
+            "n_samples": 8,
+            "n_rounds": 1,
+            "target_price": 12.0,
+            "walk_away_ceiling": 16.2,
+            "suppliers": [{"name": "Ningbo"}, {"name": "ningbo"}],
+            "rounds_quotes": [[13.0, 14.0]],
+        })
+        self.assertEqual(distinct.status_code, 200, distinct.text)
+
     def test_all_quotes_above_the_ceiling_are_flagged_and_not_actionable(self):
         session = MultiAuctionSession(
             suppliers=[{"name": "A"}, {"name": "B"}, {"name": "C"}],
@@ -220,10 +247,55 @@ class TestAuctionValidation(unittest.TestCase):
         )
         info = session.step_round([15.0, 15.5])
         self.assertTrue(any(info["blocked"]))
-        for flag, offer, reason in zip(info["blocked"], info["counter_offers_cny"], info["block_reasons"]):
+        for flag, offer, reason, upper in zip(
+            info["blocked"], info["counter_offers_cny"], info["block_reasons"], info["hazard_upper"],
+        ):
             if flag:
                 self.assertIsNone(offer)
                 self.assertIn("not actionable", reason)
+                self.assertIn("upper bound", reason)
+                self.assertIn("least aggressive", reason)
+                self.assertGreaterEqual(upper, 0.02)
+
+    def test_blocked_card_hazard_is_the_upper_bound_that_failed_the_cap(self):
+        """The cap is applied to the credible upper bound, not the mean.
+
+        At this tolerance the least-aggressive offer's mean sits under the
+        cap while its upper bound does not. The figure a card should show
+        is that upper bound.
+        """
+        cap = 0.08
+        session = MultiAuctionSession(
+            suppliers=[{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}],
+            target_price=12.0,
+            walk_away_ceiling=16.2,
+            n_samples=40,
+            n_open=20,
+            seed=4,
+            risk_tolerance=cap,
+        )
+        info = session.step_round([13.26, 15.60, 15.92, 16.80])
+        under_mean = []
+        for flag, mean, upper, reason, offer in zip(
+            info["blocked"],
+            info["p_break_array"],
+            info["hazard_upper"],
+            info["block_reasons"],
+            info["counter_offers_cny"],
+        ):
+            self.assertTrue(flag)
+            self.assertIsNone(offer)
+            self.assertIn("upper bound", reason)
+            self.assertIn("least aggressive", reason)
+            self.assertGreaterEqual(upper, cap)
+            if mean < cap:
+                under_mean.append((mean, upper))
+        self.assertTrue(under_mean)
+        mean, upper = under_mean[0]
+        self.assertLess(mean, cap)
+        self.assertGreaterEqual(upper, cap)
+        self.assertAlmostEqual(mean, 0.054897, places=4)
+        self.assertAlmostEqual(upper, 0.096797, places=4)
 
 
 class TestCvarAndCells(unittest.TestCase):
@@ -233,18 +305,77 @@ class TestCvarAndCells(unittest.TestCase):
         tau = float(CVAR_TAIL_FRACTION)
         reps = 120
         estimates = np.empty(reps, dtype=np.float64)
-        for i in range(reps):
-            estimates[i] = _cvar_upper(rng.standard_normal(n), tau)
-        empirical = float(np.std(estimates, ddof=1))
-        sample = rng.standard_normal(n)
-        reported = _cvar_bootstrap_se(sample, tau)
-        ratio = reported / empirical
-        self.assertGreater(ratio, 0.70)
-        self.assertLess(ratio, 1.45)
+        reported = np.empty(reps, dtype=np.float64)
+        naive = np.empty(reps, dtype=np.float64)
         tail_n = max(1, int(math.ceil(tau * n)))
-        worst = np.partition(sample, n - tail_n)[n - tail_n :]
-        naive = float(np.std(worst, ddof=1) / math.sqrt(tail_n))
-        self.assertGreater(reported, naive * 1.15)
+        for i in range(reps):
+            sample = rng.standard_normal(n)
+            estimates[i] = _cvar_upper(sample, tau)
+            reported[i] = _cvar_se(sample, tau)
+            worst = np.partition(sample, n - tail_n)[n - tail_n :]
+            naive[i] = float(np.std(worst, ddof=1) / math.sqrt(tail_n))
+        empirical = float(np.std(estimates, ddof=1))
+        ratio = float(np.mean(reported)) / empirical
+        self.assertGreater(ratio, 0.80)
+        self.assertLess(ratio, 1.25)
+        self.assertGreater(float(np.mean(reported)), float(np.mean(naive)) * 1.20)
+
+    def test_tail_pinned_at_the_ceiling_is_flagged(self):
+        n = 200
+        k = 2
+        ceiling = 1.35
+        beliefs = [HazardBelief(), HazardBelief()]
+        means = np.array([1.08, 1.08])
+        failed = {
+            "reserves": np.full((k, n), 2.0),
+            "uniforms": np.full((k, n), 0.5),
+            "bluff": np.full((k, n), 0.2),
+        }
+        saturated = evaluate_vector(
+            np.array([0.5, 0.5]),
+            failed,
+            np.zeros(k),
+            ceiling,
+            quotes=np.array([1.2, 1.3]),
+            beliefs=beliefs,
+            reserve_means=means,
+            risk_tolerance=0.15,
+            round_index=1.0,
+        )
+        self.assertTrue(saturated["tail_saturated_at_ceiling"])
+        self.assertAlmostEqual(saturated["cvar_cost"], ceiling, places=6)
+        self.assertEqual(saturated["cvar_se"], 0.0)
+
+        dealt = {
+            "reserves": np.full((k, n), 0.9),
+            "uniforms": np.ones((k, n)),
+            "bluff": np.zeros((k, n)),
+        }
+        informative = evaluate_vector(
+            np.array([1.0, 1.05]),
+            dealt,
+            np.zeros(k),
+            ceiling,
+            quotes=np.array([1.2, 1.3]),
+            beliefs=beliefs,
+            reserve_means=means,
+            risk_tolerance=0.15,
+            round_index=1.0,
+        )
+        self.assertFalse(informative["tail_saturated_at_ceiling"])
+        self.assertLess(informative["cvar_cost"], ceiling - 0.05)
+
+        session = MultiAuctionSession(
+            suppliers=[{"name": "A"}, {"name": "B"}],
+            target_price=12.0,
+            walk_away_ceiling=16.2,
+            n_samples=400,
+            n_open=8,
+            seed=1,
+        )
+        info = session.step_round([13.2, 14.4])
+        self.assertTrue(info["mc"]["tail_saturated_at_ceiling"])
+        self.assertAlmostEqual(info["mc"]["cvar_cost"], 16.2 / 12.0, places=6)
 
     def test_tail_fraction_is_not_the_hazard_cap_and_cells_are_one_pass(self):
         quotes = np.array([1.12, 1.20, 1.28, 1.34])

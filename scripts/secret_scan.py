@@ -1,20 +1,16 @@
-"""Pre-push secret scan: make sure no real credential value appears in any
-file that is about to be committed.
+"""Pre-push secret scan.
 
-Reads .env (never committed) and searches the working tree for each value.
-Exit code 1 if a leak is found, so this can gate a commit.
-
-[FAIL-CLOSED — 見 DEEP_DEFECT_AUDIT.md §6.3]
-舊版在找不到 .env 時只印 [warn]，`secrets` 為空 dict，於是「掃描 0 個憑證」
-後仍印出 `[PASS] No credential value found` 並 return 0。在 CI 上沒有 .env，
-這表示這個閘門**永遠通過**、從不可能失敗 —— 是個裝飾品而非安全檢查。
-
-現改為 fail-closed：找不到 .env 且未明確傳入 --allow-missing-env 時，
-以非零退出碼結束並說明原因。本機開發者（有 .env）流程不受影響。
+When a .env file is present, its credential values are the needles and a
+hit is a leak. When it is absent, the scan still runs: it reads the git
+index (tracked files) and looks for private-key and token patterns, then
+says exactly what it scanned. It does not print a credential-value PASS
+for a scan that had no needles.
 """
 from __future__ import annotations
 import argparse
 import os
+import re
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -27,12 +23,23 @@ SKIP_FILES = {".env"}
 # meant to appear in docs, so they are reported separately instead of failing.
 NON_SECRET_SUFFIXES = ("_BASE_URL", "_URL", "_MODEL", "_ENDPOINT")
 
+# Patterns a tracked file should not contain. The test suite builds these
+# strings by concatenation so this file's own source is not a hit.
+SECRET_PATTERNS = (
+    ("private key", re.compile(r"-----BEGIN (?:RSA |OPENSSH |EC |DSA |PGP )?PRIVATE KEY-----")),
+    ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b")),
+    ("Slack token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}")),
+    ("secret token", re.compile(r"\bsk-(?:live|test|proj-)?[A-Za-z0-9]{20,}\b")),
+)
+
 
 def load_secrets(env_path: str = ENV) -> tuple[dict[str, str], dict[str, str]]:
     """Return (secrets, public_config) parsed from .env.
 
-    Raises FileNotFoundError if the env file is absent — the caller decides
-    whether that is fatal (fail-closed) or tolerated.
+    Raises FileNotFoundError if the env file is absent. The caller then
+    scans tracked files for secret patterns and says that credential
+    values were not compared.
     """
     secrets: dict[str, str] = {}
     public: dict[str, str] = {}
@@ -53,6 +60,74 @@ def load_secrets(env_path: str = ENV) -> tuple[dict[str, str], dict[str, str]]:
     return secrets, public
 
 
+def _git_tracked(root: str) -> list[str] | None:
+    """Paths in the git index, relative to ``root``. None when this is not a checkout."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", root, "ls-files", "-z"],
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    raw = proc.stdout.decode("utf-8", "surrogateescape")
+    return [item for item in raw.split("\0") if item]
+
+
+def _walk_files(root: str) -> list[str]:
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        for name in filenames:
+            if name in SKIP_FILES:
+                continue
+            found.append(os.path.relpath(os.path.join(dirpath, name), root))
+    return found
+
+
+def files_to_scan(root: str) -> tuple[list[str], str]:
+    """Tracked files in a git checkout, otherwise every file under ``root``."""
+    tracked = _git_tracked(root)
+    if tracked is not None:
+        return [item for item in tracked if os.path.basename(item) not in SKIP_FILES], "tracked"
+    return _walk_files(root), "tree"
+
+
+def _read_text(path: str) -> str | None:
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return None
+    if size > 5_000_000:
+        return None
+    try:
+        with open(path, "rb") as handle:
+            blob = handle.read()
+    except OSError:
+        return None
+    if b"\0" in blob[:1024]:
+        return None
+    return blob.decode("utf-8", "ignore")
+
+
+def pattern_hits(root: str, relative_paths: list[str]) -> list[tuple[str, str, int]]:
+    hits = []
+    for relative in relative_paths:
+        text = _read_text(os.path.join(root, relative))
+        if not text:
+            continue
+        for label, pattern in SECRET_PATTERNS:
+            match = pattern.search(text)
+            if match is None:
+                continue
+            line_no = text[: match.start()].count("\n") + 1
+            hits.append((relative, label, line_no))
+    return hits
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Scan the working tree for credential values read from .env.",
@@ -61,9 +136,9 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-missing-env",
         action="store_true",
         help=(
-            "Explicitly tolerate a missing .env (nothing to scan for). Without "
-            "this flag a missing .env is a hard failure, because silently "
-            "scanning for zero credentials always reports PASS."
+            "Accepted when .env is absent. The scan still checks tracked files "
+            "for secret patterns and reports that credential values were not "
+            "compared. It does not turn the run into a silent PASS."
         ),
     )
     parser.add_argument(
@@ -82,17 +157,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
 
+    relative, kind = files_to_scan(root)
+    print(f"Scanning {len(relative)} {kind} file(s) under {root}.")
+
     try:
         secrets, public = load_secrets(args.env)
     except FileNotFoundError as exc:
-        if not args.allow_missing_env:
-            print(f"[FAIL] .env not found at {exc}. Nothing to scan for, so this")
-            print("       check cannot prove anything. Refusing to report PASS.")
-            print("       If you know there are no credentials to scan for, re-run")
-            print("       with --allow-missing-env to accept this explicitly.")
+        print(f"No .env at {exc}. Credential values were not compared.")
+        if args.allow_missing_env:
+            print("(--allow-missing-env is set; the pattern scan still runs.)")
+        hits = pattern_hits(root, relative)
+        if hits:
+            print("[FAIL] Secret pattern found:")
+            for path, label, line_no in hits:
+                print(f"   {path}:{line_no}  {label}")
             return 1
-        print("[warn] .env not found (--allow-missing-env given); nothing to scan for.")
-        print("[warn] This is NOT a security verification — 0 credentials scanned.")
+        print(
+            f"[PASS] No secret pattern in {len(relative)} {kind} file(s). "
+            "This is not a credential-value verification."
+        )
         return 0
 
     if not secrets:
@@ -102,55 +185,34 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"Credential values to scan for: {', '.join(sorted(secrets))}")
-    print(f"Public config (allowed in docs): {', '.join(sorted(public)) or '(none)'}\n")
+    print(f"Public config (allowed in docs): {', '.join(sorted(public)) or '(none)'}")
 
     leaks: list[tuple[str, str, int]] = []
-    scanned = 0
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        for name in filenames:
-            if name in SKIP_FILES:
-                continue
-            path = os.path.join(dirpath, name)
-            if os.path.getsize(path) > 5_000_000:
-                continue
-            try:
-                text = open(path, encoding="utf-8", errors="ignore").read()
-            except OSError:
-                continue
-            scanned += 1
-            for key, val in secrets.items():
-                if val and val in text:
-                    line_no = text[: text.index(val)].count("\n") + 1
-                    leaks.append((os.path.relpath(path, root), key, line_no))
+    texts: dict[str, str] = {}
+    for relative_path in relative:
+        text = _read_text(os.path.join(root, relative_path))
+        if text is None:
+            continue
+        texts[relative_path] = text
+        for key, val in secrets.items():
+            if val and val in text:
+                line_no = text[: text.index(val)].count("\n") + 1
+                leaks.append((relative_path, key, line_no))
+    leaks.extend(pattern_hits(root, relative))
 
-    print(f"Scanned {scanned} files.")
+    print(f"Scanned {len(texts)} file(s).")
     if leaks:
         print("\n[FAIL] SECRET LEAK(S) FOUND — do not commit:")
         for path, key, line_no in leaks:
             print(f"   {path}:{line_no}  contains {key}")
         return 1
-    print("[PASS] No credential value found in any file. Safe to commit.")
+    print("[PASS] No credential value or secret pattern found. Safe to commit.")
     if public:
         print("\n[info] Public config values (URLs/model names) appear in the repo —")
         print("       these are expected and are NOT secrets:")
         for key, val in sorted(public.items()):
-            hits = []
-            for dirpath, dirnames, filenames in os.walk(root):
-                dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-                for name in filenames:
-                    if name in SKIP_FILES:
-                        continue
-                    p = os.path.join(dirpath, name)
-                    if os.path.getsize(p) > 5_000_000:
-                        continue
-                    try:
-                        t = open(p, encoding="utf-8", errors="ignore").read()
-                    except OSError:
-                        continue
-                    if val in t:
-                        hits.append(os.path.relpath(p, root))
-            print(f"       {key}: {len(hits)} file(s)")
+            count = sum(1 for text in texts.values() if val in text)
+            print(f"       {key}: {count} file(s)")
     return 0
 
 
