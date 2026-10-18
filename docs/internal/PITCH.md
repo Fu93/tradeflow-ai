@@ -138,7 +138,7 @@ The multi-supplier demo path (the Web "Run Auction" default) evaluates **28.8M r
 1. **One ROCm abstraction**: `_xp()` in `src/engine/solver.py` lets the same tensor-game code be developed on an x86-64 CPU (NumPy SIMD) and switched to an AMD Instinct GPU (ROCm/CuPy) for production in one line.
 2. **AMD tokenfactory model service (measured)**: the Stage-2 semantic layer really calls an open model served at `https://developer.amd.com.cn/radeon/api`; latency and token cost are measured values.
 
-> **Honest boundary.** The MI300X latency figure is an **analytical roofline bound on data movement**, not a hardware measurement and not a runtime prediction. Our development machine is an **Intel Core Ultra 7 355 (x86-64)** — **this project has never executed any computation on an AMD CPU or AMD GPU**. We would rather say that plainly than hide behind the phrase "AMD environment".
+> **Honest boundary.** The MI300X figure is a theoretical roofline lower-bound estimate, not measured (`results/mi300x_roofline.json`). This project has not executed the solver on an AMD GPU. `results/bench.json` does not name a CPU.
 
 ---
 

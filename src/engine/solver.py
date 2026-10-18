@@ -4,8 +4,8 @@
 （或顯式 `use_gpu=True`）會改試 CuPy；CuPy 不在時仍回 NumPy，不會假裝跑過 GPU。
 
 本儲存庫沒有 AMD GPU 實測。延遲以 `results/bench.json` 的 CPU 牆鐘為準。
-`src/engine/benchmark.py` 裡的 MI300X 數字是工作集 ÷ 公開 HBM3 峰值頻寬的
-資料搬運下界，不是執行時間。
+MI300X 欄位是 theoretical roofline lower-bound estimate, not measured，
+公式與引用在 `results/mi300x_roofline.json`。
 """
 from __future__ import annotations
 import numpy as np

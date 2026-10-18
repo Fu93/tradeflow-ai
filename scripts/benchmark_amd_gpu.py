@@ -6,9 +6,8 @@ On an AMD GPU box, with ROCm and CuPy installed:
     TRADEFLOW_SOLVER_BACKEND=cupy python scripts/benchmark_amd_gpu.py
 
 On a CPU machine the same command still runs. It records wall-clock time for
-NumPy and, separately, an analytical MI300X HBM3 transfer bound. That bound is
-an estimate (measured host working set ÷ AMD's published 5.3 TB/s peak). It is
-not a runtime and it is not a speedup.
+NumPy and, separately, a theoretical roofline lower-bound estimate, not measured.
+The formula and the datasheet citation live in results/mi300x_roofline.json.
 
 ``ran_on_amd_gpu`` is true only when CuPy executed and the device name looks
 like an AMD GPU. This script does not invent that flag.
@@ -31,16 +30,13 @@ if ROOT not in sys.path:
 
 from src.engine.backend import describe_solver_backend, resolve_use_gpu  # noqa: E402
 from src.engine import model  # noqa: E402
+from src.engine.roofline import (  # noqa: E402
+    formula as roofline_formula,
+    label as roofline_label,
+    load as load_roofline,
+    rounded_lower_bound_seconds,
+)
 from src.engine.solver import solve  # noqa: E402
-
-def _published_mi300x_bandwidth() -> float:
-    """The roofline constant already stored in results/bench.json."""
-    path = os.path.join(ROOT, "results", "bench.json")
-    with open(path, encoding="utf-8") as fh:
-        return float(json.load(fh)["roofline_specs"]["mi300x_hbm3_bandwidth_gb_s"])
-
-
-MI300X_HBM3_GB_S = _published_mi300x_bandwidth()
 
 
 def _utc_now() -> str:
@@ -62,7 +58,7 @@ def _measure(samples: int, use_gpu: bool) -> dict:
     host_only = not use_gpu
     transfer_s = None
     if host_only and working_set_mb > 0:
-        transfer_s = (working_set_mb / 1024) / MI300X_HBM3_GB_S
+        transfer_s = rounded_lower_bound_seconds(working_set_mb)
     return {
         "samples": int(samples),
         "grid": int(opens.shape[0] * scheds.shape[0]),
@@ -79,6 +75,7 @@ def _measure(samples: int, use_gpu: bool) -> dict:
         ),
         "mi300x_bound_is_estimate": True,
         "mi300x_bound_is_measurement": False,
+        "mi300x_bound_label": roofline_label(),
     }
 
 
@@ -123,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         info["note"] = "Forced NumPy via --force-cpu."
 
     row = _measure(args.samples, use_gpu=use_gpu and info.get("actual") == "cupy")
+    spec = load_roofline()
     report = {
         "generated_at_utc": _utc_now(),
         "ran_on_amd_gpu": bool(info.get("ran_on_amd_gpu")),
@@ -130,14 +128,21 @@ def main(argv: list[str] | None = None) -> int:
         "measurement": row,
         "roofline_constant": {
             "name": "AMD Instinct MI300X HBM3 peak bandwidth",
-            "gb_per_s": MI300X_HBM3_GB_S,
+            "label": spec["label"],
+            "formula": spec["formula"],
+            "tb_per_s": spec["peak_bandwidth_tb_s"],
+            "bytes_per_s": spec["peak_bandwidth_bytes_per_s"],
+            "hbm3_capacity_gb": spec["hbm3_capacity_gb"],
+            "datasheet_url": spec["datasheet_url"],
+            "datasheet_quote_bandwidth": spec["datasheet_quote_bandwidth"],
+            "datasheet_quote_capacity": spec["datasheet_quote_capacity"],
             "is_estimate_input": True,
-            "source": "Published peak bandwidth used as a roofline constant, not a measurement from this host.",
+            "source_file": "results/mi300x_roofline.json",
         },
         "disclaimer": (
             "elapsed_seconds is a wall-clock measurement on this process. "
-            "mi300x_hbm3_transfer_lower_bound_seconds is an estimate "
-            "(host working set ÷ 5300 GB/s) and is not an MI300X runtime. "
+            f"mi300x_hbm3_transfer_lower_bound_seconds is a {roofline_label()}. "
+            f"Formula: {roofline_formula()}. "
             "Do not divide one by the other and call the ratio a speedup. "
             "ran_on_amd_gpu is false unless CuPy saw an AMD device."
         ),
@@ -153,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"samples: {row['samples']}  elapsed_seconds: {row['elapsed_seconds']}")
     if row["mi300x_hbm3_transfer_lower_bound_seconds"] is not None:
         print(
-            "mi300x transfer bound (estimate, not a runtime): "
+            "theoretical roofline lower-bound estimate, not measured: "
             f"{row['mi300x_hbm3_transfer_lower_bound_seconds']} s"
         )
     print(report["disclaimer"])

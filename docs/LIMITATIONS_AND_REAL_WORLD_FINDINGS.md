@@ -22,11 +22,11 @@
 | China HS 6601 umbrella export unit price $5.01/kg, YoY −5.8% | **A** | UN Comtrade public API (China customs declarations) | ✅ yes |
 | Raw-material trend: steel −9.2%, fabric −8.8%, ABS −12.4%, aluminium +3.3% | **A** | Same source, HS 7208 / 5407 / 3903 / 7601 | ✅ yes |
 | USD/CNY = 6.7050 | **A** | open.er-api.com daily reference rate | ✅ yes |
-| MI300X HBM3 bandwidth 5300 GB/s, CPU DDR5 60 GB/s | **A** | AMD official hardware specifications | ✅ yes |
+| MI300X HBM3 "5.3 TB/s max. peak theoretical" and "Up to 192 GB HBM3" | **A** | AMD Instinct MI300X datasheet. The transfer time in `results/mi300x_roofline.json` is a theoretical roofline lower-bound estimate, not measured | the quotes are the datasheet's; the bound is not a runtime |
 | Academic literature (NegotiationArena / AgenticPay / Cattle Trade) | **A** | arXiv IDs are searchable | ✅ yes |
 | Expected margin, breakdown rate, tactic labels, BATNA ceilings | **B** | Expectimax grid search + Bayesian update; formulas in §13 | ⚠️ formula real, inputs synthetic |
 | 28.8M / 72M / 96M rollout positions (**arithmetic products, not execution counts**) | **B** | Product of the actual call parameters (K×S×N_open×N_sched) | ⚠️ arithmetic real, **not measured**: the rollouts happen in one vectorised broadcast |
-| MI300X latency lower bound (e.g. 1.3e-05 s) | **B** | Analytical roofline: working set ÷ peak bandwidth | ✅ derivation real (a lower bound, not a measurement) |
+| MI300X transfer lower bound | **B** | theoretical roofline lower-bound estimate, not measured. Formula `lower_bound_seconds = (working_set_mb * 1024 * 1024) / (5.3e12)` in `results/mi300x_roofline.json`. `working_set_mb` is the tracemalloc peak stored in `results/bench.json` | derivation, not a measurement |
 | ¥17.91/unit fair should-cost | **C** | Expert BOM estimate, tagged `[EXPERT]` | ❌ not a factory quote |
 | Supplier quotes ¥13.26 / ¥15.60 / ¥12.60 etc. | **C** | Generated round by round by `adversaries.py` | ❌ **not real factory quotes** |
 | Four opponent archetype parameters (`OPP_TYPES`) | **C** | Chosen values matching literature behaviour traits; never fitted | ❌ no statistical basis |
@@ -68,7 +68,7 @@ None of the following needed to be "caught" — it is disclosed throughout:
 | **CFR (counterfactual regret minimisation)** | A vectorised Expectimax grid search | **Vectorised Expectimax solver**<br>*CFR is the offline adaptive direction once 10,000+ real matches are logged.* |
 | **Bayesian confidence 96%** | An empirical $1.0 - \sigma_{\text{post}}$ clipping formula | **Belief convergence metric**<br>*Measures how steadily posterior reserve variance has converged; not a calibrated probability.* |
 | **Breakdown risk 7.2%** | The mean of an exponential decay over the final price gap at particular parameters | **Impasse penalty score**<br>*Weights how far past bids stray from equilibrium; not a macro default probability.* |
-| **AMD MI300X 192GB VRAM** | A 96M FP32 matrix is only ~384 MB (bandwidth-bound, not capacity-bound) | **Analytical roofline memory-bandwidth model**<br>*MI300X's 5.3 TB/s HBM3 removes the 3D broadcast gather bottleneck; ROCm hosts models and solver in one stack.* |
+| **AMD MI300X 192GB HBM3** | Datasheet capacity ("Up to 192 GB HBM3"). A 96M FP32 matrix is only ~384 MB. No solve was run on MI300X | **theoretical roofline lower-bound estimate, not measured**<br>*Peak bandwidth quoted by the datasheet is "5.3 TB/s max. peak theoretical". The bound is rebuilt by `scripts/regen_mi300x_roofline.py`.* |
 | **AST natural-language guardrail** | The AST compiles the policy object; natural language relies on regex/templates | **Dual-tier invariant defense**<br>*Tier 1: AST physically blocks out-of-range policy objects; tier 2: deterministic templates and regex audit the prose.* |
 
 ### 1.1 Decision-core audit fixes
@@ -238,9 +238,9 @@ On 2026-10-15 we repeated the experiment with a **real AMD-hosted model** (Qwen3
     Even the theoretical 96M bound is only about **384 MB** under the same (under-counting) formula:
     $$\text{Memory Size} = 4 \times 50000 \times 40 \times 12 \times 4 \text{ bytes} \approx 384 \text{ MB}$$
   * **384 MB does not need 192GB.** Any claim that "10 factories negotiating requires 192GB of VRAM" would be dismantled on the spot by a hardware architect.
-* **Where MI300X actually adds value**:
-  * **Memory-bandwidth bound**: the bottleneck in a 3-D broadcast is not capacity but repeatedly streaming the working set each round. DDR5 is about 80 GB/s; MI300X HBM3 reaches **5.3 TB/s (≈66×)**.
-  * **A single ROCm toolchain**: the real value of the large VRAM pool is that **the open model, the multi-factory conversation context and the tensor solver can live in one GPU memory pool**, removing repeated PCIe copies between host and device.
+* **What the datasheet supports, and what this repo did not run**:
+  * The HBM3 quotes are "5.3 TB/s max. peak theoretical" and "Up to 192 GB HBM3". The transfer time is a theoretical roofline lower-bound estimate, not measured (`results/mi300x_roofline.json`). No host DDR ratio is stated: `results/bench.json` does not name a CPU, and the datasheet does not state one.
+  * A single ROCm process could hold an open model and the solver tensor in one memory pool. That layout was not executed here.
 
 ---
 
@@ -353,11 +353,7 @@ The self-play baseline (recorded artefact: 100 matches = 20 × 5 archetypes, see
 * **Measured reality**:
   * The hackathon development environment is an **x86-64 CPU (Intel Core Ultra 7 355) — not AMD hardware, and with no GPU**. Every rollout projection comes from the **analytical roofline bandwidth model**. The multi-supplier demo path evaluates **28.8M** tensor positions (the arithmetic product K×S×N_open×N_sched, not an execution count); the theoretical bound is 96M.
   > **Correction on record**: an earlier version called the dev environment an "AMD Zen CPU". `Get-CimInstance Win32_Processor` reports Intel Core Ultra 7 355 (GenuineIntel). That was a factual error and is corrected here. AMD's **real** role in this project is limited to: calling the AMD tokenfactory endpoint from the model layer, and the `_xp()` abstraction switching to an AMD GPU when ROCm/CuPy is available.
-* **AMD Developer Cloud (MI300X) reference baseline**:
-  * From AMD's official AI developer programme and related ROCm open benchmarks (e.g. comparable kernel measurements from the ROCmPort-AI project on MI300X):
-    - **Memory-bound kernels**: **531.8 GB/s** measured (over 6.6× DDR5 bandwidth);
-    - **Compute-bound matmul**: **1843.7 GB/s** measured.
-    - These two figures are citations of that external write-up. TradeFlow did not measure them.
+* **Not run on MI300X.** No Instinct GPU timing is in this repository. External kernel write-ups are not copied here, because their inputs are not in the repo. The only MI300X number kept is the theoretical roofline lower-bound estimate, not measured, in `results/mi300x_roofline.json`.
 * **Architecture portability**:
   * The engine wraps its array backend in the `_xp()` abstraction in [`src/engine/solver.py`](../src/engine/solver.py). The default is NumPy. `TRADEFLOW_SOLVER_BACKEND=cupy` (or `use_gpu=True`) requests CuPy and falls back to NumPy when CuPy cannot be imported. That GPU path has not been measured on an AMD device in this repository.
 
@@ -372,7 +368,7 @@ This section records **real connection tests** against the hackathon's official 
 * The event page only says the endpoint is hosted at `notebooks.amd.com/tokenfactory` and **does not publish the API base URL**.
 * The verified endpoint is `https://developer.amd.com.cn/radeon/api` (**note `.com.cn`, not `amd.com`**).
 * Supported: `POST /v1/chat/completions` (OpenAI-compatible), `POST /v1/messages` (Anthropic-compatible), `GET /v1/models`, `POST /v1/ocr` (MinerU2.5-Pro).
-* `GET /v1/models` returns HTTP 200 with **11 models** (re-checked 2026-10-15; an earlier version said 12, and the endpoint changed, so this is corrected); `POST /v1/chat/completions` returns HTTP 200 with full usage/cost detail.
+* The committed evidence of calls is `results/real_llm_benchmark_100.json` (endpoint, model, 348 calls, latency, cost). That file does not store an HTTP status or a model count. `scripts/verify_amd_endpoint.py` records HTTP 200 only when `status` is `ok`. No evidence file is committed, so this note does not claim a stored HTTP 200 or a stored model count.
 * **Credit premise correction**: the official FAQ states *"Developers don't need the $100 credit to participate — just the API from the tokenfactory."* and no credit card is required. The earlier plan that listed "waiting for AMD credits approval" as a P0 blocker was **based on a false premise**.
 
 ### 10.2 The credential-resolution bug that was fixed

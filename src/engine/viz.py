@@ -111,13 +111,19 @@ def plot_benchmark(rows_or_summary, save_path=None):
     x = np.arange(len(samples))
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.bar(x - 0.2, cpu, 0.4, label="CPU (vectorized, measured)", color="#4C72B0")
-    ax.bar(x + 0.2, gpu, 0.4, label="AMD MI300X HBM3 transfer (analytical lower bound, non-runtime)", color="#C44E52")
+    ax.bar(
+        x + 0.2,
+        gpu,
+        0.4,
+        label="theoretical roofline lower-bound estimate, not measured",
+        color="#C44E52",
+    )
     ax.set_yscale("log")
     ax.set_xticks(x)
     ax.set_xticklabels([f"{s:,}" for s in samples])
     ax.set_xlabel("Opponent samples (rollouts = samples × 480 strategies)")
     ax.set_ylabel("Seconds (log scale)")
-    ax.set_title("Solve time: CPU (measured) vs AMD MI300X HBM3 transfer bound (analytical)")
+    ax.set_title("CPU (measured) vs MI300X HBM3 theoretical roofline lower-bound estimate, not measured")
     for i in x:
         cpu_lbl = f"{cpu[i]:.2f}s" if cpu[i] >= 0.01 else f"{cpu[i]*1000:.1f}ms"
         gpu_lbl = f"{gpu[i]:.2f}s" if gpu[i] >= 0.01 else f"{gpu[i]*1000:.2f}ms"

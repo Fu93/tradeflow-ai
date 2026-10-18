@@ -19,7 +19,8 @@
 [硬體誠實揭露] `results/bench.json` 的 `is_gpu_active` 為 false，
 `hardware_detected` 是 CPU。本儲存庫沒有 AMD GPU 實測。
 `_get_xp(use_gpu=True)` 在 CuPy 不存在時回落 NumPy，不會把 CPU 計時說成 GPU。
-MI300X 的唯一量化是 benchmark.py 的 roofline 資料搬運下界（見 bench.json）。
+MI300X 的唯一量化是 theoretical roofline lower-bound estimate, not measured
+（見 results/mi300x_roofline.json）。本路徑沒有在 MI300X 上執行。
 """
 from __future__ import annotations
 import time

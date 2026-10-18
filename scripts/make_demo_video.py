@@ -165,8 +165,8 @@ def frames_cpu(bench):
         "× 480 strategies = 9.6M rollouts",
         f"CPU measured ~{cpu:.2f}s",
         f"MI300X lower bound ~{mi_lbl}",
-        "lower bound = working set ÷ 5.3 TB/s",
-        "a physical bound, not a projection",
+        "theoretical roofline lower-bound estimate, not measured",
+        "formula: results/mi300x_roofline.json",
         "GPU runs the engine's rollouts,",
         "not chat tokens",
     ], y0=0.78, size=17, dy=0.05, x=0.05, wmax=0.45)

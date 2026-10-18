@@ -19,7 +19,7 @@ Install a ROCm build of CuPy in the environment that runs the process, then:
 TRADEFLOW_SOLVER_BACKEND=cupy python scripts/benchmark_amd_gpu.py
 ```
 
-Read `ran_on_amd_gpu` in `results/amd_gpu_benchmark.json`. If it is false, the file is a CPU timing plus an HBM3 transfer estimate. Do not replace `results/bench.json` with a projected MI300X runtime.
+Read `ran_on_amd_gpu` in `results/amd_gpu_benchmark.json`. If it is false, the file is a CPU timing plus a theoretical roofline lower-bound estimate, not measured. The formula is `lower_bound_seconds = (working_set_mb * 1024 * 1024) / (5.3e12)` in `results/mi300x_roofline.json`. The 5.3 TB/s figure is the datasheet quote "5.3 TB/s max. peak theoretical" (https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/data-sheets/amd-instinct-mi300x-data-sheet.pdf), which also says "Up to 192 GB HBM3". Do not replace `results/bench.json` with a projected MI300X runtime. This runbook has not been executed in this repository.
 
 ## vLLM on a ROCm host
 

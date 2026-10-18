@@ -9,7 +9,7 @@ What was checked in this repository, how, and what was not. Numbers quoted in [R
 - `results/real_llm_benchmark_100.json` for the model name, call count, average latency, cost, Bluffing Hardliner deal rate, and the completed-match violation count
 - `results/self_play_benchmark.md` for matches per archetype, the archetype count, seed, engine savings range, and the Hard-Bargainer fixed 5%-per-round baseline
 - `models/onnx_export_metrics.json` and `data/ood_split_manifest.json` for the held-out intent score and the 195-of-500 split
-- `results/bench.json` for `is_gpu_active` and the MI300X HBM3 roofline constant (5300 GB/s)
+- `results/mi300x_roofline.json` (rebuilt by `scripts/regen_mi300x_roofline.py`) for the MI300X figure. It is a theoretical roofline lower-bound estimate, not measured. Formula: `lower_bound_seconds = (working_set_mb * 1024 * 1024) / (5.3e12)`. `working_set_mb` is the tracemalloc peak stored in `results/bench.json`. The denominator is the datasheet quote "5.3 TB/s max. peak theoretical" and the capacity quote is "Up to 192 GB HBM3" (https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/data-sheets/amd-instinct-mi300x-data-sheet.pdf). The same check fails if a doc, `docker-compose.yml`, or `results/bench.json` states a different MI300X bandwidth, capacity, or runtime.
 
 The deadline in SUBMISSION.md is the pack's instruction (11:00 London, BST, 18 October 2026). It is not a measurement. The script only stops that line drifting back to an older clock time.
 
@@ -70,12 +70,13 @@ Honest exceptions the scanner does not treat as scenario data:
 
 - Integers: counts, seeds, HTTP statuses, day defaults on a pydantic field, loop bounds.
 - Tests. They assert behaviour and may use the simulated mandates.
-- `results/*.json` and the markdown under `docs/`. Those are measured outputs or write-ups. `scripts/check_claims.py` is what keeps README and SUBMISSION numbers tied to the result files.
+- `results/*.json` and the markdown under `docs/`. Those are measured outputs or write-ups. `scripts/check_claims.py` keeps README and SUBMISSION numbers tied to the result files, and it fails if an MI300X bandwidth, capacity, runtime, or multiplier in those pages, in `docker-compose.yml`, or under `docs/` is not the figure in `results/mi300x_roofline.json`.
+- `scripts/regen_mi300x_roofline.py` is allowlisted for the two datasheet floats it cites (5.3 TB/s and the 5.2 Gbps pin rate in footnote MI300-18). It is the only place those literals are typed. The generated JSON is what the rest of the code reads.
 - Comments and docstrings, including ones that say a number is not a quote.
 
 ## Not verified
 
-- No AMD GPU was present. The CuPy-versus-NumPy parity test skips when CuPy does not import. `ran_on_amd_gpu` was not measured here.
+- No AMD GPU was present. The CuPy-versus-NumPy parity test skips when CuPy does not import. `ran_on_amd_gpu` was not measured here. The MI300X column is a theoretical roofline lower-bound estimate, not measured. The tokenfactory log in `results/real_llm_benchmark_100.json` is the committed call record; it does not store an HTTP status.
 - Docker was not run. This environment has no Docker daemon.
 - `scripts/verify_amd_endpoint.py` was not given a live key.
 - The extension was not driven in a live Chrome window for this note. CI's extension job is a separate run.

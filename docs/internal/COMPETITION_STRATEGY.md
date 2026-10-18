@@ -44,11 +44,13 @@
 - 主賽事：AMD 是**強制技術**（*"AMD is a required technology to be eligible for prizes"*）。
   我們的引擎是為 GPU 批量 rollout 設計的（對手樣本 × 480 策略 = 960 萬次，訪存頻寬受限）。
   - **誠實邊界**：本機無 AMD GPU，目前**沒有 MI300X 實測數字**。可主張的是
-    ① 引擎以 `_xp()` 抽象層支援 CuPy/ROCm 一鍵切換；② Analytical Roofline 物理下界
-    （工作集 ÷ 5300 GB/s）可推導且不含主觀折扣。**不可**聲稱「已在 MI300X 上實測」。
-  - 模型層則**確實**跑在 AMD 基礎設施上：Stage-2 語意分類與 Evolus Agent 均呼叫
-    AMD tokenfactory 的 `Qwen3.8-Flash-Next`（實測 HTTP 200），且我們以真實端點
-    完成了 100 場 / 348 次推理的對抗基準。
+    ① 引擎以 `_xp()` 抽象層支援 CuPy/ROCm 一鍵切換；② `results/mi300x_roofline.json`
+    裡的 theoretical roofline lower-bound estimate, not measured。公式是
+    `lower_bound_seconds = (working_set_mb * 1024 * 1024) / (5.3e12)`，分母是 datasheet
+    的 "5.3 TB/s max. peak theoretical"。**不可**聲稱「已在 MI300X 上實測」。
+  - 模型層的已提交證據是 `results/real_llm_benchmark_100.json`（`Qwen3.8-Flash-Next`，348 次呼叫）。
+    該檔沒有 HTTP 狀態碼。`scripts/verify_amd_endpoint.py` 在 `status: ok` 時才記錄 HTTP 200；
+    這份 repo 沒有提交那份 evidence 檔。
 - Evolus：要求 *"main agent must use an open model served on AMD infrastructure through your own vLLM endpoint on AMD Developer Cloud"* + ≥2 building blocks + 從 app 用 REST API 驅動。→ **這是我們的合規硬條件**（見 §5 修正）。
 
 **B. Business Value（要有「可量化」的數字）**
@@ -61,7 +63,7 @@
 - 需：cover image、demo video（3–5 min）、slide presentation、README that runs、public GitHub、Application URL（可跑的 demo 平台）。我們 README/repo 已就緒，缺 cover/video/slide/URL。
 
 **結論公式**：
-> 真實業務流程（採購議價） + 可解釋數學引擎（貝氏+MCTS，非 chatbot） + 在 AMD MI300X 上實體跑批量 rollout + 用 Evolus API 真驅動 ≥2 blocks + 一組可量化增益數字 + 乾淨 demo 影片/簡報 = 雙賽道都有競爭力。
+> 真實業務流程（採購議價） + 可解釋數學引擎（貝氏 + Expectimax，非 chatbot） + 已提交的 tokenfactory 呼叫紀錄 + 一組可量化增益數字 + 乾淨 demo 影片/簡報。MI300X 求解沒有跑過。
 
 ---
 
@@ -134,5 +136,6 @@ Fireworks 是**託管 API**（非 AMD Developer Cloud、非你自己的 vLLM end
 > [!WARNING]
 > **不可使用版本**（舊句）：*「…在 AMD MI300X 上向量化蒙地卡羅…」*
 > 本機無 AMD GPU，我們**從未**在 MI300X 上執行過。宣稱已實測屬於虛假陳述。
-> 可主張的是：引擎以 `_xp()` 抽象層支援 ROCm/CuPy 一鍵切換，且 Analytical Roofline
-> 物理下界可推導（工作集 ÷ 5300 GB/s）。模型層則是**真實**跑在 AMD tokenfactory 上。
+> 可主張的是：引擎以 `_xp()` 抽象層支援 ROCm/CuPy 一鍵切換，且
+> `results/mi300x_roofline.json` 是 theoretical roofline lower-bound estimate, not measured。
+> 模型層的已提交證據是 `results/real_llm_benchmark_100.json`，檔內沒有 HTTP 狀態碼。

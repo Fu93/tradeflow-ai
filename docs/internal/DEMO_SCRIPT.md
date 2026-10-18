@@ -32,8 +32,8 @@ the omission as a bait-and-switch.
 > "The engine evaluates twenty thousand opponents against four hundred and eighty strategies —
 > nine point six million negotiation rollouts — every time you ask for a recommendation.
 > Vectorized CPU takes about one point seven seconds for that default twenty-thousand-sample grid.
-> Architecturally, the data-movement lower bound on an AMD MI300X is on the order of a tenth of a
-> millisecond — an analytical estimate from memory bandwidth, not a measured runtime."
+> The MI300X column is a theoretical roofline lower-bound estimate, not measured.
+> Read the formula in results/mi300x_roofline.json. This machine did not run that solve."
 
 **Visual**: `results/benchmark.png` / demo_video frames 140+.
 **Key line**: "The engine's batched rollouts run as one vectorized broadcast on CPU — not chat tokens."

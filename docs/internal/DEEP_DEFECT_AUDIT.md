@@ -500,7 +500,7 @@ README:111-121 的「快速開始」指示使用者 `pip install -r requirements
 ### 8.2 確認「非假資料」的項目（掃描後判定為合理）
 - **13% 專票**：中國增值稅專用發票真實稅率，屬正確領域知識而非虛構。
 - **`0.08 / 0.82 / 1.25 / 0.45 / 0.02 / 0.32` 等求解器常數**：皆有 docstring 明確標註「編譯時固定之啟發式常數，非資料擬合」，屬已揭露的設計常數。
-- **`docs/archive/*` 的 14.8% / 0.4s / 46s 等**：歷史規劃文件，本身即記錄當時想法，且 `docs/archive/README.md` 已標示為存檔。
+- **`docs/archive/*` 裡沒有出處的硬體秒數**：歷史規劃文件。那些秒數已刪。現行 MI300X 數字只在 `results/mi300x_roofline.json`，標籤是 theoretical roofline lower-bound estimate, not measured。
 - **`HARDCODED_DATA_AUDIT.md` 與 `tests/test_benchmark_integrity.py` 中的舊值**：作為「舊版寫了什麼」的對照證據，屬必要的歷史引用。
 
 ### 8.3 尚未處理（誠實保留）

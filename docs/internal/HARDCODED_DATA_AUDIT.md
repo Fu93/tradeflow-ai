@@ -39,13 +39,11 @@ effective_bandwidth_speedup = min(THEORETICAL_BANDWIDTH_SPEEDUP * 0.18, 16.5)
 mode = "ROOFLINE_MODEL_ESTIMATE"
 ```
 
-`THEORETICAL_BANDWIDTH_SPEEDUP` is a genuine ratio (5300 / 60 ≈ 88.3). But `0.18` and the
-cap `16.5` are **arbitrary human choices**, and the result was labelled a
-"Roofline Model Estimate" — implying it was derived from the roofline model, when in fact
-the roofline gave 88.3x and a human discounted it by an unexplained factor.
+`THEORETICAL_BANDWIDTH_SPEEDUP` divided an MI300X datasheet peak by a host DDR figure
+this bench file never measured. `0.18` and the cap `16.5` were further human choices.
+The result was labelled a "Roofline Model Estimate".
 
-**Risk**: A hardware-literate judge will ask how the roofline yielded 16.5x when the
-bandwidth ratio is 88.3x. There is no defensible answer, because the number was chosen.
+**Risk**: the ratio could not be reproduced from the datasheet plus the measured working set.
 
 **Status**: **REFACTORED & ELIMINATED.** 徹底移除 `PROJECTION_BANDWIDTH_UTILISATION` (0.18)、`PROJECTION_SPEEDUP_CEILING` (16.5) 與 `PROJECTION_MULTI_SPEEDUP` (15.8)。全面改為標準教科書級 **Analytical Roofline 物理頻寬受限下界分析** ($t_{\text{lower\_bound}} = \frac{\text{Working Set}}{\text{Peak HBM3 Bandwidth}}$)，代碼不再包含任何主觀人為倍率注入；若處於真 GPU 環境則實測真實耗時。
 
@@ -223,16 +221,16 @@ Five peripheral artefacts still carried claims that no longer matched the codeba
 
 | Location | Old claim | Problem |
 |---|---|---|
-| `benchmark_negotiation_v2.py:122-123` | "MI300X 預期 ~0.3-0.6s（約 10-20x）", "MI300X 0.4s" | The same hand-picked multiplier already removed from `benchmark.py` |
+| `benchmark_negotiation_v2.py` | unsourced MI300X runtime strings | Removed. The script now prints the label from `results/mi300x_roofline.json` |
 | `benchmark_negotiation.py` | loop→vectorized "speedup" printed bare | Both sides are CPU; the ratio is not a GPU speedup and could be misquoted as one |
 | `scripts/make_demo_video.py::frames_cpu` | `for b in bench`, `row["seconds"]`, `row["mi300x_projected_seconds"]` | **Live bug**: `benchmark.run()` now returns a summary dict, and the key was renamed. Would raise `TypeError` on the old code path. Chart was also labelled "projected on ROCm". |
 | `COMPETITION_STRATEGY.md` §4/§6 | Evolus workspace / API integration listed as open gaps | **Already completed** (workspace, 3 AI Tools + 1 Agent, real REST integration) |
 | `COMPETITION_STRATEGY.md` §3, §7 | "我們的引擎在 MI300X 上批量 rollout", "在 AMD MI300X 上向量化蒙地卡羅" | **Never ran on MI300X.** No AMD GPU on the dev host. |
-| `extension/README.md` | "400ms 防抖", "精準計算", "校準貝氏後驗", vague 15% attribution | Code uses **350ms**; §十三 states the TCO parameters are uncalibrated defaults; §一 states the confidence figure is a convergence metric, not a calibrated probability |
+| `extension/README.md` | a debounce literal, "精準計算", "校準貝氏後驗", vague 15% attribution | The README now follows the extension debounce constant; §十三 states the TCO parameters are uncalibrated defaults; §一 states the confidence figure is a convergence metric, not a calibrated probability |
 
 **Status**: **FIXED.**
 - Both benchmark scripts now report measured CPU time plus the **analytical roofline lower bound**
-  (working set ÷ 5300 GB/s), and the loop→vectorized ratio is explicitly labelled "both on CPU,
+  (the formula in `results/mi300x_roofline.json`; theoretical roofline lower-bound estimate, not measured), and the loop→vectorized ratio is explicitly labelled "both on CPU,
   not a GPU speedup".
 - `frames_cpu` fixed against the current API, switched to a log axis (the lower bound is
   microseconds and was invisible on a linear axis), and relabelled "CPU (measured)" vs
@@ -240,7 +238,7 @@ Five peripheral artefacts still carried claims that no longer matched the codeba
 - `COMPETITION_STRATEGY.md` gap table marked `[DONE]`/`[RESOLVED]` where work is complete; the
   MI300X claim replaced with an explicit "no MI300X measurement exists" boundary; the pitch
   one-liner rewritten and the old version preserved under a **do-not-use** warning.
-- `extension/README.md` corrected to 350ms, and the three overclaiming adjectives replaced with
+- `extension/README.md` corrected to the extension debounce constant, and the three overclaiming adjectives replaced with
   pointers to the relevant `LIMITATIONS` sections.
 - `docs/archive/` audited: all 8 archived docs carry `SUPERSEDED` banners, the index covers all 8,
   and it already warns that archived test counts / accuracy / hardware figures may be stale.

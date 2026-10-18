@@ -9,6 +9,7 @@ Allowed to contain scenario floats:
   src/engine/multi_solver.py the auction simulator
   extension/mock_chat.html   the supplier sandbox
   scripts/generate_ood_500.py synthetic intent generator
+  scripts/regen_mi300x_roofline.py datasheet quotes used to rebuild the roofline JSON
 
 Everywhere else, a float that is not 0, 1, -1, a numeric epsilon (|x| < 1e-3),
 or an input cap (|x| >= 1e6) is a violation. Currency amounts written as
@@ -41,6 +42,8 @@ ALLOW_FILES = {
     "benchmark_negotiation_v2.py",
     "extension/mock_chat.html",
     "scripts/generate_ood_500.py",
+    # Datasheet quotes (5.3 TB/s, 5.2 Gbps) cited next to their URLs.
+    "scripts/regen_mi300x_roofline.py",
 }
 ALLOW_PREFIXES = ("src/sim/",)
 

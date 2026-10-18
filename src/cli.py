@@ -55,10 +55,8 @@ def run_demo():
         else:
             print("  No supplier reply  →  continue / hand to human approval")
 
-    # [審計修正] 舊版在此印出寫死的 "MI300X ~0.4s / CPU ~1s / naive loop ~46s"。
-    # 那些數字既非本機實測，也與現行的 Analytical Roofline 下界不符（0.4s 曾被
-    # 人為折扣係數推出，已於 HARDCODED_DATA_AUDIT.md 移除）。
-    # 改為只報告本次實際測得的 CPU 耗時，並明確標注 GPU 數字為理論下界而非實測。
+    # The old hardcoded MI300X runtime was removed. It was not a measurement.
+    # This path prints the CPU wall clock from this process only.
     # [誠實揭露] 這裡的數字是「張量元素位數」= n_samples × 開盤檔 × 讓步曲線，
     # 不是迴圈執行次數；一次向量化廣播就求完整個張量。舊版把 480 寫成魔法數
     # 並稱其為 measured rollouts，容易讀成「執行了 960 萬次 rollout」。
@@ -72,9 +70,9 @@ def run_demo():
           f"evaluated by one vectorised pass per round")
     print(f"  Measured this run : {len(trace)} rounds in {elapsed:.2f}s on CPU "
           f"(NumPy vectorised) — wall-clock measured, the position count is arithmetic.")
-    print("  GPU note          : no AMD GPU on this host; consult results/bench.json "
-          "for the analytical roofline lower bound (working set ÷ 5300 GB/s), which is a "
-          "physical bound, not a measured runtime.")
+    print("  GPU note          : no AMD GPU solve is recorded in this repository. "
+          "results/mi300x_roofline.json is a theoretical roofline lower-bound estimate, "
+          "not measured.")
     return trace
 
 
@@ -269,23 +267,11 @@ def run_benchmark():
     p_img = "results/benchmark.png"
     viz.plot_benchmark(report, p_img)
     print(f"\n[Hardware Detected] {report['hardware_detected']}")
-    # [修正] 見 DEEP_DEFECT_AUDIT.md §4 附註：舊版在此讀取一個
-    # roofline_specs 中**已被移除**的鍵（名為 theoretical-max-speedup 的舊欄位），
-    # 但 `benchmark.run()` 自 commit 045d243 起只輸出 cpu_bandwidth_gb_s /
-    # mi300x_hbm3_bandwidth_gb_s / bandwidth_ratio_cpu_to_mi300x / note，
-    # 因此 `python -m src.cli --benchmark` 在全新 clone 上必定 KeyError 並以
-    # exit 1 結束（已實測）。
-    # 現改讀真正存在的鍵，並明確標示該比值**不是**加速預測（與 benchmark.py 的
-    # note 一致），避免把規格比值誤讀成可達成的加速倍率。
+    # theoretical_max_speedup was removed. Do not subscript it.
+    # Host DDR ratios were removed: the bench file does not name a CPU.
     specs = report.get("roofline_specs", {})
-    ratio = specs.get("bandwidth_ratio_cpu_to_mi300x")
-    if ratio is not None:
-        print(
-            f"[Roofline Model] Bandwidth ratio CPU→MI300X: {ratio}x "
-            f"(specification ratio only — NOT a speedup prediction)"
-        )
-    else:
-        print("[Roofline Model] bandwidth ratio unavailable in this report.")
+    print(f"[Roofline] {specs.get('label', 'theoretical roofline lower-bound estimate, not measured')}")
+    print(f"[Roofline Formula] {specs.get('formula', '(missing formula)')}")
     print(f"[Roofline Note] {specs.get('note', '(none)')}")
     print(f"[Saved Profile] -> {p_json}")
     print(f"[Saved Plot] -> {p_img}")

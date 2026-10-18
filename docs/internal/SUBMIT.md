@@ -15,8 +15,8 @@
 ## Engine (decision core)
 - [x] Bayesian belief update + vectorized Expectimax (`src/engine/`)
 - [x] Robustness: gain vs fixed baseline, scenario sensitivity **and misbelief test** (`robustness.py`, `results/robustness.png`; see LIMITATIONS §13)
-- [x] Benchmark: CPU measured + MI300X **analytical roofline projection** (`benchmark.py`, `results/benchmark.png`)
-- [ ] **MI300X real measurement** — replaces projection if an AMD Developer Cloud instance is obtained
+- [x] Benchmark: CPU measured in `results/bench.json`. The MI300X column is a theoretical roofline lower-bound estimate, not measured (`results/mi300x_roofline.json`, `results/benchmark.png`)
+- [ ] **MI300X real measurement** — not run. Do not replace the estimate with a projected runtime
       (note: the $100 credit is NOT required to participate; tokenfactory access is sufficient for the model layer)
 
 ## Evolus integration — live-verified 2026-10-14
@@ -30,7 +30,7 @@
 - [x] AMD model bound to the agent (`modelKey: own/qwen3.8-flash-next`, `modelState: ok`)
 
 ## AMD technology
-- [x] AMD tokenfactory endpoint live-verified: `https://developer.amd.com.cn/radeon/api` (11 models, HTTP 200)
+- [x] AMD tokenfactory calls recorded in `results/real_llm_benchmark_100.json` (no HTTP status stored). `scripts/verify_amd_endpoint.py` records HTTP 200 only when `status` is `ok`; that evidence file is not committed
 - [x] Stage-2 semantic layer calling an AMD-hosted open model (`Qwen3.8-Flash-Next`)
 - [x] **Compliance CONFIRMED**: organisers confirmed the tokenfactory endpoint **satisfies** the
       *"your own vLLM endpoint on AMD Developer Cloud"* requirement. No self-hosted vLLM needed.

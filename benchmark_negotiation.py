@@ -170,5 +170,5 @@ if __name__ == "__main__":
     print()
     print("  [審計註記] 上述 speedup 是「純 Python loop → NumPy 向量化」的比值，")
     print("    兩者都跑在 CPU 上。它**不是** GPU 加速比，也不應被引用為硬體比較。")
-    print("    GPU 效能數字一律取自 src/engine/benchmark.py 的 Analytical Roofline")
-    print("    下界（工作集 ÷ 5300 GB/s），不使用任何主觀折扣倍率。")
+    print("    GPU 欄位一律取自 results/mi300x_roofline.json：")
+    print("    theoretical roofline lower-bound estimate, not measured.")

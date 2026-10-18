@@ -59,9 +59,9 @@
 
 ### F8 DEMO_SCRIPT Scene 2：無出處的 46 秒 + 把解析下界講成實測
 - **文檔:位置**：DEMO_SCRIPT.md Scene 2 vs results/bench.json、results/benchmark.png。
-- **問題**：「naive loop 46 seconds」在 benchmark.py 全文與 bench.json、benchmark.png 均無出處（**未驗證**）；「Vectorized CPU about one second」與圖上 1.68s（20K）不符；「On an AMD MI300X…under a tenth of a second」把 bench.json 0.125ms 解析下界（資料搬運下限，非 runtime）講成事實——bench.json disclosure 明文禁止如此使用。
-- **影響**：錄影旁白的過度聲稱是最容易被評審質疑誠信的點；46s 無法重現。
-- **建議**：刪 46s 或補出處；CPU 句改「約 1.7 秒（20K 樣本）」；MI300X 句改「架構上，僅資料搬運下界就在 0.1ms 量級——這是解析推算，不是實測」。
+- **問題**：旁白裡的 naive-loop 秒數在 benchmark.py、bench.json、benchmark.png 都沒有出處。CPU 句要跟 bench.json 的 `cpu_seconds` 一致。MI300X 句若把下界說成實測 runtime，就和 disclosure 衝突。下界的標籤是 theoretical roofline lower-bound estimate, not measured，數字以 `results/mi300x_roofline.json` 為準。
+- **影響**：錄影旁白的過度聲稱是最容易被評審質疑誠信的點；沒有出處的 loop 秒數無法重現。
+- **建議**：刪掉沒有出處的 loop 秒數。CPU 句改讀 `results/bench.json` 的 `cpu_seconds`。MI300X 句改指向 `results/mi300x_roofline.json`，並帶上 theoretical roofline lower-bound estimate, not measured。不要自造一個毫秒量級。
 
 ### F9 DEMO_SCRIPT Scene 6：演算法名錯誤 + AMD 執行聲稱
 - **文檔:位置**：DEMO_SCRIPT.md Scene 6 vs README/SUBMISSION_DRAFT/PITCH/LIMITATIONS（一致聲明）。
@@ -160,5 +160,5 @@
 - 28.8M/72M/96M rollout 定義（9.6M×3/×7.5/×10）：與 bench.json、LIMITATIONS §四表一致，且一致標註「算術乘積非執行計數」✓。
 - OOD 63.08%（123/195）、195 held-out、92.79% train：與 tests/test_ood_500_benchmark.py:48/117 一致 ✓。
 - intent「60 條中 54 條重疊」與 tests/test_intent_benchmark.py:7 一致 ✓。
-- benchmark.png 四柱（0.30/1.11/1.68/3.83s）與 bench.json 一致；MI300X 標為 roofline lower bound（免責聲明在圖上）✓；robustness.png 與 LIMITATIONS §4.5 一致 ✓。
+- benchmark.png 的 CPU 柱與 bench.json 的 `cpu_seconds` 一致。MI300X 系列是 theoretical roofline lower-bound estimate, not measured，數字來自 `results/mi300x_roofline.json`。robustness.png 與 LIMITATIONS §4.5 一致 ✓。
 - 所有相對連結目標存在（第五節）✓。

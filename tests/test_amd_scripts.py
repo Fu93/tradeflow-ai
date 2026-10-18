@@ -64,7 +64,16 @@ class TestAmdEvidenceScripts(unittest.TestCase):
             self.assertGreater(payload["measurement"]["elapsed_seconds"], 0)
             self.assertTrue(payload["measurement"]["mi300x_bound_is_estimate"])
             self.assertFalse(payload["measurement"]["mi300x_bound_is_measurement"])
-            self.assertIsNotNone(payload["measurement"]["mi300x_hbm3_transfer_lower_bound_seconds"])
+            bound = payload["measurement"]["mi300x_hbm3_transfer_lower_bound_seconds"]
+            self.assertIsNotNone(bound)
+            mb = payload["measurement"]["host_working_set_mb"]
+            expected = round((mb * 1024 * 1024) / (5.3e12), 9)
+            self.assertEqual(bound, expected)
+            self.assertIn(
+                "theoretical roofline lower-bound estimate, not measured",
+                payload["disclaimer"],
+            )
+            self.assertNotIn("cpu_bandwidth_gb_s", payload)
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ older clock time.
 from __future__ import annotations
 
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -81,7 +82,11 @@ def _claims() -> dict:
     if held != int(manifest["test_count"]):
         raise SystemExit("held-out total disagrees with data/ood_split_manifest.json test_count")
     split_n = int(manifest["train_count"]) + int(manifest["test_count"])
-    bandwidth = float(bench["roofline_specs"]["mi300x_hbm3_bandwidth_gb_s"])
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    import scripts.regen_mi300x_roofline as regen
+
+    roofline = regen.build_payload(bench)
     bluff = float(llm["archetypes"]["Bluffing Hardliner"]["deal_rate"])
     completed = int(totals["completed_matches"])
     violations = float(totals["violation_rate"])
@@ -98,10 +103,12 @@ def _claims() -> dict:
         "bluff_deal": _pct(bluff),
         "violations": violation_phrase,
         "gpu_flag": f"is_gpu_active: {str(bool(bench['is_gpu_active'])).lower()}",
-        "roofline": (
-            f"roofline constant in results/bench.json "
-            f"({bandwidth:.0f} GB/s, {bandwidth / 1000:.1f} TB/s), not a measured runtime"
-        ),
+        "roofline_label": roofline["label"],
+        "roofline_formula": roofline["formula"],
+        "roofline_datasheet": roofline["datasheet_url"],
+        "roofline_product": roofline["product_page_url"],
+        "roofline_bandwidth_quote": roofline["datasheet_quote_bandwidth"],
+        "roofline_capacity_quote": roofline["datasheet_quote_capacity"],
         "held_out_acc": f"{100.0 * correct / held:.2f}%",
         "held_out_split": f"{held} of {split_n}",
         "play": play,
@@ -152,7 +159,12 @@ def main() -> int:
             (claims["bluff_deal"], "Bluffing Hardliner deal rate"),
             (claims["violations"], "budget-violation count"),
             (claims["gpu_flag"], "bench.json GPU flag"),
-            (claims["roofline"], "MI300X roofline constant"),
+            (claims["roofline_label"], "MI300X roofline label"),
+            (claims["roofline_formula"], "MI300X roofline formula"),
+            (claims["roofline_datasheet"], "MI300X datasheet URL"),
+            (claims["roofline_product"], "MI300X product-page URL"),
+            (claims["roofline_bandwidth_quote"], "MI300X datasheet bandwidth quote"),
+            (claims["roofline_capacity_quote"], "MI300X datasheet capacity quote"),
             (claims["held_out_acc"], "held-out accuracy"),
             (claims["held_out_split"], "held-out split size"),
             (claims["play"]["min_savings"], "self-play minimum engine savings"),
@@ -212,13 +224,136 @@ def main() -> int:
         if shorter is None or int(shorter.group(2)) != len(shorter.group(1)):
             problems.append("the shorter tagline's stated character count disagrees with its text")
 
+    problems.extend(_mi300x_problems())
+
     if problems:
         print("Documented claims do not match their source files:", file=sys.stderr)
         for item in problems:
             print(f"  - {item}", file=sys.stderr)
         return 1
-    print("check_claims: README.md and SUBMISSION.md match the source files.")
+    print("check_claims: README.md, SUBMISSION.md, and MI300X figures match the source files.")
     return 0
+
+
+_NUM = r"(?<![A-Za-z0-9.])(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)"
+_BAND = re.compile(_NUM + r"\s*(TB/s|GB/s|Gbps)\b", re.I)
+_CAP = re.compile(r"(?<![A-Za-z0-9.])(\d+(?:\.\d+)?)\s*GB(?![A-Za-z/])", re.I)
+_TIME = re.compile(
+    _NUM + r"\s*(milliseconds|seconds|millisecond|second|msec|sec|ms|s)\b",
+    re.I,
+)
+_SPEEDUP = re.compile(r"(?<![A-Za-z0-9.])(\d+(?:\.\d+)?)\s*[×xX](?!\s*\d)")
+_TENTH = re.compile(r"tenth of a (?:milli)?second", re.I)
+_MI_WORD = re.compile(r"MI300X", re.I)
+_MI_FILE = re.compile(r"MI300X|HBM3|roofline", re.I)
+_UNSOURCED = (
+    "60 GB/s",
+    "80 GB/s",
+    "88.3",
+    "531.8",
+    "1843.7",
+)
+
+
+def _near(value: float, targets: list[float]) -> bool:
+    return any(math.isclose(value, target, rel_tol=1e-4, abs_tol=1e-9) for target in targets)
+
+
+def _scan_roots() -> list[Path]:
+    found = [README, SUBMISSION, ROOT / "docker-compose.yml", ROOT / "Dockerfile"]
+    found.extend(sorted((ROOT / "docs").rglob("*.md")))
+    found.append(ROOT / "results" / "bench.json")
+    found.append(ROOT / "results" / "mi300x_roofline.json")
+    return [path for path in found if path.is_file()]
+
+
+def _mi300x_problems() -> list[str]:
+    """Fail when a doc states an MI300X figure the regenerator does not emit."""
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    import scripts.regen_mi300x_roofline as regen
+
+    problems = [f"results: {item}" for item in regen._problems()]
+    payload = regen.build_payload()
+    label = payload["label"]
+    bandwidth = [
+        ("tb/s", float(payload["peak_bandwidth_tb_s"])),
+        ("gb/s", float(payload["peak_bandwidth_gb_s"])),
+        ("gbps", float(payload["footnote"]["pin_rate_gbps"])),
+        ("gb/s", float(payload["footnote"]["product_gb_s"])),
+        ("tb/s", float(payload["footnote"]["quoted_rounding_tb_s"])),
+    ]
+    times = [float(row["lower_bound_seconds"]) for row in payload["rows"]]
+    capacity = [float(payload["hbm3_capacity_gb"])]
+    quoted_bandwidth_units = {"tb/s", "gb/s"}
+
+    for path in _scan_roots():
+        text = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT).as_posix()
+        if not _MI_FILE.search(text):
+            continue
+        for banned in _UNSOURCED:
+            if banned in text:
+                problems.append(f"{rel} still contains unsourced {banned!r}")
+        cites_bandwidth = False
+        for match in _BAND.finditer(text):
+            unit = match.group(2).lower()
+            value = float(match.group(1))
+            allowed = [item for item in bandwidth if item[0] == unit]
+            if not _near(value, [item[1] for item in allowed]):
+                problems.append(
+                    f"{rel} states {match.group(0).strip()} and that figure is not in results/mi300x_roofline.json"
+                )
+            elif unit in quoted_bandwidth_units and _near(
+                value, [payload["peak_bandwidth_tb_s"], payload["peak_bandwidth_gb_s"]]
+            ):
+                cites_bandwidth = True
+        flat_for_capacity = re.sub(r"\s+", " ", text)
+        hw_spans = [item.span() for item in re.finditer(r"MI300X|HBM3", flat_for_capacity, re.I)]
+        for match in _CAP.finditer(flat_for_capacity):
+            if not any(abs(match.start() - left) <= 80 or abs(match.start() - right) <= 80 for left, right in hw_spans):
+                continue
+            value = float(match.group(1))
+            if not _near(value, capacity):
+                problems.append(
+                    f"{rel} states {match.group(0).strip()} beside an MI300X/HBM3 note and that capacity is not in results/mi300x_roofline.json"
+                )
+        flat = re.sub(r"\s+", " ", text)
+        mi_spans = [item.span() for item in _MI_WORD.finditer(flat)]
+
+        def _beside(start: int) -> bool:
+            return any(abs(start - left) <= 140 or abs(start - right) <= 140 for left, right in mi_spans)
+
+        for tenth in _TENTH.finditer(flat):
+            if _beside(tenth.start()):
+                problems.append(
+                    f"{rel} gives MI300X a 'tenth of a second/millisecond' with no sourced bound"
+                )
+        for time_match in _TIME.finditer(flat):
+            if not _beside(time_match.start()):
+                continue
+            raw = float(time_match.group(1))
+            unit = time_match.group(2).lower()
+            seconds = raw / 1000.0 if unit in {"ms", "msec", "millisecond", "milliseconds"} else raw
+            if not _near(seconds, times):
+                problems.append(
+                    f"{rel} states MI300X time {time_match.group(0).strip()} which is not a regenerated lower bound"
+                )
+        for speed_match in _SPEEDUP.finditer(flat):
+            if not _beside(speed_match.start()):
+                continue
+            problems.append(
+                f"{rel} states MI300X multiplier {speed_match.group(0).strip()} and no sourced ratio exists"
+            )
+        if cites_bandwidth and label not in text:
+            problems.append(f"{rel} quotes MI300X bandwidth without the label {label!r}")
+    unique: list[str] = []
+    seen: set[str] = set()
+    for item in problems:
+        if item not in seen:
+            seen.add(item)
+            unique.append(item)
+    return unique
 
 
 if __name__ == "__main__":

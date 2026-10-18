@@ -12,6 +12,9 @@ services:
     # The decision engine runs in this container on NumPy unless the image
     # actually has CuPy/ROCm and TRADEFLOW_SOLVER_BACKEND=cupy. This compose
     # file does not attach a GPU and does not run the solver on MI300X.
+    # The only MI300X figure in the repo is a theoretical roofline lower-bound
+    # estimate, not measured (results/mi300x_roofline.json). No MI300X run
+    # is produced here.
     # An AMD tokenfactory / vLLM endpoint, if configured in .env, is remote.
     healthcheck:
       test:

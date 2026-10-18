@@ -21,7 +21,7 @@
 | F5 | ✅ | SUBMISSION_DRAFT §5 範圍註 | "60 matches (12 per archetype)" → "100 matches (20 per archetype, seed 42)"，消除與同節「20 matches per archetype」的矛盾 |
 | F6 | ◐ | README「性能」節；PITCH Slide 6 表列；SUBMISSION_DRAFT §2 | 統一為 20K 預設 ≈1.7s、完整 HTTP 輪次 ≈3.3s、2K ≈0.30s，補量測環境註記（開發機 Intel Core Ultra 7 355，x86-64 CPU；bench.json）。LIMITATIONS 四處殘留（:292、:353、:366-367、:383-384，含自查發現的 :292「1.1 秒」與 :353「約 2 秒」）待套用 |
 | F7 | ✅ | DEMO_SCRIPT Scene 3 | 31.7%→28.3%、two yuan→forty cents (¥0.40)；「recommendation holds」改為「低估穩健、高估 DEGRADES，故刻意保守估計」，不再過度聲稱 |
-| F8 | ✅ | DEMO_SCRIPT Scene 2 | 刪「naive loop forty-six seconds」（審計證實無出處）；one second→one point seven seconds (20K)；MI300X「under a tenth of a second」改為「解析下界（記憶體頻寬推導），非實測 runtime」；Key line 改「batched rollouts run as one vectorized broadcast on CPU」，去除 GPU 執行聲稱 |
+| F8 | ✅ | DEMO_SCRIPT Scene 2 | 刪掉沒有出處的 naive-loop 秒數；CPU 句改對 bench.json；MI300X 句改為 theoretical roofline lower-bound estimate, not measured，並指向 `results/mi300x_roofline.json`；Key line 改「batched rollouts run as one vectorized broadcast on CPU」，去除 GPU 執行聲稱 |
 | F9 | ✅ | DEMO_SCRIPT Scene 6；README mermaid 圖 | "vectorized MCTS on AMD MI300X" → "Vectorized Expectimax on CPU (x86)"；連帶排查：README mermaid 節點 id MCTS96M→TensorSolver（3 處，非渲染文字）、Scene 2 Key line（歸 F8）。範圍外殘留：COMPETITION_STRATEGY.md:58,64 與 docs/archive/*.md 仍有 MCTS/AMD 執行聲稱——不在允許清單，未動 |
 | F10 | ✅ | PITCH Slide 5 | ¥12.30→¥13.12 改 ¥12.30→¥14.23，與 results/belief_update.png 及 DEMO_SCRIPT Scene 1 一致。範圍外殘留：DEMO_VIDEO_DIRECTOR_SCRIPT.md:40 對白含 ¥13.12（屬 Evolus 500-unit 草稿情境；重錄影片時由主會話決定是否標註情境） |
 | F11 | ✅ | PITCH Slide 3 揭露段 | 「每格僅 12 場、4/5 原型一位小數相同、不構成證據」→「每格 20 場（100.0% 實為 20/20）、5/5 原型互不相同、但 Hard-Bargainer 上 8.8% vs 9.2% 仍遜於基準——如實保留該格」，與現 artefact 及 LIMITATIONS §2.2 一致 |
