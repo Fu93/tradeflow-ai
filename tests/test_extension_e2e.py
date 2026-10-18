@@ -252,25 +252,25 @@ def main() -> int:
                 deadline = time.time() + 90
                 while time.time() < deadline:
                     try:
-                        status_text = page.evaluate(
+                        # One read: two evaluates can straddle the paint that
+                        # replaces "ENGINE SOLVING..." with the cards.
+                        snap = page.evaluate(
                             """() => {
                                 const el = document.querySelector('[data-tradeflow="overlay"]');
-                                if (!el || !el.shadowRoot) return '';
+                                if (!el || !el.shadowRoot) return { status: '', cards: 0 };
                                 const t = el.shadowRoot.querySelector('.tf-title');
                                 const s = el.shadowRoot.querySelector('.tf-subtext');
-                                return (t ? t.innerText : '') + ' || ' + (s ? s.innerText : '');
+                                return {
+                                    status: (t ? t.innerText : '') + ' || ' + (s ? s.innerText : ''),
+                                    cards: el.shadowRoot.querySelectorAll('.tf-copy-btn').length,
+                                };
                             }"""
                         )
-                        cards = page.evaluate(
-                            """() => {
-                                const el = document.querySelector('[data-tradeflow="overlay"]');
-                                if (!el || !el.shadowRoot) return 0;
-                                return el.shadowRoot.querySelectorAll('.tf-copy-btn').length;
-                            }"""
-                        )
+                        status_text = snap.get("status") or ""
+                        cards = int(snap.get("cards") or 0)
                     except Exception:
                         pass
-                    if cards >= 3:
+                    if cards >= 3 and "SOLVING" not in status_text.upper():
                         break
                     time.sleep(0.5)
 
@@ -441,6 +441,236 @@ def main() -> int:
                       not any("PAGEERROR" in c for c in sp_console),
                       "; ".join(c for c in sp_console if "PAGEERROR" in c)[:200])
 
+                # ------------------------------------------------ source + gate
+                print("\n[5c] Source badge, approval gate, savings")
+                gate = sp.evaluate(
+                    """() => ({
+                        badge: document.getElementById('source-badge-text').innerText.trim(),
+                        state: document.getElementById('approval-state').innerText.trim(),
+                        action: document.getElementById('approval-action').innerText.trim(),
+                        price: document.getElementById('approval-price').innerText.trim(),
+                        evidence: document.getElementById('approval-evidence').innerText.trim(),
+                        savings: document.getElementById('val-savings').innerText.trim(),
+                        note: document.getElementById('gate-send-note').innerText,
+                        url: (typeof tabMeta !== 'undefined' && tabMeta.url) || '',
+                    })"""
+                )
+                print("    gate: " + json.dumps(gate, ensure_ascii=False)[:400])
+                allowed_badges = {"AMD live", "Offline fallback", "Simulator", "Unreachable"}
+                check("source badge is one of the four honesty labels",
+                      gate.get("badge") in allowed_badges, f"badge={gate.get('badge')!r}")
+                check("sandbox tab is labelled Simulator",
+                      gate.get("badge") == "Simulator",
+                      f"badge={gate.get('badge')!r} url={gate.get('url')!r}")
+                check("approval gate is Pending while the buyer has not decided",
+                      gate.get("state") == "Pending", f"state={gate.get('state')!r}")
+                check("approval action comes from the engine payload",
+                      bool(gate.get("action")) and gate.get("action") != "--",
+                      f"action={gate.get('action')!r}")
+                check("approval price is an engine figure",
+                      "¥" in str(gate.get("price")) and gate.get("price") != "--",
+                      f"price={gate.get('price')!r}")
+                check("approval evidence is present",
+                      bool(gate.get("evidence")) and gate.get("evidence") != "--",
+                      f"evidence={str(gate.get('evidence'))[:80]!r}")
+                check("gate says the buyer pastes and sends",
+                      "you paste and send; TradeFlow never sends" in str(gate.get("note")))
+                check("savings stay '--' unless the engine sent a savings field",
+                      gate.get("savings") == "--" or "¥" in str(gate.get("savings")) or "%" in str(gate.get("savings")),
+                      f"savings={gate.get('savings')!r}")
+
+                states = sp.evaluate(
+                    """() => {
+                        const live = lastRoundPayload;
+                        if (!live) return { error: 'no payload' };
+                        const saved = JSON.parse(JSON.stringify(live));
+                        const price = document.getElementById('approval-price').innerText.trim();
+                        const out = { price };
+                        const paint = (extra) => {
+                          const copy = JSON.parse(JSON.stringify(saved));
+                          Object.assign(copy, extra);
+                          if (!copy.session) copy.session = {};
+                          if (extra.state) copy.session.state = extra.state;
+                          renderEngineData(copy);
+                          return document.getElementById('approval-state').innerText.trim();
+                        };
+                        out.approved = paint({
+                          pending_human_approval: false,
+                          awaiting_human_approval: false,
+                          autopilot_state: 'HUMAN_APPROVED_APPLIED',
+                          state: 'HUMAN_APPROVED_APPLIED',
+                        });
+                        out.approvedPrice = document.getElementById('approval-price').innerText.trim();
+                        out.rejected = paint({
+                          pending_human_approval: false,
+                          awaiting_human_approval: false,
+                          autopilot_state: 'WALK_AWAY',
+                          state: 'WALK_AWAY',
+                        });
+                        renderEngineData(saved);
+                        const next = JSON.parse(JSON.stringify(saved));
+                        next.pending_human_approval = false;
+                        next.awaiting_human_approval = false;
+                        next.autopilot_state = 'COPILOT_MONITORING';
+                        if (!next.session) next.session = {};
+                        next.session.state = 'COPILOT_MONITORING';
+                        if (!next.action_object) next.action_object = {};
+                        next.action_object.source_round_id = String(next.action_object.source_round_id || 'round') + '-later';
+                        renderEngineData(next);
+                        out.superseded = document.getElementById('approval-state').innerText.trim();
+                        renderEngineData(saved);
+                        out.restored = document.getElementById('approval-state').innerText.trim();
+                        out.restoredPrice = document.getElementById('approval-price').innerText.trim();
+                        return out;
+                    }"""
+                )
+                print("    states: " + json.dumps(states, ensure_ascii=False))
+                check("approval card can show Approved",
+                      states.get("approved") == "Approved", f"got={states.get('approved')!r}")
+                check("approved price stays the engine figure",
+                      states.get("approvedPrice") == states.get("price"),
+                      f"{states.get('approvedPrice')!r} vs {states.get('price')!r}")
+                check("approval card can show Rejected",
+                      states.get("rejected") == "Rejected", f"got={states.get('rejected')!r}")
+                check("approval card can show Superseded",
+                      states.get("superseded") == "Superseded", f"got={states.get('superseded')!r}")
+                check("live gate is restored after the state check",
+                      states.get("restored") == "Pending" and states.get("restoredPrice") == states.get("price"),
+                      f"state={states.get('restored')!r}")
+
+                badges = sp.evaluate(
+                    """() => {
+                        const out = {};
+                        const savedUrl = tabMeta.url;
+                        const savedHealth = tfHealth;
+                        const savedErr = tfHealthError;
+                        const savedForce = sourceForced;
+                        const savedRound = lastRoundPayload;
+                        tabMeta = Object.assign({}, tabMeta, { url: '' });
+                        if (lastRoundPayload) {
+                          lastRoundPayload = Object.assign({}, lastRoundPayload, { simulated_sample: false });
+                          if (lastRoundPayload.amd_live) {
+                            lastRoundPayload.amd_live = Object.assign({}, lastRoundPayload.amd_live, { requested: false });
+                          }
+                        }
+                        sourceForced = null;
+                        tfHealthError = null;
+                        paintSourceBadge();
+                        out.offline = document.getElementById('source-badge-text').innerText.trim();
+                        tfHealth = { llm: { amd_live_available: true }, offline_demo: false };
+                        if (!lastRoundPayload) lastRoundPayload = {};
+                        lastRoundPayload.amd_live = { requested: true, decides_price: false };
+                        lastRoundPayload.quote_status = 'ok';
+                        paintSourceBadge();
+                        out.amd = document.getElementById('source-badge-text').innerText.trim();
+                        tfHealth = null;
+                        tfHealthError = new Error('down');
+                        sourceForced = 'unreachable';
+                        paintSourceBadge();
+                        out.down = document.getElementById('source-badge-text').innerText.trim();
+                        tabMeta.url = savedUrl;
+                        tfHealth = savedHealth;
+                        tfHealthError = savedErr;
+                        sourceForced = savedForce;
+                        lastRoundPayload = savedRound;
+                        paintSourceBadge();
+                        out.restored = document.getElementById('source-badge-text').innerText.trim();
+                        return out;
+                    }"""
+                )
+                print("    badges: " + json.dumps(badges, ensure_ascii=False))
+                check("offline fallback badge is derived when AMD was not requested",
+                      badges.get("offline") == "Offline fallback", f"got={badges.get('offline')!r}")
+                check("AMD live badge is derived only from live fields",
+                      badges.get("amd") == "AMD live", f"got={badges.get('amd')!r}")
+                check("unreachable badge is shown when the backend cannot be read",
+                      badges.get("down") == "Unreachable", f"got={badges.get('down')!r}")
+                check("source badge restores to Simulator",
+                      badges.get("restored") == "Simulator", f"got={badges.get('restored')!r}")
+
+                a11y = sp.evaluate(
+                    """() => {
+                        const body = getComputedStyle(document.body);
+                        const btn = document.getElementById('btn-hold').getBoundingClientRect();
+                        const refresh = document.getElementById('btn-refresh').getBoundingClientRect();
+                        return {
+                          font: parseFloat(body.fontSize),
+                          btnH: btn.height,
+                          refreshH: refresh.height,
+                          statusLive: document.getElementById('status-badge').getAttribute('aria-live'),
+                          signalLive: document.getElementById('val-last-signal').getAttribute('aria-live'),
+                        };
+                    }"""
+                )
+                check("body text is at least 12px", a11y.get("font", 0) >= 12, f"font={a11y.get('font')}")
+                check("decision control is at least 32px", a11y.get("btnH", 0) >= 32, f"height={a11y.get('btnH')}")
+                check("reload control is at least 32px", a11y.get("refreshH", 0) >= 32, f"height={a11y.get('refreshH')}")
+                check("status text is a polite live region", a11y.get("statusLive") == "polite")
+                check("signal text is a polite live region", a11y.get("signalLive") == "polite")
+
+                sp.locator("#btn-hold").focus()
+                focus_ring = sp.evaluate(
+                    """() => {
+                        const s = getComputedStyle(document.getElementById('btn-hold'));
+                        return { style: s.outlineStyle, width: parseFloat(s.outlineWidth) || 0 };
+                    }"""
+                )
+                check("decision control shows a visible focus ring",
+                      focus_ring.get("style") not in ("none", "hidden", "") and focus_ring.get("width", 0) >= 2,
+                      f"outline={focus_ring}")
+
+                def contrast_sample(scheme):
+                    sp.emulate_media(color_scheme=scheme)
+                    sp.wait_for_timeout(50)
+                    return sp.evaluate(
+                        """() => {
+                            const parse = (value) => {
+                              const m = String(value).match(/[\\d.]+/g);
+                              if (!m || m.length < 3) return null;
+                              return m.slice(0, 3).map(Number);
+                            };
+                            const lin = (channel) => {
+                              const s = channel / 255;
+                              return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+                            };
+                            const ratio = (fg, bg) => {
+                              const L = (rgb) => 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+                              const a = L(fg);
+                              const b = L(bg);
+                              const hi = Math.max(a, b);
+                              const lo = Math.min(a, b);
+                              return (hi + 0.05) / (lo + 0.05);
+                            };
+                            const opaque = (el) => {
+                              let node = el;
+                              while (node) {
+                                const bg = parse(getComputedStyle(node).backgroundColor);
+                                if (bg && (bg.length < 4 || Number(getComputedStyle(node).backgroundColor.split(',')[3]) !== 0)) {
+                                  const parts = getComputedStyle(node).backgroundColor.replace(/[rgba()]/g, '').split(',');
+                                  if (parts.length < 4 || parseFloat(parts[3]) > 0.2) return bg;
+                                }
+                                node = node.parentElement;
+                              }
+                              return null;
+                            };
+                            const fine = document.querySelector('.fineprint');
+                            const fg = parse(getComputedStyle(fine).color);
+                            const bg = opaque(fine);
+                            const bodyBg = parse(getComputedStyle(document.body).backgroundColor);
+                            return {
+                              ratio: fg && bg ? ratio(fg, bg) : 0,
+                              bodyBg,
+                            };
+                        }"""
+                    )
+
+                for scheme in ("light", "dark"):
+                    sample = contrast_sample(scheme)
+                    print(f"    contrast {scheme}: {sample}")
+                    check(f"{scheme} mode body text contrast is at least 4.5:1",
+                          sample.get("ratio", 0) >= 4.5, f"ratio={sample.get('ratio')}")
+                sp.emulate_media(color_scheme="light")
+
                 # ------------------------------------------------ mobile command
                 print("\n[6] Tactical command path (2 = hold firm)")
                 sp.click("#btn-hold")
@@ -450,6 +680,114 @@ def main() -> int:
                 check("side panel reports a command outcome (no silent no-op)",
                       ("Hold" in fb or "command" in fb.lower() or "dispatched" in fb.lower()
                        or "not applied" in fb.lower() or "OK" in fb))
+
+                # ------------------------------------------------- error + empty
+                print("\n[6b] Error banner, teaching empty, overflow")
+                sp.evaluate(
+                    """async () => {
+                        const orig = window.fetch;
+                        window.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+                        try {
+                          await fetchSessionFromBackend(currentSessionId || 'probe-session');
+                        } finally {
+                          window.fetch = orig;
+                        }
+                    }"""
+                )
+                sp.wait_for_timeout(300)
+                banner_on = sp.locator("#error-banner").is_visible()
+                retry_on = sp.locator("#btn-retry").is_visible()
+                banner_text = sp.locator("#error-text").inner_text()
+                badge_down = sp.locator("#source-badge-text").inner_text().strip()
+                check("failed session load shows an error banner", banner_on, banner_text[:120])
+                check("error banner offers Retry", retry_on)
+                check("failed load labels the source Unreachable",
+                      badge_down == "Unreachable", f"badge={badge_down!r}")
+                sp.click("#btn-retry")
+                recovered_price = "--"
+                for _ in range(40):
+                    if not sp.locator("#error-banner").is_visible():
+                        recovered_price = sp.locator("#approval-price").inner_text().strip()
+                        if recovered_price and recovered_price != "--":
+                            break
+                    time.sleep(0.25)
+                check("Retry clears the error and restores the engine price",
+                      not sp.locator("#error-banner").is_visible() and recovered_price not in ("", "--"),
+                      f"price={recovered_price!r}")
+
+                def overflow_at(width):
+                    sp.set_viewport_size({"width": width, "height": 800})
+                    sp.wait_for_timeout(150)
+                    return sp.evaluate(
+                        """() => {
+                            const vw = document.documentElement.clientWidth;
+                            let bad = '';
+                            for (const el of document.body.querySelectorAll('*')) {
+                              const r = el.getBoundingClientRect();
+                              if (r.width < 1 || r.height < 1) continue;
+                              if (r.right > vw + 1) {
+                                bad = (el.id || el.className || el.tagName).toString().slice(0, 80);
+                                break;
+                              }
+                            }
+                            return {
+                              vw,
+                              scroll: document.documentElement.scrollWidth,
+                              bad,
+                            };
+                        }"""
+                    )
+
+                for width in (320, 360, 480):
+                    metrics = overflow_at(width)
+                    print(f"    overflow @{width}: {metrics}")
+                    check(
+                        f"no horizontal overflow at {width}px",
+                        metrics.get("scroll", 9999) <= metrics.get("vw", 0) + 1 and not metrics.get("bad"),
+                        f"scroll={metrics.get('scroll')} vw={metrics.get('vw')} offender={metrics.get('bad')!r}",
+                    )
+
+                tc = (
+                    "請在一六八八、阿里巴巴國際站或 WhatsApp 的這一則很長的對話裡核對採購條件："
+                    "引擎只呈現已經算出的授權價格與供應商原文證據，採購人員必須自己貼上並且自己送出，"
+                    "TradeFlow 絕不會代填輸入框也絕不會代按送出按鈕，若後端暫時連不上就顯示無法連線。"
+                )
+                sp.evaluate(
+                    """(text) => {
+                        const evidence = document.getElementById('approval-evidence');
+                        const action = document.getElementById('approval-action');
+                        const status = document.getElementById('status-text');
+                        if (evidence) evidence.textContent = text;
+                        if (action) action.textContent = text;
+                        if (status) status.textContent = text;
+                    }""",
+                    tc,
+                )
+                for width in (320, 480):
+                    metrics = overflow_at(width)
+                    print(f"    tc overflow @{width}: {metrics}")
+                    check(
+                        f"Traditional Chinese sample does not overflow at {width}px",
+                        metrics.get("scroll", 9999) <= metrics.get("vw", 0) + 1 and not metrics.get("bad"),
+                        f"scroll={metrics.get('scroll')} vw={metrics.get('vw')} offender={metrics.get('bad')!r}",
+                    )
+
+                sp.set_viewport_size({"width": 320, "height": 800})
+                sp.evaluate("() => { hasRenderedLiveData = false; renderDormantView(); }")
+                sp.wait_for_timeout(200)
+                empty_text = sp.locator("#teaching-empty").inner_text()
+                empty_visible = sp.locator("#teaching-empty").is_visible()
+                empty_price = sp.locator("#approval-price").inner_text().strip()
+                check("teaching empty state explains the gate",
+                      empty_visible and "you paste and send; TradeFlow never sends" in empty_text
+                      and "請開啟" in empty_text,
+                      empty_text[:80])
+                check("teaching empty does not invent a price", empty_price == "--", f"price={empty_price!r}")
+                empty_metrics = overflow_at(320)
+                check("teaching empty does not overflow at 320px",
+                      empty_metrics.get("scroll", 9999) <= empty_metrics.get("vw", 0) + 1
+                      and not empty_metrics.get("bad"),
+                      f"offender={empty_metrics.get('bad')!r}")
 
                 # ------------------------------------------------------- summary
                 print("\n[7] Console health")
