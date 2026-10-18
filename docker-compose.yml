@@ -3,6 +3,9 @@ services:
     build: .
     ports:
       - "8000:8000"
+    # Optional. A checkout with no .env still starts: the process defaults
+    # to TRADEFLOW_ENV=sandbox and TRADEFLOW_SOLVER_BACKEND=numpy.
+    # `environment` below overrides env_file, so only PORT is forced.
     env_file:
       - path: .env
         required: false

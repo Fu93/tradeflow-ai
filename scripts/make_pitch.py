@@ -1,126 +1,193 @@
-"""Build pitch.pptx (10 slides) from our strategy. Uses python-pptx."""
+"""Build the 8-slide deck in results/pitch.pptx from the SUBMISSION.md outline.
+
+Every measured figure is read from a source file at generation time
+(results/*.json, results/*.md, models/onnx_export_metrics.json). The slide
+text does not invent a latency, a speedup, or a second hackathon track.
+
+Regenerate after those sources change:
+
+    python -m pip install python-pptx
+    python scripts/make_pitch.py
+"""
 from __future__ import annotations
-import os
-from pptx import Presentation
-from pptx.util import Inches, Pt, Emu
-from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
 
-HERE = os.path.dirname(__file__)
-ROOT = os.path.abspath(os.path.join(HERE, ".."))
-OUT = os.path.join(ROOT, "results", "pitch.pptx")
-COVER = os.path.join(ROOT, "results", "cover_1280x720.png")
+import json
+import sys
+from pathlib import Path
 
-NAVY = RGBColor(0x0B, 0x10, 0x20)
-BLUE = RGBColor(0x2C, 0x6F, 0xB5)
-RED = RGBColor(0xED, 0x1C, 0x24)
-GREEN = RGBColor(0x55, 0xA8, 0x68)
-CREAM = RGBColor(0xEE, 0xF2, 0xF7)
-GREY = RGBColor(0x6B, 0x78, 0x90)
-WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "results" / "pitch.pptx"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-SLIDES = [
-    ("TradeFlow AI",
-     ["Constrained Decision Prototype: Vectorized Expectimax & AST Guardrails.",
-      "Decision core computes; the LLM only renders language.",
-      "AMD Developer Hackathon: ACT III",
-      "Reinvent Commerce + Evolus Business Agents on AMD"]),
-    ("One-liner: an AI-native trading company of one",
-     ["TradeFlow computes concession strategies with Vectorized Expectimax + AST code guardrails.",
-      "'Math governs strategy, LLM expresses jargon.'",
-      "The LLM never decides a price; it renders an already-computed, AST-validated decision.",
-      "One operator can run supplier-facing procurement that traditionally needs a sourcing team."]),
-    ("Why not a chatbot — measured, not asserted",
-     ["We ran our own real-model benchmark on the AMD endpoint: 100 matches, 348 real inference calls, $0.108.",
-      "Real model budget violations: 0/94 (exact 95% upper bound 3.1%) — the simulator's violation figures (12–44% historically; 20–40% in the current 100-match artifact) were NOT reproduced.",
-      "The real model's actual weakness is BREAKDOWN, not overspending: 61.1% deal-closure vs a Bluffing Hardliner (our solver in the synthetic arena closes 20/20 — but those archetypes carry reserves far below the ceiling, so that gap is scenario structure, NOT solver superiority).",
-      "Academic context: NegotiationArena (ICLR 2024), AgenticPay (arXiv:2602.06008), Cattle Trade (arXiv:2605.14537)."]),
-    ("Architecture: why decouple",
-     ["Numerical decision core (NumPy tensor solver, no LLM in the decision path).",
-      "Dual-tier defense: Tier-1 AST invariant guardrail on the strategy object + Tier-2 deterministic templates for language.",
-      "Pareto Logrolling: swap non-price terms (deposit for lead time, volume for price) when unit price deadlocks.",
-      "Deterministic degradation: Stage-1 regex + on-device ONNX runs offline; Stage-2 LLM is optional.",
-      "Latency, honestly: Stage-1 mean ~0.13 ms (p99 ~0.49 ms); full HTTP round ~3.3 s (solver-bound), not '<3 ms end-to-end'."]),
-    ("Demo: three verifiable moments",
-     ["1. Belief convergence: Bayesian posterior reserve tracking across rounds (results/belief_update.png).",
-      "2. AST guardrail rejects a >60% deposit demand — the object is blocked before it can be rendered.",
-      "3. Multi-supplier reverse auction: 4 dynamic adversary agents quote round-by-round; BATNA ceilings tighten.",
-      "All reproducible: verify_all.py (6 pillars), verify_live.py (7 E2E checks), 332 tests + 68 subtests green."]),
-    ("User story: a single operator",
-     ["An Amazon outdoor seller buys ~50,000 umbrellas/yr from China.",
-      "Status quo: Google Translate on 1688 invites a foreigner markup and hidden mould fees; agents charge 7% and take kickbacks.",
-      "With TradeFlow: the engine proposes an opening price and concession curve; the operator approves via a mobile card.",
-      "Savings claim: 7% commission + foreigner markup + mould fees — each component documented separately, not one fabricated figure."]),
-    ("AMD integration — honest version",
-     ["Committed AMD evidence is results/real_llm_benchmark_100.json (tokenfactory calls). That file does not store an HTTP status.",
-      "scripts/verify_amd_endpoint.py records HTTP 200 only when status is ok. A skip is not that record.",
-      "Engine is GPU-shaped: 20,000 opponent samples × 480 strategies = 9.6M rollouts/round, memory-bandwidth bound.",
-       "Multi-supplier demo path: 4 suppliers × 20,000 samples × 20 opens × 6 scheds = 9.6M grid cells/round × 3 rounds = 28.8M parameterised cells (NOT a measured iteration count).",
-      "Measured here (CPU): results/bench.json cpu_seconds. is_gpu_active is false.",
-      "MI300X: theoretical roofline lower-bound estimate, not measured. See results/mi300x_roofline.json. No MI300X run.",
-      "One-line portability via the _xp() tensor abstraction (NumPy ↔ CuPy/ROCm)."]),
-    ("Evolus integration — all real calls",
-     ["Building blocks actually exercised (real usage stats): email 2.46, doc-structure 2.12, sentiment 3.75 credits.",
-      "Agent wiring calls the configured endpoint. A stored HTTP 200 for that call is not in this repo.",
-      "App-driven REST: orchestrator.on_webhook() → engine → real Evolus AI Tool draft (no longer an offline stub).",
-      "Knowledge library: real UN Comtrade customs data + live FX feed the agent's cost analysis.",
-      "Remaining gap: the Evolus-side Automation (workflow) has not yet been created in the console."]),
-    ("Honest limitations",
-     ["Expectimax, not CFR: a heuristic solver under coarse priors; optimality fails if real factories fall outside the 4 archetypes.",
-      "The simulator's violation claim (12–44% historically; 20–40% in the current artefact) was disproven by our own experiment (0/94, upper bound 3.1%).",
-      "Prior miss is asymmetric: overestimating a supplier's reserve costs real margin (−0.102); underestimating is nearly free.",
-      "Supplier quotes in demos are synthetic (adversary models), not real factory quotes. See LIMITATIONS §零 data classification.",
-      "Calibration constants are chosen, not fitted; no real negotiation logs exist yet."]),
-    ("Next steps",
-     ["Collect 10,000+ real negotiation logs to fit the priors properly (currently chosen, not calibrated).",
-      "If AMD Developer Cloud credits are granted: obtain a real MI300X measurement to replace the roofline bound.",
-      "Rotate the two API keys exposed in plaintext during development.",
-      "Extend the real-model benchmark beyond 100 matches to tighten the confidence bound.",
-      "Double-track submission: Reinvent Commerce (main) + Evolus Business Agents on AMD."]),
-]
+from scripts.check_claims import _claims, _read  # noqa: E402
 
 
-def add_title_only(prs, title, bullets, color=BLUE):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    # top bar
-    bar = slide.shapes.add_shape(1, 0, 0, prs.slide_width, Inches(1.1))
-    bar.fill.solid(); bar.fill.fore_color.rgb = NAVY
-    bar.line.fill.background()
-    # accent dot
-    dot = slide.shapes.add_shape(9, Inches(0.4), Inches(0.35), Inches(0.25), Inches(0.25))
-    dot.fill.solid(); dot.fill.fore_color.rgb = color; dot.line.fill.background()
-    # title
-    tb = slide.shapes.add_textbox(Inches(0.8), Inches(0.22), prs.slide_width - Inches(1.2), Inches(0.8))
-    tf0 = tb.text_frame; tf0.margin_top = Pt(0); tf0.margin_bottom = Pt(0)
-    p = tf0.paragraphs[0]
-    r = p.add_run(); r.text = title
-    r.font.size = Pt(30); r.font.bold = True; r.font.color.rgb = WHITE
-    # bullets — uniform style, top-aligned
-    bt = slide.shapes.add_textbox(Inches(0.6), Inches(1.45), prs.slide_width - Inches(1.2),
-                                  prs.slide_height - Inches(1.7))
-    tf = bt.text_frame; tf.word_wrap = True
-    tf.margin_top = Pt(0); tf.margin_left = Pt(0); tf.margin_right = Pt(0)
-    tf.auto_size = None
-    for i, b in enumerate(bullets):
-        para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        run = para.add_run(); run.text = "•  " + b
-        run.font.size = Pt(14)
-        run.font.color.rgb = RGBColor(0x14, 0x1E, 0x36)
-        para.space_after = Pt(8)
-        para.space_before = Pt(0)
-    return slide
+def auction_baseline_lines(text: str) -> list[str]:
+    """The three labeled savings lines in results/multi_supplier_auction.md."""
+    wanted_prefix = (
+        "Headline savings",
+        "Versus target",
+        "Secondary,",
+    )
+    found: list[str] = []
+    for line in text.splitlines():
+        if not line.startswith("- "):
+            continue
+        body = line[2:].strip()
+        if body.startswith(wanted_prefix):
+            found.append(body)
+    if len(found) != 3:
+        raise SystemExit(
+            "results/multi_supplier_auction.md no longer has the three baseline lines"
+        )
+    return found
 
 
-def main():
+def build_slides() -> list[tuple[str, list[str]]]:
+    """Return (title, bullets) for the eight SUBMISSION.md slides."""
+    claims = _claims()
+    play = claims["play"]
+    llm = json.loads((ROOT / "results" / "real_llm_benchmark_100.json").read_text(encoding="utf-8"))
+    bench = json.loads((ROOT / "results" / "bench.json").read_text(encoding="utf-8"))
+    auction = auction_baseline_lines(_read(ROOT / "results" / "multi_supplier_auction.md"))
+    logged_on = str(llm["meta"]["generated_at_utc"])[:10]
+    endpoint = str(llm["meta"]["endpoint"])
+    gpu_flag = "true" if bench.get("is_gpu_active") else "false"
+
+    return [
+        (
+            "1. Title",
+            [
+                "TradeFlow AI. Track: Reinvent Commerce.",
+                "One operator. The engine sets the price. A human sends the offer.",
+                "Prototype. No factory has closed a deal through this.",
+                "Public repo: https://github.com/Fu93/tradeflow-ai. License: MIT.",
+            ],
+        ),
+        (
+            "2. Problem",
+            [
+                "Cross-border buyers either negotiate alone, often with a language penalty, or pay an agent.",
+                "TradeFlow is a prototype of a third arrangement: one operator, software doing the arithmetic, the person keeping the send button.",
+                "It is not a deployed company and it has not bought from a real factory.",
+            ],
+        ),
+        (
+            "3. Split",
+            [
+                "Solver decides. The decision core does not ask a language model what to pay.",
+                "Model phrases. An optional call can classify a message or draft wording.",
+                "Human sends. The Chrome extension (Manifest V3) shows a card. It cannot press Send.",
+                "Code: src/engine/solver.py, src/engine/multi_solver.py, extension/.",
+            ],
+        ),
+        (
+            "4. Decision core",
+            [
+                "A belief about the supplier reserve, then a vectorised Expectimax search over openings and concession curves.",
+                "Read the recommended price and the breakdown probability off the dashboard you just captured.",
+                "This slide does not state a latency. Use the number on the screen.",
+            ],
+        ),
+        (
+            "5. AMD language layer",
+            [
+                f"Sample endpoint: {endpoint}.",
+                (
+                    f"Committed log results/real_llm_benchmark_100.json ({logged_on}): "
+                    f"model {claims['model']}, {claims['calls']} calls, "
+                    f"average latency {claims['latency']} s, cost ${claims['cost']}."
+                ),
+                "That file does not store an HTTP status. status: ok from scripts/verify_amd_endpoint.py means that process received HTTP 200. skipped_no_credentials is not a successful check.",
+            ],
+        ),
+        (
+            "6. AMD compute layer",
+            [
+                "TRADEFLOW_SOLVER_BACKEND selects NumPy (default) or a CuPy/ROCm request.",
+                f"results/bench.json is a CPU measurement (is_gpu_active: {gpu_flag}).",
+                f"The MI300X column is a {claims['roofline_label']}.",
+                f"Formula: {claims['roofline_formula']}.",
+                "No AMD GPU measurement is in the repo unless a sibling benchmark JSON says ran_on_amd_gpu: true. Do not narrate a speedup.",
+            ],
+        ),
+        (
+            "7. Evidence, with the baseline named",
+            [
+                (
+                    f"Self-play (results/self_play_benchmark.md): engine savings versus that table's "
+                    f"walk-away ceiling run from {play['min_savings']} to {play['max_savings']}. "
+                    f"Hard-Bargainer {play['hard_engine']} versus the fixed baseline {play['hard_fixed']}. "
+                    f"{play['per_archetype']} matches, {play['n_archetypes']} archetypes, seed {play['seed']}. "
+                    "Not the auction headline."
+                ),
+                f"Real-model log, different experiment: Bluffing Hardliner deal rate {claims['bluff_deal']}. {claims['violations']}.",
+                f"Held-out intent accuracy on the synthetic set: {claims['held_out_acc']} ({claims['held_out_split']} held out).",
+                "Auction headline is savings versus the first-round best quote. Versus target is shown, including when that figure is negative. The walk-away ceiling figure is secondary.",
+                *auction,
+            ],
+        ),
+        (
+            "8. Limits and how to run",
+            [
+                "cp .env.example .env && docker compose up --build, then open http://localhost:8000.",
+                "Placeholder keys are ignored. /health reports offline_demo and the solver backend.",
+                "No factory deal. No shipped MI300X timing. MIT. Public repo.",
+                "Working deadline used for this pack: 11:00 London (BST), 18 October 2026. Confirm the form.",
+            ],
+        ),
+    ]
+
+
+def render(slides: list[tuple[str, list[str]]], out: Path) -> None:
+    from pptx import Presentation
+    from pptx.dml.color import RGBColor
+    from pptx.util import Emu, Inches, Pt
+
     prs = Presentation()
-    prs.slide_width = Inches(13.333)
-    prs.slide_height = Inches(7.5)
-    # All slides are title+bullets (cover image is submitted separately as 1280x720 png).
-    for title, bullets in SLIDES:
-        add_title_only(prs, title, bullets)
-    os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    prs.save(OUT)
-    print("saved:", OUT, "slides:", len(prs.slides._sldIdLst))
+    # 13.333in x 7.5in widescreen, in English Metric Units.
+    prs.slide_width = Emu(12192000)
+    prs.slide_height = Emu(6858000)
+    ink = RGBColor(0x1C, 0x17, 0x12)
+    navy = RGBColor(0x1E, 0x3A, 0x4C)
+    white = RGBColor(0xFB, 0xF7, 0xF0)
+    for title, bullets in slides:
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        bar = slide.shapes.add_shape(1, 0, 0, prs.slide_width, Inches(1.05))
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = navy
+        bar.line.fill.background()
+        box = slide.shapes.add_textbox(Inches(0.45), Inches(0.22), prs.slide_width - Inches(0.9), Inches(0.7))
+        para = box.text_frame.paragraphs[0]
+        run = para.add_run()
+        run.text = title
+        run.font.size = Pt(28)
+        run.font.bold = True
+        run.font.color.rgb = white
+        body = slide.shapes.add_textbox(
+            Inches(0.5), Inches(1.35), prs.slide_width - Inches(1.0), prs.slide_height - Inches(1.6)
+        )
+        frame = body.text_frame
+        frame.word_wrap = True
+        for index, bullet in enumerate(bullets):
+            paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
+            bullet_run = paragraph.add_run()
+            bullet_run.text = bullet
+            bullet_run.font.size = Pt(16)
+            bullet_run.font.color.rgb = ink
+            paragraph.space_after = Pt(10)
+            paragraph.level = 0
+    out.parent.mkdir(parents=True, exist_ok=True)
+    prs.save(out)
+
+
+def main() -> None:
+    slides = build_slides()
+    if len(slides) != 8:
+        raise SystemExit(f"expected 8 slides, got {len(slides)}")
+    render(slides, OUT)
+    print(f"saved: {OUT} slides: {len(slides)}")
 
 
 if __name__ == "__main__":

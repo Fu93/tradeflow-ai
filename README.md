@@ -35,10 +35,13 @@ Open http://localhost:8000. If port 8000 is already taken, the process prints th
 Chrome copilot (does not send messages): load `extension/` unpacked, or open `extension/mock_chat.html`. No API key is required for this offline demo. Placeholder values in `.env.example` stay `__FILL_ME__`.
 
 ```bash
+python scripts/preflight.py  # before a recording; prints FIX lines, never secret values
 python -m pytest tests -q
 python -m src.cli            # one-supplier walkthrough
 python -m src.cli --multi    # four-supplier auction
 ```
+
+Recording clicks and narration: [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md). Form fields: [docs/LABLAB_FORM.md](docs/LABLAB_FORM.md). The slide deck is [results/pitch.pptx](results/pitch.pptx) (eight slides, rebuilt from the SUBMISSION.md outline).
 
 ## Interface
 
@@ -52,7 +55,7 @@ Screenshots:
 
 - Desktop, before a run: [docs/screenshots/dashboard-desktop.png](docs/screenshots/dashboard-desktop.png)
 - Mobile, before a run: [docs/screenshots/dashboard-mobile.png](docs/screenshots/dashboard-mobile.png)
-- Auction panel before Run: [docs/screenshots/auction-before-desktop.png](docs/screenshots/auction-before-desktop.png), [docs/screenshots/auction-before-mobile.png](docs/screenshots/auction-before-mobile.png)
+- Auction panel before Run auction: [docs/screenshots/auction-before-desktop.png](docs/screenshots/auction-before-desktop.png), [docs/screenshots/auction-before-mobile.png](docs/screenshots/auction-before-mobile.png)
 - Auction panel after Run: [docs/screenshots/auction-after-desktop.png](docs/screenshots/auction-after-desktop.png), [docs/screenshots/auction-after-mobile.png](docs/screenshots/auction-after-mobile.png)
 - Full desk after Run: [docs/screenshots/dashboard-desktop-after-run.png](docs/screenshots/dashboard-desktop-after-run.png)
 - Simulated supplier sandbox: [docs/screenshots/mock-chat-desktop.png](docs/screenshots/mock-chat-desktop.png), [docs/screenshots/mock-chat-mobile.png](docs/screenshots/mock-chat-mobile.png)

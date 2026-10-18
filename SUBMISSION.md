@@ -67,5 +67,6 @@ Record the screen. Speak only what the screen just showed. If a command prints `
 - [ ] Put a real `VLLM_API_KEY` in an untracked `.env`, run `python scripts/verify_amd_endpoint.py` (and `--chat` if you want a completion), and keep the evidence file. Do not commit the key.
 - [ ] On an AMD GPU box with ROCm and CuPy, run `scripts/benchmark_amd_gpu.py`. Commit that JSON only if `ran_on_amd_gpu` is true and you have read it.
 - [ ] Rotate the Evolus and AMD keys if they were pasted into chat, tickets, or screenshots during development. A scan of this git history did not find a committed live key; `.env` is gitignored. Rotation is still the right move if the keys were shared outside the repo.
-- [ ] `results/pitch.pptx` was generated from an older pitch. Rebuild it from this outline or do not upload it.
+- [x] `results/pitch.pptx` is the 8-slide deck from the outline above (`python scripts/make_pitch.py`). Glance at it before upload.
+- [ ] Record the video using [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md). Paste the form fields from [docs/LABLAB_FORM.md](docs/LABLAB_FORM.md). `python scripts/preflight.py` is the checklist.
 - [ ] GitHub topics are empty. This pack cannot edit repository settings. Add `procurement`, `negotiation`, `expectimax`, `fastapi`, `amd`, `hackathon`, `commerce`. The description already matches the pitch and can stay. The CI badge in the README points at `.github/workflows/ci.yml`. License on the repo is already MIT.

@@ -1,4 +1,6 @@
-FROM python:3.12-slim
+# Pinned 2026-10-18 to the library/python 3.12-slim index digest published
+# that day. Bump the digest on purpose; do not float the tag.
+FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 
 WORKDIR /app
 COPY requirements.txt .
@@ -28,6 +30,13 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONIOENCODING=utf-8
 # Render and other hosts inject PORT. Compose publishes 8000.
 ENV PORT=8000
+
+# The dashboard writes data/sessions.db and may create .env on save.
+# Those paths must be writable by the runtime user.
+RUN useradd --create-home --uid 10001 tradeflow \
+    && mkdir -p /app/data \
+    && chown -R tradeflow:tradeflow /app
+USER tradeflow
 
 EXPOSE 8000
 
