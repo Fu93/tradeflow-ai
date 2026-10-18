@@ -243,9 +243,15 @@ def test_desk_auction_rounds_and_sandbox(live_server):
             )
             assert page.locator("#amdLiveToggle").is_visible()
             assert page.locator("#amdLiveToggle").is_checked() is False
+            assert page.locator("#quoteSampleImg").is_hidden()
             page.click("#sampleQuote1")
             page.wait_for_function(
                 "() => document.getElementById('quotePaste').value.includes('SIMULATION')",
+                timeout=15000,
+            )
+            page.wait_for_function(
+                "() => { const el = document.getElementById('quoteSampleImg');"
+                " return !!el && !el.hidden && el.naturalWidth > 0; }",
                 timeout=15000,
             )
             page.click("#readQuoteBtn")
@@ -258,6 +264,15 @@ def test_desk_auction_rounds_and_sandbox(live_server):
             assert page.locator("#amdCallout").evaluate("el => el.classList.contains('is-ok')") is False
             assert "Traceback" not in callout
             assert page.locator("#quoteSampleImg").is_visible()
+            page.set_input_files(
+                "#quoteUpload",
+                os.path.join(REPO, "src", "web", "static", "samples", "quote_01.png"),
+            )
+            page.wait_for_function(
+                "() => { const el = document.getElementById('quoteSampleImg');"
+                " return !!el && !el.hidden && el.naturalWidth > 0 && el.src.indexOf('data:') === 0; }",
+                timeout=15000,
+            )
             assert not errors, errors
 
             sandbox = browser.new_page(viewport={"width": 390, "height": 844})

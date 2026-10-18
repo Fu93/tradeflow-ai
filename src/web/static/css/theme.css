@@ -1214,6 +1214,8 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
   border: 1px dashed var(--rule);
 }
 
+.quote-sample-img[hidden] { display: none; }
+
 .amd-callout {
   margin: 8px 0 0;
   padding: 10px 12px;
