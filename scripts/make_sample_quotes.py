@@ -21,17 +21,20 @@ SAMPLES = (
     (
         "quote_01",
         "Umbrella chat (simulation)",
-        "SIMULATION — not a real supplier screenshot.\n单价：14.80元。5000個。21天。30%定金。\n",
+        "SIMULATION — not a real supplier screenshot.\n"
+        "Unit price: 14.80 CNY per piece. MOQ 5000. Lead time 21 days. 30% deposit.\n",
     ),
     (
         "quote_02",
         "CNC case chat (simulation)",
-        "SIMULATION — not a real supplier screenshot.\n報價：28.50元。2000 pcs。18 days。20%定金。\n",
+        "SIMULATION — not a real supplier screenshot.\n"
+        "Unit price: 28.50 CNY per piece. MOQ 2000. Lead time 18 days. 20% deposit.\n",
     ),
     (
         "quote_03",
         "Battery pack chat (simulation)",
-        "SIMULATION — not a real supplier screenshot.\n價格：190.00元。500套。45天。40%預付。\n",
+        "SIMULATION — not a real supplier screenshot.\n"
+        "Unit price: 190.00 CNY per piece. MOQ 500. Lead time 45 days. 40% deposit.\n",
     ),
 )
 
@@ -57,11 +60,16 @@ def _draw(title: str, body: str) -> bytes:
     draw = ImageDraw.Draw(image)
     draw.rectangle((0, 0, width, 72), fill=(30, 58, 76))
     font = ImageFont.load_default()
-    draw.text((24, 24), "SIMULATION — not a real supplier screenshot", fill=(251, 247, 240), font=font)
-    draw.text((24, 100), title, fill=(28, 23, 18), font=font)
+
+    def _glyph(text: str) -> str:
+        # The bitmap font has no em dash, so the banner used to draw as tofu.
+        return text.replace("\u2014", "-").replace("\u2013", "-")
+
+    draw.text((24, 24), _glyph("SIMULATION — not a real supplier screenshot"), fill=(251, 247, 240), font=font)
+    draw.text((24, 100), _glyph(title), fill=(28, 23, 18), font=font)
     y = 150
     for line in body.splitlines():
-        draw.text((24, y), line, fill=(28, 23, 18), font=font)
+        draw.text((24, y), _glyph(line), fill=(28, 23, 18), font=font)
         y += 28
     draw.text((24, height - 48), "Generated in-repo. Not a factory chat.", fill=(90, 78, 66), font=font)
     raw = image.tobytes()

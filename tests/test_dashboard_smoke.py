@@ -130,12 +130,12 @@ def test_desk_auction_rounds_and_sandbox(live_server):
             page.click("#runAuctionBtn")
             page.wait_for_selector("#auctionSummary:not(.hidden)", timeout=120000)
             summary = page.locator("#auctionSummary").inner_text()
-            assert "Headline: savings vs first-round best quote" in summary
-            assert "Versus target" in summary
-            assert "Secondary: versus walk-away ceiling" in summary
-            headline_at = summary.index("Headline: savings vs first-round best quote")
-            target_at = summary.index("Versus target")
-            ceiling_at = summary.index("Secondary: versus walk-away ceiling")
+            assert "Savings versus the first-round best quote" in summary
+            assert "Versus your target" in summary
+            assert "Versus the walk-away ceiling" in summary
+            headline_at = summary.index("Savings versus the first-round best quote")
+            target_at = summary.index("Versus your target")
+            ceiling_at = summary.index("Versus the walk-away ceiling")
             assert headline_at < target_at < ceiling_at
             # The committed archetype close is above the ¥12 target. The minus stays.
             assert "-" in page.locator("#auctionSummary .is-negative").inner_text()
@@ -148,6 +148,7 @@ def test_desk_auction_rounds_and_sandbox(live_server):
 
             page.set_viewport_size({"width": 1280, "height": 900})
             page.select_option("#presetCategorySelect", "cnc_case")
+            page.click("#openSandboxBtn")
             page.wait_for_function(
                 "() => (document.getElementById('presetStatus') || {}).textContent.includes('DEMO_CNC_CASE_01')",
                 timeout=30000,
@@ -170,7 +171,12 @@ def test_desk_auction_rounds_and_sandbox(live_server):
                 "() => { const t = document.getElementById('decisionCounter').textContent; return t && t !== '—' && t !== '-'; }",
                 timeout=15000,
             )
-            assert page.locator("#cbBadge").inner_text() == "AWAITING HUMAN DECISION"
+            assert page.locator("#cbBadge").inner_text() == "WAITING FOR YOUR DECISION"
+            assert page.locator("#approveBtn").is_visible()
+            assert page.locator("#holdBtn").is_visible()
+            assert page.locator("#rejectBtn").is_visible()
+            assert page.locator("#beliefEmpty").is_hidden()
+            assert int(page.locator("#roundCount").inner_text()) >= 1
 
             approved = _post_json(
                 page,
@@ -186,6 +192,7 @@ def test_desk_auction_rounds_and_sandbox(live_server):
             )
 
             page.select_option("#presetCategorySelect", "battery")
+            page.click("#openSandboxBtn")
             page.wait_for_function(
                 "() => (document.getElementById('presetStatus') || {}).textContent.includes('DEMO_BATTERY_01')",
                 timeout=30000,
@@ -215,6 +222,7 @@ def test_desk_auction_rounds_and_sandbox(live_server):
             )
 
             page.select_option("#presetCategorySelect", "umbrella")
+            page.click("#openSandboxBtn")
             page.wait_for_function(
                 "() => (document.getElementById('presetStatus') || {}).textContent.includes('DEMO_UMBRELLA_01')",
                 timeout=30000,

@@ -143,12 +143,15 @@ def main() -> int:
             try:
                 # ------------------------------------------------ extension load
                 print("\n[1] Extension loads")
-                sw = None
-                for _ in range(60):
-                    if ctx.service_workers:
-                        sw = ctx.service_workers[0]
-                        break
-                    time.sleep(0.25)
+                # service_workers is a local list filled by the serviceworker
+                # event. time.sleep does not pump that event, so a poll loop
+                # can miss a worker that registered after launch returned.
+                sw = ctx.service_workers[0] if ctx.service_workers else None
+                if sw is None:
+                    try:
+                        sw = ctx.wait_for_event("serviceworker", timeout=15000)
+                    except Exception:
+                        sw = None
                 if not check("MV3 service worker registered", sw is not None):
                     return 1
                 ext_id = sw.url.split("/")[2]
@@ -221,21 +224,28 @@ def main() -> int:
 
                 # session_id whitelist: the tab session the SW registered must be
                 # backend-legal even though the mock supplier name is CJK.
-                sw_session = sw.evaluate(
-                    """async () => {
-                        try {
-                          const r = await chrome.runtime.sendMessage({type:'GET_ALL_SESSIONS'});
-                          if (r && r.sessions && r.sessions.length) return r.sessions[0];
-                        } catch (e) {}
-                        try {
-                          const all = await chrome.storage.session.get(null);
-                          const keys = Object.keys(all).filter(k => k.startsWith('tab_'));
-                          if (keys.length) return all[keys[0]];
-                        } catch (e) {}
-                        return null;
-                    }"""
-                )
-                sid = (sw_session or {}).get("sessionId") or ""
+                # Registration is async after the HUD paints, so wait briefly.
+                sid = ""
+                session_deadline = time.time() + 8
+                while time.time() < session_deadline:
+                    sw_session = sw.evaluate(
+                        """async () => {
+                            try {
+                              const r = await chrome.runtime.sendMessage({type:'GET_ALL_SESSIONS'});
+                              if (r && r.sessions && r.sessions.length) return r.sessions[0];
+                            } catch (e) {}
+                            try {
+                              const all = await chrome.storage.session.get(null);
+                              const keys = Object.keys(all).filter(k => k.startsWith('tab_'));
+                              if (keys.length) return all[keys[0]];
+                            } catch (e) {}
+                            return null;
+                        }"""
+                    )
+                    sid = (sw_session or {}).get("sessionId") or ""
+                    if sid:
+                        break
+                    page.wait_for_timeout(200)
                 import re as _re
                 print(f"    registered session_id: {sid!r}")
                 check(

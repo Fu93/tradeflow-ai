@@ -95,10 +95,26 @@ def _deposit_fraction(value: float | None) -> tuple[float | None, str | None]:
 def _moq_from_text(text: str, stage1_moq: int | None) -> int | None:
     if stage1_moq is not None:
         return stage1_moq
+    extracted = InboundIntentClassifier.extract_demanded_moq(text or "")
+    if extracted is not None:
+        return extracted
     match = _MOQ_WORD.search(text or "")
     if not match:
         return None
     return InboundIntentClassifier._clamp_moq(match.group(1))
+
+
+def describe_supplier_price(fields: dict | None) -> str:
+    """What the desk should show. Missing stays missing; USD is not relabelled CNY."""
+    source = fields or {}
+    amount = _as_float(source.get("quoted_amount"))
+    if amount is None:
+        return "missing"
+    currency = source.get("currency")
+    text = f"{amount:.2f}"
+    if isinstance(currency, str) and currency.strip():
+        return f"{text} {currency.strip()}"
+    return text
 
 
 def extract_stage1(text: str) -> dict:

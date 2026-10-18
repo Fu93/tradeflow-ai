@@ -754,6 +754,11 @@ def _dispatch_supervisor_command(
                     expected_version=expected_version,
                 )
                 applied = True
+            elif sess.state == AutopilotState.AWAITING_HUMAN_DECISION:
+                note = (
+                    "This deal is waiting for a person to approve, hold, or reject. "
+                    "The remote command was not applied."
+                )
             elif sess.state in (AutopilotState.DEAL_CLOSED, AutopilotState.WALK_AWAY):
                 note = (
                     f"Session is in terminal state {sess.state.value}; the command produced "
@@ -956,7 +961,7 @@ class ApproveActionRequest(BaseModel):
     # approve with defaults.
     model_config = ConfigDict(extra="forbid")
 
-    action: str = "approve"  # "approve", "modify", "override", "reject"
+    action: str = "approve"  # "approve", "hold", "modify", "override", "reject"
     custom_price: Optional[float] = Field(default=None, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
     custom_reply_text: Optional[str] = Field(default=None, max_length=10_000)
     expected_version: Optional[int] = Field(default=None, ge=1)
@@ -968,10 +973,10 @@ class ApproveActionRequest(BaseModel):
         if v is None:
             return "approve"
         key = str(v).strip().lower()
-        if key not in ("approve", "modify", "override", "reject"):
+        if key not in ("approve", "hold", "modify", "override", "reject"):
             raise ValueError(
                 f"Unknown approve action {v!r}; expected one of "
-                "approve|modify|override|reject"
+                "approve|hold|modify|override|reject"
             )
         return key
 
@@ -1236,16 +1241,39 @@ def approve_session_decision(session_id: str, body: ApproveActionRequest):
     if not sess:
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    # 狀態守衛：必須處於等待人類決策、監聽中或熔斷狀態
-    if sess.state not in (
+    waiting = {
         AutopilotState.AWAITING_HUMAN_DECISION,
         AutopilotState.CIRCUIT_TRIPPED_ESCALATED,
-        AutopilotState.COPILOT_MONITORING,
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Session is in state '{sess.state.value}', not awaiting human decision.",
+    }
+    not_waiting = (
+        "This deal is not waiting for a decision, so that action was not recorded."
+    )
+
+    # Hold stays on the human. It records the choice and does not approve.
+    if body.action == "hold":
+        if sess.state not in waiting:
+            raise HTTPException(status_code=409, detail=not_waiting)
+        held_price = _latest_recommended_price(sess)
+        session_mgr.annotate_last_turn(
+            session_id,
+            {
+                "human_decision": "hold",
+                "held_engine_price": held_price,
+                "rationale": body.tactical_rationale or "Hold firm at the engine price.",
+            },
         )
+        sess = session_mgr.get_session(session_id)
+        return {
+            "status": "held",
+            "action": "hold",
+            "session": sess,
+            "autopilot_state": sess.state.value,
+            "applied_price": None,
+            "message": (
+                "Held the engine price. The deal is still waiting for you to approve or reject. "
+                "Nothing was sent."
+            ),
+        }
 
     # CAS 樂觀鎖版本檢查
     if body.expected_version is not None and sess.version != body.expected_version:
@@ -1256,18 +1284,31 @@ def approve_session_decision(session_id: str, body: ApproveActionRequest):
 
     # 1. 否決撤退
     if body.action == "reject":
-        sess = session_mgr.transition_state(
-            session_id,
-            AutopilotState.WALK_AWAY,
-            reason=body.tactical_rationale or "Human buyer rejected offer and terminated negotiation.",
-            expected_version=sess.version,
-        )
+        try:
+            sess = session_mgr.transition_state(
+                session_id,
+                AutopilotState.WALK_AWAY,
+                reason=body.tactical_rationale or "Human buyer rejected offer and terminated negotiation.",
+                expected_version=sess.version,
+            )
+        except InvalidStateTransitionError:
+            raise HTTPException(
+                status_code=409,
+                detail="This deal cannot be rejected from its current state, so nothing was recorded.",
+            )
+        except OptimisticLockConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
         return {
             "status": "rejected",
             "session": sess,
             "action": "reject",
             "autopilot_state": sess.state.value,
         }
+
+    # Approve writes a buyer turn and leaves the waiting state. A second
+    # approve, or an approve after the deal has moved on, must not 500.
+    if sess.state != AutopilotState.AWAITING_HUMAN_DECISION:
+        raise HTTPException(status_code=409, detail=not_waiting)
 
     # 2. 核准或覆寫
     # [P0 REGRESSION] 舊版在未指定 custom_price 時用 `sess.latest_our_offer or target`。
@@ -1339,19 +1380,26 @@ def approve_session_decision(session_id: str, body: ApproveActionRequest):
             reason=f"Human buyer approved action '{body.action}' at price ¥{final_price:.2f}",
             expected_version=sess.version,
         )
+        # 檢查是否達成協議
+        is_deal_closed = False
+        if sess.latest_opponent_offer is not None and sess.latest_opponent_offer <= final_price:
+            is_deal_closed = True
+
+        if is_deal_closed:
+            sess = session_mgr.transition_state(session_id, AutopilotState.DEAL_CLOSED, expected_version=sess.version)
+        else:
+            # 轉入常規 Copilot 監聽狀態
+            sess = session_mgr.transition_state(session_id, AutopilotState.COPILOT_MONITORING, expected_version=sess.version)
     except OptimisticLockConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
-
-    # 檢查是否達成協議
-    is_deal_closed = False
-    if sess.latest_opponent_offer is not None and sess.latest_opponent_offer <= final_price:
-        is_deal_closed = True
-
-    if is_deal_closed:
-        sess = session_mgr.transition_state(session_id, AutopilotState.DEAL_CLOSED, expected_version=sess.version)
-    else:
-        # 轉入常規 Copilot 監聽狀態
-        sess = session_mgr.transition_state(session_id, AutopilotState.COPILOT_MONITORING, expected_version=sess.version)
+    except InvalidStateTransitionError:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "That decision does not apply to this deal in its current state, "
+                "so it was not recorded."
+            ),
+        )
 
     return {
         "status": "approved",
@@ -1441,6 +1489,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         ActionObjectASTGuardrail,
         ChineseSurfaceRenderer,
         EnglishExecutiveRenderer,
+        render_supplier_reply,
         CURRENT_SCHEMA_VERSION,
     )
     # 1. 供應商套路意圖分類與潛台詞反編譯
@@ -1560,6 +1609,9 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                 "moq": offered_moq,
                 "lead_days": action.offered_lead_days,
                 "deposit_pct": action.deposit_pct,
+                "currency": stage1.mentioned_currency,
+                "quoted_amount": stage1.quoted_amount,
+                "currency_note": stage1.price_currency_note,
             },
             "bayesian_confidence": float(bayesian_confidence),
             "expected_margin": float(rec.get("expected_margin_price", 0.0)),
@@ -1923,7 +1975,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
 
     # 5.7 雙向表面渲染
     # 中文表面渲染 (面向供應商對話)：沿海地道行話，徹底消除外商溢價
-    auto_reply_text = ChineseSurfaceRenderer.render(action_obj)
+    auto_reply_text = render_supplier_reply(action_obj, raw_text)
 
     # 文本層數值護欄複核 (防止任何渲染偏差)
     try:

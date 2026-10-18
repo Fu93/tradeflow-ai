@@ -71,8 +71,63 @@ function tfCaution() {
 }
 
 function tfMoney(value) {
+  return tfAmount(value, "CNY");
+}
+
+function tfAmount(value, currency) {
   const n = tfNum(value, null);
-  return n === null ? "—" : `¥${n.toFixed(2)}`;
+  if (n === null) return "—";
+  const negative = n < 0;
+  const abs = Math.abs(n);
+  const digits = abs >= 1000 ? 0 : 2;
+  const scale = digits === 0 ? 1 : 100;
+  const cents = Math.round(abs * scale);
+  const wholeNum = digits === 0 ? cents : Math.floor(cents / scale);
+  const frac = digits === 0 ? "" : String(cents % scale).padStart(2, "0");
+  const whole = String(wholeNum).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const body = frac && frac !== "00" ? whole + "." + frac : whole;
+  const code = currency ? " " + currency : "";
+  return (negative ? "-" : "") + body + code;
+}
+
+function tfPct(value) {
+  const n = tfNum(value, null);
+  if (n === null) return "";
+  const shown = Math.round(n * 1000) / 10;
+  const text = shown.toFixed(1) + "%";
+  return shown > 0 ? "+" + text : text;
+}
+
+function isHiddenSession(id) {
+  return /^(smoke-|probe-|ui-demo-|xss)/i.test(String(id || ""));
+}
+
+function quoteOnSession(session) {
+  const turns = (session && (session.history || session.turns)) || [];
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const entities = (turns[i].metadata || {}).entities || {};
+    if (entities.currency || entities.quoted_amount != null) {
+      return {
+        currency: entities.currency || null,
+        amount: tfNum(entities.quoted_amount, null),
+        note: entities.currency_note || "",
+      };
+    }
+  }
+  return null;
+}
+
+function friendlyState(name) {
+  const labels = {
+    AWAITING_HUMAN_DECISION: "Waiting for you",
+    COPILOT_MONITORING: "Watching",
+    CIRCUIT_TRIPPED_ESCALATED: "Needs you",
+    HUMAN_APPROVED_APPLIED: "Approved",
+    WALK_AWAY: "Walked away",
+    DEAL_CLOSED: "Closed",
+    AUTOPILOT_CRUISING: "Cruising",
+  };
+  return labels[name] || name;
 }
 
 function tfTone(el, tone) {
@@ -97,6 +152,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // P1-3: SSE 與遙測配置必須先於圖表初始化；圖表失敗（CDN 不可達）不得中止
   // 整個啟動鏈，否則會話清單永遠停在 "Connecting..."。
   initSSE();
+  bindDeskChrome();
   fetchTelemetryConfig();
   loadDeskConfig();
   paintAmdAvailability();
@@ -125,7 +181,7 @@ function initBeliefChart() {
       labels: ["Prior"],
       datasets: [
         {
-          label: "Posterior mean (¥)",
+          label: "Posterior mean (CNY)",
           // Empty until a real posterior arrives: the old hardcoded 12.96 drew
           // a data point for a session that had never been measured.
           data: [],
@@ -172,7 +228,7 @@ function initBeliefChart() {
           ticks: { color: "#4e5a52", font: { size: 11, family: '"Outfit TF", sans-serif' } },
           grid: { color: "#efe6d6" },
           border: { color: "#b7a894" },
-          title: { display: true, text: "Price (¥)", color: "#4e5a52", font: { size: 11, family: '"Outfit TF", sans-serif' } }
+          title: { display: true, text: "Price (CNY)", color: "#4e5a52", font: { size: 11, family: '"Outfit TF", sans-serif' } }
         },
         yRisk: {
           position: "right",
@@ -199,12 +255,12 @@ function initSSE() {
 
   evtSource.onopen = () => {
     statusDot.className = "feed-dot active";
-    statusLabel.textContent = "Connected · live";
+    statusLabel.textContent = "Live";
   };
 
   evtSource.onerror = () => {
     statusDot.className = "feed-dot";
-    statusLabel.textContent = "Disconnected";
+    statusLabel.textContent = "Reconnecting";
   };
 
   evtSource.onmessage = (e) => {
@@ -225,13 +281,14 @@ function renderSessions(sessions) {
   const listEl = document.getElementById("sessionList");
   if (!listEl) return;
 
-  if (sessions.length === 0) {
-    listEl.innerHTML = `<div class="empty-state">No sessions. Start via API or CLI.</div>`;
+  const visible = sessions.filter((s) => !isHiddenSession(s.session_id));
+  if (visible.length === 0) {
+    listEl.innerHTML = `<div class="empty-state">No deals on file. Open a sandbox deal from the mandate, or start one from the API.</div>`;
     return;
   }
 
   listEl.innerHTML = "";
-  sessions.forEach((s) => {
+  visible.forEach((s) => {
     const item = document.createElement("div");
     item.className = `session-item ${s.session_id === currentSessionId ? "active" : ""}`;
     item.onclick = () => selectSession(s);
@@ -246,19 +303,27 @@ function renderSessions(sessions) {
     item.innerHTML = `
       <div class="session-item-row">
         <span class="session-item-id">${tfEsc(s.session_id)}</span>
-        <span class="session-badge ${tfEsc(stateClass)}">${tfEsc(s.state)}</span>
+        <span class="session-badge ${tfEsc(stateClass)}">${tfEsc(friendlyState(s.state))}</span>
       </div>
       <div class="session-item-row session-item-sub">
-        <span>${tfEsc(s.product)} (target ¥${tfEsc(s.target)})</span>
-        <span>${tfEsc(s.rounds)} rounds</span>
+        <span>${tfEsc(s.product)} (target ${tfEsc(tfAmount(s.target, "CNY"))})</span>
+        <span>${tfEsc(s.rounds)} ${Number(s.rounds) === 1 ? "round" : "rounds"}</span>
       </div>
     `;
     listEl.appendChild(item);
   });
 }
 
+function clearStaleDecisionPrompt() {
+  const result = document.getElementById("decisionResult");
+  if (result && result.textContent.indexOf("Open a sandbox deal first") === 0) {
+    result.textContent = "";
+  }
+}
+
 function selectSession(s) {
   currentSessionId = s.session_id;
+  clearStaleDecisionPrompt();
   document.getElementById("cmdSessionId").value = s.session_id;
   document.getElementById("sessionLabel").textContent = s.session_id;
   const titleEl = document.getElementById("dealTitle");
@@ -294,7 +359,7 @@ function selectSession(s) {
     ring.className = "cb-ring tripped";
   } else if (s.state === "AWAITING_HUMAN_DECISION") {
     badge.className = "cb-badge cb-warn";
-    badge.textContent = "AWAITING HUMAN DECISION";
+    badge.textContent = "Waiting for your decision";
     ring.className = "cb-ring";
   } else if (s.state === "DEAL_CLOSED") {
     badge.className = "cb-badge cb-safe";
@@ -335,7 +400,7 @@ function selectSession(s) {
     const targetPx = tfNum(s.target, 0);
     const meanPx = targetPx > 0 ? tfNum(s.last_posterior, 0) * targetPx : null;
     document.getElementById("postMean").textContent =
-      meanPx == null ? "--" : `¥${meanPx.toFixed(2)}`;
+      meanPx == null ? "—" : tfAmount(meanPx, "CNY");
   } else {
     document.getElementById("postMean").textContent = "--";
   }
@@ -444,8 +509,8 @@ function renderPriceLadder(session) {
   const target = tfNum(spec.target_price, null);
   const ceiling = tfNum(spec.ceiling_price, null);
 
-  setText("ladderTarget", target === null ? "—" : `¥${target.toFixed(2)}`);
-  setText("ladderCeiling", ceiling === null ? "—" : `¥${ceiling.toFixed(2)}`);
+  setText("ladderTarget", tfAmount(target, "CNY"));
+  setText("ladderCeiling", tfAmount(ceiling, "CNY"));
 
   const turns = session.history || session.turns || [];
   const lastOpp = [...turns].reverse().find((t) => t.sender === "opponent");
@@ -478,7 +543,7 @@ function renderPriceLadder(session) {
   if (plottable && ask !== null) {
     askMarker.style.top = `calc(${place(ask)}% - 8px)`;
     askMarker.hidden = false;
-    setText("ladderAskValue", `¥${ask.toFixed(2)}`);
+    setText("ladderAskValue", tfAmount(ask, "CNY"));
   } else {
     askMarker.hidden = true;
     setText("ladderAskValue", "—");
@@ -493,7 +558,7 @@ function renderPriceLadder(session) {
     }
     counterMarker.style.top = `calc(${topPct}% - 8px)`;
     counterMarker.hidden = false;
-    setText("ladderCounterValue", `¥${counter.toFixed(2)}`);
+    setText("ladderCounterValue", tfAmount(counter, "CNY"));
   } else {
     counterMarker.hidden = true;
     setText("ladderCounterValue", "—");
@@ -521,15 +586,19 @@ function renderPriceLadder(session) {
       if (!Number.isFinite(step) || step <= 0 || !Number.isFinite(edgeLo) || !Number.isFinite(edgeHi)) {
         ticksEl.innerHTML = "";
       } else {
+      let lastTickPct = -1;
       for (let v = Math.ceil(target / step) * step; v < ceiling; v += step) {
         const frac = (ceiling - v) / span;
         // Keep clear of the two end labels (ceiling at 0, target at 1).
         if (v <= target || frac < edgeLo || frac > edgeHi) continue;
+        const tickPct = Math.round(frac * 100);
+        if (lastTickPct >= 0 && Math.abs(tickPct - lastTickPct) < 8) continue;
+        lastTickPct = tickPct;
         const row = document.createElement("div");
         row.className = "track-tick";
         row.style.top = `${frac * 100}%`;
         const label = document.createElement("span");
-        label.textContent = `¥${Number.isInteger(v) ? v : v.toFixed(2)}`;
+        label.textContent = tfAmount(v, "CNY");
         row.appendChild(label);
         ticksEl.appendChild(row);
       }
@@ -537,16 +606,21 @@ function renderPriceLadder(session) {
     }
   }
 
+  const quote = quoteOnSession(session);
+  const foreign = quote && quote.currency && quote.currency !== "CNY" && quote.amount !== null;
   setText(
     "ladderRoom",
-    ask === null || ceiling === null ? "—" : `¥${(ceiling - ask).toFixed(2)}`
+    ask === null || ceiling === null ? "—" : tfAmount(ceiling - ask, "CNY")
   );
   setText(
     "ladderPremium",
     ask === null || target === null || target <= 0
       ? "—"
-      : `+¥${(ask - target).toFixed(2)} (${(((ask - target) / target) * 100).toFixed(0)}%)`
+      : `${tfAmount(ask - target, "CNY")} (${tfPct((ask - target) / target)})`
   );
+  if (foreign && ask === null && noteEl) {
+    noteEl.textContent = `Supplier quote ${tfAmount(quote.amount, quote.currency)} is not plotted on this CNY ladder. ${quote.note || "No conversion rate is set."}`;
+  }
 }
 
 function customsReferenceLine(ctx) {
@@ -586,7 +660,8 @@ function renderEngineDecision(session) {
   if (curRound === null) {
     el("decisionRound").textContent = "—";
   } else if (maxRounds !== null && curRound > maxRounds) {
-    el("decisionRound").textContent = `${curRound} rounds (limit ${maxRounds})`;
+    const roundWord = curRound === 1 ? "round" : "rounds";
+    el("decisionRound").textContent = `${curRound} ${roundWord} (limit ${maxRounds})`;
   } else {
     el("decisionRound").textContent = `Round ${curRound} / ${maxRounds === null ? "—" : maxRounds}`;
   }
@@ -595,7 +670,7 @@ function renderEngineDecision(session) {
   const lastOpp = [...turns].reverse().find((t) => t.sender === "opponent");
   if (lastOpp && lastOpp.raw_text) {
     const txt = String(lastOpp.raw_text);
-    el("decisionIntent").textContent = txt.length > 46 ? txt.slice(0, 46) + "…" : txt;
+    el("decisionIntent").textContent = txt;
     el("decisionIntent").title = txt;
   } else {
     el("decisionIntent").textContent = "—";
@@ -612,7 +687,19 @@ function renderEngineDecision(session) {
     if (v !== null) { recommended = v; break; }
   }
   const shownOffer = recommended !== null ? recommended : tfNum(session.latest_our_offer, null);
-  el("decisionCounter").textContent = shownOffer === null ? "—" : `¥${shownOffer.toFixed(2)}`;
+  el("decisionCounter").textContent = shownOffer === null ? "—" : tfAmount(shownOffer, "CNY");
+  const unitNote = document.getElementById("decisionUnit");
+  if (unitNote) {
+    const quote = quoteOnSession(session);
+    if (quote && quote.currency && quote.currency !== "CNY") {
+      const asked = quote.amount === null ? quote.currency : tfAmount(quote.amount, quote.currency);
+      unitNote.textContent = quote.note
+        ? `Supplier asked ${asked}. ${quote.note}`
+        : `Supplier asked ${asked}. The counter above is CNY.`;
+    } else {
+      unitNote.textContent = "Prices in this panel are CNY, the mandate currency.";
+    }
+  }
 
   // 破局風險：取最近一輪**有量測值**的 p_break。人工核准輪沿用上一輪的實測值，
   // 但舊資料可能有 p_break=null；一律往回找到第一個真實值，找不到就 "—"。
@@ -649,6 +736,75 @@ function renderEngineDecision(session) {
 
 // The draft is meant to be pasted into the supplier chat by a human. Until now
 // the dashboard only displayed it, so the operator had to select text by hand.
+async function decide(action) {
+  const result = document.getElementById("decisionResult");
+  const sid = currentSessionId || ((document.getElementById("cmdSessionId") || {}).value || "");
+  if (!sid) {
+    if (result) result.textContent = "Open a sandbox deal first. Nothing was recorded.";
+    return;
+  }
+  const rationale = action === "hold"
+    ? "Hold firm at the engine price."
+    : action === "reject"
+      ? "Buyer rejected the offer."
+      : "Buyer approved the engine price.";
+  if (result) result.textContent = "Recording your decision…";
+  try {
+    const res = await fetch(`/api/v1/sessions/${encodeURIComponent(sid)}/approve`, {
+      method: "POST",
+      headers: tfJsonHeaders(),
+      body: JSON.stringify({ action: action, tactical_rationale: rationale }),
+    });
+    let body = null;
+    try { body = await res.json(); } catch (_) { body = null; }
+    if (!res.ok) {
+      const detail = (body && (body.detail || body.reason)) || "The desk could not record that decision.";
+      if (result) result.textContent = typeof detail === "string" ? detail : "Try again after the supplier replies.";
+      return;
+    }
+    if (action === "reject") {
+      if (result) result.textContent = "Rejected. The deal is closed on our side. Nothing was sent to the supplier.";
+    } else if (action === "hold") {
+      if (result) result.textContent = (body && body.message) || "Held the engine price. The deal is still waiting for you to approve or reject. Nothing was sent.";
+    } else if (result) {
+      result.textContent = "Approved the engine price. Paste the draft yourself. Nothing was sent automatically.";
+    }
+    await fetchSessionDetails(sid);
+  } catch (err) {
+    if (result) result.textContent = err.message || "The desk could not record that decision.";
+  }
+}
+
+function bindDeskChrome() {
+  const themeBtn = document.getElementById("themeToggle");
+  const langBtn = document.getElementById("langToggle");
+  const apply = () => {
+    const root = document.getElementById("marketIntel");
+    if (themeBtn) themeBtn.textContent = document.documentElement.dataset.theme === "dark" ? "Light" : "Dark";
+    if (langBtn) langBtn.textContent = document.documentElement.lang === "zh-Hant" ? "EN" : "繁";
+    if (root && window.TradeFlowMarket) window.TradeFlowMarket.paint(root, root._last || null);
+  };
+  if (themeBtn) {
+    themeBtn.addEventListener("click", () => {
+      const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem("tfMarketTheme", next); } catch (err) { /* ignore */ }
+      apply();
+    });
+  }
+  if (langBtn) {
+    langBtn.addEventListener("click", () => {
+      const next = document.documentElement.lang === "zh-Hant" ? "en" : "zh-Hant";
+      document.documentElement.lang = next;
+      const root = document.getElementById("marketIntel");
+      if (root) root.dataset.lang = next;
+      try { localStorage.setItem("tfMarketLang", next); } catch (err) { /* ignore */ }
+      apply();
+    });
+  }
+  apply();
+}
+
 function copyDraftReply() {
   const btn = document.getElementById("copyReplyBtn");
   const node = document.getElementById("decisionReply");
@@ -714,8 +870,7 @@ function setBeliefChartEmpty(isEmpty) {
 }
 
 // Sandbox commodities. The catalogue arrives from /api/v1/simulation/mandates.
-// Changing the selector still POSTs /api/v1/sessions so the engine enforces
-// the same simulated mandate the table shows.
+// The selector only previews a mandate. Open sandbox deal POSTs /api/v1/sessions.
 function paintRiskBands() {
   const trip = tfTrip();
   const caution = tfCaution();
@@ -771,9 +926,31 @@ async function loadDeskConfig() {
   if (select && categoryPresets && categoryPresets[select.value]) {
     paintMandate(categoryPresets[select.value]);
     if (statusEl) {
-      statusEl.textContent = "Preview of a simulated mandate. It is not a factory quote. Changing the commodity opens a sandbox session bound to it.";
+      statusEl.textContent = "Preview only. No deal was opened. Use Open sandbox deal when you want the engine to use this mandate.";
     }
   }
+}
+
+function previewMandate(cat) {
+  const p = categoryPresets && categoryPresets[cat];
+  const statusEl = document.getElementById("presetStatus");
+  if (!p) {
+    if (statusEl) {
+      statusEl.textContent = "Simulated mandates have not loaded. Refresh the desk.";
+      tfTone(statusEl, "is-bad");
+    }
+    return;
+  }
+  paintMandate(p);
+  if (statusEl) {
+    statusEl.textContent = "Preview only. No deal was opened. Use Open sandbox deal when you want the engine to use this mandate.";
+    tfTone(statusEl, "");
+  }
+}
+
+async function openSandboxDeal() {
+  const select = document.getElementById("presetCategorySelect");
+  return applyCategoryPreset(select ? select.value : "");
 }
 
 async function applyCategoryPreset(cat) {
@@ -790,7 +967,7 @@ async function applyCategoryPreset(cat) {
   paintMandate(p);
 
   // Create (or reuse) a real session so the engine actually operates under this
-  // mandate instead of the display merely changing.
+  // mandate instead of the display merely changing. Called only from Open sandbox deal.
   const newSid = `DEMO_${cat.toUpperCase()}_01`;
   const body = {
     session_id: newSid,
@@ -815,6 +992,7 @@ async function applyCategoryPreset(cat) {
         statusEl.textContent = `Sandbox session ${newSid} created. The engine is bound to this simulated mandate, not a factory quote.`;
         tfTone(statusEl, "is-ok");
       }
+      clearStaleDecisionPrompt();
       fetchSessionDetails(newSid);
     } else {
       const detail = await res.text();
@@ -842,6 +1020,15 @@ async function applyCategoryPreset(cat) {
 // rule as TF_API_KEY (send no header when we have no value configured). Set a
 // value at runtime via localStorage.setItem("tfWebhookToken", ...) in DevTools.
 const TF_WEBHOOK_AUTH = localStorage.getItem("tfWebhookToken") || "";
+
+function humanCommandResult(reason) {
+  const text = String(reason || "");
+  if (text.indexOf("waiting for a person") !== -1 || text.indexOf("AWAITING_HUMAN_DECISION") !== -1) {
+    return "This deal is waiting for you. Use Approve, Hold firm, or Reject. The remote command was not applied.";
+  }
+  if (!text) return "The command was not applied.";
+  return text;
+}
 
 async function sendCommand(cmdCode) {
   const sid = document.getElementById("cmdSessionId").value.trim() || currentSessionId;
@@ -896,7 +1083,7 @@ async function sendCommand(cmdCode) {
       const reason = (result && (result.detail || result.reason)) || "no action applied";
       resEl.className = "cmd-result is-bad";
       tfTone(resEl, "is-bad");
-      resEl.textContent = `[NOT APPLIED] ${reason}`;
+      resEl.textContent = humanCommandResult(reason);
     }
   } catch (err) {
     resEl.className = "cmd-result is-bad";
@@ -963,35 +1150,52 @@ async function runMultiAuction() {
       const quotePct = Math.max(0, Math.min(100, (Number(quoteNum) / scale) * 100));
 
       let tagClass = "tactic-anchor";
-      if (tactic === "LEAN_IN") tagClass = "tactic-lean";
-      else if (tactic === "SIDELINE") tagClass = "tactic-sideline";
+      let plainTactic = "Hold the line";
+      if (tactic === "LEAN_IN") {
+        tagClass = "tactic-lean";
+        plainTactic = "Press for a better price";
+      } else if (tactic === "SIDELINE") {
+        tagClass = "tactic-sideline";
+        plainTactic = "Step back";
+      }
 
       const card = document.createElement("div");
       card.className = "supplier-card";
       if (sName === data.winning_supplier) card.classList.add("is-winner");
+      const quoteLabel = tfAmount(quoteNum, "CNY");
       card.innerHTML = `
         <div class="card-top">
           <span class="supplier-title">${tfEsc(sName)}</span>
-          <span class="tactic-tag ${tfEsc(tagClass)}">${tfEsc(tactic)}</span>
+          <span class="tactic-tag ${tfEsc(tagClass)}">${tfEsc(plainTactic)}</span>
         </div>
         <div class="card-metrics">
-          <div>Quote: <span class="metric-val">${quoteNum === null ? "—" : "¥" + quoteNum.toFixed(2)}</span></div>
-          <div>BATNA: <span class="metric-val">${ceilingNum === null ? "—" : "¥" + ceilingNum.toFixed(2)}</span></div>
+          <div>Quote: <span class="metric-val">${tfEsc(quoteLabel)}</span></div>
+          <div>Best alternative: <span class="metric-val">${tfEsc(tfAmount(ceilingNum, "CNY"))}</span></div>
           <div>Risk: <span class="metric-val">${pBreak === "—" ? "—" : tfEsc(pBreak) + "%"}</span></div>
         </div>
-        <div class="quote-meter" role="img" aria-label="Quote is ${quotePct.toFixed(0)} percent of the walk-away ceiling">
-          <span class="quote-meter-fill" style="width: ${quotePct.toFixed(1)}%"></span>
+        <div class="meter-row">
+          <div class="quote-meter" role="img" aria-label="Quote is ${quotePct.toFixed(0)} percent of the walk-away ceiling">
+            <span class="quote-meter-fill" style="width: ${quotePct.toFixed(1)}%"></span>
+          </div>
+          <span class="quote-meter-num">${tfEsc(quoteLabel)}</span>
         </div>
-        <div class="quote-meter-scale"><span>0</span><span>walk-away ceiling</span></div>
       `;
       cardsWrap.appendChild(card);
     });
 
+    const versusTarget = tfNum(data.savings_vs_target_cny, null);
+    const pieceCount = tfNum(data.moq, null);
+    const pieceBasis = pieceCount === null ? "" : ` for ${tfAmount(pieceCount, "")} pcs`;
     summaryEl.innerHTML = `
-      <p class="summary-lead"><strong>Simulated suppliers</strong> Parameterised archetypes, not live factory quotes. Winner: ${tfEsc(data.winning_supplier)} @ ${tfNum(data.winning_price, null) === null ? "—" : "¥" + tfNum(data.winning_price, 0).toFixed(2)}. Tensor grid cells: ${tfNum(data.total_rollouts, 0).toLocaleString()} (parameterised K×S×N_open×N_sched, not measured iterations). Compute: ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}).</p>
-      <p class="summary-headline"><strong>Headline: savings vs first-round best quote</strong> (${tfNum(data.first_round_best_quote, null) === null ? "—" : "¥" + tfNum(data.first_round_best_quote, 0).toFixed(2)}): ${tfNum(data.total_savings_cny, null) === null ? "—" : "¥" + tfNum(data.total_savings_cny, 0).toFixed(2)} (${tfNum(data.total_savings_pct, null) === null ? "—" : (tfNum(data.total_savings_pct, 0) * 100).toFixed(1) + "%"})</p>
-      <p class="${tfNum(data.savings_vs_target_pct, 0) < 0 ? "is-negative" : ""}"><strong>Versus target</strong> (${tfNum(data.product_target, null) === null ? "—" : "¥" + tfNum(data.product_target, 0).toFixed(2)}): ${tfNum(data.savings_vs_target_cny, null) === null ? "—" : "¥" + tfNum(data.savings_vs_target_cny, 0).toFixed(2)} (${tfNum(data.savings_vs_target_pct, null) === null ? "—" : (tfNum(data.savings_vs_target_pct, 0) * 100).toFixed(1) + "%"})</p>
-      <p class="summary-secondary"><strong>Secondary: versus walk-away ceiling</strong> (${tfNum(data.walk_away_ceiling, null) === null ? "—" : "¥" + tfNum(data.walk_away_ceiling, 0).toFixed(2)}): ${tfNum(data.savings_vs_ceiling_cny, null) === null ? "—" : "¥" + tfNum(data.savings_vs_ceiling_cny, 0).toFixed(2)} (${tfNum(data.savings_vs_ceiling_pct, null) === null ? "—" : (tfNum(data.savings_vs_ceiling_pct, 0) * 100).toFixed(1) + "%"})</p>
+      <p class="summary-lead"><strong>Simulated suppliers</strong> These are scripted archetypes, not live factory quotes. Winner: ${tfEsc(data.winning_supplier)} at ${tfEsc(tfAmount(data.winning_price, "CNY"))}. Amounts on this card are CNY.</p>
+      <p class="summary-headline"><strong>Savings versus the first-round best quote</strong> (${tfEsc(tfAmount(data.first_round_best_quote, "CNY"))}): ${tfEsc(tfAmount(data.total_savings_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.total_savings_pct))})</p>
+      <p class="${versusTarget !== null && versusTarget < 0 ? "is-negative" : ""}"><strong>Versus your target</strong> (${tfEsc(tfAmount(data.product_target, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_target_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_target_pct))})</p>
+      <p class="summary-secondary"><strong>Versus the walk-away ceiling</strong> (${tfEsc(tfAmount(data.walk_away_ceiling, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_ceiling_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_ceiling_pct))})</p>
+      <p class="summary-secondary">Best alternative is the cheapest adjusted offer from the other simulated suppliers, capped by your walk-away ceiling. It can sit above a supplier's own quote when that supplier is the cheaper one. Suppliers who share the same cheapest rival show the same figure. It is not that supplier's private reserve.</p>
+      <details class="dev-details">
+        <summary>Engine notes</summary>
+        <p>Search size ${tfEsc(String(tfNum(data.total_rollouts, 0)))} parameter cells. Compute ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}). Engine tactic codes stay in the solver; the cards use plain words.</p>
+      </details>
     `;
     const customsNote = document.createElement("p");
     customsNote.className = "summary-secondary";
@@ -1098,7 +1302,7 @@ function paintAmdAvailability() {
       if (body.llm.amd_live_available) {
         hint.textContent = `AMD live mode can call ${model}. It stays off until you turn it on. The solver still sets every price.`;
       } else {
-        hint.textContent = `AMD live mode is available only when VLLM_API_KEY is a real secret. This server is in offline mode. The configured default model name is ${model}. Turning the switch on shows the offline fallback; it does not invent a call.`;
+        hint.textContent = `Live reading is off on this server. Turning the switch on still uses the offline reader until a live model key is configured. The solver still sets every price.`;
       }
     })
     .catch(() => {});
@@ -1131,7 +1335,7 @@ function onQuoteFile(input) {
   quoteImagePayload = "";
   if (!file) return;
   if (note) {
-    note.textContent = "Uploaded image. Offline mode does not OCR pixels. Paste the chat text, or turn on AMD live mode with no transcript to ask the endpoint to read the image.";
+    note.textContent = "Picture received. Offline mode cannot read pixels, so paste the supplier's words or open Sample 1, 2, or 3.";
   }
   const reader = new FileReader();
   reader.onload = () => {
@@ -1151,6 +1355,7 @@ function paintQuoteReading(payload) {
   const fields = document.getElementById("quoteFields");
   const accuracy = document.getElementById("quoteAccuracy");
   if (callout) {
+    callout.hidden = false;
     const status = payload && payload.status;
     let text = (payload && payload.display) || "No reading returned.";
     const liveLine = typeof text === "string" && text.indexOf("AMD GPU Cloud ·") === 0;
@@ -1160,20 +1365,50 @@ function paintQuoteReading(payload) {
     } else if (status !== "ok" && liveLine) {
       text = "AMD live call failed. The offline fallback is shown instead.";
     }
+    // The health line already says live reading is off, and the sample note
+    // already says the pictures are simulations. Don't repeat either here.
+    if (typeof text === "string" && text.indexOf("Offline fallback") === 0 && text.indexOf("Live reading is off") !== -1) {
+      text = "Offline fallback. These fields are the supplier's numbers, not our price.";
+    } else if (typeof text === "string" && text.indexOf("labeled simulations") !== -1) {
+      text = "Offline mode cannot read a picture by itself. Paste the supplier's words, or open Sample 1, 2, or 3.";
+    }
     callout.textContent = text;
     tfTone(callout, liveOk ? "is-ok" : "");
   }
   if (fields && payload && payload.fields) {
     const f = payload.fields;
-    const price = f.price === null || f.price === undefined ? "—" : String(f.price);
-    const moq = f.moq === null || f.moq === undefined ? "—" : String(f.moq);
-    const lead = f.lead_time_days === null || f.lead_time_days === undefined ? "—" : String(f.lead_time_days);
-    const deposit = f.deposit_pct === null || f.deposit_pct === undefined ? "—" : String(f.deposit_pct);
-    fields.textContent = `Extracted supplier fields (not our price): price ${price}, MOQ ${moq}, lead time days ${lead}, deposit fraction ${deposit}.`;
+    const quoted = tfNum(f.quoted_amount, null);
+    const currency = f.currency ? String(f.currency) : "";
+    const price = quoted === null ? "missing" : tfAmount(quoted, currency);
+    const moq = f.moq === null || f.moq === undefined ? "missing" : String(f.moq);
+    const lead = f.lead_time_days === null || f.lead_time_days === undefined
+      ? "Lead time —"
+      : `Lead time ${f.lead_time_days} days`;
+    const depositRaw = f.deposit_pct;
+    let deposit = "Deposit —";
+    const depositNum = Number(depositRaw);
+    if (depositRaw !== null && depositRaw !== undefined && depositRaw !== "" && Number.isFinite(depositNum)) {
+      const depositPct = depositNum <= 1 ? Math.round(depositNum * 100) : Math.round(depositNum);
+      deposit = `${depositPct}% deposit`;
+    }
+    fields.textContent = `Extracted supplier fields (not our price): price ${price}, MOQ ${moq}, ${lead}, ${deposit}.`;
+    const about = document.getElementById("quoteAbout");
+    const note = document.getElementById("quoteCurrencyNote");
+    if (about && note) {
+      const currencyNote = f.currency_note ? String(f.currency_note) : "";
+      note.textContent = currencyNote;
+      about.hidden = !currencyNote;
+    }
   }
   if (accuracy) {
     const reading = payload && payload.reading ? ` Model wording: ${payload.reading}` : "";
-    accuracy.textContent = `${(payload && payload.accuracy_note) || ""}${reading}`;
+    let friendly = "The offline reader filled these supplier fields. It does not set our price.";
+    if (payload && payload.status === "ok") {
+      friendly = "Live reading returned these supplier fields. It does not set our price.";
+    } else if (payload && payload.status === "needs_text") {
+      friendly = "No transcript was read. Use a sample image or paste the chat.";
+    }
+    accuracy.textContent = `${friendly}${reading}`;
   }
 }
 
@@ -1182,12 +1417,9 @@ async function readSupplierQuote() {
   const callout = document.getElementById("amdCallout");
   const live = !!(document.getElementById("amdLiveToggle") && document.getElementById("amdLiveToggle").checked);
   const text = paste ? paste.value : "";
-  const select = document.getElementById("presetCategorySelect");
-  if (!currentSessionId && select) {
-    await applyCategoryPreset(select.value);
-  }
   const sid = currentSessionId || (document.getElementById("cmdSessionId") || {}).value || "";
   if (callout) {
+    callout.hidden = false;
     callout.textContent = live ? "Asking AMD GPU Cloud…" : "Reading with the offline extractor…";
     tfTone(callout, "");
   }

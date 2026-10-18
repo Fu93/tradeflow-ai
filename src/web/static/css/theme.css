@@ -142,6 +142,8 @@ body {
   color: var(--ink-soft);
 }
 
+.masthead-btn { min-height: 36px; }
+
 .feed-dot {
   width: 7px;
   height: 7px;
@@ -151,12 +153,28 @@ body {
 
 .feed-dot.active { background: var(--moss); }
 
+.masthead-about { position: relative; }
+
+.masthead-about summary {
+  cursor: pointer;
+  list-style: none;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+}
+
+.masthead-about summary::-webkit-details-marker { display: none; }
+
 .feed-ver {
-  margin-left: 8px;
+  margin: 6px 0 0;
   padding: 1px 6px;
   border: 1px solid var(--rule-strong);
   color: var(--ink-soft);
   font-family: var(--display);
+  white-space: nowrap;
 }
 
 /* ----------------------------------------------------------------- dossier */
@@ -386,6 +404,9 @@ body {
   font-size: var(--step--1);
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .track-marker { position: absolute; left: 14px; right: 12px; }
@@ -484,10 +505,8 @@ body {
 .field-last .field-value {
   font-size: var(--step-0);
   color: var(--ink-soft);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .field-money {
@@ -538,6 +557,8 @@ body {
   color: var(--ink-faint);
   background: var(--sheet);
 }
+
+.chart-empty[hidden] { display: none; }
 
 .belief-stats {
   display: grid;
@@ -853,9 +874,18 @@ body {
   font-weight: 600;
 }
 
+.meter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .quote-meter {
   position: relative;
-  height: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
   border-radius: 999px;
   background: rgba(28, 23, 18, 0.08);
   overflow: hidden;
@@ -1216,11 +1246,41 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
 
 .quote-sample-img[hidden] { display: none; }
 
+.quote-sheet { margin-bottom: 16px; }
+
+.decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.quote-meter-num {
+  position: static;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 .amd-callout {
   margin: 8px 0 0;
   padding: 10px 12px;
   background: var(--sheet-sunk);
   border-radius: 12px;
+  font-size: var(--step--1);
+}
+
+.amd-callout[hidden],
+#quoteAbout[hidden] { display: none; }
+
+#quoteAbout {
+  margin-top: 8px;
   font-size: var(--step--1);
 }
 
@@ -1277,7 +1337,10 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
 
 .market-suggest-btn {
   width: 100%;
+  height: auto;
   text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
   padding: 8px 12px;
   background: var(--sheet);
   border: 1px solid var(--rule);
@@ -1285,6 +1348,22 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
   color: var(--ink);
   font: inherit;
   cursor: pointer;
+}
+
+.market-spark-caption,
+.market-spark-axis {
+  margin: 4px 0 0;
+  font-size: var(--step--1);
+  color: var(--ink-faint);
+}
+
+.market-spark-years {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  margin: 2px 0 0;
+  font-size: var(--step--1);
+  color: var(--ink-soft);
 }
 
 .market-suggest-btn:hover { border-color: var(--ink); background: var(--sheet-sunk); }
@@ -1321,6 +1400,14 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
   min-width: 0;
+}
+
+.market-hero.is-plain {
+  font-family: var(--text);
+  font-size: var(--step-0);
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0;
 }
 
 .market-year,
@@ -1363,6 +1450,7 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
   width: 100%;
   height: 32px;
   color: var(--steel);
+  overflow: visible;
 }
 
 .market-intel[data-loading="1"] [data-market="hero"],

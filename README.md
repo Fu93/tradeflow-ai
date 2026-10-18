@@ -71,7 +71,7 @@ Routes that can call the AMD endpoint (`POST /api/v1/quotes/read` with AMD live 
 
 ## Interface
 
-The desk is set in self-hosted Fraunces and Outfit (SIL Open Font License) on a bone-paper palette. The four-supplier auction is the first panel. Each quote is drawn as a share of the walk-away ceiling returned by the auction API. The page says the suppliers are simulated archetypes, and approval stays with the buyer.
+The desk is set in self-hosted Fraunces and Outfit (SIL Open Font License) on a bone-paper palette. The supplier quote sheet is the first panel. The four-supplier auction follows it. Each quote is drawn as a share of the walk-away ceiling returned by the auction API. The page says the suppliers are simulated archetypes, and approval stays with the buyer.
 
 The auction headline is savings versus the first-round best quote. In the committed run ([results/multi_supplier_auction.md](results/multi_supplier_auction.md)) that is ¥13.26 down to ¥12.60, which is 5.0% and ¥6,600 on 10,000 units. Versus target is on the same panel, including when that figure is negative (this run is −5.0% versus the ¥12.00 target, ¥−6,000). Savings versus the walk-away ceiling, 22.2% and ¥36,000, are secondary and labeled as such. Those three baselines are not interchangeable with the self-play range in Honest limits.
 
@@ -85,7 +85,7 @@ Screenshots:
 
 ![Auction panel after Run, desktop width](docs/screenshots/auction-after-desktop.png)
 
-![Extension side panel at a narrow width](docs/screenshots/sidepanel-360.png)
+![Extension side panel at 360px, Decide tab and approval bar](docs/screenshots/sidepanel-360.png)
 
 - Desktop, before a run: [docs/screenshots/dashboard-desktop.png](docs/screenshots/dashboard-desktop.png)
 - Mobile, before a run: [docs/screenshots/dashboard-mobile.png](docs/screenshots/dashboard-mobile.png)
@@ -95,7 +95,7 @@ Screenshots:
 - Simulated supplier sandbox: [docs/screenshots/mock-chat-desktop.png](docs/screenshots/mock-chat-desktop.png), [docs/screenshots/mock-chat-mobile.png](docs/screenshots/mock-chat-mobile.png)
 - Same desk at 360px and 768px: [docs/screenshots/dashboard-360.png](docs/screenshots/dashboard-360.png), [docs/screenshots/dashboard-768.png](docs/screenshots/dashboard-768.png). The mobile shot above is 390px. Desktop is 1280px.
 - Circuit-breaker card with a long Traditional Chinese product name: [docs/screenshots/circuit-360.png](docs/screenshots/circuit-360.png)
-- Extension side panel at 360px, with a long reference and a long price: [docs/screenshots/sidepanel-360.png](docs/screenshots/sidepanel-360.png)
+- Extension side panel at 360px, with Decide, Evidence, and Rounds and the approval bar along the bottom: [docs/screenshots/sidepanel-360.png](docs/screenshots/sidepanel-360.png)
 
 ## Architecture
 
