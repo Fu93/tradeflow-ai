@@ -1,0 +1,7 @@
+{
+  "label": "recorded fixture",
+  "source": "UN Comtrade public preview",
+  "url": "https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=826&partnerCode=0&period=2024&cmdCode=6601&flowCode=M",
+  "http_status": 429,
+  "note": "Raw response body saved by scripts/market_data.py. Not hand-typed."
+}

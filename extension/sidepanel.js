@@ -63,6 +63,29 @@ function tfEsc(value) {
 // [P0 REGRESSION — 2026-10-17 實機稽查] Number(null)/Number("") 都是 0，舊版把
 // 「後端沒有此值」渲染成 0（¥0.00 / 0.0% 風險）。缺值一律回 fallback，由呼叫端
 // 顯示 "--"；0 是合法量測值，只有真正的 null/undefined/空字串才會被視為缺值。
+function customsReferenceLine(ctx) {
+  if (!ctx || typeof ctx !== "object") {
+    return "REFERENCE ONLY. Customs reference: not available. Implied customs unit value is not a price quote.";
+  }
+  const pick = (value) => (value === null || value === undefined || value === "" ? "not available" : String(value));
+  const provenance = ctx.provenance || {};
+  return (
+    "REFERENCE ONLY. Implied customs unit value is not a price quote. HS " + pick(ctx.hs) +
+    ". Year " + pick(ctx.year) +
+    ". UK imports from China " + pick(ctx.value_usd) + " USD. Quantity " + pick(ctx.qty) +
+    ". Implied customs unit value " + pick(ctx.unit_value_usd) + " USD. Source " + pick(provenance.source) +
+    ". Fetched " + pick(provenance.fetched_at) +
+    ". Status " + pick(ctx.status) +
+    ". CIF customs valuation is not a supplier offer and does not set the counter."
+  );
+}
+
+function paintMarketReference(ctx) {
+  const el = document.getElementById("market-reference");
+  if (!el) return;
+  el.textContent = customsReferenceLine(ctx);
+}
+
 function tfNum(value, fallback) {
   if (value === null || value === undefined || value === "") return fallback;
   const n = Number(value);
@@ -176,6 +199,7 @@ function handleSessionPush(sessionMeta) {
 
   currentSessionId = sessionMeta.sessionId;
   sessionIdDisplay.innerText = sessionMeta.sessionId;
+  paintMarketReference(sessionMeta.marketContext);
 
   // Check if session has live turn data from engine
   if (sessionMeta.latestData) {
@@ -357,6 +381,7 @@ function renderSession(session) {
   const cPrice0 = tfNum(spec2.ceiling_price, null);
   valTargetPrice.innerText = tPrice0 === null ? "--" : `¥${tPrice0.toFixed(2)}`;
   valReserveCeiling.innerText = cPrice0 === null ? "--" : `¥${cPrice0.toFixed(2)}`;
+  paintMarketReference(spec2.market_context);
 
   const pm0 = tfNum(t0?.posterior_mean, null);
   const ps0 = tfNum(t0?.posterior_std, null);
@@ -460,6 +485,27 @@ btnRefresh?.addEventListener("click", () => {
     fetchSessionFromBackend(currentSessionId);
   } else {
     syncWithActiveTab();
+  }
+});
+
+document.getElementById("btn-hs-refresh")?.addEventListener("click", async () => {
+  const input = document.getElementById("hs-override");
+  const code = (input && input.value ? input.value : "").trim();
+  if (!/^\d{2,6}$/.test(code)) {
+    paintMarketReference({ status: "unavailable", reason: "bad_request", hs: "not available" });
+    return;
+  }
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/market?hs=${encodeURIComponent(code)}`, {
+      headers: tfAuthHeaders(),
+    });
+    if (!res.ok) {
+      paintMarketReference({ status: "unavailable", reason: "bad_request", hs: code });
+      return;
+    }
+    paintMarketReference(await res.json());
+  } catch (err) {
+    paintMarketReference({ status: "unavailable", reason: "offline", hs: code });
   }
 });
 

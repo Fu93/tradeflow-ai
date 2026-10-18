@@ -1026,6 +1026,9 @@ class MultiAuctionRunRequest(BaseModel):
     n_rounds: int = Field(default=3, ge=1, le=10)
     suppliers: Optional[List[MultiAuctionSupplierInput]] = Field(default=None, max_length=32)
     rounds_quotes: Optional[List[List[float]]] = Field(default=None, max_length=10)
+    # Context only. simulate_reverse_auction does not receive these fields.
+    hs_code: Optional[str] = None
+    product_name: Optional[str] = Field(default=None, max_length=512)
 
     @field_validator("rounds_quotes")
     @classmethod
@@ -1086,7 +1089,24 @@ def calculate_bayesian_update(req: BayesianUpdateRequest):
 
 @api_v1.post("/sessions", response_model=NegotiationSession)
 def create_session(spec: SessionSpec):
-    """建立新的談判會話。"""
+    """建立新的談判會話。
+
+    A market_context block is attached here. It is a customs reference.
+    The solver, the recommended price, and the circuit breaker do not read it.
+    A caller-supplied market_context is kept (still stamped reference-only)
+    so a test can prove the price does not move when the block changes.
+    """
+    from ..market.trade_data import _stamp_reference, build_market_context
+
+    if spec.market_context:
+        spec = spec.model_copy(update={"market_context": _stamp_reference(dict(spec.market_context))})
+    else:
+        ctx = build_market_context(spec.hs_code, spec.product_name)
+        hs_update = spec.hs_code
+        resolved = ctx.get("hs")
+        if not hs_update and isinstance(resolved, str) and resolved.isdigit():
+            hs_update = resolved
+        spec = spec.model_copy(update={"market_context": ctx, "hs_code": hs_update})
     if session_mgr.get_session(spec.session_id) is not None:
         # [FIX] 同 ID 重建會無聲清空既有會話；至少留下明確日誌供演示/審計追查。
         logger.warning(
@@ -2188,6 +2208,11 @@ def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
             rounds_quotes=req.rounds_quotes,
             n_rounds=req.n_rounds,
         )
+        from ..market.trade_data import build_market_context
+
+        # Attached after the solver returns. Not an argument of the simulator.
+        res["market_context"] = build_market_context(req.hs_code, req.product_name or "")
+        res["market_context_reference_only"] = True
         return res
     except HTTPException:
         raise  # [FIX] 上方 422 校驗不得被兜底改寫成 500。

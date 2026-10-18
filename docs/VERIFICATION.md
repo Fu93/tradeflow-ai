@@ -74,6 +74,21 @@ Honest exceptions the scanner does not treat as scenario data:
 - `scripts/regen_mi300x_roofline.py` is allowlisted for the two datasheet floats it cites (5.3 TB/s and the 5.2 Gbps pin rate in footnote MI300-18). It is the only place those literals are typed. The generated JSON is what the rest of the code reads.
 - Comments and docstrings, including ones that say a number is not a quote.
 
+## Customs reference
+
+`src/market/trade_data.py` reads the UN Comtrade public preview (one period per call). `scripts/market_data.py` writes `results/market_snapshot_6601.json`. `scripts/check_market_doc.py` requires `docs/MARKET_ANALYSIS.md` to contain that snapshot's generated block.
+
+Wiring:
+
+- `POST /api/v1/sessions` resolves an HS code from `hs_code` or the product name and stores `market_context`.
+- `GET /api/v1/market` is the same lookup. A keyword returns candidates and does not fetch.
+- The dashboard engine-decision card, the extension Evidence tab, and the content-script decision deck render the block as reference only.
+- `POST /api/v1/multi-auction/run` calls `simulate_reverse_auction` first, then attaches `market_context`.
+
+Invariant: the block does not influence the solver, the recommended price, or the circuit breaker. `tests/test_market_data.py` posts the same offer to two sessions, one with a caller-supplied unit value, and requires the same `recommended_offer_price`. It also checks that a model JSON containing `recommended_price` leaves `buyer_price` null, and that two auction calls with and without an HS code return the same winning price. `solver.py` and `multi_solver.py` do not mention `market_context`.
+
+Quantity 0 on a preview row is `not available`. An implied unit value is computed only when value and quantity both exist. Offline mode stores an explicit unavailable state.
+
 ## Not verified
 
 - No AMD GPU was present. The CuPy-versus-NumPy parity test skips when CuPy does not import. `ran_on_amd_gpu` was not measured here. The MI300X column is a theoretical roofline lower-bound estimate, not measured. The tokenfactory log in `results/real_llm_benchmark_100.json` is the committed call record; it does not store an HTTP status.

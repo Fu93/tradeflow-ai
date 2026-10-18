@@ -82,6 +82,23 @@ class SessionSpec(BaseModel):
     supplier_id: str = Field(default="default_supplier", max_length=256)
     supplier_channel: str = Field(default="web_chat", max_length=64)
     corporate_mandate: Optional[Dict[str, Any]] = None
+    # Optional 2-6 digit HS override. When omitted, create_session resolves a
+    # candidate from product_name and labels it. The solver does not read this.
+    hs_code: Optional[str] = None
+    # Customs reference copied onto the session at create time. Reference only.
+    market_context: Optional[Dict[str, Any]] = None
+
+    @field_validator("hs_code")
+    @classmethod
+    def _validate_hs_code(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        text = str(v).strip()
+        if not text:
+            return None
+        if not re.fullmatch(r"\d{2,6}", text):
+            raise ValueError("hs_code must be 2 to 6 digits")
+        return text
 
     @field_validator("session_id")
     @classmethod

@@ -314,6 +314,25 @@ chrome.runtime.onConnect.addListener((port) => {
           mode: payload.mode === "copilot" ? "copilot" : "autopilot",
           lastActiveTimestamp: Date.now(),
         };
+        meta.marketContext = { status: "unavailable", reason: "not_loaded" };
+        if (payload.sessionId) {
+          try {
+            const sessionRes = await fetch(
+              `${API_BASE_URL}/api/v1/sessions/${encodeURIComponent(payload.sessionId)}`,
+              { headers: jsonHeaders() }
+            );
+            if (sessionRes.ok) {
+              const body = await sessionRes.json();
+              const spec = body.spec || (body.session && body.session.spec) || {};
+              meta.marketContext = spec.market_context || { status: "unavailable", reason: "missing" };
+              meta.hsCode = spec.hs_code || null;
+            } else {
+              meta.marketContext = { status: "unavailable", reason: "session_unread" };
+            }
+          } catch (err) {
+            meta.marketContext = { status: "unavailable", reason: "offline" };
+          }
+        }
         tabSessions.set(tabId, meta);
         // H8: only ever persist under an integer tab key (guarded by the tabId
         // check on connect, retained here as belt-and-braces).

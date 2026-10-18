@@ -26,6 +26,9 @@ data/sessions_json/
 results/_frames/
 results/pitch_preview/
 
+# Comtrade preview cache (TTL sqlite). Regenerated. Not a source of figures.
+.cache/
+
 # ---- Scratch / local debug ----
 _s4.py
 
