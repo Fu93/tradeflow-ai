@@ -21,17 +21,20 @@ SAMPLES = (
     (
         "quote_01",
         "Umbrella chat (simulation)",
-        "SIMULATION — not a real supplier screenshot.\n单价：14.80元。5000個。21天。30%定金。\n",
+        "SIMULATION — not a real supplier screenshot.\n"
+        "Unit price: 14.80 CNY per piece. MOQ 5000. Lead time 21 days. 30% deposit.\n",
     ),
     (
         "quote_02",
         "CNC case chat (simulation)",
-        "SIMULATION — not a real supplier screenshot.\n報價：28.50元。2000 pcs。18 days。20%定金。\n",
+        "SIMULATION — not a real supplier screenshot.\n"
+        "Unit price: 28.50 CNY per piece. MOQ 2000. Lead time 18 days. 20% deposit.\n",
     ),
     (
         "quote_03",
         "Battery pack chat (simulation)",
-        "SIMULATION — not a real supplier screenshot.\n價格：190.00元。500套。45天。40%預付。\n",
+        "SIMULATION — not a real supplier screenshot.\n"
+        "Unit price: 190.00 CNY per piece. MOQ 500. Lead time 45 days. 40% deposit.\n",
     ),
 )
 

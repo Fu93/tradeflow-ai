@@ -296,6 +296,14 @@ class InboundIntentClassifier:
         "No currency was stated, so the number was not treated as CNY."
     )
     MOQ_PATTERN = SafeLinearRegexEngine.compile(r"(\d{3,7})\s*(?:個|把|件|套|pcs)", re.IGNORECASE)
+    _EXPLICIT_MOQ = SafeLinearRegexEngine.compile(
+        r"(?:MOQ|min(?:imum)?\s+order|起订量|起訂量)\s*[:：]?\s*(\d{1,7})",
+        re.IGNORECASE,
+    )
+    _QTY_BEFORE_MOQ_WORD = SafeLinearRegexEngine.compile(
+        r"(\d{1,7})\s*(?:個|把|件|套|pcs)\s*(?:起订|起訂)",
+        re.IGNORECASE,
+    )
     LEAD_DAYS_PATTERN = SafeLinearRegexEngine.compile(r"(\d{1,3})\s*(?:天|工作日|days?)", re.IGNORECASE)
     DEPOSIT_PATTERN = SafeLinearRegexEngine.compile(r"(\d{1,2}(?:\.\d+)?)\s*%\s*(?:定金|訂金|預付)", re.IGNORECASE)
     MOLD_FEE_PATTERN = SafeLinearRegexEngine.compile(
@@ -447,6 +455,28 @@ class InboundIntentClassifier:
         if quote.currency:
             return [f"Price {quote.amount:.2f} {quote.currency}"]
         return [f"Price {quote.amount:.2f}"]
+
+    @classmethod
+    def extract_demanded_moq(cls, raw_text: str) -> Optional[int]:
+        """Prefer a stated MOQ over an order quantity.
+
+        ``for 1000 pcs, MOQ 500`` is a 500-piece minimum, not a 1000-piece one.
+        A bare ``500個`` still counts, because Chinese quotes often omit the word.
+        """
+        if not raw_text:
+            return None
+        explicit = cls._EXPLICIT_MOQ.search(raw_text)
+        if explicit and explicit.group(1):
+            return cls._clamp_moq(explicit.group(1))
+        attached = cls._QTY_BEFORE_MOQ_WORD.search(raw_text)
+        if attached and attached.group(1):
+            return cls._clamp_moq(attached.group(1))
+        for match in cls.MOQ_PATTERN.finditer(raw_text):
+            prefix = raw_text[max(0, match.start() - 16):match.start()]
+            if re.search(r"(?:for|order(?:\s+qty)?|订|訂)\s*$", prefix, re.IGNORECASE):
+                continue
+            return cls._clamp_moq(match.group(1))
+        return None
 
     @classmethod
     def _clamp_moq(cls, value: Any) -> Optional[int]:
@@ -744,14 +774,8 @@ class InboundIntentClassifier:
         quote = cls.extract_quoted_price(raw_text)
         quoted = cls._quoted_kwargs(quote)
 
-        # 2. 抽取 MOQ 需求
-        moq_val = None
-        m_match = cls.MOQ_PATTERN.search(raw_text)
-        if m_match:
-            try:
-                moq_val = int(m_match.group(1))
-            except ValueError:
-                pass
+        # 2. 抽取 MOQ 需求。明示的 MOQ / min order 優先於「for N pcs」的訂購量。
+        moq_val = cls.extract_demanded_moq(raw_text)
 
         # 2.5 抽取模具費需求 (Composite Signals)
         mold_fee_val = None
@@ -1345,6 +1369,31 @@ class ChineseSurfaceRenderer:
                 f"首批試單給到 ¥{p_val:.2f} 出廠價，現款現結 {deposit_pct_str} 定金見單走帳，"
                 f"週五前出簽字封樣，合適的話現在走合同。"
             )
+
+
+def supplier_message_language(text: str) -> str:
+    """English when the supplier wrote in Latin; Chinese when they wrote in Han characters."""
+    cjk = len(re.findall(r"[\u4e00-\u9fff]", text or ""))
+    latin = len(re.findall(r"[A-Za-z]", text or ""))
+    if latin == 0 and cjk == 0:
+        return "zh"
+    return "en" if latin > cjk else "zh"
+
+
+def render_supplier_reply(obj: TacticalActionObject, inbound_text: str) -> str:
+    """Draft the buyer would paste. The price is the solver's authorized price.
+
+    The wording follows the supplier's language. It does not invent a second price.
+    """
+    price = float(obj.authorized_price)
+    if supplier_message_language(inbound_text) == "en":
+        return (
+            f"Thank you. Our offer is CNY {price:.2f} per piece. "
+            "That figure is the engine price in CNY. "
+            "It is not a conversion of your quote unless a rate was configured. "
+            "A buyer still has to approve it before anything is sent."
+        )
+    return ChineseSurfaceRenderer.render(obj)
 
 
 class EnglishExecutiveRenderer:

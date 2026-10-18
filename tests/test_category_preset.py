@@ -97,5 +97,11 @@ def test_preset_selector_posts_to_sessions_endpoint():
         "applyCategoryPreset no longer creates a session; the dashboard would "
         "display a mandate the engine does not enforce"
     )
+    html = open(
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(js_path))), "templates", "index.html"),
+        encoding="utf-8",
+    ).read()
+    assert 'onchange="previewMandate(this.value)"' in html
+    assert "openSandboxDeal" in src
     assert "/api/v1/simulation/mandates" in src
     assert "target: 12.0" not in src

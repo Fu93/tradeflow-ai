@@ -143,12 +143,15 @@ def main() -> int:
             try:
                 # ------------------------------------------------ extension load
                 print("\n[1] Extension loads")
-                sw = None
-                for _ in range(60):
-                    if ctx.service_workers:
-                        sw = ctx.service_workers[0]
-                        break
-                    time.sleep(0.25)
+                # service_workers is a local list filled by the serviceworker
+                # event. time.sleep does not pump that event, so a poll loop
+                # can miss a worker that registered after launch returned.
+                sw = ctx.service_workers[0] if ctx.service_workers else None
+                if sw is None:
+                    try:
+                        sw = ctx.wait_for_event("serviceworker", timeout=15000)
+                    except Exception:
+                        sw = None
                 if not check("MV3 service worker registered", sw is not None):
                     return 1
                 ext_id = sw.url.split("/")[2]

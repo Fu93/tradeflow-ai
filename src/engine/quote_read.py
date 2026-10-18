@@ -18,8 +18,8 @@ from src.engine.llm_config import resolve_chat_endpoint
 from src.engine.quote_fields import ACCURACY_NOTE, extract_stage1, validate_fields
 
 OFFLINE_LABEL = (
-    "Offline fallback — AMD live mode is off or VLLM_API_KEY is not a real secret. "
-    "Fields below are the deterministic reader, not a model call."
+    "Offline fallback. Live reading is off, so this uses the offline reader. "
+    "These fields are the supplier's numbers, not our price."
 )
 TIMEOUT_LABEL = (
     "Offline fallback — the AMD call timed out. "
@@ -30,9 +30,9 @@ FAILED_LABEL = (
     "Fields below are the deterministic reader, not a model call."
 )
 NEEDS_TEXT_LABEL = (
-    "This desk does not OCR pixels offline. Paste the chat text, or pick a labeled "
-    "sample. The sample transcript is what the picture shows; it is a simulation, "
-    "not a vision read."
+    "Offline mode cannot read a picture by itself. Paste the supplier's words, "
+    "or open Sample 1, 2, or 3. Those pictures are labeled simulations, and the "
+    "transcript beside them is what gets read."
 )
 
 _PROMPT = (

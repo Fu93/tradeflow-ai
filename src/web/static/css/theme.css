@@ -142,6 +142,8 @@ body {
   color: var(--ink-soft);
 }
 
+.masthead-btn { min-height: 36px; }
+
 .feed-dot {
   width: 7px;
   height: 7px;
@@ -484,10 +486,8 @@ body {
 .field-last .field-value {
   font-size: var(--step-0);
   color: var(--ink-soft);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .field-money {
@@ -538,6 +538,8 @@ body {
   color: var(--ink-faint);
   background: var(--sheet);
 }
+
+.chart-empty[hidden] { display: none; }
 
 .belief-stats {
   display: grid;
@@ -855,7 +857,7 @@ body {
 
 .quote-meter {
   position: relative;
-  height: 8px;
+  height: 22px;
   border-radius: 999px;
   background: rgba(28, 23, 18, 0.08);
   overflow: hidden;
@@ -1216,6 +1218,31 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
 
 .quote-sample-img[hidden] { display: none; }
 
+.quote-sheet { margin-bottom: 16px; }
+
+.decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.quote-meter-num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--sheet);
+  text-shadow: 0 0 2px rgba(28, 23, 18, 0.9), 0 1px 1px rgba(28, 23, 18, 0.9);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .amd-callout {
   margin: 8px 0 0;
   padding: 10px 12px;
@@ -1277,7 +1304,10 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
 
 .market-suggest-btn {
   width: 100%;
+  height: auto;
   text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
   padding: 8px 12px;
   background: var(--sheet);
   border: 1px solid var(--rule);
@@ -1285,6 +1315,22 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
   color: var(--ink);
   font: inherit;
   cursor: pointer;
+}
+
+.market-spark-caption,
+.market-spark-axis {
+  margin: 4px 0 0;
+  font-size: var(--step--1);
+  color: var(--ink-faint);
+}
+
+.market-spark-years {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  margin: 2px 0 0;
+  font-size: var(--step--1);
+  color: var(--ink-soft);
 }
 
 .market-suggest-btn:hover { border-color: var(--ink); background: var(--sheet-sunk); }

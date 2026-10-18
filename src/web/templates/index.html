@@ -33,8 +33,10 @@
     </div>
     <div class="masthead-feed">
       <span class="feed-dot" id="sseStatus"></span>
-      <span class="feed-label" id="sseLabel">Connecting…</span>
+      <span class="feed-label" id="sseLabel">Live feed</span>
       <span class="feed-ver" id="feedVer">—</span>
+      <button class="btn-quiet masthead-btn" type="button" id="langToggle">繁</button>
+      <button class="btn-quiet masthead-btn" type="button" id="themeToggle">Dark</button>
     </div>
   </header>
 
@@ -58,26 +60,6 @@
       </div>
     </section>
 
-    <!-- Supplier auction sits above the dossier so the comparison is the first read. -->
-    <section class="sheet auction-sheet auction-hero" id="tacticPanel">
-      <div class="sheet-head">
-        <h2 class="sheet-title">Four-supplier auction</h2>
-        <button class="btn-quiet" type="button" id="runAuctionBtn" onclick="runMultiAuction()" aria-describedby="auctionKicker">Run auction</button>
-      </div>
-      <p class="fineprint auction-kicker" id="auctionKicker">Simulated suppliers (parameterised archetypes), not live factory quotes. The headline is savings versus the first-round best quote. Versus target stays visible when negative. The walk-away ceiling is secondary.</p>
-      <div id="auctionLoader" class="loader hidden" role="status">Computing the parameterised tensor grid…</div>
-      <div id="supplierCards" class="supplier-cards">
-        <div class="empty-state">Run the auction to compare four simulated suppliers on price, terms and walk-away risk. These are parameterised archetypes, not live factory quotes.</div>
-      </div>
-      <div id="auctionSummary" class="auction-summary hidden" aria-live="polite" aria-label="Auction savings by baseline"></div>
-    </section>
-
-    <!-- ===================== BODY ===================== -->
-    <div class="sheet-grid">
-
-      <!-- ---------------- LEFT: the negotiation in progress ---------------- -->
-      <div class="col-main">
-
         <section class="sheet quote-sheet" id="quoteSheet">
           <div class="sheet-head">
             <h2 class="sheet-title">Supplier quote</h2>
@@ -87,7 +69,7 @@
             <input id="amdLiveToggle" type="checkbox" />
             <span>AMD live mode</span>
           </label>
-          <p class="fineprint" id="amdLiveHint">Off by default. A call leaves this browser only when this is on and the server has a real VLLM_API_KEY. The solver still sets every price.</p>
+          <p class="fineprint" id="amdLiveHint">Off by default. A live call leaves this browser only when you turn this on and the server has a model key. The solver still sets every price.</p>
           <label class="quote-label" for="quotePaste">Supplier chat text</label>
           <textarea id="quotePaste" class="input-plain quote-paste" rows="5" placeholder="Paste a supplier message. A labeled sample fills this with a simulation transcript."></textarea>
           <div class="quote-actions">
@@ -100,11 +82,32 @@
             <button class="btn-primary" type="button" id="readQuoteBtn" onclick="readSupplierQuote()">Read this quote</button>
           </div>
           <img id="quoteSampleImg" class="quote-sample-img" alt="Labeled simulation, not a real supplier screenshot" hidden />
-          <p class="fineprint" id="quoteSampleNote">Three in-repo pictures are labeled simulations. Offline mode does not OCR pixels. AMD live mode sends the pasted transcript, or the image only when there is no transcript.</p>
-          <p class="amd-callout" id="amdCallout" role="status" aria-live="polite">AMD live mode is off. The next read uses the offline fallback.</p>
+          <p class="fineprint" id="quoteSampleNote">Samples are labeled simulations. Offline mode cannot read a picture, so use the transcript or paste the chat.</p>
+          <p class="amd-callout" id="amdCallout" role="status" aria-live="polite">Live reading is off. The next read uses the offline reader.</p>
           <p class="fineprint" id="quoteFields"></p>
           <p class="fineprint" id="quoteAccuracy"></p>
         </section>
+
+
+    <!-- Quote first, then the auction. The comparison is the next step, not the first. -->
+    <section class="sheet auction-sheet auction-hero" id="tacticPanel">
+      <div class="sheet-head">
+        <h2 class="sheet-title">Four-supplier auction</h2>
+        <button class="btn-primary" type="button" id="runAuctionBtn" onclick="runMultiAuction()" aria-describedby="auctionKicker">Run auction</button>
+      </div>
+      <p class="fineprint auction-kicker" id="auctionKicker">Simulated suppliers, not live factory quotes. Savings versus the first-round best quote is the headline. Amounts are CNY.</p>
+      <div id="auctionLoader" class="loader hidden" role="status">Comparing four simulated suppliers…</div>
+      <div id="supplierCards" class="supplier-cards">
+        <div class="empty-state">Run the auction to compare four simulated suppliers.</div>
+      </div>
+      <div id="auctionSummary" class="auction-summary hidden" aria-live="polite" aria-label="Auction savings by baseline"></div>
+    </section>
+
+    <!-- ===================== BODY ===================== -->
+    <div class="sheet-grid">
+
+      <!-- ---------------- LEFT: the negotiation in progress ---------------- -->
+      <div class="col-main">
 
         <!-- Price ladder: where the supplier sits inside the authorised range.
              This is the one number a buyer reads first, so it gets the space. -->
@@ -167,6 +170,7 @@
             <div class="field">
               <span class="field-label">Recommended counter</span>
               <span class="field-value field-money" id="decisionCounter">—</span>
+              <span class="fineprint" id="decisionUnit">Prices in this panel are CNY, the mandate currency.</span>
             </div>
             <div class="field">
               <span class="field-label">Breakdown risk</span>
@@ -183,6 +187,12 @@
             </div>
             <p class="reply-text" id="decisionReply">—</p>
           </div>
+          <div class="decision-actions">
+            <button class="btn-primary" type="button" id="approveBtn" onclick="decide('approve')">Approve</button>
+            <button class="btn-quiet" type="button" id="holdBtn" onclick="decide('hold')">Hold firm</button>
+            <button class="btn-quiet" type="button" id="rejectBtn" onclick="decide('reject')">Reject</button>
+          </div>
+          <p class="fineprint" id="decisionResult" role="status"></p>
         </section>
 
         <section class="sheet market-intel" id="marketIntel" aria-labelledby="marketIntelTitle">
@@ -217,8 +227,6 @@
             <div class="market-actions">
               <button type="button" class="btn-quiet market-hit" data-market="refresh">Refresh</button>
               <button type="button" class="btn-quiet market-hit" data-market="retry" hidden>Retry</button>
-              <button type="button" class="btn-quiet market-hit" data-market="theme">Dark</button>
-              <button type="button" class="btn-quiet market-hit" data-market="lang">繁</button>
             </div>
           </footer>
         </section>
@@ -275,7 +283,7 @@
           </div>
           <label class="select-row" for="presetCategorySelect">
             <span>Commodity</span>
-            <select id="presetCategorySelect" class="input-plain" onchange="applyCategoryPreset(this.value)">
+            <select id="presetCategorySelect" class="input-plain" onchange="previewMandate(this.value)">
               <option value="umbrella">Carbon auto umbrella (HS 6601)</option>
               <option value="cnc_case">Aerospace CNC metal case (confirm the HS code)</option>
               <option value="battery">Industrial LiFePO4 pack (HS 8507)</option>
@@ -299,7 +307,8 @@
             buyer baseline on the mandate and labels any term the supplier never
             stated as a buyer-side assumption, not as the supplier's offer.
           </p>
-          <p class="fineprint" id="presetStatus">Simulated mandates load from the sandbox catalogue. They are not factory quotes.</p>
+          <button class="btn-primary" type="button" id="openSandboxBtn" onclick="openSandboxDeal()">Open sandbox deal</button>
+          <p class="fineprint" id="presetStatus">Preview only until you open a sandbox deal. These mandates are simulated, not factory quotes.</p>
         </section>
 
         <!-- Deals -->

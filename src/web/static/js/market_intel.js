@@ -11,6 +11,8 @@
       qty: "Quantity",
       unit: "Implied customs unit value",
       unavailable: "No data from source",
+      prompt: "Enter an HS code or item keyword",
+      sparkCaption: "UK import value from China, USD",
       offline: "Offline",
       retry: "Retry",
       refresh: "Refresh",
@@ -43,6 +45,8 @@
       qty: "數量",
       unit: "海關隱含單價",
       unavailable: "來源沒有資料",
+      prompt: "輸入 HS 編碼或品名",
+      sparkCaption: "英國自中國進口金額，美元",
       offline: "離線",
       retry: "重試",
       refresh: "重新整理",
@@ -88,10 +92,18 @@
   }
 
   function groupAmount(value) {
-    const raw = String(value);
-    const parts = raw.split(".");
-    const whole = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    return parts.length > 1 ? whole + "." + parts[1] : whole;
+    const n = Number(value);
+    if (!Number.isFinite(n)) return String(value);
+    const negative = n < 0;
+    const abs = Math.abs(n);
+    const digits = abs >= 1000 ? 0 : 2;
+    const cents = Math.round(abs * (digits === 0 ? 1 : 100));
+    const scale = digits === 0 ? 1 : 100;
+    const wholeNum = digits === 0 ? cents : Math.floor(cents / scale);
+    const frac = digits === 0 ? "" : String(cents % scale).padStart(2, "0");
+    const whole = String(wholeNum).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    const body = frac && frac !== "00" ? whole + "." + frac : whole;
+    return (negative ? "-" : "") + body;
   }
 
   function agePhrase(seconds, labels) {
@@ -152,6 +164,15 @@
     if (live) live.setAttribute("aria-busy", busy ? "true" : "false");
     if (skel) skel.hidden = !busy;
     root.dataset.loading = busy ? "1" : "0";
+    if (busy) {
+      const labels = copy(root);
+      text(q(root, "hero"), labels.loading);
+      text(q(root, "heroYear"), "");
+      text(q(root, "prov"), "");
+      const metrics = q(root, "metrics");
+      if (metrics) metrics.replaceChildren();
+      text(q(root, "state"), "");
+    }
   }
 
   function clearSuggest(root) {
@@ -183,7 +204,7 @@
       const code = String(row.hs || "");
       const body = String(row.text || "");
       const shown = body.indexOf(code) === 0 ? body : code + " " + body;
-      button.textContent = shown.slice(0, 96);
+      button.textContent = shown;
       button.addEventListener("click", () => {
         if (query) query.value = code;
         clearSuggest(root);
@@ -220,8 +241,8 @@
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 100 32");
     svg.setAttribute("role", "img");
-    const caption = series.map((point) => String(point.year) + " " + String(point.value_usd)).join(", ");
-    svg.setAttribute("aria-label", caption);
+    const ariaCaption = series.map((point) => String(point.year) + " " + String(point.value_usd)).join(", ");
+    svg.setAttribute("aria-label", ariaCaption);
     const min = Math.min.apply(null, nums);
     const max = Math.max.apply(null, nums);
     const span = max - min || 1;
@@ -236,12 +257,24 @@
     poly.setAttribute("stroke", "currentColor");
     poly.setAttribute("stroke-width", "2");
     svg.appendChild(poly);
+    const caption = document.createElement("p");
+    caption.className = "market-spark-caption";
+    caption.textContent = labels.sparkCaption || labels.hero;
+    const axis = document.createElement("p");
+    axis.className = "market-spark-axis";
+    axis.textContent = groupAmount(min) + " – " + groupAmount(max) + " " + labels.usd;
     const years = document.createElement("p");
     years.className = "market-spark-years";
-    years.textContent = series.map((point) => String(point.year)).join("  ");
+    series.forEach((point) => {
+      const mark = document.createElement("span");
+      mark.textContent = String(point.year);
+      years.appendChild(mark);
+    });
+    host.appendChild(caption);
     host.appendChild(svg);
+    host.appendChild(axis);
     host.appendChild(years);
-    host.dataset.ready = labels.hero;
+    host.dataset.ready = labels.sparkCaption || labels.hero;
   }
 
   function paint(root, raw) {
@@ -255,18 +288,14 @@
     const metrics = q(root, "metrics");
     if (metrics) metrics.replaceChildren();
     if (!payload) {
-      text(q(root, "heroLabel"), labels.hero);
-      text(q(root, "hero"), labels.unavailable);
+      text(q(root, "heroLabel"), "");
+      text(q(root, "hero"), labels.prompt);
       text(q(root, "heroYear"), "");
       text(q(root, "desc"), "");
       text(state, "");
       if (retry) retry.hidden = true;
       drawSpark(root, [], labels);
-      text(q(root, "prov"), [
-        labels.hs + " " + labels.unavailable,
-        labels.valuation + " " + labels.unavailable,
-        labels.fetched + " " + labels.unavailable,
-      ].join(" · "));
+      text(q(root, "prov"), "");
       const link = q(root, "sourceLink");
       if (link) {
         text(link, labels.source);
@@ -340,10 +369,9 @@
   }
 
   async function fetchCard(root, hs, refresh) {
-    const labels = copy(root);
+    clearSuggest(root);
     const endpoint = root.dataset.endpoint || "/api/v1/market";
     setBusy(root, true);
-    text(q(root, "state"), labels.loading);
     const query = "hs=" + encodeURIComponent(hs) + "&view=card" + (refresh ? "&refresh=true" : "");
     try {
       const headers = root._marketHeaders ? root._marketHeaders() : {};

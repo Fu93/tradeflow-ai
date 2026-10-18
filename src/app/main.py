@@ -754,6 +754,11 @@ def _dispatch_supervisor_command(
                     expected_version=expected_version,
                 )
                 applied = True
+            elif sess.state == AutopilotState.AWAITING_HUMAN_DECISION:
+                note = (
+                    "This deal is waiting for a person to approve, hold, or reject. "
+                    "The remote command was not applied."
+                )
             elif sess.state in (AutopilotState.DEAL_CLOSED, AutopilotState.WALK_AWAY):
                 note = (
                     f"Session is in terminal state {sess.state.value}; the command produced "
@@ -1441,6 +1446,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         ActionObjectASTGuardrail,
         ChineseSurfaceRenderer,
         EnglishExecutiveRenderer,
+        render_supplier_reply,
         CURRENT_SCHEMA_VERSION,
     )
     # 1. 供應商套路意圖分類與潛台詞反編譯
@@ -1560,6 +1566,9 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                 "moq": offered_moq,
                 "lead_days": action.offered_lead_days,
                 "deposit_pct": action.deposit_pct,
+                "currency": stage1.mentioned_currency,
+                "quoted_amount": stage1.quoted_amount,
+                "currency_note": stage1.price_currency_note,
             },
             "bayesian_confidence": float(bayesian_confidence),
             "expected_margin": float(rec.get("expected_margin_price", 0.0)),
@@ -1923,7 +1932,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
 
     # 5.7 雙向表面渲染
     # 中文表面渲染 (面向供應商對話)：沿海地道行話，徹底消除外商溢價
-    auto_reply_text = ChineseSurfaceRenderer.render(action_obj)
+    auto_reply_text = render_supplier_reply(action_obj, raw_text)
 
     # 文本層數值護欄複核 (防止任何渲染偏差)
     try:
