@@ -1120,14 +1120,15 @@ class MultiAuctionRunRequest(BaseModel):
         if float(self.target_price) > float(self.walk_away_ceiling):
             raise ValueError("target_price is above walk_away_ceiling.")
         if self.suppliers:
-            seen: list[str] = []
+            seen: dict[str, str] = {}
             for row in self.suppliers:
                 name = row.name.strip()
-                if name in seen:
+                key = name.casefold()
+                if key in seen:
                     raise ValueError(
                         f"Duplicate supplier name: {name}. Each supplier needs its own name."
                     )
-                seen.append(name)
+                seen[key] = name
         return self
 
 

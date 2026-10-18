@@ -79,13 +79,15 @@ function tfAmount(value, currency) {
   if (n === null) return "—";
   const negative = n < 0;
   const abs = Math.abs(n);
-  const digits = abs >= 1000 ? 0 : 2;
-  const scale = digits === 0 ? 1 : 100;
+  // Money always shows two decimals, so 35.00 sits next to 34.20.
+  // A blank currency is a count (pieces), which stays a whole number.
+  const money = String(currency || "") !== "";
+  const scale = money ? 100 : 1;
   const cents = Math.round(abs * scale);
-  const wholeNum = digits === 0 ? cents : Math.floor(cents / scale);
-  const frac = digits === 0 ? "" : String(cents % scale).padStart(2, "0");
+  const wholeNum = money ? Math.floor(cents / scale) : cents;
+  const frac = money ? String(cents % scale).padStart(2, "0") : "";
   const whole = String(wholeNum).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  const body = frac && frac !== "00" ? whole + "." + frac : whole;
+  const body = frac ? whole + "." + frac : whole;
   const code = currency ? " " + currency : "";
   return (negative ? "-" : "") + body + code;
 }
@@ -1324,7 +1326,8 @@ async function runMultiAuction() {
       const counterNum = tfNum(counterRaw, null);
       const blocked = !!(lastRound.blocked && lastRound.blocked[i]);
       const blockReason = (lastRound.block_reasons && lastRound.block_reasons[i]) || "";
-      const capBlock = blockReason.indexOf("upper bound") !== -1;
+      const hazardFigure = (lastRound.hazard_figure && lastRound.hazard_figure[i]) || "mean";
+      const capBlock = hazardFigure === "upper";
       const hazardUpper = tfNum(lastRound.hazard_upper && lastRound.hazard_upper[i], null);
       const riskShown = capBlock && hazardUpper !== null ? hazardUpper : pBreakNum;
       const riskText = riskShown === null
@@ -1387,10 +1390,11 @@ async function runMultiAuction() {
       <p class="${versusTarget !== null && versusTarget < 0 ? "is-negative" : ""}"><strong>Versus your target</strong> (${tfEsc(tfAmount(data.product_target, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_target_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_target_pct))})</p>
       <p class="summary-secondary"><strong>Versus the walk-away ceiling</strong> (${tfEsc(tfAmount(data.walk_away_ceiling, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_ceiling_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_ceiling_pct))})</p>
       <p class="summary-secondary">${tfEsc(altCopy)}</p>
+      ${mc.tail_saturated_at_ceiling ? `<p class="summary-secondary">CVaR cost ${tfEsc(String(mc.cvar_cost ?? "no data"))}. tail saturated at ceiling</p>` : ""}
       <details class="dev-details">
         <summary>Engine notes</summary>
         <p>Search size ${tfEsc(String(tfNum(data.total_rollouts, 0)))} scenario-offer cells. Compute ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}). Push first: ${tfEsc(data.push_first || "—")}. Order: ${tfEsc((data.push_order || []).join(", ") || "—")}. ${tfEsc(priorNote)}</p>
-        <p>Monte Carlo: P(deal) ${tfEsc(String(mc.p_deal ?? "no data"))} (SE ${tfEsc(String(mc.p_deal_se ?? "no data"))}), expected surplus ${tfEsc(String(mc.expected_surplus ?? "no data"))} (SE ${tfEsc(String(mc.expected_surplus_se ?? "no data"))}), CVaR cost ${mc.tail_saturated_at_ceiling ? "tail saturated at ceiling" : tfEsc(String(mc.cvar_cost ?? "no data"))}, regret ${tfEsc(String(mc.regret ?? "no data"))}.</p>
+        <p>Monte Carlo: P(deal) ${tfEsc(String(mc.p_deal ?? "no data"))} (SE ${tfEsc(String(mc.p_deal_se ?? "no data"))}), expected surplus ${tfEsc(String(mc.expected_surplus ?? "no data"))} (SE ${tfEsc(String(mc.expected_surplus_se ?? "no data"))}), CVaR cost ${tfEsc(String(mc.cvar_cost ?? "no data"))}${mc.tail_saturated_at_ceiling ? " (tail saturated at ceiling)" : ""}, regret ${tfEsc(String(mc.regret ?? "no data"))}.</p>
       </details>
     `;
     const customsNote = document.createElement("p");

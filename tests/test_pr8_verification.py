@@ -183,15 +183,24 @@ class TestAuctionValidation(unittest.TestCase):
         self.assertIn("Duplicate supplier name: Ningbo", duplicated.text)
         self.assertIn("Each supplier needs its own name", duplicated.text)
 
-        distinct = client.post("/api/v1/multi-auction/run", json={
+        same_letters = client.post("/api/v1/multi-auction/run", json={
             "n_samples": 8,
             "n_rounds": 1,
-            "target_price": 12.0,
-            "walk_away_ceiling": 16.2,
             "suppliers": [{"name": "Ningbo"}, {"name": "ningbo"}],
             "rounds_quotes": [[13.0, 14.0]],
         })
-        self.assertEqual(distinct.status_code, 200, distinct.text)
+        self.assertEqual(same_letters.status_code, 422, same_letters.text)
+        self.assertIn("Duplicate supplier name: ningbo", same_letters.text)
+
+        case_pair = client.post("/api/v1/multi-auction/run", json={
+            "n_samples": 8,
+            "n_rounds": 1,
+            "suppliers": [{"name": "A"}, {"name": "a"}],
+            "rounds_quotes": [[13.0, 14.0]],
+        })
+        self.assertEqual(case_pair.status_code, 422, case_pair.text)
+        self.assertIn("Duplicate supplier name: a", case_pair.text)
+        self.assertIn("Each supplier needs its own name", case_pair.text)
 
     def test_all_quotes_above_the_ceiling_are_flagged_and_not_actionable(self):
         session = MultiAuctionSession(
@@ -204,6 +213,7 @@ class TestAuctionValidation(unittest.TestCase):
         )
         info = session.step_round([20.0, 21.0, 22.0])
         self.assertTrue(info["all_quotes_above_ceiling"])
+        self.assertTrue(all(figure == "mean" for figure in info["hazard_figure"]))
         self.assertTrue(all(offer is None for offer in info["counter_offers_cny"]))
         self.assertTrue(all(item["blocked"] for item in [{"blocked": flag} for flag in info["blocked"]]))
         summary = session.get_summary()
@@ -256,6 +266,7 @@ class TestAuctionValidation(unittest.TestCase):
                 self.assertIn("upper bound", reason)
                 self.assertIn("least aggressive", reason)
                 self.assertGreaterEqual(upper, 0.02)
+        self.assertTrue(all(figure == "upper" for figure, flag in zip(info["hazard_figure"], info["blocked"]) if flag))
 
     def test_blocked_card_hazard_is_the_upper_bound_that_failed_the_cap(self):
         """The cap is applied to the credible upper bound, not the mean.
@@ -276,15 +287,17 @@ class TestAuctionValidation(unittest.TestCase):
         )
         info = session.step_round([13.26, 15.60, 15.92, 16.80])
         under_mean = []
-        for flag, mean, upper, reason, offer in zip(
+        for flag, mean, upper, reason, offer, figure in zip(
             info["blocked"],
             info["p_break_array"],
             info["hazard_upper"],
             info["block_reasons"],
             info["counter_offers_cny"],
+            info["hazard_figure"],
         ):
             self.assertTrue(flag)
             self.assertIsNone(offer)
+            self.assertEqual(figure, "upper")
             self.assertIn("upper bound", reason)
             self.assertIn("least aggressive", reason)
             self.assertGreaterEqual(upper, cap)
@@ -296,6 +309,19 @@ class TestAuctionValidation(unittest.TestCase):
         self.assertGreaterEqual(upper, cap)
         self.assertAlmostEqual(mean, 0.054897, places=4)
         self.assertAlmostEqual(upper, 0.096797, places=4)
+        self.assertEqual(len(info["hazard_figure"]), 4)
+        self.assertTrue(all(figure == "upper" for figure in info["hazard_figure"]))
+
+    def test_the_desk_does_not_parse_the_block_reason_for_the_risk_figure(self):
+        js = (ROOT / "src/web/static/js/app.js").read_text(encoding="utf-8")
+        self.assertIn("hazard_figure", js)
+        self.assertNotIn('indexOf("upper bound")', js)
+        self.assertNotIn("indexOf('upper bound')", js)
+        note = js.index("tail saturated at ceiling")
+        details = js.index('<details class="dev-details">')
+        self.assertLess(note, details)
+        self.assertIn("CVaR cost ${tfEsc(String(mc.cvar_cost", js)
+        self.assertNotIn('? "tail saturated at ceiling" :', js)
 
 
 class TestCvarAndCells(unittest.TestCase):
