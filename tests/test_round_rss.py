@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # 300 MiB. The Starter instance has 512 MB and was OOM-killed at 461 MB.
 RSS_CEILING_BYTES = 300 * 1024 * 1024
 # Price from the unchunked default round on the umbrella mandate.
-RECOMMENDED_COUNTER = 13.523076923076923
+RECOMMENDED_COUNTER = 13.21846153846154
 
 _PROBE = r"""
 import json, os, resource, tempfile

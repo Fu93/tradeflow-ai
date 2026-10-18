@@ -1119,8 +1119,41 @@ async function sendCommand(cmdCode) {
 }
 
 // ---------------------------------------------------------------------------
-// Multi-Supplier Reverse Auction (28.8M Rollouts Demo)
+// Multi-supplier comparison. Blank paste runs the scripted simulation.
 // ---------------------------------------------------------------------------
+function parseLiveQuotes(text) {
+  const lines = String(text || "").split(/\n/).map((s) => s.trim()).filter(Boolean);
+  if (!lines.length) return null;
+  const suppliers = [];
+  const quotes = [];
+  for (const line of lines) {
+    const parts = line.split(",").map((s) => s.trim());
+    if (parts.length < 2 || !parts[0]) return { error: "Each line needs a name and a unit price." };
+    const unit = Number(parts[1]);
+    if (!Number.isFinite(unit) || unit <= 0) return { error: "Unit price must be a positive number." };
+    const supplier = { name: parts[0], quote: unit };
+    if (parts.length > 2 && parts[2] !== "") {
+      const freight = Number(parts[2]);
+      if (!Number.isFinite(freight) || freight < 0) return { error: "Freight must be a number." };
+      supplier.freight = freight;
+    }
+    if (parts.length > 3 && parts[3] !== "") {
+      const duty = Number(parts[3]);
+      if (!Number.isFinite(duty) || duty < 0) return { error: "Duty rate must be a number." };
+      supplier.duty_rate = duty;
+    }
+    if (parts.length > 4 && parts[4] !== "") {
+      const fees = Number(parts[4]);
+      if (!Number.isFinite(fees) || fees < 0) return { error: "Fees must be a number." };
+      supplier.fees = fees;
+    }
+    if (parts.length > 5 && parts[5] !== "") supplier.currency = parts[5];
+    suppliers.push(supplier);
+    quotes.push(unit);
+  }
+  return { suppliers, quotes };
+}
+
 async function runMultiAuction() {
   const loader = document.getElementById("auctionLoader");
   const cardsWrap = document.getElementById("supplierCards");
@@ -1135,6 +1168,29 @@ async function runMultiAuction() {
     const preset = select && categoryPresets ? categoryPresets[select.value] : null;
     const auctionBody = {};
     if (preset && preset.name) auctionBody.product_name = preset.name;
+    const live = parseLiveQuotes(document.getElementById("liveQuotes") && document.getElementById("liveQuotes").value);
+    if (live && live.error) {
+      loader.classList.add("hidden");
+      cardsWrap.innerHTML = `<div class="empty-state is-error">${tfEsc(live.error)}</div>`;
+      return;
+    }
+    if (live && live.suppliers) {
+      auctionBody.suppliers = live.suppliers;
+      auctionBody.rounds_quotes = [live.quotes];
+      auctionBody.n_rounds = 1;
+    }
+    const riskField = document.getElementById("riskTolerance");
+    if (riskField && String(riskField.value || "").trim() !== "") {
+      const risk = Number(riskField.value);
+      if (!Number.isFinite(risk) || risk <= 0 || risk > 1) {
+        loader.classList.add("hidden");
+        cardsWrap.innerHTML = `<div class="empty-state is-error">Risk tolerance must be a number between the server floor and 1, or blank.</div>`;
+        return;
+      }
+      auctionBody.risk_tolerance = risk;
+    }
+    const confirmRefs = document.getElementById("confirmRefs");
+    if (confirmRefs && confirmRefs.checked) auctionBody.confirm_market_refs = true;
     const res = await fetch("/api/v1/multi-auction/run", {
       method: "POST",
       headers: tfJsonHeaders(),
@@ -1189,14 +1245,21 @@ async function runMultiAuction() {
       card.className = "supplier-card";
       if (sName === data.winning_supplier) card.classList.add("is-winner");
       const quoteLabel = tfAmount(quoteNum, "CNY");
+      const landedRaw = lastRound.landed_costs ? lastRound.landed_costs[i] : null;
+      const landedNum = tfNum(landedRaw, null);
+      const landedLabel = landedNum === null ? "no data" : tfAmount(landedNum, "CNY");
+      const counterRaw = lastRound.counter_offers_cny ? lastRound.counter_offers_cny[i] : null;
+      const counterNum = tfNum(counterRaw, null);
       card.innerHTML = `
         <div class="card-top">
           <span class="supplier-title">${tfEsc(sName)}</span>
           <span class="tactic-tag ${tfEsc(tagClass)}">${tfEsc(plainTactic)}</span>
         </div>
         <div class="card-metrics">
-          <div>Quote: <span class="metric-val">${tfEsc(quoteLabel)}</span></div>
+          <div>Unit price: <span class="metric-val">${tfEsc(quoteLabel)}</span></div>
+          <div>Landed cost: <span class="metric-val">${tfEsc(landedLabel)}</span></div>
           <div>Best alternative: <span class="metric-val">${tfEsc(tfAmount(ceilingNum, "CNY"))}</span></div>
+          <div>Counter: <span class="metric-val">${counterNum === null ? "no data" : tfEsc(tfAmount(counterNum, "CNY"))}</span></div>
           <div>Risk: <span class="metric-val">${pBreak === "—" ? "—" : tfEsc(pBreak) + "%"}</span></div>
         </div>
         <div class="meter-row">
@@ -1212,15 +1275,23 @@ async function runMultiAuction() {
     const versusTarget = tfNum(data.savings_vs_target_cny, null);
     const pieceCount = tfNum(data.moq, null);
     const pieceBasis = pieceCount === null ? "" : ` for ${tfAmount(pieceCount, "")} pcs`;
+    const leadCopy = data.simulated
+      ? `<p class="summary-lead"><strong>Simulated suppliers</strong> These are scripted archetypes, not live factory quotes. Winner: ${tfEsc(data.winning_supplier)} at ${tfEsc(tfAmount(data.winning_price, "CNY"))}. Amounts on this card are CNY.</p>`
+      : `<p class="summary-lead"><strong>Your quotes</strong> Winner: ${tfEsc(data.winning_supplier)} at ${tfEsc(tfAmount(data.winning_price, "CNY"))}. Ranking basis: ${tfEsc(data.ranking_basis || "unit_price")}. Amounts on this card are in the base currency.</p>`;
+    const mc = data.mc || {};
+    const priorNote = data.prior_driven
+      ? "Walk-away hazard is prior-driven until real continue or walk-away events are recorded."
+      : "Walk-away hazard includes recorded continue or walk-away events.";
     summaryEl.innerHTML = `
-      <p class="summary-lead"><strong>Simulated suppliers</strong> These are scripted archetypes, not live factory quotes. Winner: ${tfEsc(data.winning_supplier)} at ${tfEsc(tfAmount(data.winning_price, "CNY"))}. Amounts on this card are CNY.</p>
+      ${leadCopy}
       <p class="summary-headline"><strong>Savings versus the first-round best quote</strong> (${tfEsc(tfAmount(data.first_round_best_quote, "CNY"))}): ${tfEsc(tfAmount(data.total_savings_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.total_savings_pct))})</p>
       <p class="${versusTarget !== null && versusTarget < 0 ? "is-negative" : ""}"><strong>Versus your target</strong> (${tfEsc(tfAmount(data.product_target, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_target_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_target_pct))})</p>
       <p class="summary-secondary"><strong>Versus the walk-away ceiling</strong> (${tfEsc(tfAmount(data.walk_away_ceiling, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_ceiling_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_ceiling_pct))})</p>
       <p class="summary-secondary">Best alternative is the cheapest adjusted offer from the other simulated suppliers, capped by your walk-away ceiling. It can sit above a supplier's own quote when that supplier is the cheaper one. Suppliers who share the same cheapest rival show the same figure. It is not that supplier's private reserve.</p>
       <details class="dev-details">
         <summary>Engine notes</summary>
-        <p>Search size ${tfEsc(String(tfNum(data.total_rollouts, 0)))} parameter cells. Compute ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}). Engine tactic codes stay in the solver; the cards use plain words.</p>
+        <p>Search size ${tfEsc(String(tfNum(data.total_rollouts, 0)))} scenario-offer cells. Compute ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}). Push first: ${tfEsc(data.push_first || "—")}. Order: ${tfEsc((data.push_order || []).join(", ") || "—")}. ${tfEsc(priorNote)}</p>
+        <p>Monte Carlo: P(deal) ${tfEsc(String(mc.p_deal ?? "no data"))} (SE ${tfEsc(String(mc.p_deal_se ?? "no data"))}), expected surplus ${tfEsc(String(mc.expected_surplus ?? "no data"))} (SE ${tfEsc(String(mc.expected_surplus_se ?? "no data"))}), CVaR cost ${tfEsc(String(mc.cvar_cost ?? "no data"))}, regret ${tfEsc(String(mc.regret ?? "no data"))}.</p>
       </details>
     `;
     const customsNote = document.createElement("p");

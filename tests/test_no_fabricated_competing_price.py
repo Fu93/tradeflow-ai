@@ -76,7 +76,8 @@ class _IsolatedClientCase(unittest.TestCase):
     def _replies(self, sid: str, target: float) -> list:
         """沿著會話跑多輪，收集所有 reply_text / action_object。"""
         out = []
-        for factor in (1.00, 0.99, 0.97, 0.95, 0.93, 0.90, 0.88, 0.85, 0.80, 0.75, 0.70):
+        # 1.25x target is a mild gap: walk-away hazard falls in the caution band.
+        for factor in (1.25, 1.00, 0.99, 0.97, 0.95, 0.93, 0.90, 0.88, 0.85, 0.80, 0.75, 0.70):
             r = self.c.post(
                 f"/api/v1/sessions/{sid}/round",
                 json={
@@ -126,7 +127,8 @@ class TestNoFabricatedCompetingPrice(_IsolatedClientCase):
     def test_cross_anchor_mode_uses_honest_phrasing(self):
         """CROSS_ANCHOR 戰術話術必須出現「同規格同行報價」且不帶任何錨定價金額。
 
-        以 p_break ∈ [0.08, 0.15) 的區間命中 CROSS_ANCHOR（實測 offer ≈ 0.88×target）。
+        The band is the caution threshold up to the trip cap. A supplier ask
+        near the target puts the walk-away hazard in that band.
         """
         self._new_session("comp-cross", 12.0, 16.2)
         cross_seen = 0

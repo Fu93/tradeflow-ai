@@ -46,12 +46,23 @@ class TestTransportStd(unittest.TestCase):
             transport.send_message(
                 recipient="supplier@factory.com",
                 content="Please quote for 500 umbrellas",
-                metadata={"session_id": "sess_mock_email", "round_index": 1},
+                metadata={"session_id": "sess_mock_email", "round_index": 1, "human_approved": True},
             )
         )
         self.assertTrue(res)
         self.assertEqual(len(transport.mock_sent_box), 1)
         self.assertIn("sess_mock_email", transport.mock_sent_box[0]["subject"])
+
+        refused = EmailStdTransport()
+        blocked = loop.run_until_complete(
+            refused.send_message(
+                recipient="supplier@factory.com",
+                content="Please quote for 500 umbrellas",
+                metadata={"session_id": "sess_unapproved"},
+            )
+        )
+        self.assertFalse(blocked)
+        self.assertEqual(len(refused.mock_sent_box), 0)
 
         # 模擬收信
         transport.mock_inbox.append(

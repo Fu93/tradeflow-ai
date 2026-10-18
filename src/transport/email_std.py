@@ -53,6 +53,10 @@ class EmailStdTransport(BaseTransport):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         meta = metadata or {}
+        # The desk never sends on its own. A person has to approve first.
+        # Mock mode is the same gate: an unapproved message is not queued.
+        if meta.get("human_approved") is not True:
+            return False
         session_id = meta.get("session_id", "default_session")
         round_idx = meta.get("round_index", 1)
         sub = subject or f"[TradeFlow Procurement] Inquiry: {meta.get('product', 'RFQ')} (Ref: {session_id})"

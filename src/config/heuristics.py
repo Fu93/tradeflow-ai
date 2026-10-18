@@ -22,9 +22,11 @@ GRID_EDGE_INSET = 0.02
 # proposing and waits for a person. Not fitted to factory data.
 BREAKDOWN_TRIP_THRESHOLD = 0.15
 
-# Rationale: display and tactic band below the trip threshold. Caution is
-# not a second trip and it is not a measured rate.
-CAUTION_RISK_THRESHOLD = 0.08
+# Rationale: display band for a mild walk-away hazard. It sits just above
+# the zero-gap prior (the logistic intercept) and below the trip cap, so a
+# small opening gap is labelled caution. Not a measured rate and not a
+# second trip. The old 0.08 band was chosen for 1 - p_deal, which sat higher.
+CAUTION_RISK_THRESHOLD = 0.06
 
 # Rationale: neutral opening gap (normalised) for the anchoring reaction.
 ANCHORING_REF = 0.10
@@ -261,6 +263,92 @@ WILSON_ALPHA = 0.05
 ONNX_LOGREG_C = 3.0
 ONNX_TEMPERATURE = 1.20
 
+# Rationale: walk-away hazard logit when our offer is not aggressive.
+# Assumption, not a fit. No public dataset was estimated for this build.
+# The eBay Best Offer replication (doi:10.7910/DVN/ZOWWO7) was not downloaded.
+HAZARD_INTERCEPT = -2.9
+
+# Rationale: logit slope on (quote - offer) / quote. Positive, so a more
+# aggressive offer has a higher walk-away hazard. Assumption, not fitted.
+HAZARD_QUOTE_GAP = 3.4
+
+# Rationale: logit slope on max(reserve - offer, 0) / reserve. Positive, so
+# the same offer is riskier against a higher reserve. Assumption, not fitted.
+HAZARD_RESERVE_GAP = 2.2
+
+# Rationale: logit slope on a reciprocity violation. Assumption. With no
+# concession history the term is zero.
+HAZARD_RECIPROCITY = 0.8
+
+# Rationale: logit slope on the round index. Zero because the sign of time
+# pressure is not assumed without observed walk-aways.
+HAZARD_ROUND = 0.0
+
+# Rationale: logit slope on the number of better rival quotes. Zero.
+# Competition enters through the outside option. A direct hazard sign is
+# not assumed.
+HAZARD_N_ALT = 0.0
+
+# Rationale: extra logit slope when a sampled bluff multiplies the reserve
+# gap. Assumption, not fitted.
+HAZARD_BLUFF = 0.6
+
+# Rationale: prior standard deviation of the per-supplier hazard random
+# effect. Hierarchical shrinkage before any walk-away is observed.
+# Assumption, not estimated.
+HAZARD_SUPPLIER_TAU = 0.35
+
+# Rationale: half-width of the random-effect grid. A support for the logit
+# shift, not a price.
+HAZARD_U_HALF = 2.0
+
+# Rationale: clip on the hazard logit so an extreme gap cannot overflow
+# the sigmoid. Not a price.
+HAZARD_LOGIT_CLIP = 20.0
+
+# Rationale: tail mass outside the central credible interval. 0.05 leaves
+# a 95% interval. The upper end is the conservative prior-driven reading.
+HAZARD_CREDIBLE_ALPHA = 0.05
+
+# Rationale: below this many observed continue or walk-away events the
+# hazard is labelled prior-driven. A disclosure rule, not a fitted size.
+HAZARD_MIN_EVENTS = 30
+
+# Rationale: number of points on the random-effect grid.
+HAZARD_U_POINTS = 64
+
+# Rationale: lowest normalised offer on the coupled grid, where 1 is the
+# target. A supplier quote below this floor can still be accepted. Not a
+# market quote.
+OFFER_GRID_FLOOR = 0.50
+
+# Rationale: weight on CVaR of buyer loss in the coupled objective. The
+# user's risk tolerance scales it. Assumption, not fitted.
+CVAR_WEIGHT = 0.35
+
+# Rationale: smallest risk tolerance used when scaling the CVaR weight, so
+# a tiny cap cannot divide by zero. The hazard cap itself stays the user's
+# number. A numerical floor, not a measured rate.
+RISK_TOLERANCE_FLOOR = 0.01
+
+# Rationale: normalised cost of one more exchange in the Weitzman index,
+# as a share of the target. An ordering assumption, not a supplier quote.
+WEITZMAN_SEARCH_COST = 0.02
+
+# Rationale: a quote above this multiple of the cheapest quote is labelled
+# sideline. Display band carried forward from the previous hand-set rule.
+# Not a price and not a fitted threshold.
+TACTIC_SIDELINE_RATIO = 1.12
+
+# Rationale: prior correlation of reserve shocks across suppliers. Zero is
+# the independence prior. A shared factor is still drawn. Not estimated.
+SHARED_FACTOR_RHO = 0.0
+
+# Rationale: Jacobi sweeps of the coupled offer search. The outside option
+# is the rival quote, so extra sweeps repeat the same decision. The count
+# is the documented search budget.
+COUPLED_SWEEPS = 3
+
 
 def public_payload() -> dict:
     """Numbers the dashboard and the extension are allowed to display."""
@@ -268,7 +356,14 @@ def public_payload() -> dict:
         "documented": True,
         "source": "src/config/heuristics.py",
         "breakdown_trip_threshold": BREAKDOWN_TRIP_THRESHOLD,
+        "risk_tolerance_default": BREAKDOWN_TRIP_THRESHOLD,
         "caution_risk_threshold": CAUTION_RISK_THRESHOLD,
+        "hazard_status": "prior-driven",
+        "hazard_note": (
+            "Walk-away hazard uses assumed logistic coefficients in "
+            "src/config/heuristics.py. No public dataset was fitted. "
+            "The default cap is user policy, not an estimated rate."
+        ),
         "ladder_edge_lo": LADDER_EDGE_LO,
         "ladder_edge_hi": LADDER_EDGE_HI,
         "ladder_step_fine": LADDER_STEP_FINE,
