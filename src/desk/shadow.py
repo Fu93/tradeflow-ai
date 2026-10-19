@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from src.config.heuristics import GATE_CERTIFY_ACCEPTS, SPAN_GROUP, Z_95
+from src.config.heuristics import GATE_CERTIFY_ACCEPTS, NEIGHBORHOOD_CHARS, WILSON_QUARTIC, Z_95
 from src.desk.extract import extract_mentions
 from src.desk.span_read import cny_marked, per_piece_marked, read_one, span_in_message
 
@@ -19,7 +19,7 @@ def _neighborhood(message: str, span: str) -> str:
     index = str(message).find(str(span))
     if index < 0:
         return ""
-    radius = int(SPAN_GROUP) * (2 * 2 * 2)
+    radius = int(NEIGHBORHOOD_CHARS)
     return str(message)[max(0, index - radius): index + len(span) + radius]
 
 
@@ -34,7 +34,7 @@ def wilson_interval(successes: int, total: int, z: float = Z_95) -> tuple[float,
     z2 = zed * zed
     denom = 1.0 + z2 / count
     centre = (phat + z2 / (2 * count)) / denom
-    margin = zed * math.sqrt((phat * (1.0 - phat) + z2 / ((2 * 2) * count)) / count) / denom
+    margin = zed * math.sqrt((phat * (1.0 - phat) + z2 / (int(WILSON_QUARTIC) * count)) / count) / denom
     return max(0.0, centre - margin), min(1.0, centre + margin)
 
 
@@ -87,9 +87,15 @@ def evaluate_shadow(
     rule_value = _rule_value(reading)
     span_value = None
     would = False
-    if extractor_configured and mentions and rule_value is not None:
+    instructed = set()
+    if mentions:
         for mention in mentions:
             if mention.get("class") == "instruction":
+                instructed.add(str(mention.get("evidence_span") or ""))
+    if extractor_configured and mentions and rule_value is not None:
+        for mention in mentions:
+            span = str(mention.get("evidence_span") or "")
+            if mention.get("class") == "instruction" or span in instructed:
                 continue
             agreed = _mention_agrees(mention, message, rule_value, low, high)
             if agreed is None:

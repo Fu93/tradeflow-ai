@@ -312,18 +312,25 @@
         ? money(supplier.landed_cost, "CNY")
         : "no data";
       line(card, "Landed cost: " + landed);
+      const priorMean = supplier.d_prior_mean == null ? "labelled policy" : String(supplier.d_prior_mean);
+      const priorStrength = supplier.d_prior_strength == null ? "labelled policy" : String(supplier.d_prior_strength);
+      line(card, "D prior (user policy): mean " + priorMean + ", strength " + priorStrength);
       line(card, "Reserve: " + (supplier.reserve_note || supplier.belief_label || "no data"));
       const half = supplier.sensitivity_half == null ? "withheld" : money(supplier.sensitivity_half, "CNY");
       const doubled = supplier.sensitivity_double == null ? "withheld" : money(supplier.sensitivity_double, "CNY");
       const counter = supplier.counter == null ? "withheld" : money(supplier.counter, "CNY");
       const push = supplier.push_counter == null ? "withheld" : money(supplier.push_counter, "CNY");
       const relation = supplier.counter_relation === "at_ask"
-        ? " (this supplier is the cheapest confirmed quote, so the default is their ask)"
+        ? "This supplier is the cheapest confirmed quote, so the default is their ask."
         : supplier.counter_relation === "match_rival"
-          ? " (matches the best other confirmed landed quote)"
+          ? "The default matches the best other confirmed landed quote."
           : "";
-      line(card, "Default counter: " + counter + relation);
-      line(card, "Push lower: " + push + ". At half the prior strength: " + half + ". At double the prior strength: " + doubled + ".");
+      line(card, "Default counter: " + counter);
+      if (relation) line(card, relation);
+      line(card, "Push lower: " + push);
+      if (supplier.push_note) line(card, supplier.push_note);
+      line(card, "At half the prior strength: " + half);
+      line(card, "At double the prior strength: " + doubled);
       line(card, "Walk-away hazard: " + hazardText(supplier));
       if (supplier.excluded_from_decision) {
         line(card, "Excluded from the decision until you include unverified quotes.");

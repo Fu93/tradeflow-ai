@@ -159,6 +159,14 @@ def ingest_message(
 ) -> dict[str, Any]:
     if source not in SOURCES:
         raise DeskRejected("Quote source must be email, chat-import, or paste.")
+    deal = store.get_deal(deal_id)
+    if deal is None:
+        raise KeyError(deal_id)
+    prepared = _prepare_reading(
+        raw_text,
+        deal,
+        llm_fields=llm_fields,
+    )
     with deal_lock(deal_id):
         return _ingest_locked(
             store,
@@ -173,6 +181,7 @@ def ingest_message(
             fees=fees,
             external_id=external_id,
             provenance_extra=provenance_extra,
+            prepared=prepared,
         )
 
 
@@ -189,6 +198,72 @@ def _outside_sanity(price: float, deal: dict[str, Any]) -> bool:
     return float(price) > high or float(price) < low
 
 
+def _prepare_reading(raw_text: str, deal: dict[str, Any], *, llm_fields: dict | None) -> dict[str, Any]:
+    """Parse and call the extractor before the deal lock. A failure still returns a review shell."""
+    from src.desk.shadow import shadow_from_message
+
+    try:
+        reading = parse_quote(
+            raw_text,
+            llm_fields=llm_fields,
+            quantity=deal.get("quantity"),
+            deal_currency="CNY",
+        )
+    except Exception:
+        reading = {
+            "parsed": {},
+            "provenance": {"review_reason": "the reader failed closed"},
+            "status": "review",
+        }
+    target = float(deal["target_price"])
+    ceiling = float(deal["ceiling_price"])
+    multiple = float(UNIT_SANITY_MULTIPLE if deal.get("unit_sanity_multiple") is None else deal["unit_sanity_multiple"])
+    high = max(target, ceiling) * multiple
+    low = target / multiple if multiple else target
+    try:
+        shadow = shadow_from_message(raw_text, reading, low=low, high=high)
+    except Exception:
+        shadow = {
+            "would_accept": False,
+            "applied": False,
+            "span_value": None,
+            "rule_value": None,
+            "numeric_field_discarded": False,
+            "error": "extractor_failed",
+        }
+    reading = dict(reading)
+    provenance = dict(reading.get("provenance") or {})
+    candidates = [
+        str(token) for token in (provenance.get("candidates") or [])
+        if not _quantity_token(raw_text, str(token))
+    ]
+    suggested = provenance.get("suggested_token")
+    if suggested and _quantity_token(raw_text, str(suggested)):
+        suggested = candidates[0] if candidates else None
+    elif suggested and str(suggested) not in candidates and candidates:
+        suggested = candidates[0]
+    provenance["candidates"] = candidates
+    provenance["suggested_token"] = suggested
+    reading["provenance"] = provenance
+    return {"reading": reading, "shadow": shadow}
+
+
+def _quantity_token(raw_text: str, token: str) -> bool:
+    """A MOQ or a quantity unit is not a unit price, even when it sits near one."""
+    if not token or token not in (raw_text or ""):
+        return False
+    import re
+
+    for match in re.finditer(re.escape(token), raw_text):
+        head = raw_text[max(0, match.start() - 12):match.start()]
+        tail = raw_text[match.end():match.end() + 8]
+        if re.search(r"(?i)(?:moq|起订量|起訂量|起订|起訂|最少|数量|數量)\s*$", head):
+            return True
+        if re.match(r"(?i)\s*(?:个|件|只|pcs|pc|pieces|k)(?:\b|(?=[\u4e00-\u9fff])|$)", tail):
+            return True
+    return False
+
+
 def _ingest_locked(
     store: DeskStore,
     deal_id: str,
@@ -203,6 +278,7 @@ def _ingest_locked(
     fees: float | None,
     external_id: str | None,
     provenance_extra: dict | None,
+    prepared: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     deal = store.get_deal(deal_id)
     if deal is None:
@@ -212,23 +288,13 @@ def _ingest_locked(
         if existing is not None:
             snapshot = store.get_snapshot(deal_id)
             return {"duplicate": True, "event": existing, "snapshot": snapshot}
-    reading = parse_quote(
-        raw_text,
-        llm_fields=llm_fields,
-        quantity=deal.get("quantity"),
-        deal_currency="CNY",
-    )
-    parsed = dict(reading["parsed"])
+    if prepared is None:
+        prepared = _prepare_reading(raw_text, deal, llm_fields=llm_fields)
+    reading = prepared["reading"]
+    shadow = prepared["shadow"]
+    parsed = dict(reading.get("parsed") or {})
     # Phase 1: the agreement gate only logs. The user confirms every number.
     parsed["unit_price"] = None
-    target = float(deal["target_price"])
-    ceiling = float(deal["ceiling_price"])
-    multiple = float(UNIT_SANITY_MULTIPLE if deal.get("unit_sanity_multiple") is None else deal["unit_sanity_multiple"])
-    high = max(target, ceiling) * multiple
-    low = target / multiple if multiple else target
-    from src.desk.shadow import shadow_from_message
-
-    shadow = shadow_from_message(raw_text, reading, low=low, high=high)
     provenance = dict(reading["provenance"])
     provenance["source"] = source
     provenance["reader"] = "prefill"
@@ -239,6 +305,8 @@ def _ingest_locked(
     provenance["rule_value"] = shadow.get("rule_value")
     provenance["auto_accept"] = False
     provenance["llm_price_ignored"] = True
+    if shadow.get("error"):
+        provenance["extractor_error"] = shadow["error"]
     if freight is not None:
         parsed["freight"] = float(freight)
     if duty_rate is not None:
@@ -299,6 +367,8 @@ def accept_review(
         if reject:
             provenance = dict(event["provenance"])
             provenance["review_rejected_by"] = "human"
+            provenance["shadow_resolved"] = True
+            provenance["shadow_matched"] = False
             parsed = dict(event["parsed"])
             parsed["unit_price"] = None
             store.set_event_status(
@@ -317,7 +387,10 @@ def accept_review(
         supplier = store.supplier(deal_id, supplier_id)
         if supplier is None:
             raise DeskRejected("That supplier is not on this deal.")
-        reading = parse_quote(event["raw_text"], llm_fields=None)
+        deal = store.get_deal(deal_id)
+        if deal is None:
+            raise KeyError(deal_id)
+        reading = parse_quote(event["raw_text"], llm_fields=None, quantity=deal.get("quantity"))
         previous = dict(event["parsed"])
         parsed = dict(reading["parsed"])
         for key in ("freight", "duty_rate", "fees"):
@@ -325,6 +398,8 @@ def accept_review(
                 parsed[key] = previous[key]
         price = parsed.get("unit_price")
         if chosen_token:
+            if _quantity_token(event["raw_text"], chosen_token):
+                raise DeskRejected("That amount is a quantity, not a unit price.")
             price = price_from_token(event["raw_text"], chosen_token)
             if price is None:
                 raise DeskRejected("That amount is not a CNY unit price in the raw text.")
@@ -332,6 +407,8 @@ def accept_review(
             parsed["currency"] = "CNY"
         elif price is None:
             raise DeskRejected("Pick one amount from the raw text before accepting.")
+        if price is None or _outside_sanity(float(price), deal):
+            raise DeskRejected("That amount is outside the plausible unit-price band. It was not accepted.")
         provenance = dict(event["provenance"])
         provenance["review_accepted_by"] = "human"
         provenance["review_reason"] = None

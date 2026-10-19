@@ -489,6 +489,25 @@ SPAN_GROUP = 3
 # endpoint leaves the rule prefill only.
 LLM_TIMEOUT_SECONDS = 20
 
+# Rationale: Newton polish step is two to the minus this many bits, times the
+# offer scale. Wide enough that curvature is visible in float64, and short
+# enough that the uniform and Beta(alpha, 1) closed forms land inside 1e-9.
+NEWTON_STEP_BITS = 20
+
+# Rationale: characters of the message kept on each side of an evidence span
+# when a currency or unit mark sits beside the number rather than inside it.
+NEIGHBORHOOD_CHARS = 24
+
+# Rationale: the 4 in the two-sided Wilson variance, z squared over 4n. An
+# identity of the interval, not a price and not a sample size.
+WILSON_QUARTIC = 4
+
+# Rationale: quote-gap knot for the small-gap hinge in the eBay walk-away
+# logit. Gaps below this knot get an extra term because a straight line
+# understated seller-ended walk-away there. It is part of the fitted model,
+# not a price.
+SMALL_GAP_KNOT = 0.10
+
 
 def _sigmoid(value: float) -> float:
     import math
@@ -513,12 +532,14 @@ def public_payload() -> dict:
         intercept = float(fit.intercept)
         gap = float(fit.gap_coef)
         hazard_status = "ebay_seller_ended"
+        caveat = str((fit.provenance or {}).get("transfer_caveat") or "")
         hazard_note = (
             "Walk-away hazard is transferred from eBay Best Offer, 2012–13, "
-            "Business & Industrial, seller-ended. It is not a measured "
-            "Chinese-factory rate. A reserve-gap term is not in the decision. "
-            "The risk cap applies to the incremental hazard of our offer."
-        )
+            "Business & Industrial, seller-ended, with a small-gap hinge. "
+            "It is not a measured Chinese-factory rate. A reserve-gap term is "
+            "not in the decision. The risk cap applies to the incremental hazard "
+            "of our offer. " + caveat
+        ).strip()
     except Exception:
         pass
     return {

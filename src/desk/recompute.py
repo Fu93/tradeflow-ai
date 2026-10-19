@@ -14,12 +14,12 @@ from src.config.heuristics import (
     DESK_N_SAMPLES,
     HAZARD_MIN_EVENTS,
     HAZARD_SUPPLIER_TAU,
-    SEARCH_STEP,
+    OPT_TOL,
     UNIT_SANITY_MULTIPLE,
     WEITZMAN_SEARCH_COST,
 )
 from src.desk.store import DeskStore
-from src.desk.headline import AUDIT_LINE, confirmed_prices, saving_vs_best_first
+from src.desk.headline import audit_line, confirmed_prices, saving_vs_best_first
 from src.desk.shadow import progress as shadow_progress
 from src.engine.coupled import solve_coupled
 from src.engine.decision import HEURISTIC_NOTE
@@ -30,9 +30,12 @@ from src.engine.landed import landed_unit_cost, ranking_basis
 from src.engine.reserve import ReserveState
 
 HAZARD_NOTE = (
-    "Walk-away hazard uses one gap, transferred from the eBay seller-ended fit. "
-    "A reserve-gap term is not added. Recorded continue and walk-away outcomes "
-    "update only this supplier's effect. Quote text is not an outcome."
+    "Walk-away hazard is transferred from the eBay seller-ended fit, with a "
+    "small-gap hinge because a straight line understated walk-away on small gaps. "
+    "The fit is the first buyer offer of a thread and is applied per round to the "
+    "latest ask. A reserve-gap term is not added. Recorded continue and walk-away "
+    "outcomes update only this supplier's effect. Quote text is not an outcome. "
+    "This is not a measured Chinese-factory rate."
 )
 KAPPA_NOTE = (
     "Missing freight, duty, or fees are not treated as zero. "
@@ -183,37 +186,64 @@ def _hold_previous(row: dict[str, Any], previous: dict[str, Any] | None) -> dict
     return row
 
 
-def _headline(events: list[dict[str, Any]], outcomes: list[dict[str, Any]]) -> dict[str, Any]:
+def _headline(events: list[dict[str, Any]], outcomes: list[dict[str, Any]], *, unconfirmed: int) -> dict[str, Any]:
     confirmed, _used = confirmed_prices(events)
+    live = [event for event in confirmed if not _unverified(event)]
     first: dict[str, float] = {}
-    for event in confirmed:
+    basis: dict[str, str] = {}
+    adder: dict[str, float] = {}
+    for event in live:
         supplier_id = event.get("supplier_id")
-        if not supplier_id or supplier_id in first:
+        if not supplier_id or str(supplier_id) in first:
             continue
-        landed = _components(event.get("parsed") or {})
-        price = landed.get("landed_cost")
-        if price is None:
-            price = (event.get("parsed") or {}).get("unit_price")
-        if price is not None:
-            first[str(supplier_id)] = float(price)
-    agreed = [
-        float(item["agreed_price"])
-        for item in outcomes
+        parsed = event.get("parsed") or {}
+        landed = _components(parsed)
+        unit = parsed.get("unit_price")
+        if landed.get("status") == "complete" and landed.get("landed_cost") is not None and unit is not None:
+            first[str(supplier_id)] = float(landed["landed_cost"])
+            basis[str(supplier_id)] = "landed"
+            adder[str(supplier_id)] = float(landed["landed_cost"]) - float(unit)
+        elif unit is not None:
+            first[str(supplier_id)] = float(unit)
+            basis[str(supplier_id)] = "unit"
+    agreed_rows = [
+        item for item in outcomes
         if item.get("outcome") == "agreed" and item.get("agreed_price") is not None
     ]
-    simulated = any((event.get("provenance") or {}).get("origin") == "simulated" for event in confirmed)
+    agreed_landed = None
+    if agreed_rows and first:
+        last = agreed_rows[-1]
+        unit_agreed = float(last["agreed_price"])
+        supplier_id = str(last.get("supplier_id") or "")
+        uses_landed = any(kind == "landed" for kind in basis.values())
+        if uses_landed:
+            if supplier_id in adder:
+                agreed_landed = unit_agreed + adder[supplier_id]
+        elif basis.get(supplier_id) == "unit" or (not supplier_id and all(kind == "unit" for kind in basis.values())):
+            agreed_landed = unit_agreed
+    simulated = any(_unverified(event) for event in confirmed) or not live
     return saving_vs_best_first(
         list(first.values()),
-        None if not agreed else agreed[-1],
+        agreed_landed,
         simulated=simulated,
+        unconfirmed=unconfirmed,
     )
 
 
-def _reserve_state(prices: list[float], outcomes: list[dict[str, Any]]) -> ReserveState | None:
-    """Own-ask Beta. Later prices and closed deals are upper bounds on D."""
+def _reserve_state(
+    prices: list[float],
+    outcomes: list[dict[str, Any]],
+    *,
+    prior_mean: float | None = None,
+    prior_std: float | None = None,
+) -> ReserveState | None:
+    """Own-ask Beta. D is a fraction of the first ask. Later prices are upper bounds."""
     if not prices:
         return None
-    state = ReserveState.policy()
+    if prior_mean is None:
+        state = ReserveState.policy()
+    else:
+        state = ReserveState.from_moments(float(prior_mean), prior_std)
     first = float(prices[0])
     if first <= 0.0:
         return None
@@ -228,6 +258,10 @@ def _reserve_state(prices: list[float], outcomes: list[dict[str, Any]]) -> Reser
         elif kind == "continue":
             state = state.record()
     return state
+
+
+def _walked_away(outcomes: list[dict[str, Any]]) -> bool:
+    return any(item.get("outcome") == "walk_away" for item in outcomes)
 
 
 def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
@@ -262,27 +296,47 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             return rows
         return [event for event in rows if not _unverified(event)]
 
+    consumed: list[dict[str, Any]] = []
+    for row in suppliers:
+        consumed.extend(decision_events(row["id"]))
+    _kept, unconfirmed = confirmed_prices(consumed)
     beliefs_state: dict[str, tuple] = {}
     for row in suppliers:
         history = decision_events(row["id"])
+        outcomes = store.outcomes(deal_id, row["id"])
         prices = [
             float(event["parsed"]["unit_price"])
             for event in history
             if event.get("parsed", {}).get("unit_price") is not None
         ]
-        state = _reserve_state(prices, store.outcomes(deal_id, row["id"]))
-        if state is None:
+        state = _reserve_state(
+            prices,
+            outcomes,
+            prior_mean=user_prior,
+            prior_std=user_std,
+        )
+        if state is None or not state.consistent() or _walked_away(outcomes):
+            note = "No accepted quote yet."
+            if state is not None and not state.consistent():
+                note = "The rejection lower bound meets or passes the upper bound, so no price is issued."
+            elif _walked_away(outcomes):
+                note = "This supplier walked away, so no new counter is issued."
             beliefs_state[row["id"]] = {
                 "mean": None,
                 "std": None,
                 "observations": 0,
-                "label": "no data",
+                "label": "withheld" if state is not None else "no data",
                 "state": None,
-                "note": "No accepted quote yet.",
+                "note": note,
+                "prior_mean": None if state is None else state.alpha / (state.alpha + state.beta),
+                "prior_strength": None if state is None else state.alpha + state.beta,
+                "reference_ask": None if not prices else float(prices[0]),
             }
             continue
-        mean = float(prices[-1]) * float(state.mean()) / target
-        std = _std_or_tiny(float(prices[-1]) * float(state.std()) / target)
+        reference = float(prices[0]) / target
+        state = state.with_reference(reference)
+        mean = reference * float(state.mean())
+        std = _std_or_tiny(reference * float(state.std()))
         beliefs_state[row["id"]] = {
             "mean": mean,
             "std": std,
@@ -290,14 +344,19 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "label": state.source,
             "state": state,
             "note": state.note(),
+            "prior_mean": state.alpha / (state.alpha + state.beta),
+            "prior_strength": state.alpha + state.beta,
+            "reference_ask": float(prices[0]),
         }
         store.set_belief(row["id"], mean, std)
     reserve_note = "Each supplier has their own Beta prior. A markup is not applied."
 
-    active = [
-        row for row in suppliers
-        if beliefs_state[row["id"]]["state"] is not None and decision_events(row["id"])
-    ]
+    active = []
+    if unconfirmed == 0:
+        active = [
+            row for row in suppliers
+            if beliefs_state[row["id"]]["state"] is not None and decision_events(row["id"])
+        ]
     samples, grid = solver_budget()
     solved: dict[str, Any] | None = None
     half_solved: dict[str, Any] | None = None
@@ -399,6 +458,10 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "belief_observations": observations,
             "belief_label": label,
             "reserve_note": supplier_note,
+            "d_prior_mean": slot.get("prior_mean"),
+            "d_prior_strength": slot.get("prior_strength"),
+            "d_prior_label": "user policy",
+            "reference_ask": slot.get("reference_ask"),
             "markup_used": None,
             "sensitivity_half": None,
             "sensitivity_double": None,
@@ -410,6 +473,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "prior_driven": True,
             "counter": None,
             "push_counter": None,
+            "push_note": "",
             "counter_relation": None,
             "blocked": False,
             "hazard": None,
@@ -444,10 +508,14 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             else:
                 counter = min(offer, ceiling, own_quote)
                 figure = "mean"
-                if abs(float(counter) - own_quote) <= target * float(SEARCH_STEP):
+                if abs(float(counter) - own_quote) <= float(OPT_TOL) * max(1.0, own_quote):
                     relation = "at_ask"
+            withheld_push = bool(solved.get("push_withheld", [False])[index])
             card["counter"] = counter
-            card["push_counter"] = None if blocked else min(float(solved["push_offers"][index]) * target, ceiling, own_quote)
+            card["push_counter"] = None if blocked or withheld_push else min(
+                float(solved["push_offers"][index]) * target, ceiling, own_quote
+            )
+            card["push_note"] = "" if blocked else str(solved.get("push_note", [""])[index])
             card["counter_relation"] = relation
             card["sensitivity_half"] = None if blocked else min(float(solved["push_half"][index]) * target, ceiling, own_quote)
             card["sensitivity_double"] = None if blocked else min(float(solved["push_double"][index]) * target, ceiling, own_quote)
@@ -489,8 +557,13 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         card["rank"] = by_id[card["id"]]["rank"]
 
     for card in cards:
-        if card["latest_quote"] is None or card["counter"] is None:
+        if card["latest_quote"] is None or card["counter"] is None or _walked_away(store.outcomes(deal_id, card["id"])):
             store.supersede_open_drafts(deal["id"], card["id"])
+            if _walked_away(store.outcomes(deal_id, card["id"])):
+                card["counter"] = None
+                card["push_counter"] = None
+                card["blocked"] = True
+                card["counter_relation"] = "withheld"
             continue
         history = by_supplier.get(card["id"]) or []
         language = _language([event.get("raw_text") or "" for event in history])
@@ -617,10 +690,10 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "min_events": int(HAZARD_MIN_EVENTS),
             "recorded_outcomes": len(recorded),
             "prior_driven": len(recorded) < int(HAZARD_MIN_EVENTS),
-            "note": HAZARD_TRANSFER_NOTE,
+            "note": (HAZARD_TRANSFER_NOTE + " " + str(fit.provenance.get("transfer_caveat") or "")).strip(),
         },
-        "audit": AUDIT_LINE,
-        "unconfirmed_numbers_used": confirmed_prices(events)[1],
+        "audit": audit_line(unconfirmed),
+        "unconfirmed_numbers_used": unconfirmed,
         "shadow_gate": shadow_progress(
             [
                 {
@@ -631,7 +704,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
                 for event in events
             ]
         ),
-        "headline": _headline(events, recorded),
+        "headline": _headline(consumed, recorded, unconfirmed=unconfirmed),
         "ranking_basis": basis,
         "kappa_note": LANDED_NOTE if basis == "landed_cost" else KAPPA_NOTE,
         "hazard_note": HAZARD_NOTE,

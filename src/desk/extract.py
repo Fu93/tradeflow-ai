@@ -136,8 +136,16 @@ def extract_mentions(message: str, *, transport=None) -> dict[str, Any]:
         ],
     }
     if transport is not None:
-        decoded = transport(body)
-        result = mentions_from_payload(decoded)
+        try:
+            decoded = transport(body)
+        except Exception:
+            return {"mentions": [], "numeric_field_discarded": False, "configured": True, "error": "extractor_failed"}
+        if isinstance(decoded, dict) and "choices" in decoded:
+            return _from_chat(decoded)
+        try:
+            result = mentions_from_payload(decoded)
+        except Exception:
+            return {"mentions": [], "numeric_field_discarded": False, "configured": True, "error": "extractor_malformed"}
         result["configured"] = True
         return result
     raw = json.dumps(body).encode("utf-8")
@@ -151,15 +159,30 @@ def extract_mentions(message: str, *, transport=None) -> dict[str, Any]:
             decoded = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
         return {"mentions": [], "numeric_field_discarded": False, "configured": True, "error": "extractor_unreachable"}
-    content = ""
-    choices = decoded.get("choices") if isinstance(decoded, dict) else None
-    if isinstance(choices, list) and choices:
-        message_body = choices[0].get("message") or {}
-        content = str(message_body.get("content") or "")
+    except Exception:
+        return {"mentions": [], "numeric_field_discarded": False, "configured": True, "error": "extractor_failed"}
+    return _from_chat(decoded)
+
+
+def _from_chat(decoded: Any) -> dict[str, Any]:
+    """Fail closed on a malformed chat body. The quote is still stored by the caller."""
+    failed = {"mentions": [], "numeric_field_discarded": False, "configured": True, "error": "extractor_malformed"}
+    if not isinstance(decoded, dict):
+        return failed
+    choices = decoded.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return failed
+    message_body = choices[0].get("message") or {}
+    if not isinstance(message_body, dict):
+        return failed
+    content = str(message_body.get("content") or "")
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError:
         return {"mentions": [], "numeric_field_discarded": False, "configured": True, "error": "extractor_not_json"}
-    result = mentions_from_payload(parsed)
+    try:
+        result = mentions_from_payload(parsed)
+    except Exception:
+        return failed
     result["configured"] = True
     return result

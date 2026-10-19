@@ -122,6 +122,8 @@ class DeskStore:
         self._ensure_column("drafts", "reply_to", "TEXT")
         self._ensure_column("drafts", "references_header", "TEXT")
         self._ensure_column("drafts", "message_id", "TEXT")
+        self._ensure_column("drafts", "seq", "INTEGER")
+        self.conn.execute("UPDATE drafts SET seq = rowid WHERE seq IS NULL")
         for column, ddl in (
             ("hazard_intercept", "REAL"),
             ("hazard_tau", "REAL"),
@@ -411,7 +413,7 @@ class DeskStore:
                 """
                 SELECT * FROM drafts
                 WHERE deal_id = ? AND supplier_id = ?
-                ORDER BY created_at DESC, id DESC
+                ORDER BY seq DESC, created_at DESC, id DESC
                 """,
                 (deal_id, supplier_id),
             ).fetchall()
@@ -449,13 +451,15 @@ class DeskStore:
             draft_id = uuid.uuid4().hex
             now = _now()
             digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+            seq_row = self.conn.execute("SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM drafts").fetchone()
+            seq = int(seq_row["seq"])
             self.conn.execute(
                 """
                 INSERT INTO drafts (
                     id, deal_id, supplier_id, body, status, human_approved,
                     transmitted, created_at, sent_at, gmail_draft_id, gmail_error,
-                    version, body_sha256, reply_to, references_header
-                ) VALUES (?, ?, ?, ?, 'draft', 0, 0, ?, NULL, NULL, NULL, ?, ?, ?, ?)
+                    version, body_sha256, reply_to, references_header, seq
+                ) VALUES (?, ?, ?, ?, 'draft', 0, 0, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?)
                 """,
                 (
                     draft_id,
@@ -467,6 +471,7 @@ class DeskStore:
                     digest,
                     reply_to,
                     references_header,
+                    seq,
                 ),
             )
             self.conn.commit()
@@ -516,7 +521,7 @@ class DeskStore:
                 """
                 SELECT * FROM drafts
                 WHERE deal_id = ?
-                ORDER BY created_at DESC, id DESC
+                ORDER BY seq DESC, created_at DESC, id DESC
                 """,
                 (deal_id,),
             ).fetchall()

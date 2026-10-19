@@ -80,55 +80,24 @@ def analyze(spec: dict, observed_offer: float | None = None, quick: bool = False
         quote_price = float(observed_offer) * float(target)
     if quote_price is None:
         raise ValueError("a supplier quote is required")
-    raw_markup = spec.get("expected_markup")
-    markup = None if raw_markup is None else float(raw_markup)
-    width_source = "user"
-    if spec.get("prior_reserve_mean") is None and markup is None:
-        return {
-            "recommendation": {
-                "opening_offer_price": None,
-                "blocked": True,
-                "counter_relation": "withheld",
-                "concession_curve": [],
-                "expected_margin_price": 0.0,
-                "breakdown_prob": 0.0,
-            },
-            "posterior_reserve_mean": None,
-            "posterior_reserve_std": None,
-            "reserve_source": "ask_only",
-            "robustness": _robustness_placeholder(float(target)),
-            "proposal": {
-                "concession_curve": [],
-                "advice_text": (
-                    "Insufficient data: one ask and no closed deals on this item. "
-                    "No markup was assumed."
-                ),
-            },
-            "data_class": spec.get("label") or "user_supplied",
-            "prior_width_source": "unidentified",
-        }
-    if spec.get("prior_reserve_mean") is None:
-        post_mean, post_std = robust_location([float(quote_price) / float(target) - float(markup)])
-        width_source = "markup"
-    else:
-        post_mean = float(spec["prior_reserve_mean"])
-        raw_std = spec.get("prior_reserve_std")
-        if raw_std is None:
-            if not demo:
-                raise ValueError(
-                    "prior_reserve_std is required when prior_reserve_mean is set"
-                )
-            from .demo_data import DEMO_SPEC
+    width_source = "labelled_policy"
+    from src.engine.reserve import ReserveState
 
-            raw_std = DEMO_SPEC["prior_reserve_std"]
-            width_source = "labelled_demo"
-        else:
-            width_source = "user"
-        post_std = float(raw_std)
-        if observed_offer is not None and markup is not None:
-            post_mean, post_std = bayes_update(
-                post_mean, post_std, float(observed_offer), estimated_markup=float(markup),
-            )
+    if spec.get("prior_reserve_mean") is None:
+        state = ReserveState.policy()
+    else:
+        raw_std = spec.get("prior_reserve_std")
+        if raw_std is None and not demo:
+            raise ValueError("prior_reserve_std is required when prior_reserve_mean is set")
+        state = ReserveState.from_moments(
+            float(spec["prior_reserve_mean"]),
+            None if raw_std is None else float(raw_std),
+        )
+        width_source = "user"
+    norm_quote = float(quote_price) / float(target)
+    state = state.with_reference(norm_quote)
+    post_mean = norm_quote * float(state.mean())
+    post_std = norm_quote * float(state.std())
     n_samples = spec.get("n_samples")
     rec = one_step_counter(
         quote=float(quote_price),
@@ -161,10 +130,14 @@ def analyze(spec: dict, observed_offer: float | None = None, quick: bool = False
     )
     rec = dict(rec)
     rec["concession_curve"] = prop["concession_curve"]
+    rec["markup_applied"] = False
+    rec["reserve_source"] = state.source
     return {
         "recommendation": rec,
         "posterior_reserve_mean": float(post_mean),
         "posterior_reserve_std": float(post_std),
+        "reserve_source": state.source,
+        "markup_applied": False,
         "robustness": rob,
         "proposal": prop,
         "data_class": spec.get("label") or "user_supplied",

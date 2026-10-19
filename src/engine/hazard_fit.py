@@ -21,8 +21,11 @@ _FIT_PATH = Path(__file__).resolve().parents[2] / "data" / "hazard_ebay_bi.json"
 NOTE = (
     "Walk-away hazard is transferred from eBay Best Offer, 2012–13, "
     "Business & Industrial. It is not a measured Chinese-factory rate. "
-    "The decision uses the seller-ended outcome. The thread-level no-deal "
-    "fit includes threads the buyer ended and is shown beside it."
+    "The decision uses the seller-ended outcome and a small-gap hinge, "
+    "because a straight line understated walk-away on small gaps. The fit "
+    "is the first buyer offer of a thread and is applied per round to the "
+    "latest ask. The thread-level no-deal fit includes threads the buyer "
+    "ended and is shown beside it."
 )
 
 
@@ -34,6 +37,9 @@ class LogisticFit:
     se_gap: float
     n: int
     outcome: str
+    small_gap: float = 0.0
+    se_small_gap: float = 0.0
+    small_gap_knot: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -49,6 +55,14 @@ class HazardFit:
     @property
     def gap_coef(self) -> float:
         return self.seller_ended.gap
+
+    @property
+    def small_gap_coef(self) -> float:
+        return self.seller_ended.small_gap
+
+    @property
+    def small_gap_knot(self) -> float:
+        return self.seller_ended.small_gap_knot
 
 
 def sigmoid(logit: float) -> float:
@@ -73,11 +87,19 @@ def quote_gap(ask: float, offer: float) -> float:
     return max(float(ask) - float(offer), 0.0) / ask
 
 
-def hazard_at_gap(gap: float, effect: float, fit: HazardFit | None = None, *, intercept: float | None = None, gap_coef: float | None = None) -> float:
+def hazard_at_gap(gap: float, effect: float, fit: HazardFit | None = None, *, intercept: float | None = None, gap_coef: float | None = None, small_gap_coef: float | None = None) -> float:
     loaded = fit if fit is not None else load_hazard_fit()
     b0 = loaded.intercept if intercept is None else float(intercept)
     slope = loaded.gap_coef if gap_coef is None else float(gap_coef)
-    return sigmoid(b0 + slope * float(gap) + float(effect))
+    # A caller who replaces the linear terms is not also given the fitted hinge.
+    if small_gap_coef is None and intercept is None and gap_coef is None:
+        hinge_coef = loaded.small_gap_coef
+        knot = loaded.small_gap_knot
+    else:
+        hinge_coef = 0.0 if small_gap_coef is None else float(small_gap_coef)
+        knot = loaded.small_gap_knot
+    hinge = hinge_coef * max(float(knot) - float(gap), 0.0)
+    return sigmoid(b0 + slope * float(gap) + hinge + float(effect))
 
 
 def incremental_hazard(ask: float, offer: float, effect: float = 0.0, fit: HazardFit | None = None, *, intercept: float | None = None, gap_coef: float | None = None) -> float:
@@ -95,6 +117,9 @@ def _logistic(row: dict) -> LogisticFit:
         se_gap=float(row["se_gap_clustered"]),
         n=int(row["n"]),
         outcome=str(row.get("outcome") or ""),
+        small_gap=float(row.get("small_gap") or 0.0),
+        se_small_gap=float(row.get("se_small_gap_clustered") or 0.0),
+        small_gap_knot=float(row.get("small_gap_knot") or 0.0),
     )
 
 
@@ -109,5 +134,10 @@ def load_hazard_fit(path: Path | None = None) -> HazardFit:
 
 
 def decision_uses_one_gap(fit: HazardFit) -> bool:
-    """The shipped file records a single gap coefficient on the outcome the decision uses."""
-    return fit.seller_ended.gap == fit.gap_coef and "reserve_gap" not in fit.provenance.get("decision_terms", ["quote_gap"])
+    """The decision uses the quote gap plus the small-gap hinge, not a reserve gap."""
+    terms = fit.provenance.get("decision_terms", ["quote_gap"])
+    return (
+        fit.seller_ended.gap == fit.gap_coef
+        and "quote_gap" in terms
+        and "reserve_gap" not in terms
+    )

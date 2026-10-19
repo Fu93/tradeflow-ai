@@ -67,16 +67,77 @@ def _assignments(path: Path) -> dict[str, ast.AST]:
     return found
 
 
+_FOLD_OPS = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow)
+
+
+def _structural_expr(node: ast.AST) -> bool:
+    """True when the node is arithmetic built only from 0, 1, -1, and 2."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+        return node.value in STRUCTURAL
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        return _structural_expr(node.operand)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, _FOLD_OPS):
+        return _structural_expr(node.left) and _structural_expr(node.right)
+    return False
+
+
+def _eval_structural(node: ast.AST) -> object:
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.UnaryOp):
+        value = _eval_structural(node.operand)
+        return value if isinstance(node.op, ast.UAdd) else -value
+    left = _eval_structural(node.left)
+    right = _eval_structural(node.right)
+    if isinstance(node.op, ast.Add):
+        return left + right
+    if isinstance(node.op, ast.Sub):
+        return left - right
+    if isinstance(node.op, ast.Mult):
+        return left * right
+    if isinstance(node.op, ast.Div):
+        return left / right
+    if isinstance(node.op, ast.FloorDiv):
+        return left // right
+    if isinstance(node.op, ast.Mod):
+        return left % right
+    return left ** right
+
+
 def _literals(path: Path) -> list[tuple[int, object, str]]:
     source = path.read_text(encoding="utf-8").splitlines()
     tree = ast.parse("\n".join(source))
+    parents: dict[int, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[id(child)] = node
     found = []
     for node in ast.walk(tree):
+        if isinstance(node, ast.BinOp) and _structural_expr(node):
+            parent = parents.get(id(node))
+            if isinstance(parent, (ast.BinOp, ast.UnaryOp)) and _structural_expr(parent):
+                continue
+            value = _eval_structural(node)
+            if isinstance(value, bool) or value in STRUCTURAL:
+                continue
+            context = source[node.lineno - 1].strip()
+            found.append((node.lineno, value, context))
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
             if node.value in STRUCTURAL:
                 continue
             context = source[node.lineno - 1].strip()
             found.append((node.lineno, node.value, context))
+    return found
+
+
+def _decision_files() -> list[str]:
+    found = []
+    for folder in ("src/engine", "src/desk"):
+        for path in sorted((ROOT / folder).rglob("*.py")):
+            found.append(path.relative_to(ROOT).as_posix())
+    for extra in ("src/app/main.py", "src/app/orchestrator.py"):
+        if extra not in found:
+            found.append(extra)
     return found
 
 
@@ -116,7 +177,7 @@ def _sim_imports() -> list[str]:
 
 def _live_literals() -> list[tuple[str, object, str]]:
     found = []
-    for rel in DECISION:
+    for rel in _decision_files():
         for _line, value, context in _literals(ROOT / rel):
             found.append((rel, value, context))
     return found
@@ -171,7 +232,7 @@ def scan() -> list[str]:
             continue
         allowed.append((item.get("file"), item.get("value"), context))
     live = _live_literals()
-    for rel in DECISION:
+    for rel in _decision_files():
         for line, value, context in _literals(ROOT / rel):
             matched = any(
                 item[0] == rel and item[2] == context and _same(item[1], value)

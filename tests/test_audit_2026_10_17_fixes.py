@@ -77,15 +77,16 @@ class TestZeroEvidenceRound(_Isolated):
         self.assertEqual(stored["history"], [], "a rejected round must not create history")
         self.assertEqual(stored["current_round"], 0)
 
-    def test_text_only_round_still_accepted(self):
+    def test_text_only_round_is_rejected(self):
         sid = self._session()
         r = self.c.post(
             f"/api/v1/sessions/{sid}/round",
             json={"opponent_raw_text": "最低 14.80元，不能再低", "mode": "copilot"},
             headers=self.headers,
         )
-        self.assertEqual(r.status_code, 200, r.text)
-        self.assertIsNotNone(r.json()["recommended_offer_price"])
+        self.assertEqual(r.status_code, 422, r.text)
+        stored = self.c.get(f"/api/v1/sessions/{sid}", headers=self.headers).json()
+        self.assertEqual(stored["history"], [])
 
 
 class TestApproveUsesEngineRecommendation(_Isolated):

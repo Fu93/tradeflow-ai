@@ -472,11 +472,13 @@ class MultiAuctionSession:
             for i in active:
                 state = ReserveState.policy()
                 observed = self._observed[i]
-                if len(observed) >= 2 and float(observed[0]) > 0.0:
+                reference = float(observed[0]) if observed and float(observed[0]) > 0.0 else float(offers_norm[i])
+                state = state.with_reference(reference)
+                if len(observed) >= 2 and reference > 0.0:
                     for later in observed[1:]:
-                        state = state.tighten(float(later) / float(observed[0]))
-                self.prior_means[i] = float(offers_norm[i]) * float(state.mean())
-                self.prior_stds[i] = max(float(offers_norm[i]) * float(state.std()), tiny)
+                        state = state.tighten(float(later) / reference)
+                self.prior_means[i] = reference * float(state.mean())
+                self.prior_stds[i] = max(reference * float(state.std()), tiny)
             self.reserve_source = "labelled_policy"
             self.reserve_note = (
                 "Each supplier's reserve is their own ask times D. "
@@ -513,9 +515,11 @@ class MultiAuctionSession:
             for supplier_index in identified:
                 state = ReserveState.policy()
                 observed = self._observed[supplier_index]
-                if len(observed) >= 2 and float(observed[0]) > 0.0:
+                reference = float(observed[0]) if observed and float(observed[0]) > 0.0 else float(offers_norm[supplier_index])
+                state = state.with_reference(reference)
+                if len(observed) >= 2 and reference > 0.0:
                     for later in observed[1:]:
-                        state = state.tighten(float(later) / float(observed[0]))
+                        state = state.tighten(float(later) / reference)
                 states.append(state)
             res_active = self.solver.solve_reverse_auction_tensor(
                 supplier_offers=offers_norm[identified],

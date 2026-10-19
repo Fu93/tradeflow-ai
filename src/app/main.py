@@ -1715,20 +1715,32 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     #    效能說明：Stage-1（正則 + 端側 ONNX）實測 ~1ms。
     #    Stage-2（AMD tokenfactory LLM）實測 2–13 秒，故預設不啟用，避免阻塞同步 HTTP 請求。
     #    呼叫端若需要更深語意理解，可設 deep_semantic=true。
-    #    The price, MOQ, and lead time the solver sees come from the request or
-    #    from Stage-1. A model mentioned_price is ignored even when Stage-2 runs.
-    from ..engine.quote_fields import price_the_solver_may_use
-
+    #    MOQ and lead time may be read from the text for the cost breakdown.
+    #    The unit price is only the caller's confirmed opponent_offer_price.
     stage1 = InboundIntentClassifier.classify_stage1_only(raw_text)
     if action.deep_semantic:
         inbound_classification = InboundIntentClassifier.classify(raw_text)
     else:
         inbound_classification = stage1
-    explicit_price = opp_price
-    llm_mentioned = None
-    if action.deep_semantic:
-        llm_mentioned = inbound_classification.mentioned_price
-    opp_price = price_the_solver_may_use(explicit_price, stage1.mentioned_price, llm_mentioned)
+    if opp_price is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Confirm the supplier unit price. Raw text is not a decision input.",
+        )
+    from src.desk.headline import audit_line, confirmed_prices
+
+    confirmed_quote = {
+        "status": "accepted",
+        "parsed": {"unit_price": float(opp_price)},
+        "provenance": {"review_accepted_by": "human", "price_source": "explicit_field"},
+    }
+    _kept_prices, unconfirmed_prices = confirmed_prices([confirmed_quote])
+    if unconfirmed_prices:
+        raise HTTPException(
+            status_code=422,
+            detail="Confirm the supplier unit price. Raw text is not a decision input.",
+        )
+    round_audit = audit_line(unconfirmed_prices)
 
     # 1.5 多目標非價格條款 TCO 影子成本折算 (Total Cost of Ownership Normalization)
     offered_moq = action.offered_moq or stage1.demanded_moq
@@ -1850,7 +1862,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             "reserve_note": rec.get("prior_note"),
             "heuristic": rec.get("heuristic"),
             "markup_applied": False,
-            "audit": "unconfirmed numbers used in decisions: 0",
+            "audit": round_audit,
         },
     )
     try:
@@ -1915,6 +1927,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             "reply_text": None,
             "tco_breakdown": tco_breakdown,
             "effective_opp_price": effective_opp_price,
+            "audit": round_audit,
             "bayesian_belief_state": v2_belief.model_dump(),
         }
 
@@ -1995,6 +2008,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             "reply_text": None,  # 阻斷回覆，等待主管手機授權
             "tco_breakdown": tco_breakdown,
             "effective_opp_price": effective_opp_price,
+            "audit": round_audit,
             "bayesian_belief_state": v2_belief.model_dump(),
         }
 
@@ -2368,11 +2382,9 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             "recommendation": rec,
             "proposal": prop,
             "recommended_offer_price": auth_price,
-            "price_source": (
-                "explicit_offer" if explicit_price is not None
-                else ("stage1_regex" if stage1.mentioned_price is not None else "none")
-            ),
-            "llm_price_ignored": llm_mentioned if action.deep_semantic else None,
+            "price_source": "explicit_field",
+            "llm_price_ignored": True,
+            "audit": round_audit,
             "amd_live": {
                 "requested": bool(action.amd_live),
                 "decides_price": False,
@@ -2463,11 +2475,9 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         "recommendation": rec,
         "proposal": prop,
         "recommended_offer_price": auth_price,
-        "price_source": (
-            "explicit_offer" if explicit_price is not None
-            else ("stage1_regex" if stage1.mentioned_price is not None else "none")
-        ),
-        "llm_price_ignored": llm_mentioned if action.deep_semantic else None,
+        "price_source": "explicit_field",
+        "llm_price_ignored": True,
+        "audit": round_audit,
         "amd_live": {
             "requested": bool(action.amd_live),
             "decides_price": False,

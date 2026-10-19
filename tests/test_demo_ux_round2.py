@@ -113,7 +113,7 @@ class TestDeskRoundAndCommand(unittest.TestCase):
             json={"opponent_raw_text": WALKTHROUGH, "mode": "copilot"},
         )
         self.assertEqual(response.status_code, 422, response.text[:400])
-        self.assertIn("numeric supplier quote", response.json()["detail"])
+        self.assertIn("Confirm the supplier unit price", response.json()["detail"])
         stored = client.get("/api/v1/sessions/UX_USD_01").json()
         self.assertEqual(stored["history"], [])
 
@@ -198,7 +198,11 @@ class TestHumanDecisionApi(unittest.TestCase):
         api_main.session_mgr.create_session(spec)
         opened = self.client.post(
             f"/api/v1/sessions/{session_id}/round",
-            json={"opponent_raw_text": "最低 14.80 元，500個起訂", "mode": "copilot"},
+            json={
+                "opponent_raw_text": "最低 14.80 元，500個起訂",
+                "opponent_offer_price": 14.80,
+                "mode": "copilot",
+            },
             headers=self.headers,
         )
         self.assertEqual(opened.status_code, 200, opened.text[:400])

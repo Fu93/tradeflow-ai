@@ -573,6 +573,8 @@ def _analytic_choice(
         "blocked": bool(choice.blocked),
         "push_limit": float(cap),
         "counter_relation": choice.counter_relation,
+        "push_withheld": bool(choice.push_withheld),
+        "push_note": choice.push_note,
         "mesh": 0,
         "optimiser": choice.optimiser,
         "prior_source": choice.prior_source,
@@ -623,9 +625,16 @@ def solve_coupled(
     if reserves is None:
         reserves = [ReserveState.policy() for _ in range(k)]
     tiny = float(np.finfo(np.float64).tiny)
-    d_means = np.asarray([float(quotes[i]) * float(reserves[i].mean()) for i in range(k)], dtype=np.float64)
+
+    def _moment_base(index: int) -> float:
+        recorded = reserves[index].reference_ask
+        if recorded is not None and float(recorded) > 0.0:
+            return float(recorded)
+        return float(quotes[index])
+
+    d_means = np.asarray([_moment_base(i) * float(reserves[i].mean()) for i in range(k)], dtype=np.float64)
     d_stds = np.asarray(
-        [max(abs(float(quotes[i]) * float(reserves[i].std())), tiny) for i in range(k)],
+        [max(abs(_moment_base(i) * float(reserves[i].std())), tiny) for i in range(k)],
         dtype=np.float64,
     )
     scenarios = sample_joint_scenarios(rng, d_means, d_stds, int(n_samples), rho=rho)
@@ -646,7 +655,6 @@ def solve_coupled(
             batna = max(0.0, float(ceiling) - other)
             rival_unit_cap = other - float(kappas[i])
         hi = min(float(quotes[i]), float(ceiling), float(rival_unit_cap))
-        hi = max(hi, float(np.finfo(np.float64).tiny))
         # The auction scores the outside option. The desk scores what remains
         # with no outside option, so a tighter rival cannot re-rank it.
         choice = _analytic_choice(
@@ -739,6 +747,8 @@ def solve_coupled(
         "hazard_provenance": dict(PROVENANCE),
         "prior_driven": all(item.prior_driven for item in beliefs),
         "counter_relation": [str(item["counter_relation"]) for item in choices],
+        "push_withheld": [bool(item.get("push_withheld")) for item in choices],
+        "push_note": [str(item.get("push_note") or "") for item in choices],
         "n_samples": int(n_samples),
         "n_grid": int(n_grid),
         "search_step": step,

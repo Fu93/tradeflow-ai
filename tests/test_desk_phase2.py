@@ -207,8 +207,8 @@ def test_better_rival_does_not_raise_other_counters(tmp_path):
         new = row["counter"]
         if old is not None:
             assert new is None or new <= old
-    state = ReserveState.policy().tighten(13.40 / 15.60)
-    assert later["Ningbo"]["belief_mean"] == pytest.approx(13.40 * state.mean() / 12)
+    state = ReserveState.policy().with_reference(15.60 / 12).tighten(13.40 / 15.60)
+    assert later["Ningbo"]["belief_mean"] == pytest.approx((15.60 / 12) * state.mean())
     assert later["Ningbo"]["belief_observations"] == 2
     store.close()
 
@@ -365,7 +365,10 @@ def test_nothing_is_sent_without_approval(tmp_path, monkeypatch):
         supplier_id=wenzhou,
     )
     accept_review(store, deal_id, follow["event"]["id"], wenzhou)
-    pending = [item for item in store.drafts(deal_id) if item["status"] == "draft"]
+    pending = [
+        item for item in store.drafts(deal_id)
+        if item["status"] == "draft" and item["supplier_id"] == wenzhou
+    ]
     assert pending
     pending_body = pending[0]["body"]
     sent = asyncio.run(

@@ -54,8 +54,8 @@
         <label>Reserve-gap coefficient <input id="hazard-reserve-gap" type="number" step="any" /></label>
         <label>Observation noise <input id="obs-noise" type="number" step="any" min="0" /></label>
         <label>Plausibility multiple <input id="sanity-multiple" type="number" step="any" min="0" /></label>
-        <label>Reserve prior mean <input id="reserve-prior" type="number" step="any" min="0" placeholder="blank leaves the ask unidentified" /></label>
-        <label>Reserve prior spread <input id="reserve-std" type="number" step="any" min="0" /></label>
+        <label>D prior mean, user policy <input id="reserve-prior" type="number" step="any" min="0" max="1" placeholder="blank uses the labelled policy" /></label>
+        <label>D prior spread, user policy <input id="reserve-std" type="number" step="any" min="0" placeholder="blank uses the labelled strength" /></label>
         <label>Expected markup, fraction of the target <input id="expected-markup" type="number" step="any" min="0" placeholder="a typed markup is not applied" title="A typed markup is not applied. The reserve is this supplier's ask times a labelled Beta prior." /></label>
         <label>Search cost <input id="search-cost" type="number" step="any" min="0" /></label>
         <label><input id="include-unverified" type="checkbox" /> Include fixture and simulated quotes in the decision</label>

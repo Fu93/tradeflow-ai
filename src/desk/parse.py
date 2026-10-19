@@ -352,6 +352,17 @@ def _settled(token: str) -> float | None:
     return float(settled.cny_amount)
 
 
+def _quantity_amount(text: str, start: int, token: str) -> bool:
+    """MOQ and quantity units are not unit prices."""
+    head = text[max(0, start - 12):start]
+    tail = text[start + len(token):start + len(token) + 8]
+    if re.search(r"(?i)(?:moq|起订量|起訂量|起订|起訂|最少|数量|數量)\s*$", head):
+        return True
+    if re.match(r"(?i)\s*(?:个|件|只|pcs|pc|pieces|k)(?:\b|(?=[\u4e00-\u9fff])|$)", tail):
+        return True
+    return False
+
+
 def _collect(text: str, deal_currency: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], bool]:
     """Unit candidates, competing money, review tokens, and whether a price range was seen."""
     units: list[dict[str, Any]] = []
@@ -370,6 +381,8 @@ def _collect(text: str, deal_currency: str) -> tuple[list[dict[str, Any]], list[
         if _inside(span, ranges):
             continue
         kind = _currency_of(pre, post)
+        if _quantity_amount(text, match.start("num"), token):
+            continue
         left, _right = _clause_span(text, match.start("num"))
         clause = text[left:_right]
         amount_at = match.start("num") - left

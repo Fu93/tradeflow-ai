@@ -1725,27 +1725,7 @@ async function readSupplierQuote() {
     headers: tfJsonHeaders(),
     body: JSON.stringify(readBody),
   });
-  let roundOk = false;
-  if (sid && text.trim()) {
-    try {
-      const roundRes = await fetch(`/api/v1/sessions/${encodeURIComponent(sid)}/round`, {
-        method: "POST",
-        headers: tfJsonHeaders(),
-        body: JSON.stringify({
-          opponent_raw_text: text,
-          mode: "copilot",
-          amd_live: live,
-        }),
-      });
-      roundOk = roundRes.ok;
-      if (roundOk) await fetchSessionDetails(sid);
-      else if (callout) {
-        callout.textContent = `The solver round was rejected (HTTP ${roundRes.status}). The AMD reading is separate and still cannot set the price.`;
-      }
-    } catch (err) {
-      if (callout) callout.textContent = `Solver round failed: ${err.message || "request failed"}`;
-    }
-  }
+  const roundOk = false;
   try {
     const res = await readPromise;
     let payload = null;
@@ -1762,6 +1742,39 @@ async function readSupplierQuote() {
   } catch (err) {
     if (callout) callout.textContent = `AMD reading failed: ${err.message || "request failed"}`;
   }
+}
+
+async function confirmSupplierPrice() {
+  const sid = currentSessionId || (document.getElementById("cmdSessionId") || {}).value || "";
+  const field = document.getElementById("confirmedUnitPrice");
+  const callout = document.getElementById("amdCallout");
+  const paste = document.getElementById("quotePaste");
+  const price = field ? Number(field.value) : NaN;
+  if (!sid) {
+    if (callout) callout.textContent = "Open a session before confirming a unit price.";
+    return;
+  }
+  if (!Number.isFinite(price) || price <= 0) {
+    if (callout) callout.textContent = "Type the confirmed unit price. The raw chat is not a decision input.";
+    return;
+  }
+  const live = !!(document.getElementById("amdLiveToggle") && document.getElementById("amdLiveToggle").checked);
+  const response = await fetch(`/api/v1/sessions/${encodeURIComponent(sid)}/round`, {
+    method: "POST",
+    headers: tfJsonHeaders(),
+    body: JSON.stringify({
+      opponent_offer_price: price,
+      opponent_raw_text: paste ? paste.value : "",
+      mode: "copilot",
+      amd_live: live,
+    }),
+  });
+  if (!response.ok) {
+    if (callout) callout.textContent = `The confirmed price was rejected (HTTP ${response.status}).`;
+    return;
+  }
+  if (callout) callout.textContent = "Confirmed unit price sent to the solver. The raw chat did not set the price.";
+  await fetchSessionDetails(sid);
 }
 
 async function testPush(ch) {

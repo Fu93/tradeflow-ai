@@ -540,7 +540,7 @@ def test_draft_language_on_the_desk(live_server):
             assert label in page.locator("#decisionReply").inner_text()
             assert "Our offer is CNY" in page.locator("#decisionReply").inner_text()
 
-            chinese_round = open_round("DRAFT_ZH_01", chinese)
+            chinese_round = open_round("DRAFT_ZH_01", chinese, quote=14.80)
             assert "Our offer is CNY" not in chinese_round["reply_text"]
             show("DRAFT_ZH_01", False)
             assert "Our offer is CNY" not in page.locator("#decisionReply").inner_text()

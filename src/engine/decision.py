@@ -18,6 +18,7 @@ from src.config.heuristics import (
     BRENT_ITERS,
     GOLDEN_CONJUGATE,
     HAZARD_MIN_EVENTS,
+    NEWTON_STEP_BITS,
     ONE_HALF,
     OPT_TOL,
 )
@@ -50,6 +51,8 @@ class OfferChoice:
     blocked: bool
     counter_relation: str
     note: str
+    push_withheld: bool = False
+    push_note: str = ""
 
 
 def _clip(value: float, lo: float, hi: float) -> float:
@@ -65,7 +68,7 @@ def _newton_polish(fn, guess: float, lo: float, hi: float) -> float:
     the guess is left as it is. The ends are compared by the caller.
     """
     scale = max(1.0, abs(float(guess)), abs(float(lo)), abs(float(hi)))
-    width = float(ONE_HALF) ** (2 * 2 * 2 * 2 + 2 * 2)
+    width = float(ONE_HALF) ** int(NEWTON_STEP_BITS)
     step = width * scale
     current = float(guess)
     for _ in range(2):
@@ -155,13 +158,29 @@ def hazard_floor(ask: float, cap: float, effect: float, fit: HazardFit, *, inter
     return right
 
 
+def reference_ask(state: ReserveState, latest_ask: float) -> float:
+    """D is a fraction of the first ask. The latest ask is only the offer cap."""
+    recorded = state.reference_ask
+    if recorded is not None and float(recorded) > 0.0:
+        return float(recorded)
+    return float(latest_ask)
+
+
 def objective(offer: float, ask: float, outside: float, state: ReserveState, effect: float, fit: HazardFit, *, intercept: float | None = None, gap_coef: float | None = None) -> float:
-    """Expected landed saving minus incremental walk risk priced at the outside option."""
+    """Expected landed saving minus incremental walk risk priced at the surplus at stake.
+
+    A walk loses this supplier's option, which is worth the gap between the
+    outside option and the offer. It is not priced at the full outside price.
+    """
     if offer > outside or offer < 0.0:
         return -float(ask) - float(outside)
-    fraction = 0.0 if ask <= 0.0 else float(offer) / float(ask)
-    saving = state.acceptance(fraction) * (float(outside) - float(offer))
-    risk = incremental_hazard(ask, offer, effect, fit, intercept=intercept, gap_coef=gap_coef) * float(outside)
+    if not state.consistent():
+        return -float(ask) - float(outside)
+    ref = reference_ask(state, ask)
+    fraction = 0.0 if ref <= 0.0 else float(offer) / ref
+    stake = max(float(outside) - float(offer), 0.0)
+    saving = state.acceptance(fraction) * stake
+    risk = incremental_hazard(ask, offer, effect, fit, intercept=intercept, gap_coef=gap_coef) * stake
     return saving - risk
 
 
@@ -193,7 +212,8 @@ def choose_offer(
     loaded = fit if fit is not None else load_hazard_fit()
     belief = state if state is not None else ReserveState.policy()
     hi = min(float(ask), float(outside))
-    blocked = hi <= 0.0
+    inconsistent = not belief.consistent()
+    blocked = hi <= 0.0 or inconsistent
     default = 0.0 if blocked else hi
     push, kind = _push(float(ask), float(outside), belief, effect, float(risk_cap), loaded, intercept=intercept, gap_coef=gap_coef)
     half_state = belief.with_strength(float(ONE_HALF))
@@ -203,31 +223,51 @@ def choose_offer(
     push = min(push, default) if not blocked else 0.0
     push_half = min(push_half, default) if not blocked else 0.0
     push_double = min(push_double, default) if not blocked else 0.0
-    fraction = 0.0 if ask <= 0.0 else default / float(ask)
+
+    def score(offer: float) -> float:
+        return objective(offer, float(ask), hi if hi > 0.0 else 0.0, belief, effect, loaded, intercept=intercept, gap_coef=gap_coef)
+
+    push_withheld = (not blocked) and score(push) < 0.0
+    if push_withheld:
+        push = default
+        push_half = default
+        push_double = default
+    push_note = ""
+    if inconsistent:
+        push_note = "The rejection lower bound meets or passes the upper bound, so no price is issued."
+    elif push_withheld:
+        push_note = "Push would reduce expected value, so it is withheld."
+    ref = reference_ask(belief, float(ask))
+    fraction = 0.0 if ref <= 0.0 else default / ref
     if blocked:
         relation = "withheld"
     elif abs(default - float(ask)) <= float(OPT_TOL) * max(1.0, abs(float(ask))):
         relation = "at_ask"
     else:
         relation = "match_rival"
+    bound_note = belief.note()
+    if inconsistent:
+        bound_note = push_note
     return OfferChoice(
         default_counter=default,
         push_counter=push,
         push_half=push_half,
         push_double=push_double,
-        acceptance=belief.acceptance(fraction),
+        acceptance=0.0 if blocked else belief.acceptance(fraction),
         incremental_hazard=incremental_hazard(ask, default, effect, loaded, intercept=intercept, gap_coef=gap_coef),
-        objective=objective(default, ask, hi if hi > 0.0 else 0.0, belief, effect, loaded, intercept=intercept, gap_coef=gap_coef),
+        objective=score(default),
         optimiser=kind,
         prior_source=belief.source,
         prior_alpha=belief.alpha,
         prior_beta=belief.beta,
-        prior_mean=belief.mean(),
+        prior_mean=float("nan") if not belief.consistent() else belief.mean(),
         n_responses=belief.n_responses,
         outside=float(outside),
         blocked=blocked,
         counter_relation=relation,
-        note=belief.note() + " " + HEURISTIC_NOTE,
+        note=bound_note + " " + HEURISTIC_NOTE,
+        push_withheld=push_withheld,
+        push_note=push_note,
     )
 
 

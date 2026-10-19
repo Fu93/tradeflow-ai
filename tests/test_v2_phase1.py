@@ -168,8 +168,9 @@ def test_unconfirmed_numbers_are_not_decision_inputs():
         {"status": "accepted", "parsed": {"unit_price": 14.2}, "supplier_id": "b"},
     ]
     kept, used = confirmed_prices(events)
-    assert used == 0
+    assert used == 1
     assert len(kept) == 1
+    assert kept[0]["parsed"]["unit_price"] == 14.2
     assert AUDIT_LINE == "unconfirmed numbers used in decisions: 0"
 
 
@@ -185,7 +186,8 @@ def test_closed_deal_is_an_upper_bound_and_suppliers_do_not_share_a_posterior():
     assert low.mean() < before
     assert other.mean() == pytest.approx(before)
     soft = first.add_rejection(0.8)
-    assert soft.cdf(0.5) > 0.0
+    assert soft.cdf(0.5) == 0.0
+    assert soft.cdf(0.9) < first.cdf(0.9)
 
 
 def test_labelled_policy_until_thirty_responses_and_strength_keeps_the_mean():
@@ -244,8 +246,11 @@ def test_hazard_file_has_both_outcomes_and_one_decision_gap():
     assert FIT_PATH.is_file(), "run scripts/fit_ebay_hazard.py offline before this test"
     payload = json.loads(FIT_PATH.read_text(encoding="utf-8"))
     assert payload["used_for_decision"] == "seller_ended"
-    assert payload["provenance"]["decision_terms"] == ["quote_gap"]
+    assert payload["provenance"]["decision_terms"] == ["quote_gap", "small_gap_hinge"]
     assert "reserve_gap" not in payload["provenance"]["decision_terms"]
+    low = payload["gap_bins"]["below_half_knot"]
+    assert low["hinge_abs_error"] < low["linear_abs_error"]
+    assert payload["seller_ended"]["small_gap"] > 0
     assert payload["provenance"]["partial"] is False
     assert "anon_bo_threads.csv.gz" in payload["provenance"]["threads_url"]
     assert payload["provenance"]["meta_categ_id"] == 12576

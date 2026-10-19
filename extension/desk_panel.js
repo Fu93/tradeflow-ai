@@ -89,13 +89,23 @@
       const half = supplier.sensitivity_half == null ? "withheld" : money(supplier.sensitivity_half, "CNY");
       const doubled = supplier.sensitivity_double == null ? "withheld" : money(supplier.sensitivity_double, "CNY");
       const push = supplier.push_counter == null ? "withheld" : money(supplier.push_counter, "CNY");
-      row.textContent = supplier.name
-        + " default counter " + counter
-        + ". Push lower: " + push
-        + ". Reserve: " + (supplier.reserve_note || supplier.belief_label || "no data")
-        + " At half the prior strength: " + half
-        + ". At double the prior strength: " + doubled
-        + ". Hazard " + hazardText(supplier);
+      const priorMean = supplier.d_prior_mean == null ? "labelled policy" : String(supplier.d_prior_mean);
+      const priorStrength = supplier.d_prior_strength == null ? "labelled policy" : String(supplier.d_prior_strength);
+      row.appendChild(document.createTextNode(supplier.name));
+      ["Default counter: " + counter,
+        "Push lower: " + push,
+        supplier.push_note || "",
+        "D prior (user policy): mean " + priorMean + ", strength " + priorStrength,
+        "At half the prior strength: " + half,
+        "At double the prior strength: " + doubled,
+        "Hazard: " + hazardText(supplier),
+      ].forEach((text) => {
+        if (!text) return;
+        const part = document.createElement("span");
+        part.textContent = text;
+        part.style.display = "block";
+        row.appendChild(part);
+      });
       counters.appendChild(row);
     });
     const current = select.value;
@@ -145,6 +155,8 @@
         return;
       }
       render(await response.json());
+      window.tfDeskLinked = true;
+      setStatus("Desk linked");
     } catch (err) {
       setStatus("Desk is offline.");
     }

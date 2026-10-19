@@ -59,15 +59,26 @@ class TestPriceGuard(unittest.TestCase):
             "expected_markup": 0.0,
         })
             self.assertEqual(created.status_code, 200, created.text)
+        raw_only = client.post(
+            "/api/v1/sessions/GUARD_QUIET/round",
+            json={"opponent_raw_text": SAMPLE, "mode": "copilot", "amd_live": True},
+        )
+        self.assertEqual(raw_only.status_code, 422, raw_only.text)
         with patch.object(InboundIntentClassifier, "classify", staticmethod(fake_classify)):
             quiet = client.post(
                 "/api/v1/sessions/GUARD_QUIET/round",
-                json={"opponent_raw_text": SAMPLE, "mode": "copilot", "amd_live": True},
+                json={
+                    "opponent_raw_text": SAMPLE,
+                    "opponent_offer_price": 14.80,
+                    "mode": "copilot",
+                    "amd_live": True,
+                },
             )
             loud = client.post(
                 "/api/v1/sessions/GUARD_LOUD/round",
                 json={
                     "opponent_raw_text": SAMPLE,
+                    "opponent_offer_price": 14.80,
                     "mode": "copilot",
                     "deep_semantic": True,
                     "amd_live": True,
@@ -79,9 +90,9 @@ class TestPriceGuard(unittest.TestCase):
             quiet.json()["recommended_offer_price"],
             loud.json()["recommended_offer_price"],
         )
-        self.assertEqual(loud.json()["price_source"], "stage1_regex")
+        self.assertEqual(loud.json()["price_source"], "explicit_field")
         self.assertFalse(loud.json()["amd_live"]["decides_price"])
-        self.assertEqual(loud.json()["llm_price_ignored"], 1.0)
+        self.assertTrue(loud.json()["llm_price_ignored"])
         self.assertNotEqual(loud.json()["recommended_offer_price"], 1.0)
 
 

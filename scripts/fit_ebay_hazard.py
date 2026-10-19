@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.config.heuristics import Z_95
+from src.config.heuristics import ONE_HALF, SMALL_GAP_KNOT, Z_95
 DEFAULT_LISTS = Path("/tmp/ebay/anon_bo_lists.csv.gz")
 DEFAULT_THREADS = Path("/tmp/ebay/anon_bo_threads.csv.gz")
 OUT = ROOT / "data" / "hazard_ebay_bi.json"
@@ -152,11 +152,21 @@ def load_threads(path: Path, listings: dict[int, float]) -> tuple[list[dict], in
     return rows, dropped_above_bin
 
 
-def _fit(gap: np.ndarray, outcome: np.ndarray, seller: np.ndarray) -> tuple[np.ndarray, np.ndarray, int]:
-    """Newton / IRLS logit. Standard errors are the seller-clustered sandwich."""
+def _design(gap: np.ndarray, hinge: bool) -> np.ndarray:
+    """Quote gap, and a hinge on gaps below the labelled knot when requested."""
     count = int(gap.shape[0])
-    design = np.column_stack([np.ones(count), gap])
-    beta = np.zeros(2, dtype=np.float64)
+    if not hinge:
+        return np.column_stack([np.ones(count), gap])
+    knot = float(SMALL_GAP_KNOT)
+    small = np.maximum(knot - gap, 0.0)
+    return np.column_stack([np.ones(count), gap, small])
+
+
+def _fit(gap: np.ndarray, outcome: np.ndarray, seller: np.ndarray, hinge: bool = False) -> tuple[np.ndarray, np.ndarray, int]:
+    """Newton / IRLS logit. Standard errors are the seller-clustered sandwich."""
+    design = _design(gap, hinge)
+    width = int(design.shape[1])
+    beta = np.zeros(width, dtype=np.float64)
     for _ in range(80):
         eta = np.clip(design @ beta, -CLIP, CLIP)
         probability = 1.0 / (1.0 + np.exp(-eta))
@@ -206,23 +216,51 @@ def _decile_error(probability: np.ndarray, outcome: np.ndarray) -> float | None:
     return None if not errors else float(max(errors))
 
 
-def _predict(beta: np.ndarray, gap: np.ndarray) -> np.ndarray:
-    eta = np.clip(beta[0] + beta[1] * gap, -CLIP, CLIP)
+def _predict(beta: np.ndarray, gap: np.ndarray, hinge: bool) -> np.ndarray:
+    eta = np.clip(_design(gap, hinge) @ beta, -CLIP, CLIP)
     return 1.0 / (1.0 + np.exp(-eta))
 
 
-def _block(name: str, gap: np.ndarray, outcome: np.ndarray, seller: np.ndarray, dates: np.ndarray) -> dict:
-    beta, se, clusters = _fit(gap, outcome, seller)
+def _gap_bins(gap: np.ndarray, outcome: np.ndarray, linear: np.ndarray, hinged: np.ndarray) -> dict:
+    """Observed seller-ended rate against the line and the hinge, on two small-gap bins."""
+    knot = float(SMALL_GAP_KNOT)
+    half = knot * float(ONE_HALF)
+    cuts = ((0.0, half, "below_half_knot"), (half, knot, "half_knot_to_knot"))
+    report = {}
+    for low, high, name in cuts:
+        mask = (gap >= low) & (gap < high)
+        count = int(mask.sum())
+        if count == 0:
+            report[name] = {"n": 0, "observed": None, "linear_mean": None, "hinge_mean": None}
+            continue
+        observed = float(outcome[mask].mean())
+        linear_mean = float(_predict(linear, gap[mask], False).mean())
+        hinge_mean = float(_predict(hinged, gap[mask], True).mean())
+        report[name] = {
+            "n": count,
+            "lo": low,
+            "hi": high,
+            "observed": observed,
+            "linear_mean": linear_mean,
+            "hinge_mean": hinge_mean,
+            "linear_abs_error": abs(observed - linear_mean),
+            "hinge_abs_error": abs(observed - hinge_mean),
+        }
+    return report
+
+
+def _block(name: str, gap: np.ndarray, outcome: np.ndarray, seller: np.ndarray, dates: np.ndarray, hinge: bool) -> dict:
+    beta, se, clusters = _fit(gap, outcome, seller, hinge)
     unique = np.unique(seller)
     unique.sort()
     held = set(unique[::5].tolist())
     train = np.array([item not in held for item in seller])
-    beta_seller, _, _ = _fit(gap[train], outcome[train], seller[train])
-    seller_error = _decile_error(_predict(beta_seller, gap[~train]), outcome[~train])
+    beta_seller, _, _ = _fit(gap[train], outcome[train], seller[train], hinge)
+    seller_error = _decile_error(_predict(beta_seller, gap[~train], hinge), outcome[~train])
     early = dates < "2013-01-01"
     if int(early.sum()) > 20 and int((~early).sum()) > 20:
-        beta_time, _, _ = _fit(gap[early], outcome[early], seller[early])
-        time_error = _decile_error(_predict(beta_time, gap[~early]), outcome[~early])
+        beta_time, _, _ = _fit(gap[early], outcome[early], seller[early], hinge)
+        time_error = _decile_error(_predict(beta_time, gap[~early], hinge), outcome[~early])
         time_n = int((~early).sum())
     else:
         time_error = None
@@ -237,6 +275,11 @@ def _block(name: str, gap: np.ndarray, outcome: np.ndarray, seller: np.ndarray, 
         "outcome": name,
         "ci95_intercept": [float(beta[0] - Z_95 * se[0]), float(beta[0] + Z_95 * se[0])],
         "ci95_gap": [float(beta[1] - Z_95 * se[1]), float(beta[1] + Z_95 * se[1])],
+        "small_gap": None if not hinge else float(beta[2]),
+        "se_small_gap_clustered": None if not hinge else float(se[2]),
+        "ci95_small_gap": None if not hinge else [float(beta[2] - Z_95 * se[2]), float(beta[2] + Z_95 * se[2])],
+        "small_gap_knot": None if not hinge else float(SMALL_GAP_KNOT),
+        "model": "quote_gap_plus_small_gap_hinge" if hinge else "quote_gap",
         "holdout_seller": {
             "n_test": int((~train).sum()),
             "max_abs_decile_error": seller_error,
@@ -277,12 +320,29 @@ def main() -> int:
     dates = np.asarray([row["date"] for row in rows])
     no_deal = np.asarray([row["no_deal"] for row in rows], dtype=np.float64)
     seller_ended = np.asarray([row["seller_ended"] for row in rows], dtype=np.float64)
+    no_deal_linear = _block(
+        "thread ended with no accepted offer, including threads the buyer ended",
+        gap,
+        no_deal,
+        seller,
+        dates,
+        False,
+    )
+    seller_linear = _block(
+        "seller declined, auto-declined, or let the buyer's last offer expire; deals and buyer-ended threads are 0",
+        gap,
+        seller_ended,
+        seller,
+        dates,
+        False,
+    )
     no_deal_block = _block(
         "thread ended with no accepted offer, including threads the buyer ended",
         gap,
         no_deal,
         seller,
         dates,
+        True,
     )
     seller_block = _block(
         "seller declined, auto-declined, or let the buyer's last offer expire; deals and buyer-ended threads are 0",
@@ -290,11 +350,27 @@ def main() -> int:
         seller_ended,
         seller,
         dates,
+        True,
+    )
+    bins = _gap_bins(gap, seller_ended, np.asarray([seller_linear["intercept"], seller_linear["gap"]]), np.asarray([
+        seller_block["intercept"], seller_block["gap"], seller_block["small_gap"],
+    ]))
+    low = bins["below_half_knot"]
+    caveat = (
+        "The logit is fit on the first buyer offer of each thread and is applied "
+        "per round to the latest ask. A small-gap hinge is in the decision model "
+        "because a straight line understated seller-ended walk-away on small gaps. "
+        f"Below half the knot the observed rate is {low['observed']}, the line "
+        f"predicted {low['linear_mean']}, and the hinge predicts {low['hinge_mean']}. "
+        "This is still a 2012-13 eBay Business and Industrial transfer, not a "
+        "measured Chinese-factory rate."
     )
     payload = {
         "used_for_decision": "seller_ended",
         "seller_ended": seller_block,
         "thread_no_deal": no_deal_block,
+        "linear_only": {"seller_ended": seller_linear, "thread_no_deal": no_deal_linear},
+        "gap_bins": bins,
         "provenance": {
             "paper": "Backus, Blake, Larsen, and Tadelis (2020), Quarterly Journal of Economics",
             "doi": "10.1093/qje/qjaa003",
@@ -318,7 +394,9 @@ def main() -> int:
             "dropped_above_bin": dropped_above_bin,
             "cluster": "anon_slr_id",
             "standard_errors": "sandwich, clustered by seller, bread from the IRLS Hessian",
-            "decision_terms": ["quote_gap"],
+            "decision_terms": ["quote_gap", "small_gap_hinge"],
+            "small_gap_knot": float(SMALL_GAP_KNOT),
+            "transfer_caveat": caveat,
             "partial": False,
         },
     }

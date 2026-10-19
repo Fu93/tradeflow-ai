@@ -1,10 +1,11 @@
-"""Per-supplier reserve: reserve = ask × D, with D in [0, 1].
+"""Per-supplier reserve: reserve = reference_ask × D, with D in [0, 1].
 
 Each supplier has their own Beta prior. Another supplier's ask does not
 enter it. A later ask, an acceptance, and a closed-deal price are upper
-bounds on D. A rejection is a soft likelihood, not a hard cut. The level of
-the prior is labelled policy until this supplier has enough of their own
-responses. The eBay auto-decline ratio is not the prior.
+bounds on D. A rejection is a lower bound on D. The posterior on an
+interval [L, U] is the Beta prior truncated to that interval, in closed
+form. The level of the prior is labelled policy until this supplier has
+enough of their own responses. The eBay auto-decline ratio is not the prior.
 """
 from __future__ import annotations
 
@@ -17,12 +18,9 @@ from src.config.heuristics import (
     BETA_CF_ITERS,
     D_PRIOR_MEAN,
     D_PRIOR_STRENGTH,
-    HAZARD_LOGIT_CLIP,
     HAZARD_MIN_EVENTS,
     ONE_HALF,
     OPT_TOL,
-    QUAD_NODES,
-    REJECT_SOFTNESS,
 )
 
 _TINY = float(np.finfo(np.float64).tiny)
@@ -121,11 +119,25 @@ class ReserveState:
     upper: float = 1.0
     reject_ratios: tuple[float, ...] = field(default_factory=tuple)
     n_responses: int = 0
+    reference_ask: float | None = None
 
     @classmethod
     def policy(cls) -> "ReserveState":
         alpha, beta = policy_alpha_beta()
         return cls(alpha=alpha, beta=beta, upper=1.0, n_responses=0)
+
+    @classmethod
+    def from_moments(cls, mean: float, std: float | None = None) -> "ReserveState":
+        """User policy. Mean is a fraction of the reference ask. Spread is the standard deviation of D."""
+        centre = min(max(float(mean), _TINY), 1.0 - _TINY)
+        if std is None or float(std) <= 0.0:
+            strength = float(D_PRIOR_STRENGTH)
+        else:
+            variance = float(std) * float(std)
+            strength = centre * (1.0 - centre) / variance - 1.0
+            if strength <= _TINY:
+                strength = float(D_PRIOR_STRENGTH)
+        return cls(alpha=centre * strength, beta=(1.0 - centre) * strength, upper=1.0, n_responses=0)
 
     @property
     def source(self) -> str:
@@ -143,7 +155,7 @@ class ReserveState:
             return (
                 "Reserve prior is labelled policy. This supplier's later asks, "
                 "acceptances, and closed prices tighten D from above. "
-                "A rejection is a soft likelihood. "
+                "A rejection is a lower bound on D. "
                 f"{self.n_responses} responses are on file; "
                 f"{int(HAZARD_MIN_EVENTS)} would retire the policy label."
             )
@@ -153,141 +165,107 @@ class ReserveState:
             "Another supplier's ask is not used."
         )
 
+    def _spawn(self, **changes: object) -> "ReserveState":
+        payload = {
+            "alpha": self.alpha,
+            "beta": self.beta,
+            "upper": self.upper,
+            "reject_ratios": self.reject_ratios,
+            "n_responses": self.n_responses,
+            "reference_ask": self.reference_ask,
+        }
+        payload.update(changes)
+        return ReserveState(**payload)
+
     def with_strength(self, factor: float) -> "ReserveState":
         alpha, beta = scale_strength(self.alpha, self.beta, factor)
-        return ReserveState(
-            alpha=alpha,
-            beta=beta,
-            upper=self.upper,
-            reject_ratios=self.reject_ratios,
-            n_responses=self.n_responses,
-        )
+        return self._spawn(alpha=alpha, beta=beta)
+
+    def with_reference(self, ask: float) -> "ReserveState":
+        """The ask D is a fraction of. Later asks do not replace it."""
+        return self._spawn(reference_ask=float(ask))
 
     def tighten(self, ratio: float) -> "ReserveState":
         """Record an upper bound. A ratio above 1 does not loosen a tighter bound."""
         bound = min(float(self.upper), max(float(ratio), _TINY))
         bound = min(bound, 1.0)
-        return ReserveState(
-            alpha=self.alpha,
-            beta=self.beta,
-            upper=bound,
-            reject_ratios=self.reject_ratios,
-            n_responses=self.n_responses + 1,
-        )
+        return self._spawn(upper=bound, n_responses=self.n_responses + 1)
 
     def record(self) -> "ReserveState":
         """Count a response that does not move D. Continue is this case."""
-        return ReserveState(
-            alpha=self.alpha,
-            beta=self.beta,
-            upper=self.upper,
-            reject_ratios=self.reject_ratios,
-            n_responses=self.n_responses + 1,
-        )
+        return self._spawn(n_responses=self.n_responses + 1)
 
     def add_rejection(self, ratio: float) -> "ReserveState":
+        """A rejected offer is a lower bound: D sits at or above that fraction of the reference ask."""
         ratios = self.reject_ratios + (min(max(float(ratio), _TINY), 1.0),)
-        return ReserveState(
-            alpha=self.alpha,
-            beta=self.beta,
-            upper=self.upper,
-            reject_ratios=ratios,
-            n_responses=self.n_responses + 1,
-        )
+        return self._spawn(reject_ratios=ratios, n_responses=self.n_responses + 1)
+
+    def bounds(self) -> tuple[float, float]:
+        """Lower bound from rejections, upper bound from later asks and closed deals."""
+        lower = 0.0
+        if self.reject_ratios:
+            lower = max(float(ratio) for ratio in self.reject_ratios)
+        upper = min(max(float(self.upper), 0.0), 1.0)
+        return lower, upper
+
+    def consistent(self) -> bool:
+        """False when a rejection sits at or above the tightest upper bound."""
+        lower, upper = self.bounds()
+        return lower < upper
 
     def acceptance(self, x: float) -> float:
-        """P(accept an offer at fraction x of the first ask)."""
-        if self.reject_ratios:
-            return self.cdf(x)
-        return self.analytic_cdf(x)
+        """P(accept an offer at fraction x of the reference ask)."""
+        return self.cdf(x)
 
     def cdf(self, x: float) -> float:
-        """P(D ≤ x) under the censored, reweighted prior."""
-        grid, weights = self._quadrature()
-        if not grid:
+        """P(D ≤ x | L ≤ D ≤ U) from the regularized incomplete beta."""
+        lower, upper, mass, ok = self._interval(self.alpha, self.beta)
+        if not ok:
             return 0.0
-        total = sum(weights)
-        if total <= 0.0:
+        point = float(x)
+        if point < lower:
             return 0.0
-        passed = sum(weight for point, weight in zip(grid, weights) if point <= float(x) + float(OPT_TOL))
-        return min(max(passed / total, 0.0), 1.0)
+        if point >= upper:
+            return 1.0
+        passed = regularized_beta(point, self.alpha, self.beta) - regularized_beta(lower, self.alpha, self.beta)
+        return min(max(passed / mass, 0.0), 1.0)
 
     def mean(self) -> float:
-        if not self.reject_ratios:
-            cap = regularized_beta(self.upper, self.alpha, self.beta)
-            if cap <= _TINY:
-                return min(max(self.upper, 0.0), 1.0)
-            moment = regularized_beta(self.upper, self.alpha + 1.0, self.beta)
-            return (moment / cap) * beta_mean(self.alpha, self.beta)
-        grid, weights = self._quadrature()
-        total = sum(weights)
-        if total <= 0.0:
-            return beta_mean(self.alpha, self.beta)
-        return sum(point * weight for point, weight in zip(grid, weights)) / total
+        lower, upper, mass, ok = self._interval(self.alpha, self.beta)
+        if not ok:
+            return float("nan")
+        moment = regularized_beta(upper, self.alpha + 1.0, self.beta) - regularized_beta(
+            lower, self.alpha + 1.0, self.beta
+        )
+        return (moment / mass) * beta_mean(self.alpha, self.beta)
 
     def std(self) -> float:
-        if not self.reject_ratios and self.upper >= 1.0 - float(OPT_TOL):
+        lower, upper, mass, ok = self._interval(self.alpha, self.beta)
+        if not ok:
+            return float("nan")
+        if lower <= _TINY and upper >= 1.0 - float(OPT_TOL):
             return math.sqrt(max(beta_variance(self.alpha, self.beta), 0.0))
-        grid, weights = self._quadrature()
-        total = sum(weights)
-        if total <= 0.0:
-            return math.sqrt(max(beta_variance(self.alpha, self.beta), 0.0))
-        center = self.mean()
-        second = sum((point - center) ** 2 * weight for point, weight in zip(grid, weights)) / total
-        return math.sqrt(max(second, 0.0))
+        total = float(self.alpha) + float(self.beta)
+        factor = (float(self.alpha) * (float(self.alpha) + 1.0)) / (total * (total + 1.0))
+        second_mass = regularized_beta(upper, self.alpha + 2, self.beta) - regularized_beta(
+            lower, self.alpha + 2, self.beta
+        )
+        second = factor * second_mass / mass
+        variance = second - self.mean() ** 2
+        return math.sqrt(max(variance, 0.0))
 
     def analytic_cdf(self, x: float) -> float:
-        """Unweighted Beta CDF, renormalised onto [0, upper]. Used when nothing was rejected."""
-        if self.reject_ratios:
-            return self.cdf(x)
-        cap = regularized_beta(self.upper, self.alpha, self.beta)
-        if cap <= _TINY:
-            return 1.0 if x >= self.upper else 0.0
-        if x >= self.upper:
-            return 1.0
-        return regularized_beta(max(x, 0.0), self.alpha, self.beta) / cap
+        """Same truncated CDF. Kept so older callers do not grow a second formula."""
+        return self.cdf(x)
 
-    def _quadrature(self) -> tuple[list[float], list[float]]:
-        cap = min(max(float(self.upper), _TINY), 1.0)
-        count = int(QUAD_NODES)
-        if count < 2:
-            count = 2
-        step = cap / (count - 1)
-        grid = [step * index for index in range(count)]
-        grid[0] = min(max(grid[0], _TINY), cap)
-        grid[-1] = cap
-        logs = []
-        for point in grid:
-            if point <= 0.0 or point >= 1.0:
-                logs.append(None)
-                continue
-            log_density = (
-                (self.alpha - 1.0) * math.log(point)
-                + (self.beta - 1.0) * math.log(max(1.0 - point, _TINY))
-                - _log_beta(self.alpha, self.beta)
-            )
-            for ratio in self.reject_ratios:
-                # Soft evidence that D sits above the rejected offer. Mass below it stays.
-                gap = float(REJECT_SOFTNESS) * (point - float(ratio))
-                gap = max(min(gap, float(HAZARD_LOGIT_CLIP)), -float(HAZARD_LOGIT_CLIP))
-                soft = 1.0 / (1.0 + math.exp(-gap))
-                log_density += math.log(max(soft, _TINY))
-            logs.append(log_density)
-        finite = [item for item in logs if item is not None]
-        peak = max(finite) if finite else 0.0
-        raw = []
-        for item in logs:
-            if item is None:
-                raw.append(0.0)
-            else:
-                raw.append(math.exp(item - peak))
-        weights = []
-        for index, density in enumerate(raw):
-            if index == 0 or index == len(raw) - 1:
-                weights.append(density * step * float(ONE_HALF))
-            else:
-                weights.append(density * step)
-        return grid, weights
+    def _interval(self, alpha: float, beta: float) -> tuple[float, float, float, bool]:
+        lower, upper = self.bounds()
+        if not (lower < upper):
+            return lower, upper, 0.0, False
+        mass = regularized_beta(upper, alpha, beta) - regularized_beta(lower, alpha, beta)
+        if mass <= _TINY:
+            return lower, upper, 0.0, False
+        return lower, upper, mass, True
 
 
 def uniform_offer(outside: float, ask: float, low: float) -> float:

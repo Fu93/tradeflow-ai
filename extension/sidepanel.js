@@ -406,10 +406,22 @@ function paintSourceBadge() {
   else if (kind === "simulator") sourceBadge.classList.add("is-sim");
   else if (kind === "unreachable") sourceBadge.classList.add("is-down");
   else sourceBadge.classList.add("is-unknown");
-  sourceBadgeText.textContent = SOURCE_LABELS[kind] || "--";
+  const deskTab = document.getElementById("tab-desk");
+  const deskOpen = deskTab && deskTab.getAttribute("aria-selected") === "true" && window.tfDeskLinked;
+  let badgeLabel = SOURCE_LABELS[kind] || "--";
+  if (deskOpen && kind === "offline") {
+    badgeLabel = "Desk linked";
+    sourceBadge.classList.remove("is-offline");
+    sourceBadge.classList.add("is-amd");
+  }
+  sourceBadgeText.textContent = badgeLabel;
   document.body.dataset.source = kind;
   const meaning = document.getElementById("source-meaning");
-  if (meaning) meaning.textContent = SOURCE_MEANING[kind] || "--";
+  if (meaning) {
+    meaning.textContent = deskOpen && kind === "offline"
+      ? "The desk is linked. Live model reading is off. The solver still sets every price."
+      : (SOURCE_MEANING[kind] || "--");
+  }
   const checked = document.getElementById("source-checked");
   if (checked) checked.textContent = healthCheckedAt ? healthCheckedAt.toLocaleString() : "--";
   const endpoint = document.getElementById("source-endpoint");
