@@ -12,13 +12,13 @@ These stay labelled assumptions until the user records the missing observations.
 - The split between markup and reserve. A quote is an ask. It becomes a reserve only when the user sets a markup, including an explicit zero, or when the same product has an agreed price. An unset markup withholds the counter. It does not silently place the reserve on the ask.
 - Opponent archetypes and concession schedules. They exist only on the legacy CLI grid (`src/engine/solver.py`). `/round` does not call that grid.
 - Total-cost crisis and markdown ratios. They apply only when the caller supplies a lead-time or MOQ baseline. A missing baseline skips the term.
-- Risk tolerance, search cost, the ceiling, and the plausibility multiple. Those are preferences. The desk exposes them.
+- Risk tolerance, search cost, the ceiling, and the plausibility multiple. Those are preferences. The desk exposes them. `UNIT_SANITY_MULTIPLE` is 3: a unit price is auto-accepted only from target/3 up to max(target, ceiling)×3. A human can still accept a reviewed figure.
 
 ## One-step counter
 
 Code: `src/engine/one_step.py`, `src/engine/coupled.py`.
 
-The counter maximises expected surplus of the one-step accept-or-reject model. Shocks are normal, so the chance the reserve sits at or under the offer is the Gaussian cdf. On the accept region the reserve gap is zero, so the walk-away chance depends on the quote gap and the supplier effect. The search uses `SEARCH_STEP` (0.001 of the target). `DESK_N_GRID` and the old half-target floor do not choose the offer. Monte Carlo samples are drawn once and only fill the reported tail. They do not pick the price.
+The counter maximises expected surplus of the one-step accept-or-reject model. The chance the reserve sits at or under the offer is the Student-t cdf with `STUDENT_T_DF` degrees of freedom, the same distribution as the reported interval. On the accept region the reserve gap is zero, so the walk-away chance depends on the quote gap and the supplier effect. The search uses `SEARCH_STEP` (0.001 of the target) and keeps lattice points at or below the cap. `DESK_N_GRID` and the old half-target floor do not choose the offer. Monte Carlo samples are drawn once and only fill the reported tail. They do not pick the price.
 
 Surplus of an offer, in target units, is
 
@@ -66,6 +66,8 @@ P(walk away) = 1 / (1 + exp(−η))
 The baseline rate the desk shows is `σ(β0)`, with a band `σ(β0 ± τ)`. Those three numbers are labelled assumptions until enough outcomes exist. The desk stores them on the deal when the user saves the assumption form, and replays `hazard_outcomes` before the next solve.
 
 Why a labelled baseline blocks rows: `σ(−2.9)` is about 5%. An aggressive offer has a large quote gap, and `βq` is 3.4, so the credible upper bound (the `τ` quantile of the effect, not only the mean) crosses the default 0.15 cap. The row is then blocked and no counter is issued. Halving the intercept, doubling `τ`, or tightening the cap moves that bound. The desk shows the band so the sensitivity is visible before a solve.
+
+`HAZARD_CREDIBLE_ALPHA` is 0.05, a labelled 95% level. `/negotiate` and `/multi-auction/run` accept `hazard_intercept`, `hazard_tau`, `hazard_quote_gap`, `hazard_reserve_gap`, `bayes_obs_noise`, and `hazard_credible_alpha`. On the seed-19 bodies with markup 0.05, moving the level from 0.05 to 0.10 changed the block bit on 28 of 539 quotes (5.2%). `/negotiate` also reads `rounds` as the hazard round index and `lambda_break` as a multiplier on the walk-away probability. The round coefficient is 0 and `lambda_break` defaults to 1, so those defaults do not move an offer.
 
 ## Shared reserve factor
 

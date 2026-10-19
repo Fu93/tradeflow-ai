@@ -57,6 +57,7 @@ from src.config.heuristics import (
 from src.desk.names import supplier_name_key
 from src.engine.one_step import one_step_counter
 from src.engine.bayesian_v2 import robust_location
+from src.engine.hazard import HazardBelief
 from ..engine.backend import describe_solver_backend, resolve_use_gpu
 from ..engine.llm_config import llm_status
 from ..engine import (
@@ -368,6 +369,12 @@ class Spec(BaseModel):
     prior_reserve_std: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
     expected_markup: float | None = Field(default=None, ge=0.0, le=API_MARKUP_CAP, allow_inf_nan=False)
     observed_offer: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    hazard_intercept: float | None = Field(default=None, allow_inf_nan=False)
+    hazard_tau: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    hazard_quote_gap: float | None = Field(default=None, allow_inf_nan=False)
+    hazard_reserve_gap: float | None = Field(default=None, allow_inf_nan=False)
+    bayes_obs_noise: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    hazard_credible_alpha: float | None = Field(default=None, gt=0.0, lt=1.0, allow_inf_nan=False)
 
 
 @api_v1.get("/heuristics")
@@ -419,8 +426,18 @@ def negotiate(spec: Spec):
             "solver": "analytic expected surplus of the one-step accept-or-reject model",
             "reason": "The quote is an ask, not a reserve. Set a reserve prior or a markup.",
         }
+    belief = HazardBelief(
+        intercept=spec.hazard_intercept,
+        tau=spec.hazard_tau,
+        quote_gap_coef=spec.hazard_quote_gap,
+        reserve_gap_coef=spec.hazard_reserve_gap,
+    )
+    noise = None if spec.bayes_obs_noise is None else float(spec.bayes_obs_noise)
     if spec.prior_reserve_mean is None:
-        post_mean, post_std = robust_location([float(spec.observed_offer) - float(markup)])
+        post_mean, post_std = robust_location(
+            [float(spec.observed_offer) - float(markup)],
+            noise_floor=noise,
+        )
     elif markup is None:
         post_mean = float(spec.prior_reserve_mean)
         post_std = float(spec.prior_reserve_std)
@@ -437,6 +454,10 @@ def negotiate(spec: Spec):
             mean=float(post_mean),
             std=float(post_std),
             n_samples=spec.n_samples,
+            round_index=float(spec.rounds),
+            lambda_break=float(spec.lambda_break),
+            belief=belief,
+            credible_alpha=spec.hazard_credible_alpha,
         )
     except Exception:
         logger.exception("POST /negotiate failed")
@@ -1134,6 +1155,12 @@ class MultiAuctionRunRequest(BaseModel):
     prior_mean: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
     prior_std: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
     expected_markup: Optional[float] = Field(default=None, ge=0.0, le=API_MARKUP_CAP, allow_inf_nan=False)
+    hazard_intercept: Optional[float] = Field(default=None, allow_inf_nan=False)
+    hazard_tau: Optional[float] = Field(default=None, gt=0.0, allow_inf_nan=False)
+    hazard_quote_gap: Optional[float] = Field(default=None, allow_inf_nan=False)
+    hazard_reserve_gap: Optional[float] = Field(default=None, allow_inf_nan=False)
+    bayes_obs_noise: Optional[float] = Field(default=None, gt=0.0, allow_inf_nan=False)
+    hazard_credible_alpha: Optional[float] = Field(default=None, gt=0.0, lt=1.0, allow_inf_nan=False)
 
     @field_validator("rounds_quotes")
     @classmethod
@@ -2602,6 +2629,12 @@ def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
             prior_mean=req.prior_mean,
             prior_std=req.prior_std,
             expected_markup=req.expected_markup,
+            hazard_intercept=req.hazard_intercept,
+            hazard_tau=req.hazard_tau,
+            hazard_quote_gap=req.hazard_quote_gap,
+            hazard_reserve_gap=req.hazard_reserve_gap,
+            bayes_obs_noise=req.bayes_obs_noise,
+            hazard_credible_alpha=req.hazard_credible_alpha,
         )
         from ..market.trade_data import build_market_context
 

@@ -129,6 +129,7 @@ class MultiSupplierSolver:
         kappas: np.ndarray | None = None,
         beliefs: list[HazardBelief] | None = None,
         round_index: int = 1,
+        credible_alpha: float | None = None,
     ) -> Dict[str, Any]:
         """Coupled offer vector. ``total_rollouts`` is the number of scenario-offer cells scored."""
         offers = np.asarray(supplier_offers, dtype=np.float64)
@@ -144,6 +145,7 @@ class MultiSupplierSolver:
             beliefs=beliefs,
             rng=rng,
             round_index=round_index,
+            credible_alpha=credible_alpha,
         )
         k = int(offers.shape[0])
         flat = [0.0] * self.rounds
@@ -197,6 +199,12 @@ class MultiAuctionSession:
         prior_std: float | None = None,
         expected_markup: float | None = None,
         frozen_reserves: list[float] | None = None,
+        hazard_intercept: float | None = None,
+        hazard_tau: float | None = None,
+        hazard_quote_gap: float | None = None,
+        hazard_reserve_gap: float | None = None,
+        bayes_obs_noise: float | None = None,
+        hazard_credible_alpha: float | None = None,
     ):
         if suppliers is None or target_price is None or walk_away_ceiling is None:
             raise ValueError(
@@ -226,7 +234,17 @@ class MultiAuctionSession:
         self.user_prior = prior_mean is not None
         self.expected_markup = None if expected_markup is None else float(expected_markup)
         self.freeze_reserve = frozen_reserves is not None
-        width = float(prior_std) if prior_std is not None else float(BAYES_OBS_NOISE)
+        if prior_std is not None:
+            width = float(prior_std)
+        elif bayes_obs_noise is not None:
+            width = float(bayes_obs_noise)
+        else:
+            width = float(BAYES_OBS_NOISE)
+        self.hazard_credible_alpha = hazard_credible_alpha
+        self._hazard_intercept = hazard_intercept
+        self._hazard_tau = hazard_tau
+        self._hazard_quote_gap = hazard_quote_gap
+        self._hazard_reserve_gap = hazard_reserve_gap
         if frozen_reserves is not None:
             if len(frozen_reserves) != self.k:
                 raise ValueError("frozen reserves must name one reserve per supplier")
@@ -246,7 +264,15 @@ class MultiAuctionSession:
             self.prior_stds = np.full(self.k, width, dtype=np.float64)
             self.reserve_source = "ask_only"
         self._observed: List[List[float]] = [[] for _ in range(self.k)]
-        self.beliefs = [HazardBelief() for _ in range(self.k)]
+        self.beliefs = [
+            HazardBelief(
+                intercept=self._hazard_intercept,
+                tau=self._hazard_tau,
+                quote_gap_coef=self._hazard_quote_gap,
+                reserve_gap_coef=self._hazard_reserve_gap,
+            )
+            for _ in range(self.k)
+        ]
         self.inactive: set[int] = set()
         self.current_round = 0
         self.trace: List[Dict[str, Any]] = []
@@ -392,6 +418,7 @@ class MultiAuctionSession:
                 kappas=kappas[identified],
                 beliefs=[self.beliefs[i] for i in identified],
                 round_index=self.current_round,
+                credible_alpha=self.hazard_credible_alpha,
             )
 
         def _expand(values, fill=None):
@@ -705,6 +732,12 @@ def simulate_reverse_auction(
     prior_mean: float | None = None,
     prior_std: float | None = None,
     expected_markup: float | None = None,
+    hazard_intercept: float | None = None,
+    hazard_tau: float | None = None,
+    hazard_quote_gap: float | None = None,
+    hazard_reserve_gap: float | None = None,
+    bayes_obs_noise: float | None = None,
+    hazard_credible_alpha: float | None = None,
 ) -> Dict[str, Any]:
     """Run a concurrent round.
 
@@ -743,6 +776,12 @@ def simulate_reverse_auction(
         prior_std=prior_std,
         expected_markup=expected_markup,
         frozen_reserves=frozen,
+        hazard_intercept=hazard_intercept,
+        hazard_tau=hazard_tau,
+        hazard_quote_gap=hazard_quote_gap,
+        hazard_reserve_gap=hazard_reserve_gap,
+        bayes_obs_noise=bayes_obs_noise,
+        hazard_credible_alpha=hazard_credible_alpha,
     )
     if rounds_quotes is not None:
         for index, quotes in enumerate(rounds_quotes):

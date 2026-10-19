@@ -931,6 +931,27 @@ function paintRiskBands() {
   }
 }
 
+function paintMarkupDefault() {
+  const field = document.getElementById("expectedMarkup");
+  if (!field) return;
+  if (field.dataset.bound !== "1") {
+    field.dataset.bound = "1";
+    field.addEventListener("input", function () { field.dataset.userEdited = "1"; });
+  }
+  if (field.dataset.userEdited === "1") return;
+  const markup = tfHeuristics && Number(tfHeuristics.dashboard_expected_markup);
+  if (!Number.isFinite(markup) || markup < 0) return;
+  field.value = String(markup);
+}
+
+function readExpectedMarkup() {
+  const field = document.getElementById("expectedMarkup");
+  if (!field || String(field.value || "").trim() === "") return null;
+  const markup = Number(field.value);
+  if (!Number.isFinite(markup) || markup < 0) return null;
+  return markup;
+}
+
 function paintMandate(p) {
   document.getElementById("mandatePrice").textContent = `${tfMoney(p.target)} / ${tfMoney(p.ceiling)}`;
   document.getElementById("mandateLead").textContent = p.lead;
@@ -968,6 +989,7 @@ async function loadDeskConfig() {
     console.warn("[TradeFlow] desk config failed:", err);
   }
   paintRiskBands();
+  paintMarkupDefault();
   const select = document.getElementById("presetCategorySelect");
   const statusEl = document.getElementById("presetStatus");
   if (select && categoryPresets && categoryPresets[select.value]) {
@@ -1024,6 +1046,8 @@ async function applyCategoryPreset(cat) {
     moq: p.moq,
     max_rounds: 5
   };
+  const markup = readExpectedMarkup();
+  if (markup !== null) body.expected_markup = markup;
 
   try {
     const res = await fetch("/api/v1/sessions", {
@@ -1289,6 +1313,12 @@ async function runMultiAuction() {
     }
     const confirmRefs = document.getElementById("confirmRefs");
     if (confirmRefs && confirmRefs.checked) auctionBody.confirm_market_refs = true;
+    // Live quotes use the visible markup. The labelled self-play bundle
+    // carries its own reserves, so a pure demo run does not send this field.
+    if (liveRun) {
+      const markup = readExpectedMarkup();
+      if (markup !== null) auctionBody.expected_markup = markup;
+    }
     const res = await fetch("/api/v1/multi-auction/run", {
       method: "POST",
       headers: tfJsonHeaders(),

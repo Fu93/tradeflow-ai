@@ -112,6 +112,8 @@
       <input id="auctionCeiling" class="input-plain" type="text" inputmode="decimal" autocomplete="off" />
       <label class="fineprint" for="riskTolerance">Risk tolerance. Leave blank to use the server default.</label>
       <input id="riskTolerance" class="input-plain" type="text" inputmode="decimal" autocomplete="off" />
+      <label class="fineprint" for="expectedMarkup">Expected markup, a fraction of the target. Labelled policy, filled from the server heuristic. Reserve is the quote minus this markup. Clear it to withhold counters. The API does not apply a markup when the field is omitted.</label>
+      <input id="expectedMarkup" class="input-plain" type="text" inputmode="decimal" autocomplete="off" />
       <label class="fineprint" for="confirmRefs"><input id="confirmRefs" type="checkbox" /> Use a fetched ECB rate in the comparison when one is returned. A UK tariff figure stays reference only. Unchecked rates stay reference only.</label>
       <div id="auctionLoader" class="loader hidden" role="status">Comparing four simulated suppliers…</div>
       <div id="supplierCards" class="supplier-cards">

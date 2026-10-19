@@ -20,7 +20,7 @@ _NUM = (
     r"\d{1,3}(?:\.\d{3})+,\d+|"
     r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|"
     r"\d+(?:[.,]\d+)?"
-    r")(?![\d.,])"
+    r")(?![\d.]|,(?=\d))"
 )
 _TOKEN = re.compile(_NUM)
 _PRICE_KEYS = ("price", "unit_price", "mentioned_price", "quoted_amount", "cny_amount")
@@ -31,7 +31,8 @@ _QUOTE_SPLIT = re.compile(
 _INJECTION = re.compile(
     r"(?i)(?:\bsystem\s*:|record price as|ignore previous|you must (?:set|use)|as an ai|"
     r"note to the assistant|update your records|agreed price|"
-    r"\bassistant\b|助手|备注给|備註給|价格按|價格按|log the (?:final )?price)"
+    r"\bassistant\b|助手|备注给|備註給|价格按|價格按|log the (?:final )?price|"
+    r"\bbot\b|\bagent\b|机器人|機器人|记录单价|記錄單價|mark this deal|store\s+\d)"
 )
 _NEGATION = re.compile(
     r"(?i)(cannot accept|can't accept|can not accept|unable to accept|too low|"
@@ -47,35 +48,56 @@ _QUESTION = re.compile(
 _DATE = re.compile(r"(?:19|20)\d{2}[-/.]\d{1,2}(?:[-/.]\d{1,2})?")
 _FEE = re.compile(
     r"(?i)(freight|shipping|postage|courier|sample|mould|mold|tooling|"
-    r"运费|運費|快递|快遞|样品|樣品|模具|开模|開模|总价|總價|合计|合計|总额|總額|total amount)"
+    r"\bbank\s+fee\b|手续费|手續費|包装费|包裝費|"
+    r"运费|運費|快递|快遞|样品|樣品|模具|开模|開模|总价|總價|合计|合計|总额|總額|费|費|"
+    r"\btotal\b|total amount)"
 )
-# A reduction is "reduce … by" or 便宜/再降 on the same clause. The word
-# "discount" alone is not a reduction: "5% discount applied, new unit price …"
-# still carries a unit price in the next clause.
+# A reduction is a cut on the same clause: "reduce … by", knock/off, minus,
+# 便宜/再降/让利/再少, or 降 next to a digit. The word "discount" alone is
+# not a reduction: "5% discount applied, new unit price …" still carries a
+# unit price in the next clause.
 _REDUCTION = re.compile(
     r"(?i)(?:\breduc(?:e|ed|ing)\b.{0,48}\bby\b|\bcut\b.{0,24}\bby\b|"
-    r"\blower(?:ed|ing)?\b.{0,24}\bby\b|便宜|再降|降价|降價|减价|減價)"
+    r"\blower(?:ed|ing)?\b.{0,24}\bby\b|\bknock\b.{0,40}\boff\b|\bminus\b|"
+    r"\boff the\b|便宜|再降|再少|让利|讓利|降价|降價|减价|減價|降\s*\d)"
 )
-_DEPOSIT_CLAUSE = re.compile(r"(?i)(?:定金|订金|訂金|保证金|保證金|\bdeposit\b)")
+_DEPOSIT_CLAUSE = re.compile(
+    r"(?i)(?:定金|订金|訂金|保证金|保證金|\bdeposit\b|预付|預付|首付|"
+    r"\badvance\s+payment\b|\bupfront\b)"
+)
 _PACK = re.compile(
     r"(?i)(?:per\s+(?:carton|box|case)|/\s*(?:carton|box|case)|每箱|每盒|每包|"
-    r"(?:for|per)\s+\d+\s*(?:pcs|pc|pieces|件))"
+    r"(?:for|per)\s+\d+\s*(?:pcs|pc|pieces|件)|"
+    r"\bdozen\b|每打|\bset\s+of\b|\bpack\s+of\b|\d+\s*件\s*\d)"
 )
-_ADDON = re.compile(r"(?i)(?:\badds?\b|\bextra\b|\bsurcharge\b|\btax\b|另加|附加|加收)")
+# "extra" and "tax" are not add-ons: "extra-thick" and "incl. tax" are
+# descriptions of a unit price. A real add-on says more, plus, upgrade, or +.
+_ADDON = re.compile(
+    r"(?i)(?:\badds?\b|\bsurcharge\b|另加|附加|加收|另收|"
+    r"\bmore\b|\bplus\b|\bupgrade\b|\+\s*\d)"
+)
 _RIVAL = re.compile(
-    r"(?i)(?:another\s+factory|other\s+factory|\bcompetitor\b|其他厂|其他廠|同行|别家|別家)"
+    r"(?i)(?:another\s+factory|other\s+factory|\bcompetitor\b|其他厂|其他廠|同行|别家|別家|"
+    r"隔壁|\boffers\b|\bsays\b)"
 )
 _ASSISTANT = re.compile(
-    r"(?i)(?:\bassistant\b|助手|备注给|備註給|价格按|價格按|log the (?:final )?price)"
+    r"(?i)(?:\bassistant\b|助手|备注给|備註給|价格按|價格按|log the (?:final )?price|"
+    r"\bbot\b|\bagent\b|机器人|機器人|记录单价|記錄單價|mark this deal|store\s+\d)"
+)
+# "不含运费" inside parentheses is an exclusion, not a freight charge.
+_EXCLUSION = re.compile(
+    r"（[^）]{0,40}不含[^）]{0,40}）|"
+    r"\([^)]{0,48}(?:不含|excl\.?|excluding|not including|ex\s+freight|ex\s+shipping)[^)]{0,48}\)"
+    , re.IGNORECASE,
 )
 _CLAUSE_MARKS = ("\n", "。", "，", ",", ";", "；", "、")
 _FOREIGN = re.compile(r"(?i)(usd|eur|gbp|hkd|jpy|aud|cad|美元|欧元|歐元|英镑|英鎊|港币|港幣|日元|\$|€|£)")
-_CNY = re.compile(r"(?i)(?:cny|rmb|元|块|塊|￥|¥)")
+_CNY = re.compile(r"(?i)(?:cny|rmb|yuan|元|块|塊|￥|¥)")
 _RANGE = re.compile(rf"(?i)({_NUM})\s*(?:-|–|~|到|至|\bto\b)\s*({_NUM})")
 _AMOUNT = re.compile(
     rf"(?i)(?P<pre>cny|rmb|usd|eur|gbp|hkd|jpy|￥|¥|\$|€|£)?\s*"
     rf"(?P<num>{_NUM})\s*"
-    rf"(?P<post>cny|rmb|usd|eur|gbp|hkd|jpy|元|块|塊|美元|欧元|歐元|英镑|英鎊|\$|€|£)?"
+    rf"(?P<post>cny|rmb|yuan|usd|eur|gbp|hkd|jpy|元|块|塊|美元|欧元|歐元|英镑|英鎊|\$|€|£)?"
 )
 
 
@@ -178,15 +200,21 @@ def _clause_of(text: str, start: int) -> str:
     return text[left + 1:right]
 
 
+def _clause_for_rules(clause: str) -> str:
+    """Drop exclusion parentheticals so 不含运费 does not hide a unit price."""
+    return _EXCLUSION.sub(" ", clause)
+
+
 def _disqualified(clause: str) -> bool:
+    window = _clause_for_rules(clause)
     return bool(
-        _FEE.search(clause)
-        or _REDUCTION.search(clause)
-        or _DEPOSIT_CLAUSE.search(clause)
-        or _PACK.search(clause)
-        or _ADDON.search(clause)
-        or _RIVAL.search(clause)
-        or _ASSISTANT.search(clause)
+        _FEE.search(window)
+        or _REDUCTION.search(window)
+        or _DEPOSIT_CLAUSE.search(window)
+        or _PACK.search(window)
+        or _ADDON.search(window)
+        or _RIVAL.search(window)
+        or _ASSISTANT.search(window)
     )
 
 

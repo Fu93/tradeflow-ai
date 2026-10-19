@@ -10,6 +10,7 @@ import numpy as np
 
 from src.config.heuristics import DEFAULT_SOLVER_SEED, DESK_N_GRID, ROUND_N_SAMPLES, WEITZMAN_SEARCH_COST
 from src.engine.coupled import solve_coupled
+from src.engine.hazard import HazardBelief
 
 
 def one_step_counter(
@@ -24,6 +25,10 @@ def one_step_counter(
     risk_tolerance: float | None = None,
     seed: int = DEFAULT_SOLVER_SEED,
     search_cost: float | None = None,
+    round_index: float = 1,
+    lambda_break: float = 1.0,
+    belief: HazardBelief | None = None,
+    credible_alpha: float | None = None,
 ) -> dict:
     if target <= 0 or ceiling <= 0 or quote <= 0:
         raise ValueError("quote, target, and ceiling must be positive")
@@ -39,6 +44,10 @@ def one_step_counter(
         risk_tolerance=risk_tolerance,
         rng=np.random.default_rng(int(seed)),
         search_cost=float(WEITZMAN_SEARCH_COST if search_cost is None else search_cost),
+        beliefs=[belief if belief is not None else HazardBelief()],
+        round_index=float(round_index),
+        lambda_break=float(lambda_break),
+        credible_alpha=credible_alpha,
     )
     raw = float(solved["offers"][0]) * float(target)
     blocked = bool(solved["blocked"][0])

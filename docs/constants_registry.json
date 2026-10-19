@@ -136,7 +136,7 @@
     "BAYES_MARKUP": {
       "value": 0.08,
       "category": "d",
-      "justification": "Labelled suggestion. The update uses zero unless the caller sets a markup."
+      "justification": "Labelled markup the dashboard sends when the field is blank. The API withholds the counter when the caller omits it."
     },
     "CREDIBLE_MASS": {
       "value": 0.95,
@@ -606,7 +606,7 @@
     "HAZARD_CREDIBLE_ALPHA": {
       "value": 0.05,
       "category": "n",
-      "justification": "tail mass outside the central credible interval. 0.05 leaves a 95% interval. The upper end is the conservative prior-driven reading."
+      "justification": "Labelled 95% credible level. Moving it from 0.05 to 0.10 changed the block bit on 28 of 539 seed-19 quotes (5.2%) at markup 0.05. Auction and negotiate can override it."
     },
     "HAZARD_MIN_EVENTS": {
       "value": 30,
@@ -734,9 +734,9 @@
       "justification": "Most points the surplus mesh may hold. A wider domain uses a coarser step instead of an unbounded loop."
     },
     "UNIT_SANITY_MULTIPLE": {
-      "value": 8.0,
+      "value": 3.0,
       "category": "d",
-      "justification": "A parsed unit price outside this multiple of the target and the ceiling goes to review. The desk can replace it."
+      "justification": "Auto-accept only from target divided by this multiple up to max(target, ceiling) times it. Three still allows about twice the ceiling and reviews an eighth of the target."
     }
   },
   "inline": [
@@ -1024,6 +1024,291 @@
       "file": "src/app/main.py",
       "value": 10000000,
       "justification": "Most units one session may set as a quantity. An input bound, not a unit price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 1000000.0,
+      "justification": "Upper bound on one pasted quote inside a rounds matrix. A request cap, not a price the solver invents."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 1e-09,
+      "justification": "Tolerance when a person types a price just under the authorised floor. A comparison epsilon, not a quote."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 3,
+      "justification": "Default number of self-play rounds on the auction request. A loop bound, not a supplier quote."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 4,
+      "justification": "Decimal places used to treat two parsed amounts as the same figure. Display identity, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 10000000,
+      "justification": "Largest quantity a deal may name. An input cap, not a factory MOQ."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 11,
+      "justification": "Default desk seed when the caller does not send one. A reproducible stream index, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 200,
+      "justification": "Longest supplier name the desk will store. An input cap, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 2000,
+      "justification": "Longest page URL stored with a pasted chat. An input cap, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 20000,
+      "justification": "Longest raw message the desk will ingest. An input cap, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 2000000000,
+      "justification": "Largest seed the desk will accept. A bound on the random stream, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 320,
+      "justification": "Longest supplier address the desk will store. An input cap, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 4,
+      "justification": "A deal needs at least four suppliers so a rival set exists. A panel size, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 40,
+      "justification": "Longest channel name the desk will store. An input cap, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 404,
+      "justification": "HTTP status when the deal id is unknown. A protocol code, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 409,
+      "justification": "HTTP status when a draft is already claimed. A protocol code, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 422,
+      "justification": "HTTP status when the desk rejects a body. A protocol code, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 5,
+      "justification": "A deal accepts at most five suppliers. A panel size, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 500,
+      "justification": "Longest external id stored on a message. An input cap, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 502,
+      "justification": "HTTP status when a mailbox read fails. A protocol code, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 64,
+      "justification": "SHA-256 hex length required on a fixture body. A hash width, not a price."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 80,
+      "justification": "Longest human-picked price token. An input cap, not a price."
+    },
+    {
+      "file": "src/desk/service.py",
+      "value": 4,
+      "justification": "Creating a deal requires at least four suppliers. A panel size, not a price."
+    },
+    {
+      "file": "src/engine/bayesian_v2.py",
+      "value": 1000000.0,
+      "justification": "Clip returned when a Student-t quantile search leaves the bracket. A numerical guard, not a price."
+    },
+    {
+      "file": "src/engine/bayesian_v2.py",
+      "value": 1e-07,
+      "justification": "Below this standard deviation the normal helper CDF is a step. A numerical guard, not a price."
+    },
+    {
+      "file": "src/engine/bayesian_v2.py",
+      "value": 1e-08,
+      "justification": "Floor on the robust scale so a zero-width quote does not divide. A numerical guard, not a price."
+    },
+    {
+      "file": "src/engine/bayesian_v2.py",
+      "value": 1e-12,
+      "justification": "Floor on posterior variance so a Kalman step cannot hit exact zero. A numerical guard, not a price."
+    },
+    {
+      "file": "src/engine/bayesian_v2.py",
+      "value": 1e-30,
+      "justification": "Tiny mass used to keep a continued-fraction term off zero. A numerical guard, not a price."
+    },
+    {
+      "file": "src/engine/bayesian_v2.py",
+      "value": 3e-14,
+      "justification": "Continued-fraction convergence tolerance for the incomplete beta. A numerical guard, not a price."
+    },
+    {
+      "file": "src/engine/bayesian_v2.py",
+      "value": 4,
+      "justification": "Decimal places on a reported posterior. Display rounding, not a price."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 10,
+      "justification": "Characters of context kept before a currency token. A window width, not a price."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 100,
+      "justification": "Turns a percent written over 100 into a fraction. A unit conversion, not a price."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 1000,
+      "justification": "Longest text sent to the optional language model. An input cap, not a price."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 100000,
+      "justification": "A candidate this large is not treated as a unit price. A sanity screen, not a market quote."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 10000000,
+      "justification": "Largest MOQ the reader will keep. An input cap, not a factory limit."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 12,
+      "justification": "Characters read after a price token when classifying it. A window width, not a price."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 120,
+      "justification": "Token budget for the optional language call. A request cap, not a price."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 200,
+      "justification": "HTTP status that means the language call returned a body. A protocol code, not a price."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 24,
+      "justification": "Characters of prefix used to tell a date from a price. A window width, not a price."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 3,
+      "justification": "Regex group index for a labelled price. A capture index, not a price."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 365,
+      "justification": "A lead time longer than a year is not kept as days. A unit screen, not a price."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 4,
+      "justification": "Regex group index for an alternate price token. A capture index, not a price."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 500,
+      "justification": "Default MOQ named by the draft-language helper when the caller omits one. It is not a solver price and not a parsed quote."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 6,
+      "justification": "Short prefix window for a currency symbol. A window width, not a price."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 8,
+      "justification": "Prefix window for a second currency pattern. A window width, not a price."
+    },
+    {
+      "file": "src/engine/coupled.py",
+      "value": 1e-08,
+      "justification": "Relative tolerance for a tail that has saturated at the ceiling. A numerical guard, not a price."
+    },
+    {
+      "file": "src/engine/logrolling.py",
+      "value": 0.0001,
+      "justification": "Gap below which a logroll sentence still quotes the supplier's own price. A comparison epsilon, not a new price."
+    },
+    {
+      "file": "src/engine/logrolling.py",
+      "value": 1e-06,
+      "justification": "Tolerance when a proposed price is compared with the ceiling. A comparison epsilon, not a price."
+    },
+    {
+      "file": "src/engine/logrolling.py",
+      "value": 3,
+      "justification": "Decimal places on a proposed deposit percent. Display rounding, not a price."
+    },
+    {
+      "file": "src/engine/multi_solver.py",
+      "value": 3,
+      "justification": "Default self-play round count when the caller omits one. A loop bound, not a quote."
+    },
+    {
+      "file": "src/engine/multi_solver.py",
+      "value": 4,
+      "justification": "Decimal places on reported solver elapsed time. Display rounding, not a price."
+    },
+    {
+      "file": "src/engine/proposal.py",
+      "value": 3,
+      "justification": "Decimal places on the ceiling-over-target ratio in a proposal. Display rounding, not a price."
+    },
+    {
+      "file": "src/engine/proposal.py",
+      "value": 4,
+      "justification": "Decimal places on a reported walk-away probability. Display rounding, not a price."
+    },
+    {
+      "file": "src/engine/quote_fields.py",
+      "value": 100,
+      "justification": "Turns a duty typed as a percent into a fraction of one. A unit conversion, not a price."
+    },
+    {
+      "file": "src/engine/quote_fields.py",
+      "value": 3650,
+      "justification": "Longest lead time kept, ten years in days. A unit screen, not a price."
+    },
+    {
+      "file": "src/engine/solver.py",
+      "value": 1e-06,
+      "justification": "Denominator floor when a confidence ratio divides by the prior width. A numerical guard, not a price."
+    },
+    {
+      "file": "src/engine/solver.py",
+      "value": 3,
+      "justification": "Decimal places on a reported belief confidence. Display rounding, not a price."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "justification": "Decimal places on a reported raw price inside a TCO breakdown. Display rounding, not a new price."
     }
   ]
 }

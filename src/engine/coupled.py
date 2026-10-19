@@ -1,12 +1,14 @@
 """Analytic expected surplus of a one-step accept-or-reject model.
 
 The next offer is the mesh point that maximises expected surplus. Acceptance
-is P(reserve <= offer) times one minus the walk-away hazard on that region,
-where the reserve gap is zero. The desk scores an outside option of zero, so
-a rival only lowers the cap and cannot raise another supplier's offer. The
-auction scores the rival surplus. A coarse grid and a 0.5 times target floor
-do not choose the offer. Monte Carlo evaluates the chosen vector for the
-report. It does not pick the price.
+is the Student-t chance the reserve sits at or under the offer, times one
+minus the walk-away hazard on that region, where the reserve gap is zero.
+The same Student-t is the interval shown with the belief. The desk scores
+an outside option of zero, so a rival only lowers the cap and cannot raise
+another supplier's offer. The auction scores the rival surplus. The mesh
+keeps lattice points at or below the cap and does not snap the last point
+up to the cap. Monte Carlo evaluates the chosen vector for the report. It
+does not pick the price.
 """
 from __future__ import annotations
 
@@ -24,10 +26,10 @@ from src.config.heuristics import (
     DESK_N_GRID,
     HAZARD_CREDIBLE_ALPHA,
     OFFER_GRID_FLOOR,
-    ONE_HALF,
     ROUND_N_SAMPLES,
     SEARCH_MESH_CAP,
     SEARCH_STEP,
+    STUDENT_T_DF,
     OFFER_TIE_BREAK,
     SHARED_FACTOR_RHO,
     TACTIC_PRICE_TIE,
@@ -36,6 +38,7 @@ from src.config.heuristics import (
     WEITZMAN_BRACKET_SIGMAS,
     WEITZMAN_SEARCH_COST,
 )
+from src.engine.bayesian_v2 import student_t_cdf
 from src.engine.hazard import (
     PROVENANCE,
     HazardBelief,
@@ -486,18 +489,23 @@ def _round_for(round_index, index: int) -> float:
 
 
 def _surplus_mesh(lo: float, hi: float, step: float) -> np.ndarray:
+    """Lattice points from lo up to hi. The cap is not inserted off-lattice.
+
+    Snapping the last point up to hi made a slightly lower cap able to land
+    above the previous optimum. A tighter cap only removes points.
+    """
     step = float(step)
     hi = float(hi)
     lo = min(float(lo), hi)
     if hi <= lo or step <= 0.0:
         return np.array([hi], dtype=np.float64)
-    span = hi - lo
-    count = int(math.floor(span / step)) + 1
+    count = int(math.floor((hi - lo) / step)) + 1
     if count > int(SEARCH_MESH_CAP):
         count = int(SEARCH_MESH_CAP)
-        step = span / (count - 1)
     grid = lo + step * np.arange(count, dtype=np.float64)
-    grid[-1] = hi
+    grid = grid[grid <= hi]
+    if grid.size == 0:
+        return np.array([lo], dtype=np.float64)
     return grid
 
 
@@ -513,15 +521,18 @@ def _analytic_choice(
     belief: HazardBelief,
     cap: float,
     step: float,
+    round_index: float = 0.0,
+    lambda_break: float = 1.0,
+    credible_alpha: float | None = None,
 ) -> dict[str, Any]:
     """Expected surplus on a fine mesh. The coarse grid is not an input."""
     lo = float(np.finfo(np.float64).tiny)
     offers = _surplus_mesh(lo, float(hi), float(step))
     scale = max(abs(float(std)), float(np.finfo(np.float64).tiny))
     z = (offers - float(mean)) / scale
-    normal = z / math.sqrt(2)
-    p_reserve = float(ONE_HALF) * (
-        1.0 + np.array([math.erf(float(item)) for item in normal], dtype=np.float64)
+    p_reserve = np.array(
+        [student_t_cdf(float(item), float(STUDENT_T_DF)) for item in z],
+        dtype=np.float64,
     )
     g_quote = quote_gap(float(quote), offers)
     g_reserve = reserve_gap(float(mean), offers)
@@ -530,14 +541,19 @@ def _analytic_choice(
         "intercept": belief.intercept,
         "quote_gap_coef": belief.quote_gap_coef,
         "reserve_gap_coef": belief.reserve_gap_coef,
+        "round_index": float(round_index),
     }
     accept_logit = hazard_logit(np, g_reserve=0.0, g_quote=g_quote, effect=effect, **common)
     accept_hazard = np.asarray(sigmoid(np, accept_logit), dtype=np.float64)
+    if float(lambda_break) != 1.0:
+        scaled = float(lambda_break)
+        accept_hazard = np.clip(accept_hazard * scaled, 0.0, 1.0)
     p_accept = p_reserve * (1.0 - accept_hazard)
     deal = float(ceiling) - float(kappa) - offers
     gain = np.maximum(0.0, np.maximum(float(batna_surplus), deal) - float(batna_surplus))
     surplus = float(batna_surplus) + p_accept * gain
-    tail = float(HAZARD_CREDIBLE_ALPHA) / 2
+    alpha = float(HAZARD_CREDIBLE_ALPHA if credible_alpha is None else credible_alpha)
+    tail = alpha / 2
     u_hi = float(belief.quantile(1.0 - tail))
     upper = np.asarray(
         sigmoid(np, hazard_logit(np, g_reserve=g_reserve, g_quote=g_quote, effect=u_hi, **common)),
@@ -547,6 +563,10 @@ def _analytic_choice(
         sigmoid(np, hazard_logit(np, g_reserve=g_reserve, g_quote=g_quote, effect=effect, **common)),
         dtype=np.float64,
     )
+    if float(lambda_break) != 1.0:
+        scaled = float(lambda_break)
+        upper = np.clip(upper * scaled, 0.0, 1.0)
+        decision_hazard = np.clip(decision_hazard * scaled, 0.0, 1.0)
     score = surplus - offers * float(OFFER_TIE_BREAK)
     eps = float(np.finfo(np.float64).eps)
     under = upper <= float(cap) + eps
@@ -603,6 +623,8 @@ def solve_coupled(
     snap_to_grid: bool = False,
     search_cost: float | None = None,
     search_step: float = SEARCH_STEP,
+    lambda_break: float = 1.0,
+    credible_alpha: float | None = None,
 ) -> dict[str, Any]:
     """Choose one offer per supplier. Prices are normalised to the target."""
     started = time.perf_counter()
@@ -651,6 +673,9 @@ def solve_coupled(
             belief=beliefs[i],
             cap=cap,
             step=step,
+            round_index=_round_for(round_index, i),
+            lambda_break=float(lambda_break),
+            credible_alpha=credible_alpha,
         )
         mesh_cells += int(choice["mesh"])
         choice["batna_surplus"] = 0.0 if snap_to_grid else batna

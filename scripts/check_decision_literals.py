@@ -4,8 +4,9 @@ The registry is ``docs/constants_registry.json``. Every assignment in
 ``src/config/heuristics.py`` needs a row: value, category, and a
 justification. Categories are ``c`` (cited identity), ``d`` (labelled
 user-adjustable policy), and ``n`` (numerical guard). Decision modules may
-use 0, 1, -1, and 2 (the variance factor and a binary split). Any other
-numeric literal in those modules must be listed under ``inline``.
+use 0, 1, -1, and 2 (the variance factor and a binary split). 3, 4, and
+tiny floats need a registry row. Any other numeric literal in those
+modules must be listed under ``inline``.
 """
 from __future__ import annotations
 
@@ -30,15 +31,17 @@ DECISION = (
     "src/desk/recompute.py",
     "src/desk/parse.py",
     "src/desk/service.py",
+    "src/desk/routes.py",
+    "src/engine/quote_fields.py",
+    "src/engine/bilingual.py",
     "src/app/orchestrator.py",
     "src/app/main.py",
 )
 MIN_JUSTIFICATION = 25
 PRODUCTION = ("src/engine", "src/desk", "src/app")
 DEMO_IMPORT = "src/app/demo_data.py"
-# 0, 1, and -1 are identities. 2 is the variance factor. 3 and 4 are display
-# rounding (round(x, 4)) and a default round count, not business prices.
-STRUCTURAL = {0, 1, -1, 2, 3, 4}
+# 0, 1, and -1 are identities. 2 is the variance factor in a normal density.
+STRUCTURAL = {0, 1, -1, 2}
 
 
 def _assignments(path: Path) -> dict[str, ast.AST]:
@@ -59,8 +62,6 @@ def _literals(path: Path) -> list[tuple[int, object]]:
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
             if node.value in STRUCTURAL:
                 continue
-            if isinstance(node.value, float) and (abs(node.value) < 1e-3 or abs(node.value) >= 1e6):
-                continue
             found.append((node.lineno, node.value))
     return found
 
@@ -75,7 +76,9 @@ def _data(value):
 
 def _same(left, right) -> bool:
     if isinstance(left, float) or isinstance(right, float):
-        return abs(float(left) - float(right)) <= 1e-9
+        lf, rf = float(left), float(right)
+        scale = max(abs(lf), abs(rf), 1.0)
+        return abs(lf - rf) <= 1e-9 * scale
     return left == right
 
 

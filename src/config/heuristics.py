@@ -97,9 +97,10 @@ STUDENT_T_DF = 4.0
 # from the user's own quotes.
 MAD_NORMAL_CONSISTENCY = 1.4826
 
-# Rationale: markup subtracted from an observed offer before the reserve
-# update. Applied only when the user sets it. Zero means the quote and the
-# reserve are not split apart.
+# Rationale: labelled markup the dashboard and the sandbox session send
+# when the field is still blank. It is a fraction of the target, subtracted
+# from the normalised quote. The API does not apply it when the caller
+# omits the field, and then withholds the counter. Not a measured margin.
 BAYES_MARKUP = 0.08
 
 # Rationale: central credible mass reported with a Student-t reserve belief.
@@ -324,6 +325,10 @@ HAZARD_LOGIT_CLIP = 20.0
 
 # Rationale: tail mass outside the central credible interval. 0.05 leaves
 # a 95% interval. The upper end is the conservative prior-driven reading.
+# Moving this level from 0.05 to 0.10 changed the block bit on 28 of 539
+# quotes (5.2%) on the seed-19 bodies with markup 0.05. Callers
+# of /negotiate and /multi-auction/run can set another level. The desk
+# keeps this labelled default.
 HAZARD_CREDIBLE_ALPHA = 0.05
 
 # Rationale: below this many observed continue or walk-away events the
@@ -350,11 +355,12 @@ SEARCH_STEP = 0.001
 # decision. A numerical budget, not a price.
 SEARCH_MESH_CAP = 20001
 
-# Rationale: a parsed unit price outside this multiple of the larger of the
-# target and the ceiling is not auto-accepted. The desk shows it for a
-# person to review. The user can set a different multiple on the deal.
-# A labelled plausibility band, not a market range.
-UNIT_SANITY_MULTIPLE = 8.0
+# Rationale: a parsed unit price is auto-accepted only from the target
+# divided by this multiple up to the larger of the target and the ceiling
+# times this multiple. Three still accepts a quote near twice the ceiling,
+# and sends a price near an eighth of the target to review. The user can
+# set another multiple on the deal. A labelled band, not a market range.
+UNIT_SANITY_MULTIPLE = 3.0
 
 # Rationale: how many times the user's MOQ a planning mandate may stretch
 # when the user did not set a separate maximum. A labelled volume policy,
@@ -466,6 +472,9 @@ def public_payload() -> dict:
         "prior_reserve_suggestion": PRIOR_RESERVE_MEAN,
         "prior_reserve_std_suggestion": PRIOR_RESERVE_STD,
         "student_t_df": STUDENT_T_DF,
+        "dashboard_expected_markup": BAYES_MARKUP,
+        "unit_sanity_multiple": UNIT_SANITY_MULTIPLE,
+        "hazard_credible_alpha": HAZARD_CREDIBLE_ALPHA,
         "weitzman_search_cost": WEITZMAN_SEARCH_COST,
         "hazard_note": (
             "Walk-away hazard uses assumed logistic coefficients in "
