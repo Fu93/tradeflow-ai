@@ -18,6 +18,7 @@ import numpy as np
 from src.config.heuristics import (
     BAYES_OBS_NOISE,
     DEFAULT_SOLVER_SEED,
+    ONE_HALF,
     SEARCH_STEP,
 )
 from src.engine import model
@@ -28,7 +29,7 @@ from src.engine.coupled import (
 )
 from src.engine.hazard import HazardBelief
 from src.engine.landed import landed_unit_cost
-from src.engine.bayesian_v2 import robust_location
+from src.engine.bayesian_v2 import cross_supplier_reserve, robust_location
 from src.engine.solver import bayes_update
 
 
@@ -240,6 +241,7 @@ class MultiAuctionSession:
             width = float(bayes_obs_noise)
         else:
             width = float(BAYES_OBS_NOISE)
+        self.obs_noise = float(BAYES_OBS_NOISE if bayes_obs_noise is None else bayes_obs_noise)
         self.hazard_credible_alpha = hazard_credible_alpha
         self._hazard_intercept = hazard_intercept
         self._hazard_tau = hazard_tau
@@ -263,6 +265,7 @@ class MultiAuctionSession:
             self.prior_means = np.full(self.k, np.nan, dtype=np.float64)
             self.prior_stds = np.full(self.k, width, dtype=np.float64)
             self.reserve_source = "ask_only"
+        self.reserve_note = ""
         self._observed: List[List[float]] = [[] for _ in range(self.k)]
         self.beliefs = [
             HazardBelief(
@@ -367,6 +370,57 @@ class MultiAuctionSession:
             note,
         )
 
+    def _sensitivity_counters(self, offers_norm, kappas, identified, quotes):
+        """Counters if the reserve prior or the markup is halved and doubled.
+
+        The analytic mesh chooses the offer. The sample count does not.
+        """
+        blank = [None] * self.k
+        if not identified:
+            return list(blank), list(blank)
+        tiny = float(np.finfo(np.float64).tiny)
+        offers = [float(offers_norm[i]) for i in identified]
+        if self.freeze_reserve:
+            half = [max(float(self.prior_means[i]) * float(ONE_HALF), tiny) for i in identified]
+            double = [max(float(self.prior_means[i]) / float(ONE_HALF), tiny) for i in identified]
+        elif self.expected_markup is not None:
+            markup = float(self.expected_markup)
+            half = [max(quote - markup * float(ONE_HALF), tiny) for quote in offers]
+            double = [max(quote - markup / float(ONE_HALF), tiny) for quote in offers]
+        elif all(np.isfinite(self.prior_means[i]) for i in identified):
+            half = [max(float(self.prior_means[i]) * float(ONE_HALF), tiny) for i in identified]
+            double = [max(float(self.prior_means[i]) / float(ONE_HALF), tiny) for i in identified]
+        else:
+            return list(blank), list(blank)
+        stds = np.asarray([float(self.prior_stds[i]) for i in identified], dtype=np.float64)
+        belief_rows = [self.beliefs[i] for i in identified]
+        kappa_rows = np.asarray([float(kappas[i]) for i in identified], dtype=np.float64)
+
+        def priced(means):
+            result = self.solver.solve_reverse_auction_tensor(
+                supplier_offers=np.asarray(offers, dtype=np.float64),
+                prior_means=np.asarray(means, dtype=np.float64),
+                prior_stds=stds,
+                rng=np.random.default_rng(self.seed),
+                kappas=kappa_rows,
+                beliefs=belief_rows,
+                round_index=self.current_round,
+                credible_alpha=self.hazard_credible_alpha,
+            )
+            out = [None] * self.k
+            for local, supplier_index in enumerate(identified):
+                if result["blocked"][local]:
+                    continue
+                relation = result.get("counter_relation") or []
+                if local < len(relation) and relation[local] == "withheld":
+                    continue
+                raw = float(result["best_offers"][local]) * self.target_price
+                own = float(quotes[supplier_index])
+                out[supplier_index] = min(raw, float(self.walk_away_ceiling), own)
+            return out
+
+        return priced(half), priced(double)
+
     def step_round(self, quotes: List[float]) -> Dict[str, Any]:
         """Take this round's quotes and return counters, hazards, and the push order."""
         if len(quotes) != self.k:
@@ -396,11 +450,48 @@ class MultiAuctionSession:
                 continue
             elif self.expected_markup is not None:
                 centred = [quote - float(self.expected_markup) for quote in self._observed[i]]
-                mean, std = robust_location(centred)
+                mean, std = robust_location(centred, noise_floor=self.obs_noise)
                 self.prior_means[i] = mean
                 self.prior_stds[i] = max(std, float(np.finfo(np.float64).tiny))
             else:
                 self.prior_means[i] = np.nan
+        if (
+            not self.freeze_reserve
+            and not self.user_prior
+            and self.expected_markup is None
+        ):
+            asks = [float(offers_norm[i]) for i in active]
+            found = cross_supplier_reserve(asks, noise_floor=self.obs_noise)
+            if found is None:
+                self.reserve_source = "ask_only"
+                self.reserve_note = (
+                    "Insufficient data: one ask and no closed deals on this item. "
+                    "No markup was assumed. A markup is an optional override."
+                )
+            else:
+                loc, scale = found
+                tiny = float(np.finfo(np.float64).tiny)
+                for i in active:
+                    self.prior_means[i] = float(loc)
+                    self.prior_stds[i] = max(float(scale), tiny)
+                self.reserve_source = "cross_supplier"
+                self.reserve_note = (
+                    "Reserve is the lowest ask among the quotes on this item. "
+                    "The spread is the cross-supplier scale, floored by the observation noise. "
+                    "This is an order-statistic estimator, not a fitted margin."
+                )
+        elif self.freeze_reserve:
+            self.reserve_note = (
+                "Reserve is the scripted self-play reserve. "
+                "It is labelled simulated, not a fitted margin."
+            )
+        elif self.expected_markup is not None:
+            self.reserve_note = (
+                "Reserve is each quote minus the markup you entered. "
+                "That markup is your override, not a measured margin."
+            )
+        elif self.user_prior:
+            self.reserve_note = "Reserve is the prior you entered."
         if not active:
             if self.inactive and len(self.inactive) >= self.k:
                 raise ValueError("Every supplier has walked away, so there is no rival left to compare.")
@@ -491,7 +582,11 @@ class MultiAuctionSession:
                 blocked_out.append(True)
                 hazard_figure.append("mean")
                 block_reasons.append(
-                    "ask only: the quote is an ask, not a reserve. Set a reserve prior or a markup."
+                    getattr(self, "reserve_note", None)
+                    or (
+                        "Insufficient data: one ask and no closed deals on this item. "
+                        "No markup was assumed. A markup is an optional override."
+                    )
                 )
                 continue
             if all_above:
@@ -559,6 +654,9 @@ class MultiAuctionSession:
             prior_driven = res_active["prior_driven"]
             hazard_provenance = res_active["hazard_provenance"]
             risk_value = res_active["risk_tolerance"]
+        sensitivity_half, sensitivity_double = self._sensitivity_counters(
+            offers_norm, kappas, identified, quotes
+        )
         round_info = {
             "round": self.current_round,
             "quotes": [float(q) for q in quotes],
@@ -574,6 +672,10 @@ class MultiAuctionSession:
             "counter_offers_cny": counters,
             "counter_relation": relations,
             "reserve_source": self.reserve_source,
+            "reserve_note": getattr(self, "reserve_note", ""),
+            "markup_used": self.expected_markup,
+            "sensitivity_half": sensitivity_half,
+            "sensitivity_double": sensitivity_double,
             "counter_offers_mean_norm": mean_norm,
             "rollouts": rollouts,
             "elapsed_seconds": elapsed,
@@ -681,6 +783,11 @@ class MultiAuctionSession:
             "stop": last_round.get("stop"),
             "stop_reason": last_round.get("stop_reason"),
             "prior_driven": last_round.get("prior_driven"),
+            "reserve_source": last_round.get("reserve_source"),
+            "reserve_note": last_round.get("reserve_note"),
+            "markup_used": last_round.get("markup_used"),
+            "sensitivity_half": last_round.get("sensitivity_half"),
+            "sensitivity_double": last_round.get("sensitivity_double"),
             "hazard_provenance": last_round.get("hazard_provenance"),
             "risk_tolerance": last_round.get("risk_tolerance"),
             "breakdown_definition": "walk-away hazard of the next offer",

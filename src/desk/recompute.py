@@ -17,12 +17,19 @@ from src.config.heuristics import (
     HAZARD_QUOTE_GAP,
     HAZARD_RESERVE_GAP,
     HAZARD_SUPPLIER_TAU,
+    ONE_HALF,
     SEARCH_STEP,
     UNIT_SANITY_MULTIPLE,
     WEITZMAN_SEARCH_COST,
 )
 from src.desk.store import DeskStore
-from src.engine.bayesian_v2 import empirical_bayes_prior, robust_bayes_update, robust_location
+from src.engine.bayesian_v2 import (
+    blend_reserve_priors,
+    cross_supplier_reserve,
+    empirical_bayes_prior,
+    robust_bayes_update,
+    robust_location,
+)
 from src.engine.coupled import solve_coupled
 from src.engine.hazard import HazardBelief, baseline_rates
 from src.engine.landed import landed_unit_cost, ranking_basis
@@ -203,17 +210,6 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     noise = _optional(deal, "bayes_obs_noise")
     noise_floor = float(BAYES_OBS_NOISE if noise is None else noise)
     closed = store.agreed_multiples(product=str(deal.get("product") or ""))
-    if user_prior is not None and user_std is not None:
-        prior_mean = user_prior
-        prior_std = user_std
-        prior_source = "user"
-    elif closed:
-        prior_mean, prior_std = empirical_bayes_prior(closed)
-        prior_source = "empirical_bayes"
-    else:
-        prior_mean = None
-        prior_std = None
-        prior_source = "ask_only" if markup is None else "markup"
 
     def decision_events(supplier_id: str) -> list[dict[str, Any]]:
         rows = [
@@ -224,6 +220,62 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             return rows
         return [event for event in rows if not _unverified(event)]
 
+    latest_asks = []
+    for row in suppliers:
+        history = decision_events(row["id"])
+        priced = [
+            event for event in history
+            if event.get("parsed", {}).get("unit_price") is not None
+        ]
+        if priced:
+            latest_asks.append(float(priced[-1]["parsed"]["unit_price"]) / target)
+    cross = cross_supplier_reserve(latest_asks, noise_floor=noise_floor) if len(latest_asks) >= 2 else None
+    closed_prior = empirical_bayes_prior(closed) if closed else None
+    shared_mean = None
+    shared_std = None
+    if user_prior is not None and user_std is not None:
+        shared_mean = float(user_prior)
+        shared_std = float(user_std)
+        shared_label = "user"
+        reserve_note = "Reserve is the prior you entered."
+    elif markup is not None:
+        shared_label = "markup"
+        reserve_note = (
+            "Reserve is each quote minus the markup you entered. "
+            "That markup is your override, not a measured margin."
+        )
+    elif cross is not None and closed_prior is not None:
+        shared_mean, shared_std = blend_reserve_priors(cross, closed_prior)
+        shared_label = "closed_deals+cross_supplier"
+        reserve_note = (
+            "Reserve blends this product's closed-deal prices with the lowest "
+            "ask among the current quotes. Both pieces are estimates, not a fitted margin."
+        )
+    elif cross is not None:
+        shared_mean, shared_std = cross
+        shared_label = "cross_supplier"
+        reserve_note = (
+            "Reserve is the lowest ask among the quotes on this item. "
+            "The spread is the cross-supplier scale, floored by the observation noise. "
+            "This is an order-statistic estimator, not a fitted margin."
+        )
+    elif closed_prior is not None:
+        shared_mean, shared_std = closed_prior
+        shared_label = "empirical_bayes"
+        reserve_note = (
+            "Reserve is the robust location of your closed prices on this product, "
+            "divided by each deal's target. It is not a fitted margin."
+        )
+    elif len(latest_asks) == 1:
+        shared_label = "ask_only"
+        reserve_note = (
+            "Insufficient data: one ask and no closed deals on this item. "
+            "No markup was assumed. A markup is an optional override."
+        )
+    else:
+        shared_label = "no data"
+        reserve_note = "No accepted quote yet."
+
     beliefs_state: dict[str, tuple[float | None, float | None, int, str]] = {}
     for row in suppliers:
         history = decision_events(row["id"])
@@ -232,9 +284,9 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             for event in history
             if event.get("parsed", {}).get("unit_price") is not None
         ]
-        if prior_source == "user" and prior_mean is not None and prior_std is not None:
-            mean = float(prior_mean)
-            std = _std_or_tiny(float(prior_std))
+        if shared_label == "user" and shared_mean is not None and shared_std is not None:
+            mean = float(shared_mean)
+            std = _std_or_tiny(float(shared_std))
             # A quote is reserve + markup. Without a markup the ask is not a
             # reserve observation, so the prior is not pulled onto the quote.
             if markup is not None and quotes_norm:
@@ -249,15 +301,15 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
                     mean = float(updated.posterior_mean)
                     std = _std_or_tiny(float(updated.posterior_std))
             label = "user"
-        elif prior_source == "empirical_bayes" and prior_mean is not None and prior_std is not None:
-            # Same-product closed deals. Do not Kalman the reserve back to this ask.
-            mean, std = float(prior_mean), _std_or_tiny(float(prior_std))
-            label = "empirical_bayes"
-        elif markup is not None and quotes_norm:
+        elif shared_label == "markup" and quotes_norm:
             reserves = [quote - float(markup) for quote in quotes_norm]
             mean, std = robust_location(reserves, noise_floor=noise_floor)
             std = _std_or_tiny(std)
             label = "markup"
+        elif shared_mean is not None and shared_std is not None and quotes_norm:
+            # Closed deals and the cross-supplier estimate are not pulled back onto this ask.
+            mean, std = float(shared_mean), _std_or_tiny(float(shared_std))
+            label = shared_label
         elif quotes_norm:
             mean, std, label = None, None, "ask_only"
         else:
@@ -272,6 +324,8 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     ]
     samples, grid = solver_budget()
     solved: dict[str, Any] | None = None
+    half_solved: dict[str, Any] | None = None
+    double_solved: dict[str, Any] | None = None
     index_of: dict[str, int] = {}
     landed_rows: list[dict[str, Any]] = []
     if active:
@@ -319,25 +373,39 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         else:
             kappas = [0.0 for _row in active]
         rounds = [len(by_supplier[row["id"]]) for row in active]
-        solved = solve_coupled(
-            np.asarray(quotes, dtype=np.float64),
-            np.asarray(means, dtype=np.float64),
-            np.asarray(stds, dtype=np.float64),
-            ceiling=ceiling / target,
-            kappas=np.asarray(kappas, dtype=np.float64),
-            n_samples=samples,
-            n_grid=grid,
-            risk_tolerance=float(deal["risk_tolerance"]),
-            beliefs=hazard_beliefs,
-            rng=np.random.default_rng(int(deal["seed"])),
-            round_index=rounds,
-            snap_to_grid=True,
-            search_cost=(
-                float(WEITZMAN_SEARCH_COST)
-                if _optional(deal, "search_cost") is None
-                else float(deal["search_cost"])
-            ),
+        search_cost = (
+            float(WEITZMAN_SEARCH_COST)
+            if _optional(deal, "search_cost") is None
+            else float(deal["search_cost"])
         )
+
+        def _run(mean_values: list[float]) -> dict[str, Any]:
+            return solve_coupled(
+                np.asarray(quotes, dtype=np.float64),
+                np.asarray(mean_values, dtype=np.float64),
+                np.asarray(stds, dtype=np.float64),
+                ceiling=ceiling / target,
+                kappas=np.asarray(kappas, dtype=np.float64),
+                n_samples=samples,
+                n_grid=grid,
+                risk_tolerance=float(deal["risk_tolerance"]),
+                beliefs=hazard_beliefs,
+                rng=np.random.default_rng(int(deal["seed"])),
+                round_index=rounds,
+                snap_to_grid=True,
+                search_cost=search_cost,
+            )
+
+        solved = _run(means)
+        tiny = float(np.finfo(np.float64).tiny)
+        if markup is not None:
+            half_means = [max(quote - float(markup) * float(ONE_HALF), tiny) for quote in quotes]
+            double_means = [max(quote - float(markup) / float(ONE_HALF), tiny) for quote in quotes]
+        else:
+            half_means = [max(float(item) * float(ONE_HALF), tiny) for item in means]
+            double_means = [max(float(item) / float(ONE_HALF), tiny) for item in means]
+        half_solved = _run(half_means)
+        double_solved = _run(double_means)
     else:
         basis = "unit_price"
 
@@ -360,6 +428,10 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "belief_std": std,
             "belief_observations": observations,
             "belief_label": label,
+            "reserve_note": reserve_note,
+            "markup_used": markup,
+            "sensitivity_half": None,
+            "sensitivity_double": None,
             "markup_identified": markup is not None,
             "origin": _sticky_origin(history),
             "simulated": _sticky_origin(history) == "simulated",
@@ -407,6 +479,17 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
                     relation = "concession"
             card["counter"] = counter
             card["counter_relation"] = relation
+
+            def _side(result: dict[str, Any] | None) -> float | None:
+                if result is None:
+                    return None
+                if bool(result["blocked"][index]) or str(result["counter_relation"][index]) == "withheld":
+                    return None
+                side = float(result["offers"][index]) * target
+                return min(side, ceiling, own_quote)
+
+            card["sensitivity_half"] = _side(half_solved)
+            card["sensitivity_double"] = _side(double_solved)
             card["blocked"] = blocked
             card["hazard"] = float(solved["hazards"][index])
             card["hazard_upper"] = float(solved["hazard_upper"][index])

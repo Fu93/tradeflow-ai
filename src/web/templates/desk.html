@@ -52,7 +52,7 @@
         <label>Plausibility multiple <input id="sanity-multiple" type="number" step="any" min="0" /></label>
         <label>Reserve prior mean <input id="reserve-prior" type="number" step="any" min="0" placeholder="blank leaves the ask unidentified" /></label>
         <label>Reserve prior spread <input id="reserve-std" type="number" step="any" min="0" /></label>
-        <label>Expected markup, fraction of the target <input id="expected-markup" type="number" step="any" min="0" placeholder="blank treats markup as unidentified" title="Fraction of the target. Reserve is the normalised quote minus this markup." /></label>
+        <label>Expected markup, fraction of the target <input id="expected-markup" type="number" step="any" min="0" placeholder="blank derives the reserve from other quotes and closed deals" title="Optional override. Blank uses the other quotes on this item and closed deals. One ask with no history is not enough." /></label>
         <label>Search cost <input id="search-cost" type="number" step="any" min="0" /></label>
         <label><input id="include-unverified" type="checkbox" /> Include fixture and simulated quotes in the decision</label>
         <div class="desk-actions">

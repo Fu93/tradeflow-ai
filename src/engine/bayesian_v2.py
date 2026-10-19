@@ -286,3 +286,35 @@ def compute_calibrated_deal_prob(offer: float, reserve_mean: float, reserve_std:
 def empirical_bayes_prior(closed_multiples: Sequence[float]) -> tuple[float, float]:
     """Grand mean of the user's closed prices divided by their targets."""
     return robust_location(closed_multiples)
+
+
+def cross_supplier_reserve(
+    asks: Sequence[float],
+    noise_floor: float | None = None,
+) -> tuple[float, float] | None:
+    """Lowest ask, with the robust scale of those asks.
+
+    Two or more quotes on the same item are required. The location is the
+    first order statistic, not a fitted markup. The scale is floored by the
+    observation noise.
+    """
+    clean = [float(item) for item in asks if item is not None and math.isfinite(float(item))]
+    if len(clean) < 2:
+        return None
+    _centre, scale = robust_location(clean, noise_floor=noise_floor)
+    return min(clean), float(scale)
+
+
+def blend_reserve_priors(
+    left: tuple[float, float],
+    right: tuple[float, float],
+) -> tuple[float, float]:
+    """Precision-weighted combination of two reserve estimates."""
+    left_mean, left_std = float(left[0]), max(float(left[1]), float(BAYES_OBS_NOISE))
+    right_mean, right_std = float(right[0]), max(float(right[1]), float(BAYES_OBS_NOISE))
+    left_precision = 1.0 / (left_std * left_std)
+    right_precision = 1.0 / (right_std * right_std)
+    total = left_precision + right_precision
+    mean = (left_precision * left_mean + right_precision * right_mean) / total
+    std = math.sqrt(1.0 / total)
+    return mean, max(std, float(BAYES_OBS_NOISE))

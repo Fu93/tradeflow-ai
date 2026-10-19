@@ -2,14 +2,14 @@
 
 A price on the live desk, on `POST /negotiate`, on `POST /api/v1/sessions/{id}/round`, and on `POST /api/v1/multi-auction/run` is a formula applied to the caller's target, ceiling, and quotes, plus labelled policy the caller can see. It is not a stored scenario price. The labelled demo path is `src/app/demo_data.py`. Nothing else in `src/engine`, `src/desk`, or `src/app` imports `src.sim`.
 
-The constant registry is [constants_registry.json](constants_registry.json). `scripts/check_decision_literals.py` fails when a heuristic assignment is missing from that file, or when a decision module grows a numeric literal that is not 0, 1, −1, 2, 3, 4 or an entry under `inline`.
+The constant registry is [constants_registry.json](constants_registry.json). `scripts/check_decision_literals.py` fails when a heuristic assignment is missing from that file, or when a decision module grows a numeric literal that is not 0, 1, −1, or 2. Every other literal, including 3, 4, and tiny floats, needs an `inline` row whose `context` is that source line. A new use of a number that is already registered on a different line fails. The scan includes `landed.py`, `quote_read.py`, `model.py`, and `store.py`.
 
 ## What still cannot be derived from data
 
 These stay labelled assumptions until the user records the missing observations. They are not silent factory facts.
 
 - Walk-away intercept, quote-gap coefficient, reserve-gap coefficient, and supplier spread. Quote text is not an outcome. The posterior moves only after a person records continue, walk-away, or agreed.
-- The split between markup and reserve. A quote is an ask. It becomes a reserve only when the user sets a markup, including an explicit zero, or when the same product has an agreed price. An unset markup withholds the counter. It does not silently place the reserve on the ask.
+- The split between markup and reserve. With two or more quotes on the same item and no markup, the reserve location is the lowest ask and the scale is the robust scale of those asks, floored by the observation noise. That is an order statistic, not a fitted margin. Closed deals on the same product are blended with it by precision when both exist. One ask and no closed deals is not enough: the counter is withheld and the card says the data are insufficient. A markup is an optional override the user types. It is not filled in.
 - Opponent archetypes and concession schedules. They exist only on the legacy CLI grid (`src/engine/solver.py`). `/round` does not call that grid.
 - Total-cost crisis and markdown ratios. They apply only when the caller supplies a lead-time or MOQ baseline. A missing baseline skips the term.
 - Risk tolerance, search cost, the ceiling, and the plausibility multiple. Those are preferences. The desk exposes them. `UNIT_SANITY_MULTIPLE` is 3: a unit price is auto-accepted only from target/3 up to max(target, ceiling)×3. A human can still accept a reviewed figure.
@@ -24,11 +24,11 @@ Surplus of an offer, in target units, is
 
 `outside + P(accept) × max(0, max(outside, ceiling − landed adder − offer) − outside)`.
 
-`P(accept) = Φ((offer − reserve mean) / reserve std) × (1 − walk-away probability)`.
+`P(accept) = student_t_cdf((offer − reserve mean) / reserve std) × (1 − walk-away probability)`.
 
 On the desk the outside option is 0. A tighter rival quote can only lower the highest offer the search may consider. It cannot raise another supplier's counter. The auction path keeps the rival's surplus as the outside option. If the best surplus does not beat that outside option, the counter is withheld.
 
-A quote with no reserve prior, no same-product agreed price, and no user markup is an ask. The counter is withheld and labelled `ask_only`. If the user sets a markup, including zero, the reserve is the quote minus that markup. A counter that then sits on the ask is labelled `at_ask`. It is not a silent echo. A counter below the ask is labelled `concession`.
+When the caller omits a markup and a prior, two or more quotes on the item set the reserve to the lowest normalised ask. The card names that source and shows the counter again at half that prior and at double it. One quote and no closed-deal history stays `ask_only`, with the insufficient-data sentence, and no 0.08 is inserted. If the user types a markup, including zero, the reserve is the quote minus that markup, and the same card shows the counter at half and at double that markup. A counter that sits on the ask is labelled `at_ask`. A counter below the ask is labelled `concession`.
 
 The walk-away upper bound integrates the labelled logistic over the user's supplier spread. The effect grid covers at least eight spreads, so a spread of 0.5, 1.5, or 2.5 is inside the support. The coefficients stay the labelled policy. Recorded continue and walk-away events update the supplier effect only.
 
@@ -50,7 +50,7 @@ The Kalman step uses observation variance `σ_obs² / w`. A quote near 2.5 times
 
 The reported interval is the central Student-t interval at `CREDIBLE_MASS` (95%). `P(deal)` is the Student-t CDF of `(offer − mean) / scale`. Both use the same belief. They are not a normal interval around a mixture.
 
-If the user sets a prior, that prior is the start and each of this supplier's quotes is one update. If other deals have agreed prices, the prior is the robust location of `agreed / target` (empirical Bayes) and the quotes update it. Otherwise the posterior is the robust location of this supplier's own normalised quotes, with markup removed only when the user set a markup. The location is the median, then IRLS with the same Student-t weights, and the scale starts from `MAD × MAD_NORMAL_CONSISTENCY`.
+If the user sets a prior, that prior is the start. A markup, when they also set one, is the observation shift. If they set a markup and no prior, the reserve is the robust location of quote minus that markup, and the scale is floored by `bayes_obs_noise` when the caller sets it, otherwise by `BAYES_OBS_NOISE`. If they set neither, and at least two quotes are on the item, the reserve is the lowest ask and the scale is the robust scale of those asks (an order statistic, not a fitted margin). Closed-deal prices on the same product, `agreed / target`, are blended with that estimate by precision when both exist. One ask and no closed deals does not invent a markup. The location step is the median, then IRLS with the same Student-t weights, and the scale starts from `MAD × MAD_NORMAL_CONSISTENCY`.
 
 ## Walk-away hazard
 

@@ -168,28 +168,18 @@ def test_desk_auction_rounds_and_sandbox(live_server):
             page.wait_for_selector(".session-item")
             page.locator(".session-item", has_text="DEMO_CNC_CASE_01").click()
             page.wait_for_function(
-                "() => { const t = document.getElementById('decisionCounter').textContent; return t && t !== '—' && t !== '-'; }",
+                "() => document.getElementById('decisionCounter').textContent.includes('Insufficient data')",
                 timeout=15000,
             )
+            assert "No markup was assumed" in page.locator("#decisionCounter").inner_text()
             assert page.locator("#cbBadge").inner_text() == "WAITING FOR YOUR DECISION"
-            assert page.locator("#approveBtn").is_visible()
-            assert page.locator("#holdBtn").is_visible()
-            assert page.locator("#rejectBtn").is_visible()
-            assert page.locator("#beliefEmpty").is_hidden()
             assert int(page.locator("#roundCount").inner_text()) >= 1
-
-            approved = _post_json(
+            refused = _post_json(
                 page,
                 "/api/v1/sessions/DEMO_CNC_CASE_01/approve",
                 {"action": "approve"},
             )
-            assert approved["status"] == 200, approved
-            page.click("text=Reload")
-            page.locator(".session-item", has_text="DEMO_CNC_CASE_01").click()
-            page.wait_for_function(
-                "() => document.getElementById('decisionReply').textContent.trim() !== '—'",
-                timeout=15000,
-            )
+            assert refused["status"] == 409, refused
 
             page.select_option("#presetCategorySelect", "battery")
             page.click("#openSandboxBtn")

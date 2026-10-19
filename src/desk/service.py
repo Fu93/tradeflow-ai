@@ -212,7 +212,12 @@ def _ingest_locked(
         if existing is not None:
             snapshot = store.get_snapshot(deal_id)
             return {"duplicate": True, "event": existing, "snapshot": snapshot}
-    reading = parse_quote(raw_text, llm_fields=llm_fields)
+    reading = parse_quote(
+        raw_text,
+        llm_fields=llm_fields,
+        quantity=deal.get("quantity"),
+        deal_currency="CNY",
+    )
     parsed = reading["parsed"]
     if reading["status"] == "accepted":
         if freight is not None:

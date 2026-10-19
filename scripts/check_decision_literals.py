@@ -6,7 +6,8 @@ justification. Categories are ``c`` (cited identity), ``d`` (labelled
 user-adjustable policy), and ``n`` (numerical guard). Decision modules may
 use 0, 1, -1, and 2 (the variance factor and a binary split). 3, 4, and
 tiny floats need a registry row. Any other numeric literal in those
-modules must be listed under ``inline``.
+modules must be listed under ``inline`` with the source line as ``context``.
+A number that is already registered on a different line does not cover a new use.
 """
 from __future__ import annotations
 
@@ -36,6 +37,10 @@ DECISION = (
     "src/engine/bilingual.py",
     "src/app/orchestrator.py",
     "src/app/main.py",
+    "src/engine/landed.py",
+    "src/engine/quote_read.py",
+    "src/engine/model.py",
+    "src/desk/store.py",
 )
 MIN_JUSTIFICATION = 25
 PRODUCTION = ("src/engine", "src/desk", "src/app")
@@ -55,14 +60,16 @@ def _assignments(path: Path) -> dict[str, ast.AST]:
     return found
 
 
-def _literals(path: Path) -> list[tuple[int, object]]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+def _literals(path: Path) -> list[tuple[int, object, str]]:
+    source = path.read_text(encoding="utf-8").splitlines()
+    tree = ast.parse("\n".join(source))
     found = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
             if node.value in STRUCTURAL:
                 continue
-            found.append((node.lineno, node.value))
+            context = source[node.lineno - 1].strip()
+            found.append((node.lineno, node.value, context))
     return found
 
 
@@ -98,6 +105,14 @@ def _sim_imports() -> list[str]:
                         if alias.name.startswith("src.sim"):
                             problems.append(f"{rel}:{node.lineno} imports {alias.name}")
     return problems
+
+
+def _live_literals() -> list[tuple[str, object, str]]:
+    found = []
+    for rel in DECISION:
+        for _line, value, context in _literals(ROOT / rel):
+            found.append((rel, value, context))
+    return found
 
 
 def scan() -> list[str]:
@@ -136,19 +151,34 @@ def scan() -> list[str]:
     extra = sorted(set(rows) - set(module))
     for name in extra:
         problems.append(f"registry entry {name} is not an assignment in heuristics.py")
+    allowed = []
     for item in registry.get("inline") or []:
         justification = str(item.get("justification") or "").strip()
+        context = str(item.get("context") or "").strip()
         if len(justification) < MIN_JUSTIFICATION:
             problems.append(
                 f"inline {item.get('file')} {item.get('value')} justification must be a sentence of at least {MIN_JUSTIFICATION} characters"
             )
-    allowed = {(item["file"], item["value"]) for item in registry.get("inline") or []}
+        if not context:
+            problems.append(f"inline {item.get('file')} {item.get('value')} needs the source line as context")
+            continue
+        allowed.append((item.get("file"), item.get("value"), context))
+    live = _live_literals()
     for rel in DECISION:
-        for line, value in _literals(ROOT / rel):
-            key = (rel, value if not isinstance(value, float) else value)
-            matched = any(item[0] == rel and _same(item[1], value) for item in allowed)
+        for line, value, context in _literals(ROOT / rel):
+            matched = any(
+                item[0] == rel and item[2] == context and _same(item[1], value)
+                for item in allowed
+            )
             if not matched:
-                problems.append(f"unregistered literal {rel}:{line} {value}")
+                problems.append(f"unregistered literal {rel}:{line} {value} :: {context}")
+    for rel, value, context in allowed:
+        matched_live = any(
+            site[0] == rel and site[2] == context and _same(site[1], value)
+            for site in live
+        )
+        if not matched_live:
+            problems.append(f"stale inline {rel} {value} :: {context}")
     problems.extend(_sim_imports())
     return problems
 

@@ -97,10 +97,10 @@ STUDENT_T_DF = 4.0
 # from the user's own quotes.
 MAD_NORMAL_CONSISTENCY = 1.4826
 
-# Rationale: labelled markup the dashboard and the sandbox session send
-# when the field is still blank. It is a fraction of the target, subtracted
-# from the normalised quote. The API does not apply it when the caller
-# omits the field, and then withholds the counter. Not a measured margin.
+# Rationale: optional markup a user may type, as a fraction of the target.
+# The dashboard does not fill it in and does not send it when the field is
+# blank. Blank derives the reserve from the other quotes and from closed
+# deals. Not a measured margin and not a silent default.
 BAYES_MARKUP = 0.08
 
 # Rationale: central credible mass reported with a Student-t reserve belief.
@@ -472,7 +472,7 @@ def public_payload() -> dict:
         "prior_reserve_suggestion": PRIOR_RESERVE_MEAN,
         "prior_reserve_std_suggestion": PRIOR_RESERVE_STD,
         "student_t_df": STUDENT_T_DF,
-        "dashboard_expected_markup": BAYES_MARKUP,
+        "dashboard_expected_markup": None,
         "unit_sanity_multiple": UNIT_SANITY_MULTIPLE,
         "hazard_credible_alpha": HAZARD_CREDIBLE_ALPHA,
         "weitzman_search_cost": WEITZMAN_SEARCH_COST,

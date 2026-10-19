@@ -97,7 +97,13 @@ def analyze(spec: dict, observed_offer: float | None = None, quick: bool = False
             "posterior_reserve_std": None,
             "reserve_source": "ask_only",
             "robustness": _robustness_placeholder(float(target)),
-            "proposal": {"concession_curve": [], "advice_text": "The quote is an ask, not a reserve."},
+            "proposal": {
+                "concession_curve": [],
+                "advice_text": (
+                    "Insufficient data: one ask and no closed deals on this item. "
+                    "No markup was assumed."
+                ),
+            },
             "data_class": spec.get("label") or "user_supplied",
             "prior_width_source": "unidentified",
         }

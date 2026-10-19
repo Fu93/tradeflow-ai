@@ -294,11 +294,16 @@
         ? money(supplier.landed_cost, "CNY")
         : "no data";
       line(card, "Landed cost: " + landed);
+      const source = supplier.belief_label || "no data";
+      line(card, "Reserve source: " + source + ". " + (supplier.reserve_note || ""));
       if (supplier.belief_mean == null) {
-        line(card, "Reserve: not identified. The quote is an ask. Set a prior or a markup.");
+        line(card, "Insufficient data. No counter at half or double, because no reserve was identified.");
       } else {
         const belief = money(supplier.belief_mean) + " x target ± " + money(supplier.belief_std);
-        line(card, "Reserve belief (" + (supplier.belief_label || "prior") + "): " + belief);
+        line(card, "Reserve belief (" + source + "): " + belief);
+        const half = supplier.sensitivity_half == null ? "withheld" : money(supplier.sensitivity_half, "CNY");
+        const doubled = supplier.sensitivity_double == null ? "withheld" : money(supplier.sensitivity_double, "CNY");
+        line(card, "Counter at half the prior: " + half + ". At double: " + doubled + ".");
       }
       const counter = supplier.counter == null ? "withheld" : money(supplier.counter, "CNY");
       const relation = supplier.counter_relation === "at_ask"
@@ -348,7 +353,11 @@
       const tokens = provenance.candidates && provenance.candidates.length
         ? provenance.candidates
         : (provenance.tokens || []);
-      let chosen = saved.token || "";
+      const suggested = provenance.suggested_token || (tokens.length === 1 ? tokens[0] : "");
+      let chosen = saved.token || suggested || "";
+      if (chosen && !saved.token) {
+        reviewChoice.set(item.id, { supplierId: item.supplier_id || saved.supplierId || "", token: chosen });
+      }
       if (tokens.length) {
         const picks = document.createElement("div");
         picks.className = "desk-actions";

@@ -88,7 +88,7 @@ def test_sqlite_survives_reopen(tmp_path):
     events = reopened.events(deal_id)
     assert len(events) == 1
     assert events[0]["raw_text"] == "单价 15.60 元"
-    assert events[0]["provenance"]["reader"] == "stage1"
+    assert events[0]["provenance"]["reader"] == "positive_evidence"
     saved = reopened.get_snapshot(deal_id)
     ningbo = _by_name(saved)["Ningbo"]
     assert ningbo["belief_mean"] is None

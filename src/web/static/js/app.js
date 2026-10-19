@@ -743,7 +743,16 @@ function renderEngineDecision(session) {
     if (v !== null) { recommended = v; break; }
   }
   const shownOffer = recommended !== null ? recommended : tfNum(session.latest_our_offer, null);
-  el("decisionCounter").textContent = shownOffer === null ? "—" : tfAmount(shownOffer, "CNY");
+  let reserveNote = null;
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const meta = turns[i].metadata || {};
+    if (meta.reserve_note) { reserveNote = String(meta.reserve_note); break; }
+  }
+  if (shownOffer === null && reserveNote) {
+    el("decisionCounter").textContent = reserveNote;
+  } else {
+    el("decisionCounter").textContent = shownOffer === null ? "—" : tfAmount(shownOffer, "CNY");
+  }
   const unitNote = document.getElementById("decisionUnit");
   if (unitNote) {
     const quote = quoteOnSession(session);
@@ -939,9 +948,6 @@ function paintMarkupDefault() {
     field.addEventListener("input", function () { field.dataset.userEdited = "1"; });
   }
   if (field.dataset.userEdited === "1") return;
-  const markup = tfHeuristics && Number(tfHeuristics.dashboard_expected_markup);
-  if (!Number.isFinite(markup) || markup < 0) return;
-  field.value = String(markup);
 }
 
 function readExpectedMarkup() {
@@ -1389,6 +1395,12 @@ async function runMultiAuction() {
       const counterLabel = blocked
         ? "not actionable"
         : (counterNum === null ? "no data" : tfAmount(counterNum, "CNY"));
+      const halfRaw = lastRound.sensitivity_half ? lastRound.sensitivity_half[i] : null;
+      const doubleRaw = lastRound.sensitivity_double ? lastRound.sensitivity_double[i] : null;
+      const halfNum = tfNum(halfRaw, null);
+      const doubleNum = tfNum(doubleRaw, null);
+      const halfLabel = halfNum === null ? "withheld" : tfAmount(halfNum, "CNY");
+      const doubleLabel = doubleNum === null ? "withheld" : tfAmount(doubleNum, "CNY");
       const reasonLine = blockReason
         ? `<div>Block reason: <span class="metric-val">${tfEsc(blockReason)}</span></div>`
         : "";
@@ -1402,6 +1414,8 @@ async function runMultiAuction() {
           <div>Landed cost: <span class="metric-val">${tfEsc(landedLabel)}</span></div>
           <div>Best alternative: <span class="metric-val">${tfEsc(tfAmount(ceilingNum, "CNY"))}</span></div>
           <div>Counter: <span class="metric-val">${tfEsc(counterLabel)}</span></div>
+          <div>Reserve source: <span class="metric-val">${tfEsc(lastRound.reserve_source || "ask_only")}</span>. ${tfEsc(lastRound.reserve_note || "")}</div>
+          <div>Counter at half the prior: <span class="metric-val">${tfEsc(halfLabel)}</span>. At double: <span class="metric-val">${tfEsc(doubleLabel)}</span>.</div>
           ${reasonLine}
           <div>Risk: <span class="metric-val">${tfEsc(riskText)}</span></div>
         </div>
@@ -1440,6 +1454,7 @@ async function runMultiAuction() {
       ${data.all_quotes_above_ceiling ? `<p class="is-negative">Every quote is above the walk-away ceiling.</p>` : ""}
       ${data.winner_above_ceiling ? `<p class="is-negative">The winner is above the walk-away ceiling.</p>` : ""}
       ${data.kappa_note ? `<p class="summary-secondary">${tfEsc(data.kappa_note)}</p>` : ""}
+      <p class="summary-secondary">Reserve source: ${tfEsc((data.trace && data.trace.length ? data.trace[data.trace.length - 1].reserve_source : data.reserve_source) || "ask_only")}. ${tfEsc((data.trace && data.trace.length ? data.trace[data.trace.length - 1].reserve_note : data.reserve_note) || "")} Each card shows the counter at half that prior and at double.</p>
       <p class="summary-headline"><strong>Savings versus the first-round best quote</strong> (${tfEsc(tfAmount(data.first_round_best_quote, "CNY"))}): ${tfEsc(tfAmount(data.total_savings_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.total_savings_pct))})</p>
       <p class="${versusTarget !== null && versusTarget < 0 ? "is-negative" : ""}"><strong>Versus your target</strong> (${tfEsc(tfAmount(data.product_target, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_target_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_target_pct))})</p>
       <p class="summary-secondary"><strong>Versus the walk-away ceiling</strong> (${tfEsc(tfAmount(data.walk_away_ceiling, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_ceiling_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_ceiling_pct))})</p>

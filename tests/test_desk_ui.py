@@ -124,7 +124,7 @@ def test_desk_page_updates_when_mail_arrives():
             page.fill("#paste-text", "单价 14.80 元")
             page.locator("#paste-form button[type=submit]").click()
             page.get_by_text("14.80 CNY").first.wait_for(timeout=15000)
-            page.get_by_text("Reserve: not identified").first.wait_for(timeout=10000)
+            page.get_by_text("Insufficient data").first.wait_for(timeout=10000)
             page.fill("#expected-markup", "0.08")
             page.locator("#assumptions button[type=submit]").click()
             page.get_by_text("at the ask: expected surplus is highest").first.wait_for(timeout=15000)

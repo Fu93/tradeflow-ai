@@ -355,6 +355,15 @@ def _latest_recommended_price(sess) -> Optional[float]:
     return None
 
 
+def _reserve_not_identified(sess) -> bool:
+    """True when the last round said one ask is not a reserve."""
+    for turn in reversed(getattr(sess, "history", []) or []):
+        meta = getattr(turn, "metadata", None) or {}
+        if isinstance(meta, dict) and meta.get("reserve_source") == "ask_only":
+            return True
+    return False
+
+
 # ---- 既有端點 (向後相容) ----
 
 class Spec(BaseModel):
@@ -424,7 +433,10 @@ def negotiate(spec: Spec):
             "posterior_reserve_mean": None,
             "posterior_reserve_std": None,
             "solver": "analytic expected surplus of the one-step accept-or-reject model",
-            "reason": "The quote is an ask, not a reserve. Set a reserve prior or a markup.",
+            "reason": (
+                "Insufficient data: one ask and no closed deals on this item. "
+                "No markup was assumed. A markup is an optional override."
+            ),
         }
     belief = HazardBelief(
         intercept=spec.hazard_intercept,
@@ -1518,6 +1530,14 @@ def approve_session_decision(session_id: str, body: ApproveActionRequest):
     final_price = body.custom_price
     if final_price is None:
         final_price = _latest_recommended_price(sess)
+        if final_price is None and _reserve_not_identified(sess):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "No counter was issued. One ask without a reserve prior or a markup "
+                    "is not enough to approve."
+                ),
+            )
         if final_price is None:
             final_price = sess.latest_our_offer or sess.spec.target_price
 
@@ -1757,17 +1777,56 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     markup = None if sess.spec.expected_markup is None else float(sess.spec.expected_markup)
     norm_offer = float(effective_opp_price) / float(target_price)
     if (prev_mean is None or prev_std is None) and markup is None:
+        above_ceiling = opp_price is not None and float(opp_price) > float(ceiling_price)
+        if above_ceiling:
+            reason = (
+                f"Opponent offer ¥{float(opp_price):.2f} breaches ceiling ¥{float(ceiling_price):.2f}."
+            )
+            source = "ceiling"
+            next_state = AutopilotState.CIRCUIT_TRIPPED_ESCALATED
+        else:
+            reason = (
+                "Insufficient data: one ask and no closed deals on this item. "
+                "No markup was assumed. A markup is an optional override."
+            )
+            source = "ask_only"
+            next_state = AutopilotState.AWAITING_HUMAN_DECISION
+        turn_opp = NegotiationTurn(
+            round_index=current_round,
+            sender="opponent",
+            raw_text=action.get_effective_raw_text(),
+            parsed_price=opp_price,
+            metadata={
+                "reserve_note": reason,
+                "reserve_source": source,
+                "entities": {
+                    "mold_fee": getattr(inbound_classification, "demanded_mold_fee", None),
+                    "moq": offered_moq,
+                    "lead_days": action.offered_lead_days,
+                    "deposit_pct": action.deposit_pct,
+                    "currency": stage1.mentioned_currency,
+                    "quoted_amount": stage1.quoted_amount,
+                    "currency_note": stage1.price_currency_note,
+                },
+            },
+        )
+        try:
+            sess = session_mgr.append_turn(session_id, turn_opp, expected_version=action.expected_version)
+            sess = session_mgr.transition_state(session_id, next_state, reason=reason)
+        except OptimisticLockConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
         return {
             "session_id": session_id,
-            "circuit_tripped": True,
+            "circuit_tripped": above_ceiling,
             "pending_human_approval": True,
-            "trip_reason": "The quote is an ask, not a reserve. Set a reserve prior or a markup.",
+            "trip_reason": reason,
             "reply_text": None,
             "recommendation": {
                 "opening_offer_price": None,
                 "blocked": True,
                 "counter_relation": "withheld",
-                "reserve_source": "ask_only",
+                "reserve_source": source,
+                "reserve_note": reason,
             },
             "effective_opp_price": effective_opp_price,
             "tco_breakdown": tco_breakdown,

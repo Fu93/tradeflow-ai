@@ -86,7 +86,15 @@
       ranking.appendChild(item);
       const row = document.createElement("p");
       const counter = supplier.counter == null ? "withheld" : money(supplier.counter, "CNY");
-      row.textContent = supplier.name + " counter " + counter + ", hazard " + hazardText(supplier);
+      const half = supplier.sensitivity_half == null ? "withheld" : money(supplier.sensitivity_half, "CNY");
+      const doubled = supplier.sensitivity_double == null ? "withheld" : money(supplier.sensitivity_double, "CNY");
+      row.textContent = supplier.name
+        + " counter " + counter
+        + ". Reserve source: " + (supplier.belief_label || "no data")
+        + ". " + (supplier.reserve_note || "")
+        + " Counter at half the prior: " + half
+        + ". At double: " + doubled
+        + ". Hazard " + hazardText(supplier);
       counters.appendChild(row);
     });
     const current = select.value;
