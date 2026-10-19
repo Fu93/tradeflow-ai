@@ -6,7 +6,7 @@ import json
 import queue
 import re
 import ssl
-from typing import Any, Literal
+from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -62,7 +62,7 @@ class DealIn(BaseModel):
         allow_inf_nan=False,
     )
     seed: int = Field(default=11, ge=0, le=2_000_000_000)
-    currency: Literal["CNY", "USD", "EUR"] = DEAL_CURRENCY
+    currency: Literal["CNY", "USD", "EUR"] = cast(Literal["CNY", "USD", "EUR"], DEAL_CURRENCY)
     suppliers: list[SupplierIn] = Field(min_length=4, max_length=5)
 
     @model_validator(mode="after")

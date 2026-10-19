@@ -17,7 +17,6 @@ from src.config.heuristics import (
     HAZARD_SUPPLIER_TAU,
     OPT_TOL,
     UNIT_SANITY_MULTIPLE,
-    WEITZMAN_SEARCH_COST,
 )
 from src.desk.store import DeskStore
 from src.desk.headline import audit_line, confirmed_prices, saving_vs_best_first
@@ -268,7 +267,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     for row in suppliers:
         consumed.extend(decision_events(row["id"]))
     _kept, unconfirmed = confirmed_prices(consumed)
-    beliefs_state: dict[str, tuple] = {}
+    beliefs_state: dict[str, dict[str, Any]] = {}
     for row in suppliers:
         history = decision_events(row["id"])
         outcomes = store.outcomes(deal_id, row["id"])
@@ -317,7 +316,6 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "reference_ask": float(prices[0]),
         }
         store.set_belief(row["id"], mean, std)
-    reserve_note = "Each supplier has their own Beta prior. A markup is not applied."
 
     active = []
     if unconfirmed == 0:

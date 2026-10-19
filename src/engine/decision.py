@@ -137,7 +137,15 @@ def bounded_scalar_max(fn, lo: float, hi: float) -> float:
     return float(best_x)
 
 
-def hazard_floor(ask: float, cap: float, effect: float, fit: HazardFit, *, intercept: float | None = None, gap_coef: float | None = None) -> float:
+def hazard_floor(
+    ask: float,
+    cap: float,
+    effect: float,
+    fit: HazardFit,
+    *,
+    intercept: float | None = None,
+    gap_coef: float | None = None,
+) -> float:
     """Lowest offer whose incremental hazard is still inside the user's cap."""
     if float(cap) < 0.0:
         return float(ask)
@@ -166,7 +174,17 @@ def reference_ask(state: ReserveState, latest_ask: float) -> float:
     return float(latest_ask)
 
 
-def objective(offer: float, ask: float, outside: float, state: ReserveState, effect: float, fit: HazardFit, *, intercept: float | None = None, gap_coef: float | None = None) -> float:
+def objective(
+    offer: float,
+    ask: float,
+    outside: float,
+    state: ReserveState,
+    effect: float,
+    fit: HazardFit,
+    *,
+    intercept: float | None = None,
+    gap_coef: float | None = None,
+) -> float:
     """Expected landed saving minus incremental walk risk priced at the surplus at stake.
 
     A walk loses this supplier's option, which is worth the gap between the
@@ -184,7 +202,17 @@ def objective(offer: float, ask: float, outside: float, state: ReserveState, eff
     return saving - risk
 
 
-def _push(ask: float, outside: float, state: ReserveState, effect: float, cap: float, fit: HazardFit, *, intercept: float | None = None, gap_coef: float | None = None) -> tuple[float, str]:
+def _push(
+    ask: float,
+    outside: float,
+    state: ReserveState,
+    effect: float,
+    cap: float,
+    fit: HazardFit,
+    *,
+    intercept: float | None = None,
+    gap_coef: float | None = None,
+) -> tuple[float, str]:
     hi = min(float(ask), float(outside))
     if hi <= 0.0:
         return 0.0, "golden_section"
@@ -215,17 +243,29 @@ def choose_offer(
     inconsistent = not belief.consistent()
     blocked = hi <= 0.0 or inconsistent
     default = 0.0 if blocked else hi
-    push, kind = _push(float(ask), float(outside), belief, effect, float(risk_cap), loaded, intercept=intercept, gap_coef=gap_coef)
+    push, kind = _push(
+        float(ask), float(outside), belief, effect, float(risk_cap), loaded,
+        intercept=intercept, gap_coef=gap_coef,
+    )
     half_state = belief.with_strength(float(ONE_HALF))
     double_state = belief.with_strength(1.0 / float(ONE_HALF))
-    push_half, _kind_half = _push(float(ask), float(outside), half_state, effect, float(risk_cap), loaded, intercept=intercept, gap_coef=gap_coef)
-    push_double, _kind_double = _push(float(ask), float(outside), double_state, effect, float(risk_cap), loaded, intercept=intercept, gap_coef=gap_coef)
+    push_half, _kind_half = _push(
+        float(ask), float(outside), half_state, effect, float(risk_cap), loaded,
+        intercept=intercept, gap_coef=gap_coef,
+    )
+    push_double, _kind_double = _push(
+        float(ask), float(outside), double_state, effect, float(risk_cap), loaded,
+        intercept=intercept, gap_coef=gap_coef,
+    )
     push = min(push, default) if not blocked else 0.0
     push_half = min(push_half, default) if not blocked else 0.0
     push_double = min(push_double, default) if not blocked else 0.0
 
     def score(offer: float) -> float:
-        return objective(offer, float(ask), hi if hi > 0.0 else 0.0, belief, effect, loaded, intercept=intercept, gap_coef=gap_coef)
+        return objective(
+            offer, float(ask), hi if hi > 0.0 else 0.0, belief, effect, loaded,
+            intercept=intercept, gap_coef=gap_coef,
+        )
 
     push_withheld = (not blocked) and score(push) < 0.0
     if push_withheld:

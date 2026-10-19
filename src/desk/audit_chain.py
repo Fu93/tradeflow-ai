@@ -83,7 +83,7 @@ def verify(conn: sqlite3.Connection, deal_id: str) -> dict[str, Any]:
         (deal_id,),
     ).fetchall()
     prev = GENESIS
-    entries = []
+    entries: list[dict[str, Any]] = []
     for row in rows:
         payload = json.loads(row["payload_json"])
         expected = entry_hash(row["deal_id"], int(row["seq"]), row["type"], row["ts"], payload, row["prev_hash"])

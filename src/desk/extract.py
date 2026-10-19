@@ -189,7 +189,12 @@ def extract_mentions(message: str, *, transport=None) -> dict[str, Any]:
         try:
             result = mentions_from_payload(decoded)
         except Exception:
-            return {"mentions": [], "numeric_field_discarded": False, "configured": True, "error": "extractor_malformed"}
+            return {
+                "mentions": [],
+                "numeric_field_discarded": False,
+                "configured": True,
+                "error": "extractor_malformed",
+            }
         result["configured"] = True
         return result
     raw = json.dumps(body).encode("utf-8")

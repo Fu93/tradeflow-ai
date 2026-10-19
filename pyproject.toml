@@ -1,0 +1,26 @@
+[tool.ruff]
+line-length = 120
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+follow_imports = "silent"
+ignore_missing_imports = true
+pretty = false
+files = [
+    "src/desk",
+    "src/engine/decision.py",
+    "src/engine/reserve.py",
+    "src/engine/hazard_fit.py",
+]
+
+[tool.coverage.run]
+branch = true
+relative_files = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

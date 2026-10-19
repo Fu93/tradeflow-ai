@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+import queue
 import threading
 from email.message import EmailMessage
 from typing import Any, Awaitable, Callable
@@ -59,7 +60,7 @@ def classify_origin(raw_text: str, extra: dict | None) -> dict[str, Any]:
     else:
         fields["origin"] = "live"
     return fields
-Sender = Callable[[str, str, str], Awaitable[bool]]
+Sender = Callable[..., Awaitable[bool]]
 
 
 class SendRefused(Exception):
@@ -869,8 +870,8 @@ def ingest_mailbox_items(
     deal_id: str | None,
     channel: str,
     mailbox_key: str | None = None,
-) -> dict[str, int]:
-    counts = {"ingested": 0, "review": 0, "duplicates": 0, "ignored": 0}
+) -> dict[str, Any]:
+    counts: dict[str, Any] = {"ingested": 0, "review": 0, "duplicates": 0, "ignored": 0}
     for item in items:
         external = item.get("external_id") or _external_id(item)
         targets = _route_deals(store, item.get("sender") or "", deal_id)
@@ -1013,7 +1014,7 @@ class DeskBus:
         self._subs: dict[str, list] = {}
 
     def subscribe(self, deal_id: str):
-        mailbox_queue = self._queue.Queue(maxsize=8)
+        mailbox_queue: queue.Queue = self._queue.Queue(maxsize=8)
         with self._lock:
             self._subs.setdefault(deal_id, []).append(mailbox_queue)
         return mailbox_queue

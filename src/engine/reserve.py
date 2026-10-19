@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -166,7 +167,7 @@ class ReserveState:
         )
 
     def _spawn(self, **changes: object) -> "ReserveState":
-        payload = {
+        payload: dict[str, Any] = {
             "alpha": self.alpha,
             "beta": self.beta,
             "upper": self.upper,
@@ -175,7 +176,15 @@ class ReserveState:
             "reference_ask": self.reference_ask,
         }
         payload.update(changes)
-        return ReserveState(**payload)
+        reference = payload["reference_ask"]
+        return ReserveState(
+            alpha=float(payload["alpha"]),
+            beta=float(payload["beta"]),
+            upper=float(payload["upper"]),
+            reject_ratios=tuple(float(item) for item in payload["reject_ratios"]),
+            n_responses=int(payload["n_responses"]),
+            reference_ask=None if reference is None else float(reference),
+        )
 
     def with_strength(self, factor: float) -> "ReserveState":
         alpha, beta = scale_strength(self.alpha, self.beta, factor)

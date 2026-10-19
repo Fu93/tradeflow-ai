@@ -137,6 +137,7 @@ def _since_token(days: int) -> str:
 
 
 def _open_imap(host: str, port: int, username: str, password: str, use_ssl: bool) -> imaplib.IMAP4:
+    client: imaplib.IMAP4
     if use_ssl:
         client = imaplib.IMAP4_SSL(host, port, ssl_context=_tls_context(), timeout=30)
     elif _loopback(host):
@@ -177,7 +178,7 @@ def pull_window(
                 raise MailboxError("IMAP EXAMINE failed")
             uidvalidity = _uidvalidity(client)
             since = _since_token(lookback_days())
-            status, data = client.uid("SEARCH", None, "SINCE", since)
+            status, data = client.uid("SEARCH", None, "SINCE", since)  # type: ignore[arg-type]
             if status != "OK" or not data or not data[0]:
                 return found, uidvalidity
             for uid in data[0].split():

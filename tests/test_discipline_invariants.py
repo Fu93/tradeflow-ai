@@ -157,3 +157,59 @@ def test_legacy_routes_stay_unmounted_without_the_flag():
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_llm_numeric_keys_never_change_the_counter():
+    """A price key on an extractor row is dropped, and the offer does not move."""
+    from src.desk.extract import mentions_from_payload
+    from src.engine.decision import choose_offer
+    from src.engine.reserve import ReserveState
+
+    state = ReserveState.policy().with_reference(15.6)
+    before = choose_offer(ask=15.6, outside=14.0, state=state, risk_cap=0.5)
+    payload = mentions_from_payload(
+        {
+            "offer": 1,
+            "mentions": [
+                {
+                    "class": "own_unit_offer",
+                    "evidence_span": "15.60",
+                    "speaker": "supplier",
+                    "polarity": "affirmative",
+                    "is_question": False,
+                    "currency": "CNY",
+                    "unit": "per_piece",
+                    "price": 1,
+                    "amount": 0.01,
+                    "unit_price": 9,
+                },
+                {
+                    "class": "own_unit_offer",
+                    "evidence_span": "1",
+                    "speaker": "supplier",
+                    "polarity": "affirmative",
+                    "is_question": False,
+                    "currency": "CNY",
+                    "unit": "per_piece",
+                    "nested": {"counter": 1, "bid": 2},
+                },
+            ],
+        }
+    )
+    assert payload["numeric_field_discarded"] is True
+    assert payload["rejected_rows"] >= 1
+    row = payload["mentions"][0]
+    assert "price" not in row and "amount" not in row and "unit_price" not in row
+    after = choose_offer(ask=15.6, outside=14.0, state=state, risk_cap=0.5)
+    assert after.default_counter == before.default_counter
+
+
+def test_a_tighter_rival_never_raises_the_counter():
+    from src.engine.decision import choose_offer
+    from src.engine.reserve import ReserveState
+
+    state = ReserveState.policy().with_reference(15.0)
+    loose = choose_offer(ask=15.0, outside=14.0, state=state, risk_cap=0.5)
+    tight = choose_offer(ask=15.0, outside=12.0, state=state, risk_cap=0.5)
+    assert tight.default_counter <= loose.default_counter
+    assert tight.default_counter == 12.0

@@ -243,6 +243,8 @@ class DeskStore:
                 rows.append(supplier_id)
             self.conn.commit()
             deal = self._deal(deal_id)
+            if deal is None:
+                raise KeyError(deal_id)
             deal["supplier_ids"] = rows
             return deal
 
@@ -360,7 +362,12 @@ class DeskStore:
                 """,
                 (deal_id,),
             ).fetchall()
-            return [self._event(row) for row in rows]
+            loaded = []
+            for row in rows:
+                event = self._event(row)
+                if event is not None:
+                    loaded.append(event)
+            return loaded
 
     def event(self, deal_id: str, event_id: str) -> dict[str, Any] | None:
         with self._lock:

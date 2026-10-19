@@ -98,7 +98,15 @@ def quote_gap(ask: float, offer: float) -> float:
     return max(float(ask) - float(offer), 0.0) / ask
 
 
-def hazard_at_gap(gap: float, effect: float, fit: HazardFit | None = None, *, intercept: float | None = None, gap_coef: float | None = None, small_gap_coef: float | None = None) -> float:
+def hazard_at_gap(
+    gap: float,
+    effect: float,
+    fit: HazardFit | None = None,
+    *,
+    intercept: float | None = None,
+    gap_coef: float | None = None,
+    small_gap_coef: float | None = None,
+) -> float:
     loaded = fit if fit is not None else load_hazard_fit()
     b0 = loaded.intercept if intercept is None else float(intercept)
     slope = loaded.gap_coef if gap_coef is None else float(gap_coef)
@@ -113,7 +121,15 @@ def hazard_at_gap(gap: float, effect: float, fit: HazardFit | None = None, *, in
     return sigmoid(b0 + slope * float(gap) + hinge + float(effect))
 
 
-def incremental_hazard(ask: float, offer: float, effect: float = 0.0, fit: HazardFit | None = None, *, intercept: float | None = None, gap_coef: float | None = None) -> float:
+def incremental_hazard(
+    ask: float,
+    offer: float,
+    effect: float = 0.0,
+    fit: HazardFit | None = None,
+    *,
+    intercept: float | None = None,
+    gap_coef: float | None = None,
+) -> float:
     """h(offer) − h(ask). An offer at the ask has incremental hazard 0."""
     above = hazard_at_gap(quote_gap(ask, offer), effect, fit, intercept=intercept, gap_coef=gap_coef)
     base = hazard_at_gap(0.0, effect, fit, intercept=intercept, gap_coef=gap_coef)

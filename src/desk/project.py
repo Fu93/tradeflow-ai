@@ -63,9 +63,10 @@ def project_open_drafts(
     from src.desk.record import build_record
 
     for card in cards:
-        if card["latest_quote"] is None or card["counter"] is None or _walked_away(store.outcomes(deal["id"], card["id"])):
+        walked = _walked_away(store.outcomes(deal["id"], card["id"]))
+        if card["latest_quote"] is None or card["counter"] is None or walked:
             store.supersede_open_drafts(deal["id"], card["id"])
-            if _walked_away(store.outcomes(deal["id"], card["id"])):
+            if walked:
                 card["counter"] = None
                 card["push_counter"] = None
                 card["blocked"] = True

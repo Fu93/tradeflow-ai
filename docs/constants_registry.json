@@ -1419,8 +1419,8 @@
     {
       "file": "src/desk/service.py",
       "value": 8,
-      "context": "mailbox_queue = self._queue.Queue(maxsize=8)",
-      "justification": "Use of 8 on this line of src/desk/service.py: mailbox_queue = self._queue.Queue(maxsize=8). A different line that repeats the digits is not covered."
+      "context": "mailbox_queue: queue.Queue = self._queue.Queue(maxsize=8)",
+      "justification": "Use of 8 on this line of src/desk/service.py: the desk bus keeps eight snapshots. A different line that repeats the digits is not covered."
     },
     {
       "file": "src/desk/routes.py",

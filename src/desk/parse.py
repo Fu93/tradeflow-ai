@@ -377,7 +377,9 @@ def _quantity_amount(text: str, start: int, token: str) -> bool:
     return False
 
 
-def _collect(text: str, deal_currency: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], bool]:
+def _collect(
+    text: str, deal_currency: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], bool]:
     """Unit candidates, competing money, review tokens, and whether a price range was seen."""
     units: list[dict[str, Any]] = []
     competing: list[dict[str, Any]] = []

@@ -134,7 +134,11 @@ def build_record(
         _check("counter_le_ceiling", counter_le_ceiling, "counter is at or below the ceiling"),
         _check("hazard_within_cap", hazard_within_cap, "incremental hazard is inside the cap, or the push is withheld"),
         _check("fit_hash_pinned", fit_pinned, "the hazard file hash is on the record"),
-        _check("unconfirmed_clear", int(unconfirmed) == 0, f"unconfirmed numbers used in decisions: {int(unconfirmed)}"),
+        _check(
+            "unconfirmed_clear",
+            int(unconfirmed) == 0,
+            f"unconfirmed numbers used in decisions: {int(unconfirmed)}",
+        ),
     )
     issued = counter
     if any(not item.passed for item in checks):
