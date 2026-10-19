@@ -46,7 +46,7 @@ def test_proposal():
         },
         observed_offer=1.25,
     )
-    assert p["solver"].startswith("one-step")
+    assert "accept-or-reject" in p["solver"]
     if p["opening_offer_price"] is None:
         assert p["round_by_round_prices"] == []
     else:

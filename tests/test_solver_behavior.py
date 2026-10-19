@@ -29,6 +29,7 @@ def MultiAuctionSession(**kwargs):
     fields.pop("self_play", None)
     fields.pop("moq", None)
     fields.update(kwargs)
+    fields.setdefault("expected_markup", 0.08)
     return _MultiAuctionSession(**fields)
 
 
@@ -476,7 +477,7 @@ class TestOrchestratorRobustnessAmplifier(unittest.TestCase):
         orchestrator._ROBUSTNESS_CACHE.clear()
         out = orchestrator.on_webhook(
             {"extracted": {"product": "auto umbrella", "target_price": 12.0,
-                           "ceiling_price": 16.2},
+                           "ceiling_price": 16.2, "expected_markup": 0.0},
              "offer": 1.25, "email_body": "We can do ¥15 per unit, MOQ 500."}
         )
         # 介面凍結：既有鍵必須保留

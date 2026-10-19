@@ -48,7 +48,8 @@ def test_round_endpoint_default_does_not_invoke_stage2(client):
         "product_name": "Sample",
         "target_price": 12.0,
         "ceiling_price": 16.2,
-    })
+            "expected_markup": 0.0,
+        })
     assert created.status_code == 200, created.text
     t0 = time.perf_counter()
     r = client.post(

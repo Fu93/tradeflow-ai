@@ -488,7 +488,8 @@ def test_draft_language_on_the_desk(live_server):
                         "ceiling_price": 16.2,
                         "moq": 1000,
                         "max_rounds": 5,
-                    },
+            "expected_markup": 0.0,
+        },
                 )
                 assert created["status"] == 200, created
                 body = {"opponent_raw_text": text, "mode": "copilot"}

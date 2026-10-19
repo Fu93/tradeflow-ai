@@ -30,7 +30,8 @@ _QUOTE_SPLIT = re.compile(
 )
 _INJECTION = re.compile(
     r"(?i)(?:\bsystem\s*:|record price as|ignore previous|you must (?:set|use)|as an ai|"
-    r"note to the assistant|update your records|agreed price)"
+    r"note to the assistant|update your records|agreed price|"
+    r"\bassistant\b|助手|备注给|備註給|价格按|價格按|log the (?:final )?price)"
 )
 _NEGATION = re.compile(
     r"(?i)(cannot accept|can't accept|can not accept|unable to accept|too low|"
@@ -48,6 +49,26 @@ _FEE = re.compile(
     r"(?i)(freight|shipping|postage|courier|sample|mould|mold|tooling|"
     r"运费|運費|快递|快遞|样品|樣品|模具|开模|開模|总价|總價|合计|合計|总额|總額|total amount)"
 )
+# A reduction is "reduce … by" or 便宜/再降 on the same clause. The word
+# "discount" alone is not a reduction: "5% discount applied, new unit price …"
+# still carries a unit price in the next clause.
+_REDUCTION = re.compile(
+    r"(?i)(?:\breduc(?:e|ed|ing)\b.{0,48}\bby\b|\bcut\b.{0,24}\bby\b|"
+    r"\blower(?:ed|ing)?\b.{0,24}\bby\b|便宜|再降|降价|降價|减价|減價)"
+)
+_DEPOSIT_CLAUSE = re.compile(r"(?i)(?:定金|订金|訂金|保证金|保證金|\bdeposit\b)")
+_PACK = re.compile(
+    r"(?i)(?:per\s+(?:carton|box|case)|/\s*(?:carton|box|case)|每箱|每盒|每包|"
+    r"(?:for|per)\s+\d+\s*(?:pcs|pc|pieces|件))"
+)
+_ADDON = re.compile(r"(?i)(?:\badds?\b|\bextra\b|\bsurcharge\b|\btax\b|另加|附加|加收)")
+_RIVAL = re.compile(
+    r"(?i)(?:another\s+factory|other\s+factory|\bcompetitor\b|其他厂|其他廠|同行|别家|別家)"
+)
+_ASSISTANT = re.compile(
+    r"(?i)(?:\bassistant\b|助手|备注给|備註給|价格按|價格按|log the (?:final )?price)"
+)
+_CLAUSE_MARKS = ("\n", "。", "，", ",", ";", "；", "、")
 _FOREIGN = re.compile(r"(?i)(usd|eur|gbp|hkd|jpy|aud|cad|美元|欧元|歐元|英镑|英鎊|港币|港幣|日元|\$|€|£)")
 _CNY = re.compile(r"(?i)(?:cny|rmb|元|块|塊|￥|¥)")
 _RANGE = re.compile(rf"(?i)({_NUM})\s*(?:-|–|~|到|至|\bto\b)\s*({_NUM})")
@@ -131,6 +152,44 @@ def _sentence_of(text: str, start: int) -> str:
     return text[left + 1:end]
 
 
+def _break_positions(text: str) -> list[int]:
+    """Clause breaks. A period between two digits is a decimal, not a break."""
+    spots: list[int] = []
+    for index, char in enumerate(text):
+        if char in _CLAUSE_MARKS or char in "?？":
+            spots.append(index)
+            continue
+        if char != ".":
+            continue
+        before = text[index - 1] if index else ""
+        after = text[index + 1] if index + 1 < len(text) else ""
+        if before.isdigit() and after.isdigit():
+            continue
+        spots.append(index)
+    return spots
+
+
+def _clause_of(text: str, start: int) -> str:
+    """Comma, sentence, or newline clause. A decimal point stays inside the number."""
+    spots = _break_positions(text)
+    left = max((index for index in spots if index < start), default=-1)
+    right_candidates = [index for index in spots if index >= start]
+    right = min(right_candidates) if right_candidates else len(text)
+    return text[left + 1:right]
+
+
+def _disqualified(clause: str) -> bool:
+    return bool(
+        _FEE.search(clause)
+        or _REDUCTION.search(clause)
+        or _DEPOSIT_CLAUSE.search(clause)
+        or _PACK.search(clause)
+        or _ADDON.search(clause)
+        or _RIVAL.search(clause)
+        or _ASSISTANT.search(clause)
+    )
+
+
 def _not_a_price_range(text: str, match: re.Match[str]) -> bool:
     """Dates and telephone numbers are not price ranges."""
     window = text[max(0, match.start() - 1):min(len(text), match.end() + 6)]
@@ -179,16 +238,16 @@ def _anchored_prices(text: str) -> tuple[list[dict[str, Any]], list[dict[str, An
         span = (match.start(), match.end())
         if _inside(span, ranges):
             continue
-        sentence = _sentence_of(text, match.start())
-        window = (pre + post + " " + sentence)
+        clause = _clause_of(text, match.start())
+        window = (pre + post + " " + clause)
         kind = "unit"
         if _FOREIGN.search(window) and not _CNY.search(pre + post):
             kind = "foreign"
-        elif _FOREIGN.search(pre + post):
+        elif _FOREIGN.search(pre + post) or _FOREIGN.search(clause):
             kind = "foreign"
-        elif _QUESTION.search(sentence) or _ECHO.search(sentence) or _NEGATION.search(sentence):
+        elif _QUESTION.search(clause) or _ECHO.search(clause) or _NEGATION.search(clause):
             kind = "echo"
-        elif _FEE.search(sentence):
+        elif _disqualified(clause):
             kind = "fee"
         item = {"token": token, "value": value, "span": span, "kind": kind}
         key = round(float(value), 4)

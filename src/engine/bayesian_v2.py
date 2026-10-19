@@ -46,39 +46,48 @@ def _log_beta(a: float, b: float) -> float:
 
 
 def _betacf(a: float, b: float, x: float) -> float:
-    """Lentz continued fraction for the incomplete beta."""
+    """Lentz continued fraction for the incomplete beta (Numerical Recipes).
+
+    The previous recurrence normalised ``b1`` to 1 and then reused it as the
+    next denominator, so the fraction collapsed and the regularised beta
+    returned 1. A positive Student-t then had CDF 0.5.
+    """
     max_iter = 200
-    eps = 3e-12
-    am = 1.0
-    a0 = 1.0
-    b0 = 1.0
-    a1 = 1.0
-    b1 = 1.0 - (a + b) * x / (a + 1.0)
-    if abs(b1) < 1e-30:
-        b1 = 1e-30
-    fraction = a1 / b1
+    eps = 3e-14
+    tiny = 1e-30
+    qab = a + b
+    qap = a + 1.0
+    qam = a - 1.0
+    c = 1.0
+    d = 1.0 - qab * x / qap
+    if abs(d) < tiny:
+        d = tiny
+    d = 1.0 / d
+    h = d
     for m in range(1, max_iter + 1):
         m2 = 2 * m
-        aa = m * (b - m) * x / ((a + m2 - 1.0) * (a + m2))
-        a0 = (a1 + aa * a0)
-        b0 = (b1 + aa * b0)
-        if abs(b0) < 1e-30:
-            b0 = 1e-30
-        aa = -(a + m) * (a + b + m) * x / ((a + m2) * (a + m2 + 1.0))
-        a1 = a0 + aa * a1
-        b1 = b0 + aa * b1
-        if abs(b1) < 1e-30:
-            b1 = 1e-30
-        a0 /= b1
-        b0 /= b1
-        a1 /= b1
-        b1 = 1.0
-        delta = a1 / a0 if a0 != 0.0 else 1.0
-        fraction *= delta
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + aa / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + aa / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        delta = d * c
+        h *= delta
         if abs(delta - 1.0) < eps:
             break
-        am = a1
-    return fraction
+    return h
 
 
 def regularized_incomplete_beta(a: float, b: float, x: float) -> float:
@@ -132,15 +141,20 @@ def _deal_probability(offer: float, mean: float, scale: float, df: float) -> flo
     return student_t_cdf((offer - mean) / scale, df)
 
 
-def robust_location(values: Sequence[float], df: float = STUDENT_T_DF) -> tuple[float, float]:
+def robust_location(
+    values: Sequence[float],
+    df: float = STUDENT_T_DF,
+    noise_floor: float | None = None,
+) -> tuple[float, float]:
     """IRLS location and scale of the user's own numbers. Markup is not split out."""
     clean = [float(item) for item in values if item is not None]
     if not clean:
         raise ValueError("robust_location needs at least one number")
+    floor = float(BAYES_OBS_NOISE if noise_floor is None else noise_floor)
     loc = float(sorted(clean)[len(clean) // 2])
     deviations = [abs(item - loc) for item in clean]
     mad = float(sorted(deviations)[len(deviations) // 2])
-    scale = max(mad * float(MAD_NORMAL_CONSISTENCY), float(BAYES_OBS_NOISE))
+    scale = max(mad * float(MAD_NORMAL_CONSISTENCY), floor)
     nu = float(df)
     for _ in range(20):
         weights = []
@@ -151,7 +165,7 @@ def robust_location(values: Sequence[float], df: float = STUDENT_T_DF) -> tuple[
         loc = sum(weight * item for weight, item in zip(weights, clean)) / total
         variance = sum(weight * (item - loc) ** 2 for weight, item in zip(weights, clean))
         scale = math.sqrt(max(variance / max(len(clean), 1), 1e-12))
-        scale = max(scale, float(BAYES_OBS_NOISE))
+        scale = max(scale, floor)
     return loc, scale
 
 

@@ -131,6 +131,9 @@ class DeskStore:
             ("expected_markup", "REAL"),
             ("search_cost", "REAL"),
             ("include_unverified", "INTEGER NOT NULL DEFAULT 0"),
+            ("hazard_reserve_gap", "REAL"),
+            ("bayes_obs_noise", "REAL"),
+            ("unit_sanity_multiple", "REAL"),
         ):
             self._ensure_column("deals", column, ddl)
         self.conn.executescript(
@@ -573,6 +576,9 @@ class DeskStore:
             "expected_markup",
             "search_cost",
             "include_unverified",
+            "hazard_reserve_gap",
+            "bayes_obs_noise",
+            "unit_sanity_multiple",
         }
         updates = {key: fields[key] for key in allowed if key in fields}
         if not updates:
@@ -649,19 +655,25 @@ class DeskStore:
                 ).fetchall()
             return [dict(row) for row in rows]
 
-    def agreed_multiples(self) -> list[float]:
-        """Closed prices divided by that deal's target. Markup is not split out."""
+    def agreed_multiples(self, product: str | None = None) -> list[float]:
+        """Closed prices divided by that deal's target, for one product name.
+
+        A closed umbrella does not move a bracket's reserve. Markup is not split out.
+        """
         with self._lock:
-            rows = self.conn.execute(
-                """
+            sql = """
                 SELECT outcomes.agreed_price AS agreed_price, deals.target_price AS target_price
                 FROM hazard_outcomes AS outcomes
                 JOIN deals ON deals.id = outcomes.deal_id
                 WHERE outcomes.outcome = 'agreed'
                   AND outcomes.agreed_price IS NOT NULL
                   AND deals.target_price > 0
-                """
-            ).fetchall()
+            """
+            params: tuple = ()
+            if product:
+                sql += " AND deals.product = ?"
+                params = (product,)
+            rows = self.conn.execute(sql, params).fetchall()
             return [float(row["agreed_price"]) / float(row["target_price"]) for row in rows]
 
     def set_hazard_counts(self, supplier_id: str, events: int, walks: int) -> None:

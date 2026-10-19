@@ -138,7 +138,7 @@ def _solve_round_cached(n_opp_samples: int, use_gpu: bool | None, reserve_mean: 
         _SOLVE_CACHE.move_to_end(key)
         return cached
     raise RuntimeError(
-        "The legacy round cache is retired. /round uses the one-step lookahead."
+        "The legacy round cache is retired. /round maximises expected surplus of the one-step accept-or-reject model."
     )
     _SOLVE_CACHE[key] = result
     if len(_SOLVE_CACHE) > _SOLVE_CACHE_MAX:
@@ -366,7 +366,7 @@ class Spec(BaseModel):
     lambda_break: float = Field(default=1.0, ge=0.0, le=API_NORM_CAP, allow_inf_nan=False)
     prior_reserve_mean: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
     prior_reserve_std: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
-    expected_markup: float = Field(default=0.0, ge=0.0, le=API_MARKUP_CAP, allow_inf_nan=False)
+    expected_markup: float | None = Field(default=None, ge=0.0, le=API_MARKUP_CAP, allow_inf_nan=False)
     observed_offer: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
 
 
@@ -401,18 +401,33 @@ def negotiate(spec: Spec):
         raise HTTPException(status_code=422, detail="A supplier quote is required.")
     if spec.ceiling_price < spec.target_price:
         raise HTTPException(status_code=422, detail="The ceiling must be at or above the target.")
-    markup = float(spec.expected_markup)
+    markup = None if spec.expected_markup is None else float(spec.expected_markup)
     if spec.prior_reserve_mean is not None and spec.prior_reserve_std is None:
         raise HTTPException(
             status_code=422,
             detail="Set prior_reserve_std together with prior_reserve_mean.",
         )
+    if spec.prior_reserve_mean is None and markup is None:
+        return {
+            "opening_offer_price": None,
+            "blocked": True,
+            "counter_relation": "withheld",
+            "reserve_source": "ask_only",
+            "markup_identified": False,
+            "posterior_reserve_mean": None,
+            "posterior_reserve_std": None,
+            "solver": "analytic expected surplus of the one-step accept-or-reject model",
+            "reason": "The quote is an ask, not a reserve. Set a reserve prior or a markup.",
+        }
     if spec.prior_reserve_mean is None:
-        post_mean, post_std = robust_location([float(spec.observed_offer) - markup])
+        post_mean, post_std = robust_location([float(spec.observed_offer) - float(markup)])
+    elif markup is None:
+        post_mean = float(spec.prior_reserve_mean)
+        post_std = float(spec.prior_reserve_std)
     else:
         width = float(spec.prior_reserve_std)
         post_mean, post_std = bayes_update(
-            spec.prior_reserve_mean, width, spec.observed_offer, estimated_markup=markup,
+            spec.prior_reserve_mean, width, spec.observed_offer, estimated_markup=float(markup),
         )
     try:
         rec = one_step_counter(
@@ -428,7 +443,8 @@ def negotiate(spec: Spec):
         raise HTTPException(status_code=500, detail="Engine failure while solving the negotiation.")
     rec["posterior_reserve_mean"] = float(post_mean)
     rec["posterior_reserve_std"] = float(post_std)
-    rec["markup_identified"] = spec.prior_reserve_mean is not None and markup != 0.0
+    rec["markup_identified"] = markup is not None
+    rec["reserve_source"] = "user" if spec.prior_reserve_mean is not None else "markup"
     return rec
 
 
@@ -1115,6 +1131,9 @@ class MultiAuctionRunRequest(BaseModel):
     # Fetched ECB and UK tariff figures enter the solve only when this is set.
     confirm_market_refs: bool = False
     round_outcomes: Optional[List[List[Optional[str]]]] = Field(default=None, max_length=10)
+    prior_mean: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    prior_std: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    expected_markup: Optional[float] = Field(default=None, ge=0.0, le=API_MARKUP_CAP, allow_inf_nan=False)
 
     @field_validator("rounds_quotes")
     @classmethod
@@ -1708,18 +1727,37 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                 prev_std = t.posterior_std or prev_std
                 break
 
-    markup = float(sess.spec.expected_markup or 0.0)
+    markup = None if sess.spec.expected_markup is None else float(sess.spec.expected_markup)
     norm_offer = float(effective_opp_price) / float(target_price)
+    if (prev_mean is None or prev_std is None) and markup is None:
+        return {
+            "session_id": session_id,
+            "circuit_tripped": True,
+            "pending_human_approval": True,
+            "trip_reason": "The quote is an ask, not a reserve. Set a reserve prior or a markup.",
+            "reply_text": None,
+            "recommendation": {
+                "opening_offer_price": None,
+                "blocked": True,
+                "counter_relation": "withheld",
+                "reserve_source": "ask_only",
+            },
+            "effective_opp_price": effective_opp_price,
+            "tco_breakdown": tco_breakdown,
+        }
     if prev_mean is None or prev_std is None:
-        post_mean, post_std = robust_location([norm_offer - markup])
+        post_mean, post_std = robust_location([norm_offer - float(markup)])
         confidence_prior_std = post_std
+    elif markup is None:
+        post_mean, post_std = float(prev_mean), float(prev_std)
+        confidence_prior_std = float(prev_std)
     else:
         updated_belief = robust_bayes_update(
             prior_mean=float(prev_mean),
             prior_std=float(prev_std),
             observed_offer=norm_offer,
-            estimated_markup=markup,
-            markup_identified=markup > 0.0,
+            estimated_markup=float(markup),
+            markup_identified=True,
         )
         post_mean = float(updated_belief.posterior_mean)
         post_std = float(updated_belief.posterior_std)
@@ -1973,6 +2011,13 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         and opp_price is not None
         and opp_price > target_price * STAGNATION_PREMIUM
         and current_round >= 2
+        and mandate_obj.baseline_lead_days is not None
+        and mandate_obj.max_acceptable_lead_days is not None
+        and mandate_obj.min_desired_lead_days is not None
+        and mandate_obj.baseline_moq is not None
+        and mandate_obj.max_allowed_moq is not None
+        and (action.offered_lead_days is not None or mandate_obj.baseline_lead_days is not None)
+        and (offered_moq or sess.spec.moq or mandate_obj.baseline_moq)
     )
 
     if should_logroll:
@@ -2094,8 +2139,16 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         moq_val = offered_moq or sess.spec.moq
         if deposit_pct_val is None:
             deposit_pct_val = float(BASELINE_DEPOSIT_PCT)
-        mold_exempt = False
-        waive_mold_amount = 0.0
+        # A quoted mold fee is the supplier's number. Lead time and MOQ stay
+        # unset until the buyer provides them, and that absence does not drop
+        # the fee the supplier already wrote down.
+        quoted_mold_fee = float(inbound_classification.demanded_mold_fee or 0.0)
+        mold_exempt = bool(
+            mandate_obj is not None
+            and mandate_obj.mold_fee_exemption_demanded
+            and quoted_mold_fee > 0.0
+        )
+        waive_mold_amount = quoted_mold_fee if mold_exempt else 0.0
 
     action_obj = TacticalActionObject(
         schema_version=CURRENT_SCHEMA_VERSION,
@@ -2546,6 +2599,9 @@ def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
             round_outcomes=req.round_outcomes,
             demo=bool(req.demo and demo_bundle and not has_quotes),
             self_play=demo_bundle if req.demo and demo_bundle and not has_quotes else None,
+            prior_mean=req.prior_mean,
+            prior_std=req.prior_std,
+            expected_markup=req.expected_markup,
         )
         from ..market.trade_data import build_market_context
 

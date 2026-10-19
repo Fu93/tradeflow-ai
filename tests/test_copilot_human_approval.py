@@ -47,6 +47,7 @@ class TestCopilotHumanApproval(unittest.TestCase):
             max_rounds=5,
             supplier_id="Factory_Zhejiang_01",
             supplier_channel="1688_chat",
+            expected_markup=0.0,
         )
         session_mgr.create_session(spec)
         return spec

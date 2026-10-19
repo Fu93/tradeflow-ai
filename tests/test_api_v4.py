@@ -69,7 +69,8 @@ class TestApiV4Integration(unittest.TestCase):
                 "target_price": 12.0,
                 "ceiling_price": 16.2,
                 "moq": 10000,
-            },
+            "expected_markup": 0.0,
+        },
         )
         self.assertEqual(create_resp.status_code, 200)
         sess = create_resp.json()

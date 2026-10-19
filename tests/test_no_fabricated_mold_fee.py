@@ -108,7 +108,9 @@ class TestMoldFeeIsNeverFabricated(unittest.TestCase):
                       "target_price": 12.0,
                       "walk_away_ceiling": 16.2,
                       "mold_fee_exemption_demanded": True,
-                  }},
+                  },
+                  "expected_markup": 0.0,
+            },
         )
         saw_fee = False
         for price, txt in [
@@ -144,7 +146,9 @@ class TestMoldFeeIsNeverFabricated(unittest.TestCase):
             "/api/v1/sessions",
             json={"session_id": sid, "product_name": "Umbrella",
                   "target_price": 12.0, "ceiling_price": 16.2,
-                  "moq": 5000, "max_rounds": 6},
+                  "moq": 5000, "max_rounds": 6,
+                  "expected_markup": 0.0,
+            },
         )
         for price, txt in [
             (14.80, "老闆初次合作特惠價 ¥14.80 / 件"),

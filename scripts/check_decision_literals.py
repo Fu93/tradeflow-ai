@@ -25,9 +25,15 @@ DECISION = (
     "src/engine/proposal.py",
     "src/engine/solver.py",
     "src/engine/multi_solver.py",
+    "src/engine/logrolling.py",
+    "src/engine/tco.py",
     "src/desk/recompute.py",
     "src/desk/parse.py",
+    "src/desk/service.py",
+    "src/app/orchestrator.py",
+    "src/app/main.py",
 )
+MIN_JUSTIFICATION = 25
 PRODUCTION = ("src/engine", "src/desk", "src/app")
 DEMO_IMPORT = "src/app/demo_data.py"
 # 0, 1, and -1 are identities. 2 is the variance factor. 3 and 4 are display
@@ -111,8 +117,9 @@ def scan() -> list[str]:
             continue
         if row.get("category") not in {"c", "d", "n"}:
             problems.append(f"{name} category must be c, d, or n")
-        if not str(row.get("justification") or "").strip():
-            problems.append(f"{name} needs a justification")
+        justification = str(row.get("justification") or "").strip()
+        if len(justification) < MIN_JUSTIFICATION or justification.lower() == name.lower():
+            problems.append(f"{name} justification must be a sentence of at least {MIN_JUSTIFICATION} characters")
         registered = row.get("value")
         if isinstance(value, list):
             if list(registered) != value and [float(item) if isinstance(item, (int, float)) else item for item in registered] != value:
@@ -126,6 +133,12 @@ def scan() -> list[str]:
     extra = sorted(set(rows) - set(module))
     for name in extra:
         problems.append(f"registry entry {name} is not an assignment in heuristics.py")
+    for item in registry.get("inline") or []:
+        justification = str(item.get("justification") or "").strip()
+        if len(justification) < MIN_JUSTIFICATION:
+            problems.append(
+                f"inline {item.get('file')} {item.get('value')} justification must be a sentence of at least {MIN_JUSTIFICATION} characters"
+            )
     allowed = {(item["file"], item["value"]) for item in registry.get("inline") or []}
     for rel in DECISION:
         for line, value in _literals(ROOT / rel):

@@ -99,6 +99,7 @@ class TestMultiSupplierSimulation(unittest.TestCase):
             walk_away_ceiling=16.0,
             moq=5000,
             n_samples=2000,
+            expected_markup=0.08,
         )
 
         # 第 1 輪獨立即時傳入

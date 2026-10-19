@@ -43,16 +43,16 @@ class CorporateMandate(BaseModel):
     """企業授權契約 (Corporate Mandate)。"""
     target_price: float = Field(..., gt=0.0, description="買方預期目標單價 (元)")
     walk_away_ceiling: float = Field(..., gt=0.0, description="買方絕對底線上限單價 (元)")
-    baseline_lead_days: int = Field(default=25, gt=0, description="標準基準交期 (天)")
-    max_acceptable_lead_days: int = Field(default=35, gt=0, description="最長可容忍交期 (天)")
-    min_desired_lead_days: int = Field(default=12, gt=0, description="期望壓縮交期下限 (天)")
+    baseline_lead_days: int | None = Field(default=None, gt=0, description="標準基準交期 (天)。未設定則不參與置換。")
+    max_acceptable_lead_days: int | None = Field(default=None, gt=0, description="最長可容忍交期 (天)。未設定則不參與置換。")
+    min_desired_lead_days: int | None = Field(default=None, gt=0, description="期望壓縮交期下限 (天)。未設定則不參與置換。")
     lead_day_shadow_value: float = Field(default=LEAD_DAY_SHADOW, ge=0.0, description="每提前一天商業影子單價 (元/天/件)")
     baseline_deposit_pct: float = Field(default=BASELINE_DEPOSIT_PCT, ge=0.0, le=1.0, description="基準定金比例")
     max_allowed_deposit_pct: float = Field(default=MAX_DEPOSIT_PCT, ge=0.0, le=1.0, description="公司授權最高定金比例")
     buyer_capital_cost_rate: float = Field(default=BUYER_CAPITAL_RATE, ge=0.0, description="買方年化資本成本率")
     supplier_capital_relief_rate: float = Field(default=SUPPLIER_RELIEF_RATE, ge=0.0, description="供應商資金短缺緩釋年化收益率")
-    baseline_moq: int = Field(default=500, gt=0, description="基準標準採購量 (件)")
-    max_allowed_moq: int = Field(default=1200, gt=0, description="最大允許採購量 (件)")
+    baseline_moq: int | None = Field(default=None, gt=0, description="基準標準採購量 (件)。未設定則不參與置換。")
+    max_allowed_moq: int | None = Field(default=None, gt=0, description="最大允許採購量 (件)。未設定則不參與置換。")
     excess_holding_cost_rate: float = Field(default=EXCESS_HOLDING_RATE, ge=0.0, description="超額庫存持有成本率")
     mold_fee_exemption_demanded: bool = Field(default=True, description="是否要求免除模具費")
     estimated_mold_fee: float = Field(default=PLANNING_MOLD_FEE, ge=0.0, description="規劃用模具費，不是供應商報價")
@@ -101,13 +101,25 @@ class CorporateMandate(BaseModel):
     def validate_convex_bounds(self) -> CorporateMandate:
         if self.walk_away_ceiling < self.target_price:
             raise ValueError(f"上限價格 walk_away_ceiling ({self.walk_away_ceiling}) 不得低於目標價格 target_price ({self.target_price})")
-        if self.max_acceptable_lead_days < self.baseline_lead_days:
+        if (
+            self.max_acceptable_lead_days is not None
+            and self.baseline_lead_days is not None
+            and self.max_acceptable_lead_days < self.baseline_lead_days
+        ):
             raise ValueError(f"最大容忍交期 ({self.max_acceptable_lead_days}) 不得短於基準交期 ({self.baseline_lead_days})")
-        if self.min_desired_lead_days > self.baseline_lead_days:
+        if (
+            self.min_desired_lead_days is not None
+            and self.baseline_lead_days is not None
+            and self.min_desired_lead_days > self.baseline_lead_days
+        ):
             raise ValueError(f"期望交期下限 ({self.min_desired_lead_days}) 不得大於基準交期 ({self.baseline_lead_days})")
         if self.max_allowed_deposit_pct < self.baseline_deposit_pct:
             raise ValueError(f"最高許可定金 ({self.max_allowed_deposit_pct}) 不得低於基準定金 ({self.baseline_deposit_pct})")
-        if self.max_allowed_moq < self.baseline_moq:
+        if (
+            self.max_allowed_moq is not None
+            and self.baseline_moq is not None
+            and self.max_allowed_moq < self.baseline_moq
+        ):
             raise ValueError(f"最大允許採購量 ({self.max_allowed_moq}) 不得低於基準採購量 ({self.baseline_moq})")
         return self
 
@@ -115,9 +127,9 @@ class CorporateMandate(BaseModel):
 class SupplierCurrentOffer(BaseModel):
     """供應商當前堅持之報價條件。"""
     price: float = Field(..., gt=0.0, description="供應商堅持之單價 (元)")
-    lead_days: int = Field(default=25, gt=0, description="供應商報出之交期 (天)")
+    lead_days: int | None = Field(default=None, gt=0, description="供應商報出之交期 (天)。未報則不參與交期置換。")
     deposit_pct: float = Field(default=BASELINE_DEPOSIT_PCT, ge=0.0, le=1.0, description="供應商要求之定金比例")
-    moq: int = Field(default=500, gt=0, description="供應商要求之起訂量 (件)")
+    moq: int | None = Field(default=None, gt=0, description="供應商要求之起訂量 (件)。未報則不參與批量置換。")
     mold_fee: float = Field(default=PLANNING_MOLD_FEE, ge=0.0, description="未報價時的規劃值，不是已收到的模具費")
     is_price_stagnant: bool = Field(default=True, description="是否在單價上寸步不讓")
 
@@ -383,6 +395,22 @@ class LogrollingEngine:
         offer: SupplierCurrentOffer,
     ) -> LogrollingResult:
         """主入口：搜尋帕雷托最優前沿並返回最優置換對。"""
+        missing = [
+            name for name, value in (
+                ("supplier lead time", offer.lead_days),
+                ("supplier MOQ", offer.moq),
+                ("baseline lead time", mandate.baseline_lead_days),
+                ("maximum lead time", mandate.max_acceptable_lead_days),
+                ("minimum lead time", mandate.min_desired_lead_days),
+                ("baseline MOQ", mandate.baseline_moq),
+                ("maximum MOQ", mandate.max_allowed_moq),
+            ) if value is None
+        ]
+        if missing:
+            raise ValueError(
+                "Logrolling needs the supplier's lead time and MOQ and the buyer's "
+                "planning terms. Missing: " + ", ".join(missing) + "."
+            )
         candidates: List[LogrollingProposal] = []
         rejected_candidates: List[LogrollingProposal] = []
 

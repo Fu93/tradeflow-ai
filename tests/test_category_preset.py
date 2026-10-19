@@ -61,6 +61,7 @@ def test_every_preset_creates_a_session_the_engine_honours():
             "target_price": exp["target"],
             "ceiling_price": exp["ceiling"],
             "moq": exp["moq"],
+            "expected_markup": 0.0,
         }
         r = c.post("/api/v1/sessions", json=body)
         assert r.status_code == 200, f"{cat}: create failed {r.status_code} {r.text[:200]}"

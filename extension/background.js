@@ -156,17 +156,22 @@ async function ensureSession(payload) {
     if (lookup.status !== 404) {
       throw new Error(`Engine HTTP ${lookup.status} while reading the session`);
     }
+    const body = {
+      session_id: sessionId,
+      product_name: payload.productName || "page product",
+      target_price: target,
+      ceiling_price: ceiling,
+      supplier_id: String(payload.supplierId || "page").slice(0, 256),
+      supplier_channel: "web_chat",
+    };
+    const markup = Number(payload.expectedMarkup);
+    if (payload.expectedMarkup != null && Number.isFinite(markup) && markup >= 0) {
+      body.expected_markup = markup;
+    }
     const created = await fetch(`${API_BASE_URL}/api/v1/sessions`, {
       method: "POST",
       headers: jsonHeaders(),
-      body: JSON.stringify({
-        session_id: sessionId,
-        product_name: payload.productName || "page product",
-        target_price: target,
-        ceiling_price: ceiling,
-        supplier_id: String(payload.supplierId || "page").slice(0, 256),
-        supplier_channel: "web_chat",
-      }),
+      body: JSON.stringify(body),
     });
     if (!created.ok) {
       let detail = "";
@@ -516,6 +521,7 @@ async function importLatestVisible(message) {
     supplier_id: supplierId,
     page_url: resp.url || "",
     page_title: resp.title || "",
+    simulated: !!resp.simulated,
   };
   const res = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${stored.tfDeskDeal}/quotes`, {
     method: "POST",

@@ -60,7 +60,8 @@ class _Isolated(unittest.TestCase):
                 "ceiling_price": ceiling,
                 "moq": 500,
                 "max_rounds": 5,
-            },
+            "expected_markup": 0.0,
+        },
             headers=self.headers,
         )
         self.assertEqual(r.status_code, 200, r.text)

@@ -234,6 +234,7 @@ def test_withheld_counter_and_sent_draft_are_not_sent_again(tmp_path, monkeypatc
         ],
     )
     deal_id = snapshot["deal"]["id"]
+    store.set_policy(deal_id, {"expected_markup": 0.08})
     ningbo = snapshot["suppliers"][0]["id"]
     ingest_message(
         store,
@@ -328,6 +329,7 @@ def test_failed_send_can_be_retried(tmp_path, monkeypatch):
         ],
     )
     deal_id = snapshot["deal"]["id"]
+    store.set_policy(deal_id, {"expected_markup": 0.08})
     ingest_message(store, deal_id, source="paste", raw_text="单价 15.60 元", supplier_id=snapshot["suppliers"][0]["id"])
     draft = next(item for item in store.drafts(deal_id) if item["status"] == "draft")
     digest = draft_digest(draft["body"])

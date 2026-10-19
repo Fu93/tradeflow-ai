@@ -27,6 +27,7 @@ class TestMultiSolver(unittest.TestCase):
             target_price=12.0,
             walk_away_ceiling=16.2,
             n_samples=2000,
+            expected_markup=0.0,
         )
         r1 = session.step_round([13.26, 15.60, 15.92, 16.80])
 

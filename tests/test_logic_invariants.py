@@ -172,6 +172,11 @@ class TestLogrollingBounds(unittest.TestCase):
         mandate = CorporateMandate(
             target_price=12.0,
             walk_away_ceiling=16.2,
+            baseline_lead_days=25,
+            max_acceptable_lead_days=35,
+            min_desired_lead_days=12,
+            baseline_moq=500,
+            max_allowed_moq=1200,
             mold_fee_exemption_demanded=True,
             estimated_mold_fee=2000.0,
         )
@@ -252,6 +257,7 @@ class TestAuctionOfferBound(unittest.TestCase):
             n_open=12,
             n_sched=4,
             use_gpu=False,
+            expected_markup=0.08,
         )
         info = session.step_round([12.4, 14.5, 16.0, 13.8])
         self.assertFalse(info["all_quotes_above_ceiling"])
@@ -276,6 +282,7 @@ class TestAuctionOfferBound(unittest.TestCase):
             n_open=6,
             n_sched=2,
             use_gpu=False,
+            expected_markup=0.08,
         )
         info = session.step_round([14.0, 14.0, 14.0, 14.0])
         self.assertTrue(info["all_quotes_above_ceiling"])
@@ -363,6 +370,7 @@ class TestRoundPathHonesty(unittest.TestCase):
             "max_rounds": 1,
             "supplier_id": "S",
             "supplier_channel": "web_chat",
+            "expected_markup": 0.0,
         })
         self.assertEqual(created.status_code, 200, created.text)
         with mock.patch("requests.post") as posted:
@@ -397,6 +405,7 @@ class TestRoundPathHonesty(unittest.TestCase):
             "max_rounds": 1,
             "supplier_id": "S",
             "supplier_channel": "web_chat",
+            "expected_markup": 0.0,
         })
         response = self.c.post(f"/api/v1/sessions/{sid}/round", json={
             "opponent_offer_price": 18.0,
@@ -425,6 +434,7 @@ class TestRoundPathHonesty(unittest.TestCase):
             "max_rounds": 1,
             "supplier_id": "S",
             "supplier_channel": "web_chat",
+            "expected_markup": 0.0,
         })
         os.environ["EVOLUS_API_KEY"] = "k"
         os.environ["EVOLUS_APP_ID"] = "a"

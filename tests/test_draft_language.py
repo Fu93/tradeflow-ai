@@ -45,6 +45,7 @@ class TestDraftLanguage(unittest.TestCase):
             ceiling_price=16.2,
             moq=1000,
             max_rounds=5,
+            expected_markup=0.0,
         )
         api_main.session_mgr.create_session(spec)
         opened = self.client.post(

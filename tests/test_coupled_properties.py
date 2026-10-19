@@ -141,7 +141,8 @@ class TestHazardMonotonicity(unittest.TestCase):
         self.assertLess(_brier(prior[n // 2:]), _brier(reversed_pred[n // 2:]) + 1e-9)
         self.assertLessEqual(_brier(updated[n // 2:]), _brier(prior[n // 2:]) + 0.02)
         self.assertTrue(HazardBelief().prior_driven)
-        self.assertFalse(belief.prior_driven)
+        self.assertTrue(belief.prior_driven)
+        self.assertEqual(belief.snapshot()["coefficients"], "labelled policy")
         self.assertGreaterEqual(belief.n_events, 30)
 
 
@@ -323,6 +324,7 @@ class TestPriceIndependence(unittest.TestCase):
             "max_rounds": 1,
             "supplier_id": "S",
             "supplier_channel": "web_chat",
+            "expected_markup": 0.0,
         })
         self.assertEqual(created.status_code, 200, created.text)
         response = client.post("/api/v1/sessions/risk-cap/round", json={

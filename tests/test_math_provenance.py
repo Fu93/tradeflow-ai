@@ -123,8 +123,8 @@ def test_fixture_and_simulated_are_server_side(tmp_path, monkeypatch):
         supplier_id=live,
         provenance_extra={"simulated": True, "page_url": "https://shop.example/item"},
     )
-    assert lied["event"]["status"] == "accepted"
-    assert lied["event"]["provenance"]["origin"] == "live"
+    assert lied["event"]["status"] == "review"
+    assert lied["event"]["provenance"]["origin"] == "simulated"
     simulated = ingest_message(
         store,
         deal_id,

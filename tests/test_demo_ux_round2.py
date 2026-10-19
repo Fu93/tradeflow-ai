@@ -104,7 +104,8 @@ class TestDeskRoundAndCommand(unittest.TestCase):
                 "target_price": 12.0,
                 "ceiling_price": 16.2,
                 "moq": 5000,
-            },
+            "expected_markup": 0.0,
+        },
         )
         self.assertEqual(created.status_code, 200)
         response = client.post(
@@ -192,6 +193,7 @@ class TestHumanDecisionApi(unittest.TestCase):
             ceiling_price=16.2,
             moq=1000,
             max_rounds=5,
+            expected_markup=0.0,
         )
         api_main.session_mgr.create_session(spec)
         opened = self.client.post(

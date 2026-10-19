@@ -193,6 +193,9 @@
     fillOnce("hazard-intercept", box.intercept);
     fillOnce("hazard-tau", box.tau);
     fillOnce("hazard-quote-gap", box.quote_gap);
+    fillOnce("hazard-reserve-gap", box.reserve_gap);
+    fillOnce("obs-noise", deal.bayes_obs_noise);
+    fillOnce("sanity-multiple", deal.unit_sanity_multiple);
     fillOnce("reserve-prior", deal.reserve_prior_mean);
     fillOnce("reserve-std", deal.reserve_prior_std);
     fillOnce("expected-markup", deal.expected_markup);
@@ -202,8 +205,8 @@
       note.textContent = "Labelled baseline walk-away " + rateText(box.baseline_rate)
         + " (spread " + rateText(box.baseline_low) + " to " + rateText(box.baseline_high)
         + "). Source: " + (box.source || "labelled policy")
-        + ". Recorded outcomes: " + String(box.recorded_outcomes || 0)
-        + ". Prior-driven until " + String(box.min_events || 0) + ".";
+        + ". Coefficients stay labelled. Recorded outcomes: " + String(box.recorded_outcomes || 0)
+        + ". They update the supplier effect only.";
     }
   }
 
@@ -244,6 +247,9 @@
       take("hazard-intercept", "hazard_intercept");
       take("hazard-tau", "hazard_tau");
       take("hazard-quote-gap", "hazard_quote_gap");
+      take("hazard-reserve-gap", "hazard_reserve_gap");
+      take("obs-noise", "bayes_obs_noise");
+      take("sanity-multiple", "unit_sanity_multiple");
       take("reserve-prior", "reserve_prior_mean");
       take("reserve-std", "reserve_prior_std");
       take("expected-markup", "expected_markup");
@@ -288,10 +294,19 @@
         ? money(supplier.landed_cost, "CNY")
         : "no data";
       line(card, "Landed cost: " + landed);
-      const belief = money(supplier.belief_mean) + " x target ± " + money(supplier.belief_std);
-      line(card, "Reserve belief (" + (supplier.belief_label || "prior") + "): " + belief);
+      if (supplier.belief_mean == null) {
+        line(card, "Reserve: not identified. The quote is an ask. Set a prior or a markup.");
+      } else {
+        const belief = money(supplier.belief_mean) + " x target ± " + money(supplier.belief_std);
+        line(card, "Reserve belief (" + (supplier.belief_label || "prior") + "): " + belief);
+      }
       const counter = supplier.counter == null ? "withheld" : money(supplier.counter, "CNY");
-      line(card, "Counter: " + counter);
+      const relation = supplier.counter_relation === "at_ask"
+        ? " (at the ask: expected surplus is highest at this quote; desk outside option is zero)"
+        : supplier.counter_relation === "concession"
+          ? " (expected-surplus maximum below the quote; desk outside option is zero)"
+          : "";
+      line(card, "Counter: " + counter + relation);
       line(card, "Walk-away hazard: " + hazardText(supplier));
       if (supplier.excluded_from_decision) {
         line(card, "Excluded from the decision until you include unverified quotes.");

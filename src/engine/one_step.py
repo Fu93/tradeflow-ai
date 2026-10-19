@@ -1,7 +1,8 @@
 """One supplier, one next offer.
 
-The price is the coupled one-step lookahead applied to this quote, this
-belief, and the session ceiling. It is not a five-round concession script.
+The price is the analytic expected surplus of the one-step accept-or-reject
+model on this quote, this belief, and the session ceiling. It is not a
+five-round concession script, and the Monte Carlo sample does not choose it.
 """
 from __future__ import annotations
 
@@ -52,7 +53,8 @@ def one_step_counter(
         "breakdown_prob": float(solved["hazards"][0]),
         "breakdown_definition": "walk-away hazard of this one-step offer",
         "blocked": blocked,
-        "solver": "one-step lookahead over sampled accept-or-reject scenarios",
+        "solver": "analytic expected surplus of the one-step accept-or-reject model",
+        "counter_relation": solved["counter_relation"][0],
         "n_samples": samples,
         "posterior_reserve_mean": float(mean),
         "posterior_reserve_std": float(std),

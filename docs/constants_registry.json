@@ -101,22 +101,22 @@
     "BELIEF_CONF_VAR": {
       "value": 0.35,
       "category": "d",
-      "justification": "BELIEF_CONF_VAR"
+      "justification": "Weight on variance reduction in the belief-meter display. A display score, not a confidence interval."
     },
     "BELIEF_CONF_CV": {
       "value": 0.8,
       "category": "d",
-      "justification": "BELIEF_CONF_CV"
+      "justification": "Penalty on the coefficient of variation in the belief-meter display. A display score, not a confidence interval."
     },
     "BELIEF_CONF_LO": {
       "value": 0.5,
       "category": "d",
-      "justification": "BELIEF_CONF_LO"
+      "justification": "Lower clip of the belief-meter display score. A display bound, not a measured confidence."
     },
     "BELIEF_CONF_HI": {
       "value": 0.98,
       "category": "d",
-      "justification": "BELIEF_CONF_HI"
+      "justification": "Upper clip of the belief-meter display score. A display bound, not a measured confidence."
     },
     "BAYES_OBS_NOISE": {
       "value": 0.06,
@@ -222,27 +222,27 @@
     "BASELINE_DEPOSIT_PCT": {
       "value": 0.3,
       "category": "d",
-      "justification": "BASELINE_DEPOSIT_PCT"
+      "justification": "Buyer planning deposit when a mandate does not override it. A labelled policy, not a supplier quote."
     },
     "MAX_DEPOSIT_PCT": {
       "value": 0.5,
       "category": "d",
-      "justification": "MAX_DEPOSIT_PCT"
+      "justification": "Highest deposit a logrolling proposal may offer when the mandate does not override it. Labelled policy."
     },
     "BUYER_CAPITAL_RATE": {
       "value": 0.08,
       "category": "d",
-      "justification": "BUYER_CAPITAL_RATE"
+      "justification": "Annual capital rate used in the buyer's deposit cost. Labelled planning rate, not a quoted price."
     },
     "SUPPLIER_RELIEF_RATE": {
       "value": 0.22,
       "category": "d",
-      "justification": "SUPPLIER_RELIEF_RATE"
+      "justification": "Annual rate used for the supplier's cash-flow relief in logrolling. Labelled planning rate, not a quote."
     },
     "EXCESS_HOLDING_RATE": {
       "value": 0.05,
       "category": "d",
-      "justification": "EXCESS_HOLDING_RATE"
+      "justification": "Annual rate for holding stock above the baseline quantity. Labelled planning rate, not a quote."
     },
     "PLANNING_MOLD_FEE": {
       "value": 3000.0,
@@ -252,22 +252,22 @@
     "VOLUME_DISCOUNT_RATIO": {
       "value": 0.08,
       "category": "d",
-      "justification": "VOLUME_DISCOUNT_RATIO"
+      "justification": "Assumed unit-price discount when volume is raised. Labelled policy until a supplier quotes that discount."
     },
     "SUPPLIER_COST_RATIO": {
       "value": 0.82,
       "category": "d",
-      "justification": "SUPPLIER_COST_RATIO"
+      "justification": "Assumed production cost as a fraction of the target, used only inside logrolling surplus. Not a cost sheet."
     },
     "RUSH_COST_COEFFICIENT": {
       "value": 0.08,
       "category": "d",
-      "justification": "RUSH_COST_COEFFICIENT"
+      "justification": "Scale of the supplier rush-cost curve in logrolling. Labelled shape, not a factory cost sheet."
     },
     "RUSH_COST_EXPONENT": {
       "value": 1.25,
       "category": "d",
-      "justification": "RUSH_COST_EXPONENT"
+      "justification": "Curvature of the supplier rush-cost curve in logrolling. Labelled shape, not a factory cost sheet."
     },
     "MOLD_SURPLUS_SHARE": {
       "value": 0.5,
@@ -287,32 +287,32 @@
     "DAILY_LEAD_PENALTY": {
       "value": 0.003,
       "category": "d",
-      "justification": "DAILY_LEAD_PENALTY"
+      "justification": "Per-day lead penalty in the total-cost shadow when a baseline lead time is set. Labelled rate."
     },
     "TCO_MARKDOWN_RATE": {
       "value": 0.08,
       "category": "d",
-      "justification": "TCO_MARKDOWN_RATE"
+      "justification": "Markdown rate in the total-cost shadow when a lead baseline is set. Labelled shape, not a contract clause."
     },
     "TCO_MARKDOWN_EXP": {
       "value": 1.2,
       "category": "d",
-      "justification": "TCO_MARKDOWN_EXP"
+      "justification": "Exponent of the markdown curve in the total-cost shadow. Labelled shape, not a contract clause."
     },
     "TCO_UNFAVORABLE_PREMIUM": {
       "value": 1.05,
       "category": "d",
-      "justification": "TCO_UNFAVORABLE_PREMIUM"
+      "justification": "Premium applied to an unfavorable term in the total-cost shadow. Labelled multiple, not a quote."
     },
     "TCO_CRISIS_RATE": {
       "value": 0.015,
       "category": "d",
-      "justification": "TCO_CRISIS_RATE"
+      "justification": "Rate of the crisis delay term in the total-cost shadow. Labelled shape, not a contract clause."
     },
     "TCO_CRISIS_EXPONENT": {
       "value": 1.75,
       "category": "d",
-      "justification": "TCO_CRISIS_EXPONENT"
+      "justification": "Exponent of the crisis delay term in the total-cost shadow. Labelled shape, not a contract clause."
     },
     "TCO_CRISIS_DELAY_START": {
       "value": 5.0,
@@ -322,7 +322,7 @@
     "TCO_CRISIS_DELAY_SCALE": {
       "value": 10.0,
       "category": "d",
-      "justification": "TCO_CRISIS_DELAY_SCALE"
+      "justification": "Day scale of the crisis delay term after the start day. Labelled shape, not a contract clause."
     },
     "SILENCE_CONCESSION_RATIO": {
       "value": 0.97,
@@ -347,17 +347,17 @@
     "API_EXTRACTED_PRICE_CAP": {
       "value": 1000.0,
       "category": "n",
-      "justification": "Numerical guard."
+      "justification": "Upper bound on a price extracted into an API field so one request cannot pass an unbounded number."
     },
     "API_PRICE_CAP": {
       "value": 1000000.0,
       "category": "n",
-      "justification": "Numerical guard."
+      "justification": "Upper bound on an API price field. One million is an input cap, not a market quote."
     },
     "API_MARKUP_CAP": {
       "value": 10.0,
       "category": "n",
-      "justification": "Numerical guard."
+      "justification": "Upper bound on a markup the caller may set. An input cap, not a measured supplier markup."
     },
     "STAGNATION_PREMIUM": {
       "value": 1.05,
@@ -367,12 +367,12 @@
     "NEAR_DEAL_RATIO": {
       "value": 1.02,
       "category": "d",
-      "justification": "NEAR_DEAL_RATIO"
+      "justification": "An offer within this multiple of the target is treated as close to a deal. Labelled comparison, not a quote."
     },
     "PRICE_MATCH_RATIO": {
       "value": 0.02,
       "category": "d",
-      "justification": "PRICE_MATCH_RATIO"
+      "justification": "Relative gap at which two prices count as the same mention. A parser tolerance, not a market range."
     },
     "MIN_MENTIONED_PRICE": {
       "value": 0.1,
@@ -382,12 +382,12 @@
     "MAX_MENTIONED_PRICE": {
       "value": 50000.0,
       "category": "n",
-      "justification": "Numerical guard."
+      "justification": "Upper clamp on a price token read from text. An input bound, not a market range."
     },
     "MAX_MENTIONED_MOLD_FEE": {
       "value": 100000000.0,
       "category": "n",
-      "justification": "Numerical guard."
+      "justification": "Upper clamp on a mold-fee token read from text. An input bound, not a quoted fee."
     },
     "REGEX_CONF_OFFLINE": {
       "value": 0.95,
@@ -397,57 +397,57 @@
     "REGEX_CONF_SPEC": {
       "value": 0.9,
       "category": "d",
-      "justification": "REGEX_CONF_SPEC"
+      "justification": "Rank of a specification-pattern hit. A rule order, not a calibrated probability."
     },
     "REGEX_CONF_IDENTITY": {
       "value": 0.92,
       "category": "d",
-      "justification": "REGEX_CONF_IDENTITY"
+      "justification": "Rank of an identity-pattern hit. A rule order, not a calibrated probability."
     },
     "REGEX_CONF_DEAL": {
       "value": 0.9,
       "category": "d",
-      "justification": "REGEX_CONF_DEAL"
+      "justification": "Rank of a deal-pattern hit. A rule order, not a calibrated probability."
     },
     "REGEX_CONF_POVERTY": {
       "value": 0.85,
       "category": "d",
-      "justification": "REGEX_CONF_POVERTY"
+      "justification": "Rank of a poverty-plea pattern hit. A rule order, not a calibrated probability."
     },
     "REGEX_CONF_VOLUME": {
       "value": 0.85,
       "category": "d",
-      "justification": "REGEX_CONF_VOLUME"
+      "justification": "Rank of a volume-pattern hit. A rule order, not a calibrated probability."
     },
     "REGEX_CONF_TAX": {
       "value": 0.85,
       "category": "d",
-      "justification": "REGEX_CONF_TAX"
+      "justification": "Rank of a tax-pattern hit. A rule order, not a calibrated probability."
     },
     "REGEX_CONF_UNRECOGNIZED": {
       "value": 0.3,
       "category": "d",
-      "justification": "REGEX_CONF_UNRECOGNIZED"
+      "justification": "Rank when no pattern matches. A rule order, not a calibrated probability."
     },
     "ONNX_ACCEPT_CONFIDENCE": {
       "value": 0.7,
       "category": "d",
-      "justification": "ONNX_ACCEPT_CONFIDENCE"
+      "justification": "Score at which the on-device intent export accepts a label. A threshold, not a measured accuracy."
     },
     "LLM_DEFAULT_CONFIDENCE": {
       "value": 0.85,
       "category": "d",
-      "justification": "LLM_DEFAULT_CONFIDENCE"
+      "justification": "Score written when a language-model intent call returns no score. A placeholder, not a calibration."
     },
     "FIELD_DEFAULT_CONFIDENCE": {
       "value": 0.8,
       "category": "d",
-      "justification": "FIELD_DEFAULT_CONFIDENCE"
+      "justification": "Score written when a field extractor returns no score. A placeholder, not a calibration."
     },
     "POSTERIOR_STD_PLACEHOLDER": {
       "value": 0.1,
       "category": "d",
-      "justification": "POSTERIOR_STD_PLACEHOLDER"
+      "justification": "Width shown when a caller sets a reserve mean and no width. Labelled suggestion, not a fitted posterior."
     },
     "PRICE_MENTION_TOLERANCE": {
       "value": 0.05,
@@ -472,17 +472,17 @@
     "LADDER_EDGE_HI": {
       "value": 0.94,
       "category": "d",
-      "justification": "LADDER_EDGE_HI"
+      "justification": "Upper fraction of the ladder span kept clear of the end label. Display spacing, not a price."
     },
     "LADDER_STEP_FINE": {
       "value": 0.1,
       "category": "d",
-      "justification": "LADDER_STEP_FINE"
+      "justification": "Fine tick spacing on the price ladder, as a fraction of the span. Display spacing, not a price."
     },
     "LADDER_STEP_MID": {
       "value": 0.5,
       "category": "d",
-      "justification": "LADDER_STEP_MID"
+      "justification": "Mid tick spacing on the price ladder, as a fraction of the span. Display spacing, not a price."
     },
     "ROBUSTNESS_CONCESSIONS": {
       "value": [
@@ -501,22 +501,22 @@
         1.5
       ],
       "category": "d",
-      "justification": "ROBUSTNESS_FACTORS"
+      "justification": "Multiples of the reserve width the robustness report sweeps. A sensitivity grid, not a supplier claim."
     },
     "ROBUSTNESS_STABLE_BREAK": {
       "value": 0.15,
       "category": "d",
-      "justification": "ROBUSTNESS_STABLE_BREAK"
+      "justification": "Break probability the robustness report treats as stable. A report band, not a fitted rate."
     },
     "ROBUSTNESS_STABLE_GAP": {
       "value": 0.05,
       "category": "d",
-      "justification": "ROBUSTNESS_STABLE_GAP"
+      "justification": "Gap the robustness report treats as stable. A report band, not a fitted rate."
     },
     "ROBUSTNESS_BREAK_MULTIPLE": {
       "value": 2.0,
       "category": "d",
-      "justification": "ROBUSTNESS_BREAK_MULTIPLE"
+      "justification": "How many times the stable break band a point may sit before the report flags it. A report rule."
     },
     "FIXED_BASELINE_CONCESSION": {
       "value": 0.05,
@@ -531,7 +531,7 @@
     "PLAUSIBLE_OFFER_MAX": {
       "value": 30.0,
       "category": "d",
-      "justification": "PLAUSIBLE_OFFER_MAX"
+      "justification": "Upper yuan bound of the offline benchmark's unit check. Offers outside the band are parse failures, not imputed."
     },
     "BENCHMARK_FINAL_STEP": {
       "value": 0.01,
@@ -556,7 +556,7 @@
     "ONNX_TEMPERATURE": {
       "value": 1.2,
       "category": "n",
-      "justification": "Numerical guard."
+      "justification": "Temperature of the on-device intent export. A training hyperparameter, not a measured accuracy."
     },
     "HAZARD_INTERCEPT": {
       "value": -2.9,
@@ -596,7 +596,7 @@
     "HAZARD_U_HALF": {
       "value": 2.0,
       "category": "n",
-      "justification": "half-width of the random-effect grid. A support for the logit shift, not a price."
+      "justification": "Minimum half-width of the random-effect grid. The grid widens with the user's supplier spread. Not a price."
     },
     "HAZARD_LOGIT_CLIP": {
       "value": 20.0,
@@ -611,7 +611,7 @@
     "HAZARD_MIN_EVENTS": {
       "value": 30,
       "category": "n",
-      "justification": "below this many observed continue or walk-away events the hazard is labelled prior-driven. A disclosure rule, not a fitted size."
+      "justification": "Count reported beside the labelled hazard. Recorded outcomes update the supplier effect only. The coefficients stay labelled."
     },
     "HAZARD_U_POINTS": {
       "value": 64,
@@ -621,7 +621,7 @@
     "OFFER_GRID_FLOOR": {
       "value": 0.5,
       "category": "n",
-      "justification": "lowest normalised offer on the coupled grid, where 1 is the target. A supplier quote below this floor can still be accepted. Not a market quote."
+      "justification": "Unused by the live counter. The analytic search starts at a tiny positive offer, not at half the target."
     },
     "MOQ_HEADROOM_MULTIPLE": {
       "value": 2,
@@ -636,12 +636,12 @@
     "DESK_N_SAMPLES": {
       "value": 5000,
       "category": "n",
-      "justification": "desk solve budget. Five thousand shared scenarios and a 20-point grid match the auction counters on the checked seeds, and the reported standard errors sit on the seed-to-seed spread. The auction default of 20_000 stays on the auction path. Not a market quote."
+      "justification": "Monte Carlo sample budget for the desk report. The samples do not choose the counter. A numerical budget, not a price."
     },
     "DESK_N_GRID": {
       "value": 20,
       "category": "n",
-      "justification": "Numerical guard."
+      "justification": "Unused by the live counter. The offer search uses SEARCH_STEP. This count remains for older callers and the reported field."
     },
     "CVAR_TAIL_FRACTION": {
       "value": 0.05,
@@ -712,6 +712,31 @@
       "value": 1000.0,
       "category": "n",
       "justification": "Bisection bracket for a standard Student-t quantile. A numerical guard."
+    },
+    "HAZARD_U_TAILS": {
+      "value": 8.0,
+      "category": "n",
+      "justification": "How many supplier-spread units the walk-away grid must cover on each side. A support width, not a price."
+    },
+    "HAZARD_U_STEP": {
+      "value": 0.05,
+      "category": "n",
+      "justification": "Spacing of the walk-away effect grid. A quadrature step, not a price and not a fitted coefficient."
+    },
+    "SEARCH_STEP": {
+      "value": 0.001,
+      "category": "n",
+      "justification": "Normalised step of the expected-surplus search. The coarse desk grid does not choose the offer."
+    },
+    "SEARCH_MESH_CAP": {
+      "value": 20001,
+      "category": "n",
+      "justification": "Most points the surplus mesh may hold. A wider domain uses a coarser step instead of an unbounded loop."
+    },
+    "UNIT_SANITY_MULTIPLE": {
+      "value": 8.0,
+      "category": "d",
+      "justification": "A parsed unit price outside this multiple of the target and the ceiling goes to review. The desk can replace it."
     }
   },
   "inline": [
@@ -723,117 +748,282 @@
     {
       "file": "src/engine/bayesian_v2.py",
       "value": 20,
-      "justification": "IRLS passes for the robust location. Numerical guard."
+      "justification": "IRLS passes for the robust location. A numerical budget, not a price."
     },
     {
       "file": "src/engine/bayesian_v2.py",
       "value": 80,
-      "justification": "Student-t quantile bisection steps. Numerical guard."
+      "justification": "Student-t quantile bisection steps. A numerical budget, not a price."
     },
     {
       "file": "src/engine/bayesian_v2.py",
       "value": 200,
-      "justification": "Lentz continued-fraction iterations. Numerical guard."
+      "justification": "Lentz continued-fraction iterations for the incomplete beta. A numerical budget, not a price."
     },
     {
       "file": "src/engine/bayesian_v2.py",
       "value": 1000.0,
-      "justification": "Student-t quantile search bracket. Numerical guard."
+      "justification": "Student-t quantile search bracket. A numerical guard, not a price."
     },
     {
       "file": "src/engine/solver.py",
       "value": 512,
-      "justification": "Opponent-sample chunk. Numerical guard."
+      "justification": "Opponent-sample chunk size in the legacy solver. A numerical budget, not a price."
     },
     {
       "file": "src/engine/solver.py",
       "value": 20000,
-      "justification": "Legacy CLI sample default. The live desk does not use this default."
+      "justification": "Legacy CLI sample default. The live desk does not use this default as a price."
     },
     {
       "file": "src/engine/solver.py",
       "value": 20261013,
-      "justification": "Legacy solver seed, same value as DEFAULT_SOLVER_SEED."
+      "justification": "Legacy solver seed, the same value as DEFAULT_SOLVER_SEED. Reproducibility only."
     },
     {
       "file": "src/engine/multi_solver.py",
       "value": 6,
-      "justification": "Legacy opening-count default. Numerical grid size."
+      "justification": "Legacy schedule-count default on the auction solver. A grid size, not a price."
     },
     {
       "file": "src/engine/multi_solver.py",
       "value": 12,
-      "justification": "Legacy schedule-count default. Numerical grid size."
+      "justification": "Legacy opening-count default on the auction solver. A grid size, not a price."
     },
     {
       "file": "src/engine/multi_solver.py",
       "value": 20,
-      "justification": "Legacy grid default. Numerical grid size."
+      "justification": "Legacy grid default on the auction solver. The live counter does not read this grid."
     },
     {
       "file": "src/engine/multi_solver.py",
       "value": 40,
-      "justification": "Legacy opening-count default. Numerical grid size."
+      "justification": "Legacy opening-count default on the auction wrapper. A grid size, not a price."
     },
     {
       "file": "src/engine/multi_solver.py",
       "value": 42,
-      "justification": "Auction demo seed. Numerical guard."
+      "justification": "Default seed of the auction demo runner. Reproducibility only, not a price."
     },
     {
       "file": "src/engine/multi_solver.py",
       "value": 20000,
-      "justification": "Auction sample default. Numerical budget."
+      "justification": "Auction sample default. A Monte Carlo budget, not a price."
     },
     {
       "file": "src/engine/multi_solver.py",
       "value": 50000,
-      "justification": "Legacy wrapper sample default. Numerical budget."
+      "justification": "Legacy wrapper sample default. A Monte Carlo budget, not a price."
     },
     {
       "file": "src/desk/recompute.py",
       "value": 20,
-      "justification": "Drafts shown on a card. Display cap."
+      "justification": "Drafts shown on one supplier card. A display cap, not a price."
     },
     {
       "file": "src/desk/recompute.py",
       "value": 40,
-      "justification": "Desk grid upper bound. Numerical budget."
+      "justification": "Upper bound a caller may set on the unused desk grid. A numerical budget, not a price."
     },
     {
       "file": "src/desk/recompute.py",
       "value": 100,
-      "justification": "Events returned on the snapshot. Display cap."
+      "justification": "Events returned on one snapshot. A display cap, not a price."
     },
     {
       "file": "src/desk/recompute.py",
       "value": 1000,
-      "justification": "Elapsed milliseconds. Unit conversion."
+      "justification": "Milliseconds in one second when the snapshot reports elapsed time. A unit conversion."
     },
     {
       "file": "src/desk/recompute.py",
       "value": 20000,
-      "justification": "Desk sample upper bound. Numerical budget."
+      "justification": "Upper bound a caller may set on the desk sample count. A numerical budget, not a price."
     },
     {
       "file": "src/desk/parse.py",
       "value": 6,
-      "justification": "Characters after a range when screening dates. Parser guard."
+      "justification": "Characters after a range when the parser screens a date. A parser guard, not a price."
     },
     {
       "file": "src/desk/parse.py",
       "value": 7,
-      "justification": "Digit length at which a range is treated as a phone. Parser guard."
+      "justification": "Digit length at which a range is treated as a phone number. A parser guard, not a price."
     },
     {
       "file": "src/desk/parse.py",
       "value": 8,
-      "justification": "Characters before a range when screening phones. Parser guard."
+      "justification": "Characters before a range when the parser screens a phone. A parser guard, not a price."
     },
     {
       "file": "src/desk/parse.py",
       "value": 12,
-      "justification": "Characters after a range when screening phones. Parser guard."
+      "justification": "Characters after a range when the parser screens a phone. A parser guard, not a price."
+    },
+    {
+      "file": "src/desk/service.py",
+      "value": 5,
+      "justification": "A desk deal compares four or five suppliers. Five is the upper count, not a price."
+    },
+    {
+      "file": "src/desk/service.py",
+      "value": 8,
+      "justification": "Mailbox worker queue depth. A concurrency bound, not a price."
+    },
+    {
+      "file": "src/desk/service.py",
+      "value": 60,
+      "justification": "Default IMAP poll interval in seconds when IMAP_POLL_SECONDS is unset. A timer, not a price."
+    },
+    {
+      "file": "src/engine/logrolling.py",
+      "value": 5,
+      "justification": "Lead-time candidate five days under the buyer's baseline. Used only after the buyer sets that baseline."
+    },
+    {
+      "file": "src/engine/logrolling.py",
+      "value": 10,
+      "justification": "Lead-time candidate ten days under the buyer's baseline. Used only after the buyer sets that baseline."
+    },
+    {
+      "file": "src/engine/logrolling.py",
+      "value": 100,
+      "justification": "Percent conversion between a deposit fraction and the digits shown in the buyer script."
+    },
+    {
+      "file": "src/engine/logrolling.py",
+      "value": 365,
+      "justification": "Days in a year when an annual capital rate is applied to a lead time. A unit conversion."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 365,
+      "justification": "Days in a year when an annual rate is applied to a holding period. A unit conversion."
+    },
+    {
+      "file": "src/app/orchestrator.py",
+      "value": 2000,
+      "justification": "Sample count used only as a cache key for the robustness placeholder. It does not set a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 8,
+      "justification": "Attempts while waiting for a free local port. A startup bound, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10,
+      "justification": "Most rounds one auction request may ask for. An input bound, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 32,
+      "justification": "Most suppliers one auction request may name. An input bound, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 48,
+      "justification": "Errno for an address already in use on one platform. An operating-system code, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 64,
+      "justification": "Most characters stored for a command source label. An input bound, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 98,
+      "justification": "Errno for an address already in use on Linux. An operating-system code, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 100,
+      "justification": "Most rounds a session request may set. An input bound, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 128,
+      "justification": "Most solve results kept in the process cache. A memory bound, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 256,
+      "justification": "Most characters stored for a supplier name. An input bound, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 400,
+      "justification": "HTTP 400 for a request the route refuses before solving. A status code, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 404,
+      "justification": "HTTP 404 when the session id is not in the store. A status code, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 409,
+      "justification": "HTTP 409 when a write loses the optimistic lock. A status code, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 422,
+      "justification": "HTTP 422 when a required price or quote is missing or not finite. A status code, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 500,
+      "justification": "HTTP 500 when the solver raises. The body stays generic and does not include the exception. A status code, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 512,
+      "justification": "Most characters stored for a product name. An input bound, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 2000,
+      "justification": "Default Monte Carlo sample count on a negotiate request. A numerical budget, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 3650,
+      "justification": "Most lead days a round request may state. An input bound of about ten years, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10000,
+      "justification": "Most characters of supplier text one round may send. An input bound, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10048,
+      "justification": "Errno for an address already in use on Windows. An operating-system code, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 20000,
+      "justification": "Most Monte Carlo samples one negotiate request may ask for. A numerical budget, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 50000,
+      "justification": "Most Monte Carlo samples one session field may ask for. A numerical budget, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 65536,
+      "justification": "Ports are integers below this bound. A network limit, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 1500000,
+      "justification": "Most characters of a base64 image one upload may send. An input bound, not a price."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10000000,
+      "justification": "Most units one session may set as a quantity. An input bound, not a unit price."
     }
   ]
 }

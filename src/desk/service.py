@@ -9,7 +9,12 @@ import threading
 from email.message import EmailMessage
 from typing import Any, Awaitable, Callable
 
-from src.config.heuristics import BREAKDOWN_TRIP_THRESHOLD, RISK_TOLERANCE_FLOOR, RISK_TOLERANCE_MAX
+from src.config.heuristics import (
+    BREAKDOWN_TRIP_THRESHOLD,
+    RISK_TOLERANCE_FLOOR,
+    RISK_TOLERANCE_MAX,
+    UNIT_SANITY_MULTIPLE,
+)
 from src.desk import mailbox, recompute
 from src.desk.names import supplier_name_key
 from src.desk.parse import parse_quote, price_from_token
@@ -22,15 +27,20 @@ OUTCOMES = {"continue", "walk_away", "agreed"}
 
 
 def classify_origin(raw_text: str, extra: dict | None) -> dict[str, Any]:
-    """Fixture and simulated are decided here. A client boolean is not authority."""
+    """Fixture and simulated are decided here.
+
+    A client ``simulated: true`` is a downgrade and is kept. The page URL
+    or title can still upgrade a live flag to simulated. A client true is
+    never stored as live.
+    """
     fields = dict(extra or {})
-    fields.pop("simulated", None)
+    client_simulated = bool(fields.pop("simulated", False))
     header = str(fields.get("fixture") or "").strip()
     text = raw_text or ""
     fixture = bool(header) or ("X-TradeFlow-Fixture" in text)
     page_url = str(fields.get("page_url") or "")
     page_title = str(fields.get("page_title") or "")
-    simulated = ("mock_chat.html" in page_url.lower()) or ("simulated" in page_title.lower())
+    simulated = client_simulated or ("mock_chat.html" in page_url.lower()) or ("simulated" in page_title.lower())
     fields["fixture"] = header or ("present" if fixture else None)
     fields["simulated"] = simulated
     if fixture:
@@ -166,6 +176,19 @@ def ingest_message(
         )
 
 
+def _outside_sanity(price: float, deal: dict[str, Any]) -> bool:
+    """Auto-accept only inside a labelled multiple of the target and ceiling."""
+    raw = deal.get("unit_sanity_multiple")
+    multiple = float(UNIT_SANITY_MULTIPLE if raw is None else raw)
+    if multiple <= 0:
+        return False
+    target = float(deal["target_price"])
+    ceiling = float(deal["ceiling_price"])
+    high = max(target, ceiling) * multiple
+    low = target / multiple
+    return float(price) > high or float(price) < low
+
+
 def _ingest_locked(
     store: DeskStore,
     deal_id: str,
@@ -217,6 +240,11 @@ def _ingest_locked(
         confidence = "low"
         parsed["unit_price"] = None
         provenance["review_reason"] = "fixture" if fixture else "simulated test fixture"
+    elif status == "accepted" and _outside_sanity(float(parsed.get("unit_price") or 0.0), deal):
+        status = "review"
+        confidence = "low"
+        parsed["unit_price"] = None
+        provenance["review_reason"] = "outside the plausibility band around the target and the ceiling"
     elif status == "accepted" and linked is None:
         status = "review"
         confidence = "low"

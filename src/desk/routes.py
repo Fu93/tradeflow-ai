@@ -113,6 +113,9 @@ class AssumptionsIn(BaseModel):
     hazard_intercept: float | None = Field(default=None, allow_inf_nan=False)
     hazard_tau: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     hazard_quote_gap: float | None = Field(default=None, allow_inf_nan=False)
+    hazard_reserve_gap: float | None = Field(default=None, allow_inf_nan=False)
+    bayes_obs_noise: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    unit_sanity_multiple: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     reserve_prior_mean: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     reserve_prior_std: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     expected_markup: float | None = Field(default=None, ge=0, allow_inf_nan=False)
@@ -185,6 +188,7 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 provenance_extra={
                     "page_url": body.page_url,
                     "page_title": body.page_title,
+                    "simulated": body.simulated,
                 },
             )
         except KeyError as exc:

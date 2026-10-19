@@ -14,8 +14,6 @@ import os
 from ..engine import bayes_update, proposal
 from ..engine.bayesian_v2 import robust_location
 from ..engine.one_step import one_step_counter
-from .demo_data import DEMO_SPEC
-
 # [修正 §6.6] 穩健性報告快取：robustness.report() 內部會跑 10 次以上 solve()。
 # 舊版在 `analyze(quick=True)`（= 每個未認證的 /webhook/evolus 請求）都重算一次，
 # 使該端點成為一個被浪費的 DoS 放大器。現在：
@@ -70,6 +68,8 @@ def analyze(spec: dict, observed_offer: float | None = None, quick: bool = False
     target = spec.get("target_price")
     ceiling = spec.get("walk_away_ceiling", spec.get("ceiling_price"))
     if demo and (target is None or ceiling is None):
+        from .demo_data import DEMO_SPEC
+
         target = target if target is not None else DEMO_SPEC["target_price"]
         ceiling = ceiling if ceiling is not None else DEMO_SPEC["ceiling_price"]
         spec["label"] = "simulated"
@@ -80,10 +80,30 @@ def analyze(spec: dict, observed_offer: float | None = None, quick: bool = False
         quote_price = float(observed_offer) * float(target)
     if quote_price is None:
         raise ValueError("a supplier quote is required")
-    markup = float(spec.get("expected_markup") or 0.0)
-    width_source = "quote_location"
+    raw_markup = spec.get("expected_markup")
+    markup = None if raw_markup is None else float(raw_markup)
+    width_source = "user"
+    if spec.get("prior_reserve_mean") is None and markup is None:
+        return {
+            "recommendation": {
+                "opening_offer_price": None,
+                "blocked": True,
+                "counter_relation": "withheld",
+                "concession_curve": [],
+                "expected_margin_price": 0.0,
+                "breakdown_prob": 0.0,
+            },
+            "posterior_reserve_mean": None,
+            "posterior_reserve_std": None,
+            "reserve_source": "ask_only",
+            "robustness": _robustness_placeholder(float(target)),
+            "proposal": {"concession_curve": [], "advice_text": "The quote is an ask, not a reserve."},
+            "data_class": spec.get("label") or "user_supplied",
+            "prior_width_source": "unidentified",
+        }
     if spec.get("prior_reserve_mean") is None:
-        post_mean, post_std = robust_location([float(quote_price) / float(target) - markup])
+        post_mean, post_std = robust_location([float(quote_price) / float(target) - float(markup)])
+        width_source = "markup"
     else:
         post_mean = float(spec["prior_reserve_mean"])
         raw_std = spec.get("prior_reserve_std")
@@ -92,14 +112,16 @@ def analyze(spec: dict, observed_offer: float | None = None, quick: bool = False
                 raise ValueError(
                     "prior_reserve_std is required when prior_reserve_mean is set"
                 )
+            from .demo_data import DEMO_SPEC
+
             raw_std = DEMO_SPEC["prior_reserve_std"]
             width_source = "labelled_demo"
         else:
             width_source = "user"
         post_std = float(raw_std)
-        if observed_offer is not None:
+        if observed_offer is not None and markup is not None:
             post_mean, post_std = bayes_update(
-                post_mean, post_std, float(observed_offer), estimated_markup=markup,
+                post_mean, post_std, float(observed_offer), estimated_markup=float(markup),
             )
     n_samples = spec.get("n_samples")
     rec = one_step_counter(
@@ -187,8 +209,17 @@ def on_webhook(payload: dict) -> dict:
     return result
 
 
+def __getattr__(name: str):
+    """Demo constants load only when a caller asks for them."""
+    if name == "DEMO_SPEC":
+        from .demo_data import DEMO_SPEC
+
+        return DEMO_SPEC
+    raise AttributeError(name)
+
+
 if __name__ == "__main__":
-    from .demo_data import SUPPLIER_REPLIES
+    from .demo_data import DEMO_SPEC, SUPPLIER_REPLIES
     payload = {
         "demo": True,
         "extracted": {"product": DEMO_SPEC["product"], "target_price": DEMO_SPEC["target_price"]},

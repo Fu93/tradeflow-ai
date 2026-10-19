@@ -9,25 +9,28 @@ The constant registry is [constants_registry.json](constants_registry.json). `sc
 These stay labelled assumptions until the user records the missing observations. They are not silent factory facts.
 
 - Walk-away intercept, quote-gap coefficient, reserve-gap coefficient, and supplier spread. Quote text is not an outcome. The posterior moves only after a person records continue, walk-away, or agreed.
-- The split between markup and reserve. Quotes identify their sum. An agreed price on a closed deal is what separates them. Until then the markup is 0 unless the user sets it.
+- The split between markup and reserve. A quote is an ask. It becomes a reserve only when the user sets a markup, including an explicit zero, or when the same product has an agreed price. An unset markup withholds the counter. It does not silently place the reserve on the ask.
 - Opponent archetypes and concession schedules. They exist only on the legacy CLI grid (`src/engine/solver.py`). `/round` does not call that grid.
 - Total-cost crisis and markdown ratios. They apply only when the caller supplies a lead-time or MOQ baseline. A missing baseline skips the term.
-- Risk tolerance, search cost, and the ceiling. Those are preferences.
+- Risk tolerance, search cost, the ceiling, and the plausibility multiple. Those are preferences. The desk exposes them.
 
 ## One-step counter
 
 Code: `src/engine/one_step.py`, `src/engine/coupled.py`.
 
-One shared sample of scenarios is drawn. For each supplier the search scores offers on a grid and keeps the offer with the highest expected surplus among those whose credible walk-away hazard is at or under the user's cap.
+The counter maximises expected surplus of the one-step accept-or-reject model. Shocks are normal, so the chance the reserve sits at or under the offer is the Gaussian cdf. On the accept region the reserve gap is zero, so the walk-away chance depends on the quote gap and the supplier effect. The search uses `SEARCH_STEP` (0.001 of the target). `DESK_N_GRID` and the old half-target floor do not choose the offer. Monte Carlo samples are drawn once and only fill the reported tail. They do not pick the price.
 
-Surplus of an offer, in target units, is the mean of:
+Surplus of an offer, in target units, is
 
-- accept: `ceiling_norm − offer − landed_adder`, when the offer clears the sampled reserve and the sampled walk-away draw says the supplier stays
-- otherwise: the outside option
+`outside + P(accept) × max(0, max(outside, ceiling − landed adder − offer) − outside)`.
 
-On the desk the outside option is 0 (`snap_to_grid=True` does not add the rival's surplus back). Rejection and walking away therefore score the same. Among offers the cap allows, a higher offer has a higher surplus, so the chosen counter is the highest grid point at or under `min(quote, ceiling, best rival)`. The auction path (`snap_to_grid=False`) still scores the rival cap, including a cap that falls between grid points.
+`P(accept) = Φ((offer − reserve mean) / reserve std) × (1 − walk-away probability)`.
 
-Remeasured on this code, not copied from the earlier audit. Design: 3 labelled mandates (12/16.2, 28/36.5, 185/240), one 1.15× opening plus 15 random sets of 4–5 suppliers with quotes uniform on 1.00–1.45× target, seed 42, desk settings 5000 samples and 20 grid points, risk cap 0.15, no recorded walk-away outcomes. 217 rows. 119 (54.8%) are blocked because the credible hazard upper bound is over the cap. All 98 unblocked counters sit within one grid step of that cap; 3 land on the cap exactly. The baseline rate `σ(−2.9)` is about 5.2%. The credible upper adds the supplier spread, and a large quote gap (`βq = 3.4`) pushes aggressive offers over 0.15, which is what blocks the row. There is no continuation value for rejection, so an allowed offer is taken at the top of the grid.
+On the desk the outside option is 0. A tighter rival quote can only lower the highest offer the search may consider. It cannot raise another supplier's counter. The auction path keeps the rival's surplus as the outside option. If the best surplus does not beat that outside option, the counter is withheld.
+
+A quote with no reserve prior, no same-product agreed price, and no user markup is an ask. The counter is withheld and labelled `ask_only`. If the user sets a markup, including zero, the reserve is the quote minus that markup. A counter that then sits on the ask is labelled `at_ask`. It is not a silent echo. A counter below the ask is labelled `concession`.
+
+The walk-away upper bound integrates the labelled logistic over the user's supplier spread. The effect grid covers at least eight spreads, so a spread of 0.5, 1.5, or 2.5 is inside the support. The coefficients stay the labelled policy. Recorded continue and walk-away events update the supplier effect only.
 
 The score does not contain a CVaR term. CVaR is reported on the joint offer vector and labelled as a report. The old bluff term is gone: an accepted offer is already at or above the reserve, so a bluff gap on that region was zero.
 
@@ -82,7 +85,7 @@ Code: `src/engine/landed.py`. A missing freight, duty, or fee is "no data". It i
 
 ## Legacy grid
 
-`src/engine/solver.py` still scores one opening and one concession schedule for the CLI. It requires an explicit ceiling and opponent rows installed by `bind_archetypes`. HTTP `/round` returns 404 when the session does not exist and otherwise calls `one_step_counter`. The README describes that one-step lookahead, not a multi-ply expectimax.
+`src/engine/solver.py` still scores one opening and one concession schedule for the CLI. It requires an explicit ceiling and opponent rows installed by `bind_archetypes`. HTTP `/round` returns 404 when the session does not exist and otherwise calls `one_step_counter`. That call maximises expected surplus. It is not a multi-ply expectimax.
 
 ## Categories
 

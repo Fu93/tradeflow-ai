@@ -38,6 +38,7 @@ class TestConcurrencyCAS(unittest.TestCase):
             product_name="precision part",
             target_price=50.0,
             ceiling_price=65.0,
+            expected_markup=0.0,
         )
         s0 = self.manager.create_session(spec)
         self.assertEqual(s0.version, 1)
@@ -68,6 +69,7 @@ class TestConcurrencyCAS(unittest.TestCase):
             product_name="precision part",
             target_price=50.0,
             ceiling_price=65.0,
+            expected_markup=0.0,
         )
         self.manager.create_session(spec)
 
@@ -92,6 +94,7 @@ class TestConcurrencyCAS(unittest.TestCase):
             product_name="auto umbrella",
             target_price=12.0,
             ceiling_price=16.0,
+            expected_markup=0.0,
         )
         s0 = self.manager.create_session(spec)
         self.assertEqual(s0.version, 1)
@@ -121,6 +124,7 @@ class TestConcurrencyCAS(unittest.TestCase):
             product_name="race test",
             target_price=20.0,
             ceiling_price=25.0,
+            expected_markup=0.0,
         )
         self.manager.create_session(spec)
 
@@ -159,6 +163,7 @@ class TestConcurrencyCAS(unittest.TestCase):
             product_name="smart copilot part",
             target_price=100.0,
             ceiling_price=120.0,
+            expected_markup=0.0,
         )
         self.manager.create_session(spec)
 
@@ -205,7 +210,8 @@ class TestConcurrencyCAS(unittest.TestCase):
                 product_name=f"Stress Product {i}",
                 target_price=10.0 + i,
                 ceiling_price=15.0 + i,
-            )
+            expected_markup=0.0,
+        )
             self.manager.create_session(spec)
 
         def worker_task(session_idx: int) -> dict:

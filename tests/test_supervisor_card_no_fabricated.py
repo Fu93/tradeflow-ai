@@ -73,6 +73,7 @@ class _IsolatedSupervisorCase(unittest.TestCase):
             "max_rounds": 5,
             "supplier_id": "Supplier_A",
             "supplier_channel": "web_chat",
+            "expected_markup": 0.0,
         })
         assert r.status_code == 200, r.text
 

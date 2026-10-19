@@ -146,8 +146,18 @@ def audit_system():
     # Pillar 3: Corporate Mandate & Logrolling Pareto Frontier
     try:
         from src.engine.logrolling import CorporateMandate, SupplierCurrentOffer, LogrollingEngine
-        mandate = CorporateMandate(target_price=LOGROLL_TARGET, walk_away_ceiling=LOGROLL_CEILING)
-        offer = SupplierCurrentOffer(price=LOGROLL_OFFER, lead_days=25, is_price_stagnant=True)
+        mandate = CorporateMandate(
+            target_price=LOGROLL_TARGET,
+            walk_away_ceiling=LOGROLL_CEILING,
+            baseline_lead_days=25,
+            max_acceptable_lead_days=35,
+            min_desired_lead_days=12,
+            baseline_moq=500,
+            max_allowed_moq=1200,
+        )
+        offer = SupplierCurrentOffer(
+            price=LOGROLL_OFFER, lead_days=25, moq=500, is_price_stagnant=True,
+        )
         lr_res = LogrollingEngine.evaluate(mandate, offer)
         assert lr_res.ast_guardrail_passed is True
         assert len(lr_res.all_pareto_proposals) > 0

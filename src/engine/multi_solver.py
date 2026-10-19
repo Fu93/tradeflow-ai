@@ -1,9 +1,10 @@
 """Concurrent negotiation across suppliers.
 
-The offer to each supplier is a one-step lookahead over sampled
-accept-or-reject scenarios. The best rival landed quote is an outside
-option inside that search. Breakdown risk on this path is the walk-away
-hazard.
+The offer to each supplier maximises expected surplus of the accept-or-reject
+model. The best rival landed quote is an outside option inside that search.
+A quote is not treated as a reserve unless the caller sets a markup or a
+prior. Demo self-play freezes the scripted reserve. Breakdown risk on this
+path is the walk-away hazard.
 
 Self-play runs only when the caller passes ``demo=True`` and a labelled
 self-play bundle. This module does not import scenario prices.
@@ -17,6 +18,7 @@ import numpy as np
 from src.config.heuristics import (
     BAYES_OBS_NOISE,
     DEFAULT_SOLVER_SEED,
+    SEARCH_STEP,
 )
 from src.engine import model
 from src.engine.backend import resolve_use_gpu
@@ -171,6 +173,7 @@ class MultiSupplierSolver:
             "hazard_provenance": result["hazard_provenance"],
             "prior_driven": result["prior_driven"],
             "p_accept": result["p_accept"],
+            "counter_relation": result.get("counter_relation"),
         }
 
 
@@ -192,7 +195,8 @@ class MultiAuctionSession:
         base_currency: str = "CNY",
         prior_mean: float | None = None,
         prior_std: float | None = None,
-        expected_markup: float = 0.0,
+        expected_markup: float | None = None,
+        frozen_reserves: list[float] | None = None,
     ):
         if suppliers is None or target_price is None or walk_away_ceiling is None:
             raise ValueError(
@@ -220,14 +224,27 @@ class MultiAuctionSession:
             risk_tolerance=risk_tolerance,
         )
         self.user_prior = prior_mean is not None
-        self.expected_markup = float(expected_markup)
+        self.expected_markup = None if expected_markup is None else float(expected_markup)
+        self.freeze_reserve = frozen_reserves is not None
         width = float(prior_std) if prior_std is not None else float(BAYES_OBS_NOISE)
-        if self.user_prior:
+        if frozen_reserves is not None:
+            if len(frozen_reserves) != self.k:
+                raise ValueError("frozen reserves must name one reserve per supplier")
+            self.prior_means = np.asarray(frozen_reserves, dtype=np.float64)
+            self.prior_stds = np.full(self.k, width, dtype=np.float64)
+            self.reserve_source = "simulated"
+        elif self.user_prior:
             self.prior_means = np.full(self.k, float(prior_mean), dtype=np.float64)
             self.prior_stds = np.full(self.k, width, dtype=np.float64)
-        else:
-            self.prior_means = np.ones(self.k, dtype=np.float64)
+            self.reserve_source = "user"
+        elif self.expected_markup is not None:
+            self.prior_means = np.full(self.k, np.nan, dtype=np.float64)
             self.prior_stds = np.full(self.k, width, dtype=np.float64)
+            self.reserve_source = "markup"
+        else:
+            self.prior_means = np.full(self.k, np.nan, dtype=np.float64)
+            self.prior_stds = np.full(self.k, width, dtype=np.float64)
+            self.reserve_source = "ask_only"
         self._observed: List[List[float]] = [[] for _ in range(self.k)]
         self.beliefs = [HazardBelief() for _ in range(self.k)]
         self.inactive: set[int] = set()
@@ -338,44 +355,75 @@ class MultiAuctionSession:
         for i in active:
             observed = float(offers_norm[i])
             self._observed[i].append(observed)
-            if self.user_prior:
+            if self.freeze_reserve:
+                continue
+            if self.user_prior and self.expected_markup is not None:
                 mean, std = bayes_update(
                     float(self.prior_means[i]),
                     float(self.prior_stds[i]),
                     observed,
-                    estimated_markup=self.expected_markup,
+                    estimated_markup=float(self.expected_markup),
                 )
-            else:
-                centred = [quote - self.expected_markup for quote in self._observed[i]]
+                self.prior_means[i] = mean
+                self.prior_stds[i] = max(std, float(np.finfo(np.float64).tiny))
+            elif self.user_prior:
+                continue
+            elif self.expected_markup is not None:
+                centred = [quote - float(self.expected_markup) for quote in self._observed[i]]
                 mean, std = robust_location(centred)
-            self.prior_means[i] = mean
-            self.prior_stds[i] = max(std, float(np.finfo(np.float64).tiny))
+                self.prior_means[i] = mean
+                self.prior_stds[i] = max(std, float(np.finfo(np.float64).tiny))
+            else:
+                self.prior_means[i] = np.nan
         if not active:
             if self.inactive and len(self.inactive) >= self.k:
                 raise ValueError("Every supplier has walked away, so there is no rival left to compare.")
             raise ValueError("No supplier quote could be compared without inventing an FX rate.")
+        identified = [i for i in active if np.isfinite(self.prior_means[i])]
         # A quote that cannot be converted is left out of the rival set.
         # Using the unconverted number would invent a comparison.
-        res_active = self.solver.solve_reverse_auction_tensor(
-            supplier_offers=offers_norm[active],
-            prior_means=self.prior_means[active],
-            prior_stds=self.prior_stds[active],
-            rng=self._rng,
-            kappas=kappas[active],
-            beliefs=[self.beliefs[i] for i in active],
-            round_index=self.current_round,
-        )
+        res_active = None
+        if identified:
+            res_active = self.solver.solve_reverse_auction_tensor(
+                supplier_offers=offers_norm[identified],
+                prior_means=self.prior_means[identified],
+                prior_stds=self.prior_stds[identified],
+                rng=self._rng,
+                kappas=kappas[identified],
+                beliefs=[self.beliefs[i] for i in identified],
+                round_index=self.current_round,
+            )
 
         def _expand(values, fill=None):
             out = [fill] * self.k
-            for local, supplier_index in enumerate(active):
+            for local, supplier_index in enumerate(identified):
                 out[supplier_index] = values[local]
             return out
 
-        best_offers = _expand(res_active["best_offers"])
-        solver_blocked = _expand(res_active["blocked"], fill=False)
-        self.total_rollouts_accum += int(res_active["total_rollouts"])
-        self.total_compute_seconds += float(res_active["elapsed_seconds"])
+        if res_active is None:
+            best_offers = [None] * self.k
+            solver_blocked = [False] * self.k
+            relations = ["withheld"] * self.k
+            rollouts = 0
+            elapsed = 0.0
+            push_order: list[int] = []
+            tactics_local: list[str] = []
+            ceilings_local: list[float | None] = []
+            hazards_local: list[float | None] = []
+            upper_local: list[float | None] = []
+        else:
+            best_offers = _expand(res_active["best_offers"])
+            solver_blocked = _expand(res_active["blocked"], fill=False)
+            relations = _expand(res_active.get("counter_relation"), fill="withheld")
+            rollouts = int(res_active["total_rollouts"])
+            elapsed = float(res_active["elapsed_seconds"])
+            push_order = list(res_active["push_order"])
+            tactics_local = list(res_active["tactics"])
+            ceilings_local = list(res_active["effective_ceilings"])
+            hazards_local = list(res_active["p_break_array"])
+            upper_local = list(res_active["hazard_upper"])
+            self.total_rollouts_accum += rollouts
+            self.total_compute_seconds += elapsed
         unit_bases = [
             None if rows[i].get("unit_price_base") is None else float(rows[i]["unit_price_base"])
             for i in range(self.k)
@@ -411,6 +459,14 @@ class MultiAuctionSession:
                 else:
                     block_reasons.append("no data")
                 continue
+            if i not in identified:
+                counters.append(None)
+                blocked_out.append(True)
+                hazard_figure.append("mean")
+                block_reasons.append(
+                    "ask only: the quote is an ask, not a reserve. Set a reserve prior or a markup."
+                )
+                continue
             if all_above:
                 counters.append(None)
                 blocked_out.append(True)
@@ -427,10 +483,17 @@ class MultiAuctionSession:
             own = unit_bases[i]
             own_cap = float(own) if own is not None else float(quotes[i])
             cap = min(self.walk_away_ceiling, own_cap)
-            counters.append(min(raw, cap))
+            counter = min(raw, cap)
+            counters.append(counter)
             blocked_out.append(False)
             hazard_figure.append("mean")
-            block_reasons.append(None)
+            if relations[i] != "at_ask" and abs(counter - own_cap) <= self.target_price * float(SEARCH_STEP):
+                relations[i] = "at_ask"
+            block_reasons.append(
+                "at the ask: expected surplus is highest at the supplier's quote"
+                if relations[i] == "at_ask"
+                else None
+            )
         actionable = [counter / self.target_price for counter in counters if counter is not None]
         self._last_offers_norm = actionable
         mean_norm = float(np.mean(actionable)) if actionable else None
@@ -439,9 +502,36 @@ class MultiAuctionSession:
             lead = min(lead_pool, key=lambda i: float(rows[i]["landed_cost"]))
         else:
             lead = min(lead_pool, key=lambda i: float(rows[i]["unit_price_base"]))
-        names = [self.suppliers[active[i]]["name"] for i in res_active["push_order"]]
-        tactics = _expand(res_active["tactics"], fill="NO_DATA")
-        ceilings = _expand(res_active["effective_ceilings"])
+        if res_active is None:
+            names = []
+            tactics = ["ASK_ONLY"] * self.k
+            ceilings = [None] * self.k
+            hazard_values = [None] * self.k
+            upper_values = [None] * self.k
+            push_first_name = None
+            weitzman = [None] * self.k
+            stop = True
+            stop_reason = "ask only: set a reserve prior or a markup before a counter is issued"
+            mc = None
+            push_limits = [None] * self.k
+            prior_driven = True
+            hazard_provenance = None
+            risk_value = self.risk_tolerance
+        else:
+            names = [self.suppliers[identified[i]]["name"] for i in push_order]
+            tactics = _expand(tactics_local, fill="NO_DATA")
+            ceilings = _expand(ceilings_local)
+            hazard_values = _expand(hazards_local)
+            upper_values = _expand(upper_local)
+            push_first_name = self.suppliers[identified[int(res_active["push_first"])]]["name"]
+            weitzman = _expand(res_active["weitzman_index"])
+            stop = res_active["stop"]
+            stop_reason = res_active["stop_reason"]
+            mc = res_active["mc"]
+            push_limits = _expand(res_active["push_limits"])
+            prior_driven = res_active["prior_driven"]
+            hazard_provenance = res_active["hazard_provenance"]
+            risk_value = res_active["risk_tolerance"]
         round_info = {
             "round": self.current_round,
             "quotes": [float(q) for q in quotes],
@@ -451,13 +541,15 @@ class MultiAuctionSession:
             "effective_ceilings_cny": [
                 None if c is None else float(c) * self.target_price for c in ceilings
             ],
-            "p_break_array": [None if p is None else float(p) for p in _expand(res_active["p_break_array"])],
-            "hazard_upper": [None if p is None else float(p) for p in _expand(res_active["hazard_upper"])],
+            "p_break_array": [None if p is None else float(p) for p in hazard_values],
+            "hazard_upper": [None if p is None else float(p) for p in upper_values],
             "hazard_figure": hazard_figure,
             "counter_offers_cny": counters,
+            "counter_relation": relations,
+            "reserve_source": self.reserve_source,
             "counter_offers_mean_norm": mean_norm,
-            "rollouts": res_active["total_rollouts"],
-            "elapsed_seconds": res_active["elapsed_seconds"],
+            "rollouts": rollouts,
+            "elapsed_seconds": elapsed,
             "unit_prices": unit_bases,
             "landed_costs": [None if rows[i].get("landed_cost") is None else float(rows[i]["landed_cost"]) for i in range(self.k)],
             "landed_status": [rows[i].get("status") for i in range(self.k)],
@@ -470,18 +562,18 @@ class MultiAuctionSession:
             ],
             "all_quotes_above_ceiling": all_above,
             "push_order": names,
-            "push_first": self.suppliers[active[int(res_active["push_first"])]]["name"],
-            "weitzman_index": _expand(res_active["weitzman_index"]),
-            "stop": res_active["stop"],
-            "stop_reason": res_active["stop_reason"],
-            "mc": res_active["mc"],
+            "push_first": push_first_name,
+            "weitzman_index": weitzman,
+            "stop": stop,
+            "stop_reason": stop_reason,
+            "mc": mc,
             "blocked": blocked_out,
             "block_reasons": block_reasons,
             "active_suppliers": [self.suppliers[i]["name"] for i in active],
-            "push_limits": _expand(res_active["push_limits"]),
-            "prior_driven": res_active["prior_driven"],
-            "hazard_provenance": res_active["hazard_provenance"],
-            "risk_tolerance": res_active["risk_tolerance"],
+            "push_limits": push_limits,
+            "prior_driven": prior_driven,
+            "hazard_provenance": hazard_provenance,
+            "risk_tolerance": risk_value,
             "breakdown_definition": "walk-away hazard of the next offer",
             "comparable": comparable,
         }
@@ -612,7 +704,7 @@ def simulate_reverse_auction(
     self_play: Optional[Dict[str, Any]] = None,
     prior_mean: float | None = None,
     prior_std: float | None = None,
-    expected_markup: float = 0.0,
+    expected_markup: float | None = None,
 ) -> Dict[str, Any]:
     """Run a concurrent round.
 
@@ -634,6 +726,9 @@ def simulate_reverse_auction(
         if embedded and all(item is not None for item in embedded):
             rounds_quotes = [[float(item) for item in embedded]]
             user_quotes = True
+    frozen = None
+    if demo and self_play and prior_mean is None and expected_markup is None:
+        frozen = [float(item["reserve_price"]) for item in self_play["specs"]]
     session = MultiAuctionSession(
         suppliers=suppliers,
         target_price=target_price,
@@ -647,6 +742,7 @@ def simulate_reverse_auction(
         prior_mean=prior_mean,
         prior_std=prior_std,
         expected_markup=expected_markup,
+        frozen_reserves=frozen,
     )
     if rounds_quotes is not None:
         for index, quotes in enumerate(rounds_quotes):
@@ -680,5 +776,5 @@ def simulate_reverse_auction(
     simulated = not user_quotes
     summary["data_class"] = "simulated" if simulated else "user_supplied"
     summary["simulated"] = simulated
-    summary["solver"] = "one-step lookahead over sampled accept-or-reject scenarios"
+    summary["solver"] = "analytic expected surplus of the one-step accept-or-reject model"
     return summary

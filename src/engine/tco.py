@@ -31,8 +31,8 @@ from src.config.heuristics import (
 
 class TradeTermsSpec(BaseModel):
     """採購方基準合約標準條款。"""
-    baseline_lead_days: int = Field(default=20, description="基準標準交期 (天)")
-    baseline_moq: int = Field(default=1000, description="基準標準訂單量 (件)")
+    baseline_lead_days: Optional[int] = Field(default=None, description="基準標準交期 (天)。未設定則不計交期影子成本。")
+    baseline_moq: Optional[int] = Field(default=None, description="基準標準訂單量 (件)。未設定則不計起訂量影子成本。")
     baseline_payment_deposit_pct: float = Field(default=BASELINE_DEPOSIT_PCT, description="基準定金比例")
     baseline_payment_credit_days: int = Field(default=0, description="基準驗收後帳期天數 (0=見提單走帳)")
     annual_cost_of_capital: float = Field(default=BUYER_CAPITAL_RATE, description="買方年化資本佔用成本")

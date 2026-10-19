@@ -214,7 +214,8 @@ def test_recommended_price_ignores_market_context():
         "product_name": "Custom Carbon Auto Umbrella",
         "target_price": 12.0,
         "ceiling_price": 16.2,
-    }
+            "expected_markup": 0.0,
+        }
     wild = dict(plain)
     wild["session_id"] = "mkt-wild"
     wild["market_context"] = {

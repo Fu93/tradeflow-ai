@@ -69,7 +69,8 @@ class _IsolatedClientCase(unittest.TestCase):
                 "ceiling_price": ceiling,
                 "moq": 5000,
                 "max_rounds": 6,
-            },
+            "expected_markup": 0.0,
+        },
         )
         self.assertIn(r.status_code, (200, 201), r.text)
 

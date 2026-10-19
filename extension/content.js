@@ -268,9 +268,12 @@
     if (!Number.isFinite(target) || target <= 0 || !Number.isFinite(ceiling) || ceiling <= 0) {
       return null;
     }
+    const markupText = read("markup");
+    const markup = markupText === "" ? null : Number(markupText);
     return {
       targetPrice: target,
       ceilingPrice: ceiling,
+      expectedMarkup: Number.isFinite(markup) && markup >= 0 ? markup : null,
       productName: read("product") || "page product",
       mandateLabel: root.getAttribute("data-tf-label") || "",
     };
@@ -1082,7 +1085,7 @@
     }
 
     console.log(`[TradeFlow Copilot] Detected quote ¥${offer} in session ${sessionContext.sessionId}`);
-    overlayEl.updateStatus("ENGINE SOLVING...", "#38bdf8", `Processing quote ¥${offer} via one-step lookahead`);
+    overlayEl.updateStatus("ENGINE SOLVING...", "#38bdf8", `Processing quote ¥${offer} via expected surplus`);
 
     // 3. Dispatch to background via Port
     // V1 (F6) CONFIRMED: neither content.js nor background.js ever sent a `mode`
@@ -1098,6 +1101,7 @@
       mode: overlayEl._state.mode === "copilot" ? "copilot" : "autopilot",
       targetPrice: mandate.targetPrice,
       ceilingPrice: mandate.ceilingPrice,
+      expectedMarkup: mandate.expectedMarkup,
       productName: mandate.productName,
       mandateLabel: mandate.mandateLabel,
       supplierId: sessionContext.supplierId,

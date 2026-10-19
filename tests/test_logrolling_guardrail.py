@@ -497,8 +497,16 @@ class TestLogrollingGuardrailOrder(unittest.TestCase):
         而該方案供應商剩餘為 -2474.69（工廠明確虧損）。
         修正後：虧損方案不得作為「帕雷托改善」被推薦。
         """
-        mandate = CorporateMandate(target_price=12, walk_away_ceiling=16.2)
-        offer = SupplierCurrentOffer(price=9.00, deposit_pct=0.60)
+        mandate = CorporateMandate(
+            target_price=12,
+            walk_away_ceiling=16.2,
+            baseline_lead_days=25,
+            max_acceptable_lead_days=35,
+            min_desired_lead_days=12,
+            baseline_moq=500,
+            max_allowed_moq=1200,
+        )
+        offer = SupplierCurrentOffer(price=9.00, deposit_pct=0.60, lead_days=25, moq=500)
         res = LogrollingEngine.evaluate(mandate, offer)
 
         best = res.best_recommendation

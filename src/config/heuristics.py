@@ -303,9 +303,20 @@ HAZARD_N_ALT = 0.0
 # Assumption, not estimated.
 HAZARD_SUPPLIER_TAU = 0.35
 
-# Rationale: half-width of the random-effect grid. A support for the logit
-# shift, not a price.
+# Rationale: minimum half-width of the random-effect grid, in logit units.
+# The live grid is at least this wide and at least HAZARD_U_TAILS times the
+# user's spread, so a spread larger than 2 is still inside the support.
 HAZARD_U_HALF = 2.0
+
+# Rationale: how many prior standard deviations of the supplier effect the
+# hazard grid covers on each side. Eight standard deviations leave a
+# negligible normal tail outside the grid.
+HAZARD_U_TAILS = 8.0
+
+# Rationale: spacing of the hazard random-effect grid, in logit units.
+# Fine enough that the predictive 97.5% hazard matches the closed form
+# sigmoid(eta + Phi^{-1}(0.975) * tau) when no outcomes have been recorded.
+HAZARD_U_STEP = 0.05
 
 # Rationale: clip on the hazard logit so an extreme gap cannot overflow
 # the sigmoid. Not a price.
@@ -322,10 +333,28 @@ HAZARD_MIN_EVENTS = 30
 # Rationale: number of points on the random-effect grid.
 HAZARD_U_POINTS = 64
 
-# Rationale: lowest normalised offer on the coupled grid, where 1 is the
-# target. A supplier quote below this floor can still be accepted. Not a
-# market quote.
+# Rationale: lowest point of the legacy concession grid, where 1 is the
+# target. The live counter does not read this floor. It searches expected
+# surplus from a tiny positive offer up to the quote, the ceiling, and the
+# rival cap. Kept for the CLI grid only.
 OFFER_GRID_FLOOR = 0.50
+
+# Rationale: step of the analytic surplus search, in the same units as the
+# normalised offer (1 is the target). The chosen counter is the mesh point
+# with the highest expected surplus. Halving the step must not move that
+# counter by more than one step.
+SEARCH_STEP = 0.001
+
+# Rationale: largest mesh the analytic search will allocate. A wider domain
+# uses a coarser step. Live offers are normalised, so this cap is not the
+# decision. A numerical budget, not a price.
+SEARCH_MESH_CAP = 20001
+
+# Rationale: a parsed unit price outside this multiple of the larger of the
+# target and the ceiling is not auto-accepted. The desk shows it for a
+# person to review. The user can set a different multiple on the deal.
+# A labelled plausibility band, not a market range.
+UNIT_SANITY_MULTIPLE = 8.0
 
 # Rationale: how many times the user's MOQ a planning mandate may stretch
 # when the user did not set a separate maximum. A labelled volume policy,
@@ -336,11 +365,14 @@ MOQ_HEADROOM_MULTIPLE = 2
 # budget, not a price.
 ROUND_N_SAMPLES = 2000
 
-# Rationale: desk solve budget. Five thousand shared scenarios and a
-# 20-point grid match the auction counters on the checked seeds, and the
-# reported standard errors sit on the seed-to-seed spread. The auction
-# default of 20_000 stays on the auction path. Not a market quote.
+# Rationale: Monte Carlo budget for the report attached to a chosen offer.
+# The samples do not choose the offer. The offer is the analytic surplus
+# maximum. Not a market quote.
 DESK_N_SAMPLES = 5000
+
+# Rationale: legacy offer-grid length. The live counter does not read it.
+# Doubling it must not move a counter. Kept so an older caller can still
+# name a grid. Not a market quote.
 DESK_N_GRID = 20
 
 # Rationale: fraction of the cost sample in the upper CVaR tail. The tail

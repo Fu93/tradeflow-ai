@@ -534,7 +534,9 @@ class TestBilingualCognitiveBridge(unittest.TestCase):
         """驗證多供應商獨立會話在對手主動降價 >= 3% 或實質讓步時瞬間破冰喚醒。"""
         from src.session.schema import NegotiationSession, SessionSpec
         session = NegotiationSession(
-            spec=SessionSpec(session_id="S_TEST", product_name="殼體", target_price=12.0, ceiling_price=15.0),
+            spec=SessionSpec(session_id="S_TEST", product_name="殼體", target_price=12.0, ceiling_price=15.0,
+            expected_markup=0.0,
+        ),
             latest_opponent_offer=15.00,
             silence_until_ts=9999999999.0,  # 沉默冷卻中
         )

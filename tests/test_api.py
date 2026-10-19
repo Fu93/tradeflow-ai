@@ -89,9 +89,10 @@ class TestAPI(_IsolatedClientCase):
         })
         self.assertEqual(r.status_code, 200, r.text)
         body = r.json()
-        self.assertIn("opening_offer_price", body)
-        # No prior was sent, so the location is the quote itself.
-        self.assertAlmostEqual(body["posterior_reserve_mean"], 1.25, places=2)
+        self.assertIsNone(body["opening_offer_price"])
+        self.assertEqual(body["counter_relation"], "withheld")
+        self.assertEqual(body["reserve_source"], "ask_only")
+        self.assertIsNone(body["posterior_reserve_mean"])
 
     def test_webhook_responds_with_draft(self):
         """Webhook 必須回傳草稿與建議，且**不得因外部服務狀態而失敗**。
@@ -106,7 +107,7 @@ class TestAPI(_IsolatedClientCase):
         sandbox 且 token 未配置的前提下測試（fail-open），與 demo 行為一致。
         """
         r = self.c.post("/webhook/evolus", json={
-            "extracted": {"target_price": 12.0, "ceiling_price": 16.2},
+            "extracted": {"target_price": 12.0, "ceiling_price": 16.2, "expected_markup": 0.0},
             "offer": 1.25, "email_body": "We can do ¥15, MOQ 500."})
         self.assertEqual(r.status_code, 200)
         body = r.json()
@@ -156,6 +157,7 @@ class TestUnknownFieldRejection(_IsolatedClientCase):
             "product_name": "Sample",
             "target_price": 12.0,
             "ceiling_price": 16.2,
+            "expected_markup": 0.0,
         })
         self.assertEqual(created.status_code, 200, created.text)
         r = self.c.post(

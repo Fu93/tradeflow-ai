@@ -212,6 +212,7 @@ class TestAppV4Endpoints(unittest.TestCase):
             "target_price": 12.0,
             "ceiling_price": 16.2,
             "moq": 500,
+            "expected_markup": 0.0,
         }
         res_create = self.client.post("/api/v1/sessions", json=spec)
         self.assertEqual(res_create.status_code, 200)

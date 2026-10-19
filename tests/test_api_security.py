@@ -98,7 +98,8 @@ def _valid_spec(session_id: str = "sec_sess_001", **over) -> dict:
         "target_price": 12.0,
         "ceiling_price": 16.2,
         "moq": 5000,
-    }
+            "expected_markup": 0.0,
+        }
     spec.update(over)
     return spec
 
@@ -628,7 +629,8 @@ class TestSessionIdPathTraversal(_IsolatedCase):
         from src.session.manager import SessionManager
         mgr = api_main.session_mgr
         spec = SessionSpec(
-            session_id="legit_id_ok", product_name="x", target_price=12.0, ceiling_price=16.0
+            session_id="legit_id_ok", product_name="x", target_price=12.0, ceiling_price=16.0,
+            expected_markup=0.0,
         )
         self.assertRaises(ValueError, mgr._snapshot_path, "../../escape")
         # And a legit id resolves inside store_dir.
@@ -640,7 +642,8 @@ class TestSessionIdPathTraversal(_IsolatedCase):
             SessionSpec(
                 session_id="sec-spec-inf", product_name="x",
                 target_price=float("inf"), ceiling_price=16.0,
-            )
+            expected_markup=0.0,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -654,7 +657,8 @@ class TestCasIsAlwaysEnforced(_IsolatedCase):
         from src.session.schema import NegotiationTurn
         mgr = api_main.session_mgr
         spec = SessionSpec(
-            session_id="sec-cas-01", product_name="x", target_price=20.0, ceiling_price=25.0
+            session_id="sec-cas-01", product_name="x", target_price=20.0, ceiling_price=25.0,
+            expected_markup=0.0,
         )
         created = mgr.create_session(spec)
 
@@ -687,7 +691,8 @@ class TestCasIsAlwaysEnforced(_IsolatedCase):
 
         mgr = api_main.session_mgr
         mgr.create_session(SessionSpec(
-            session_id="sec-cas-race", product_name="race", target_price=20.0, ceiling_price=25.0
+            session_id="sec-cas-race", product_name="race", target_price=20.0, ceiling_price=25.0,
+            expected_markup=0.0,
         ))
         base = mgr.get_session("sec-cas-race").version
 
@@ -718,7 +723,8 @@ class TestCasIsAlwaysEnforced(_IsolatedCase):
         from src.session.manager import OptimisticLockConflictError
         mgr = api_main.session_mgr
         mgr.create_session(SessionSpec(
-            session_id="sec-cas-02", product_name="x", target_price=20.0, ceiling_price=25.0
+            session_id="sec-cas-02", product_name="x", target_price=20.0, ceiling_price=25.0,
+            expected_markup=0.0,
         ))
         s = mgr.transition_state(
             "sec-cas-02", AutopilotState.COPILOT_MONITORING, expected_version=1
@@ -840,7 +846,8 @@ class TestNoInternalLeakInErrors(_IsolatedCase):
         api_main.one_step_counter = boom
         try:
             r = self.c.post("/negotiate", json={
-                "target_price": 12.0, "ceiling_price": 16.2, "observed_offer": 1.25, "n_samples": 100,
+                "target_price": 12.0, "ceiling_price": 16.2, "observed_offer": 1.25,
+                "n_samples": 100, "expected_markup": 0.0,
             })
         finally:
             api_main.one_step_counter = original

@@ -51,7 +51,8 @@ created = client.post("/api/v1/sessions", json={
     "product_name": "Sample",
     "target_price": 12.0,
     "ceiling_price": 16.2,
-})
+            "expected_markup": 0.0,
+        })
 round_resp = client.post(
     "/api/v1/sessions/rss-round-01/round",
     json={

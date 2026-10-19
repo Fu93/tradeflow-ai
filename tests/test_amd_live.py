@@ -56,7 +56,8 @@ class TestPriceGuard(unittest.TestCase):
                 "product_name": "Sample",
                 "target_price": 12.0,
                 "ceiling_price": 16.2,
-            })
+            "expected_markup": 0.0,
+        })
             self.assertEqual(created.status_code, 200, created.text)
         with patch.object(InboundIntentClassifier, "classify", staticmethod(fake_classify)):
             quiet = client.post(

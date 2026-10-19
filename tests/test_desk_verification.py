@@ -163,6 +163,7 @@ def test_drafts_follow_the_supplier_language_and_thread(desk_env):
         suppliers=SUPPLIERS,
     )
     deal_id = snapshot["deal"]["id"]
+    store.set_policy(deal_id, {"expected_markup": 0.08})
     ningbo = next(row["id"] for row in snapshot["suppliers"] if row["name"] == "Ningbo")
     foshan = next(row["id"] for row in snapshot["suppliers"] if row["name"] == "Foshan")
     ingest_message(
@@ -214,6 +215,7 @@ def test_failed_smtp_is_not_stored_as_sent(desk_env, monkeypatch):
         suppliers=SUPPLIERS,
     )
     deal_id = snapshot["deal"]["id"]
+    store.set_policy(deal_id, {"expected_markup": 0.08})
     ingest_message(
         store,
         deal_id,
@@ -262,6 +264,12 @@ def test_desk_mutations_require_a_real_key_and_a_boolean(desk_env, monkeypatch):
     created = client.post("/api/v1/desk/deals", json=body, headers={"X-API-Key": KEY})
     assert created.status_code == 200, created.text
     deal_id = created.json()["deal"]["id"]
+    assumptions = client.post(
+        f"/api/v1/desk/deals/{deal_id}/assumptions",
+        json={"expected_markup": 0.08},
+        headers={"X-API-Key": KEY},
+    )
+    assert assumptions.status_code == 200, assumptions.text
     with_key = client.get(f"/api/v1/desk/deals/{deal_id}", headers={"X-API-Key": KEY})
     assert with_key.status_code == 200
     poll = client.post(

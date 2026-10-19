@@ -5,10 +5,10 @@ still close. The hazard is the chance the supplier stops talking after the
 offer we are about to make.
 
 The logistic coefficients live in ``src.config.heuristics``. They are
-assumptions. No public bargaining file was fitted for this build, so every
-result stays labelled prior-driven until real continue / walk-away events
-are recorded. The eBay Best Offer replication (doi:10.7910/DVN/ZOWWO7) was
-not downloaded and is not a source of these numbers.
+assumptions. Recorded continue / walk-away events update only the supplier
+random effect. They do not fit the intercept, the slopes, or the spread.
+The eBay Best Offer replication (doi:10.7910/DVN/ZOWWO7) was not downloaded
+and is not a source of these numbers.
 """
 from __future__ import annotations
 
@@ -29,6 +29,8 @@ from src.config.heuristics import (
     HAZARD_SUPPLIER_TAU,
     HAZARD_U_HALF,
     HAZARD_U_POINTS,
+    HAZARD_U_STEP,
+    HAZARD_U_TAILS,
 )
 
 PROVENANCE = {
@@ -37,9 +39,9 @@ PROVENANCE = {
     "candidate_dataset_not_used": "doi:10.7910/DVN/ZOWWO7",
     "source": "src/config/heuristics.py",
     "note": (
-        "Prior-driven estimate. Coefficients are assumptions, not a fit. "
-        "No walk-away events have been observed. Do not read the number as "
-        "a calibrated probability from factory negotiations."
+        "Coefficients stay the labelled policy. Recorded outcomes update "
+        "only the supplier effect. Do not read the number as a calibrated "
+        "probability from factory negotiations."
     ),
 }
 
@@ -172,7 +174,10 @@ class HazardBelief:
         self.tau = float(HAZARD_SUPPLIER_TAU if tau is None else tau)
         self.quote_gap_coef = float(HAZARD_QUOTE_GAP if quote_gap_coef is None else quote_gap_coef)
         self.reserve_gap_coef = float(HAZARD_RESERVE_GAP if reserve_gap_coef is None else reserve_gap_coef)
-        self.u = np.linspace(-HAZARD_U_HALF, HAZARD_U_HALF, int(HAZARD_U_POINTS))
+        half = max(float(HAZARD_U_HALF), float(HAZARD_U_TAILS) * max(self.tau, 0.0))
+        step = float(HAZARD_U_STEP)
+        count = max(int(HAZARD_U_POINTS), int(np.ceil((2 * half) / step)) + 1)
+        self.u = np.linspace(-half, half, count)
         tau = max(self.tau, float(np.finfo(np.float64).tiny))
         log_prior = -(self.u * self.u) / (2 * tau * tau)
         self.log_w = log_prior - _logsumexp(log_prior)
@@ -213,7 +218,8 @@ class HazardBelief:
 
     @property
     def prior_driven(self) -> bool:
-        return self.n_events < int(HAZARD_MIN_EVENTS)
+        """Coefficients are the labelled policy. Outcomes do not fit them."""
+        return True
 
     def _logits(self, g_quote: float, g_reserve: float, reciprocity: float, round_index: float, n_alt: float) -> np.ndarray:
         return hazard_logit(
@@ -286,7 +292,10 @@ class HazardBelief:
             "mean_effect": self.mean_effect(),
             "n_events": self.n_events,
             "n_walks": self.n_walks,
-            "prior_driven": self.prior_driven,
+            "prior_driven": True,
+            "coefficients": "labelled policy",
+            "effect_events": self.n_events,
+            "min_events": int(HAZARD_MIN_EVENTS),
             "intercept": self.intercept,
             "tau": self.tau,
             "provenance": dict(PROVENANCE),

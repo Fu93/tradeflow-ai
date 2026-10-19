@@ -160,6 +160,7 @@ def test_chart_prior_comes_from_the_session_not_a_constant(live_server):
             "moq": 5000,
             "max_rounds": 5,
             "prior_reserve_mean": prior,
+            "expected_markup": 0.0,
         },
     )
 
@@ -194,6 +195,7 @@ def test_risk_and_chart_use_real_round_values(live_server):
             "moq": 5000,
             "max_rounds": 5,
             "prior_reserve_mean": prior,
+            "expected_markup": 0.0,
         },
     )
     _post(

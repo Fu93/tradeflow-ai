@@ -72,7 +72,6 @@ def _by_name(snapshot):
 def test_sqlite_survives_reopen(tmp_path):
     from src.desk.service import ingest_message
     from src.desk.store import DeskStore
-    from src.engine.bayesian_v2 import robust_location
 
     store = _open_store(tmp_path)
     snapshot = _deal(store)
@@ -91,10 +90,10 @@ def test_sqlite_survives_reopen(tmp_path):
     assert events[0]["raw_text"] == "单价 15.60 元"
     assert events[0]["provenance"]["reader"] == "stage1"
     saved = reopened.get_snapshot(deal_id)
-    mean, _std = robust_location([15.60 / 12])
     ningbo = _by_name(saved)["Ningbo"]
-    assert ningbo["belief_mean"] == mean
-    assert ningbo["belief_label"] == "quote_location"
+    assert ningbo["belief_mean"] is None
+    assert ningbo["belief_label"] == "ask_only"
+    assert ningbo["counter"] is None
     assert ningbo["belief_observations"] == 1
     reopened.close()
 
@@ -161,6 +160,7 @@ def test_better_rival_does_not_raise_other_counters(tmp_path):
     store = _open_store(tmp_path)
     snapshot = _deal(store)
     deal_id = snapshot["deal"]["id"]
+    store.set_policy(deal_id, {"expected_markup": 0.08})
     ids = {row["name"]: row["id"] for row in snapshot["suppliers"]}
     opening = {
         "Ningbo": "单价 15.60 元",
@@ -196,7 +196,7 @@ def test_better_rival_does_not_raise_other_counters(tmp_path):
         new = row["counter"]
         if old is not None:
             assert new is None or new <= old
-    mean, _std = robust_location([15.60 / 12, 13.40 / 12])
+    mean, _std = robust_location([15.60 / 12 - 0.08, 13.40 / 12 - 0.08])
     assert later["Ningbo"]["belief_mean"] == mean
     assert later["Ningbo"]["belief_observations"] == 2
     store.close()
@@ -307,6 +307,7 @@ def test_nothing_is_sent_without_approval(tmp_path, monkeypatch):
     store = _open_store(tmp_path)
     snapshot = _deal(store)
     deal_id = snapshot["deal"]["id"]
+    store.set_policy(deal_id, {"expected_markup": 0.08})
     calls = []
 
     async def spy(recipient, body, product, **kwargs):
