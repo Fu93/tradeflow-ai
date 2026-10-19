@@ -106,7 +106,8 @@ def test_live_call_fails_closed_when_the_endpoint_errors(monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", lambda *_a, **_k: _Response())
     again = extract_mentions("单价 15.60 元")
-    assert again["error"] == "extractor_unreachable"
+    assert again["mentions"] == []
+    assert again["error"] == "extractor_malformed"
 
     monkeypatch.setenv("TRADEFLOW_LLM_API_KEY", "test-key")
 

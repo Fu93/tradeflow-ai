@@ -771,7 +771,57 @@
     "EXTRACTOR_FALLBACK_MODEL": {
       "value": "nvidia/nemotron-3-super-120b-a12b",
       "category": "d",
-      "justification": "Fallback chat model when the primary extractor call cannot be completed. One retry, then the quote stays in human review."
+      "justification": "Second Nebius chat model. Called when Ultra times out, gets a server or rate-limit response, or returns a body that is not a mentions object."
+    },
+    "EXTRACTOR_NVIDIA_BASE_URL": {
+      "value": "https://integrate.api.nvidia.com/v1",
+      "category": "d",
+      "justification": "NVIDIA integrate base used only after Nebius itself fails. The Ultra model on this host is not part of the chain."
+    },
+    "EXTRACTOR_NVIDIA_MODEL": {
+      "value": "nvidia/nemotron-3-super-120b-a12b",
+      "category": "d",
+      "justification": "NVIDIA chat model for the third extractor hop. It is the Super model. The Ultra model on this host is not called."
+    },
+    "EXTRACTOR_TIMEOUT_ULTRA_SECONDS": {
+      "value": 12,
+      "category": "d",
+      "justification": "Seconds allowed for the Nebius Ultra extractor hop before the desk moves to the next hop or to human review."
+    },
+    "EXTRACTOR_TIMEOUT_SUPER_SECONDS": {
+      "value": 15,
+      "category": "d",
+      "justification": "Seconds allowed for the Nebius Super extractor hop. This is the second hop and it is a policy limit, not a price."
+    },
+    "EXTRACTOR_TIMEOUT_NVIDIA_SECONDS": {
+      "value": 30,
+      "category": "d",
+      "justification": "Seconds allowed for the NVIDIA Super extractor hop. It runs only after Nebius itself fails, and only inside the overall budget."
+    },
+    "EXTRACTOR_TIMEOUT_BUDGET_SECONDS": {
+      "value": 57,
+      "category": "d",
+      "justification": "Overall seconds one quote may spend in the extractor chain. It is the Ultra, Super, and NVIDIA hop limits added together."
+    },
+    "EXTRACTOR_MAX_OUTPUT_TOKENS": {
+      "value": 4096,
+      "category": "d",
+      "justification": "Maximum completion tokens sent on every extractor hop. A long supplier message was truncated when the provider default was left unset."
+    },
+    "EXTRACTOR_REASONING_BUDGET": {
+      "value": 2048,
+      "category": "d",
+      "justification": "Maximum reasoning tokens sent on every extractor hop so the JSON answer still fits inside the output cap."
+    },
+    "EXTRACTOR_HTTP_TOO_MANY": {
+      "value": 429,
+      "category": "n",
+      "justification": "HTTP status that means the extractor was rate limited. That status is a provider failure and the next hop is tried."
+    },
+    "EXTRACTOR_HTTP_SERVER": {
+      "value": 500,
+      "category": "n",
+      "justification": "HTTP statuses at or above this value are provider failures. The desk records them and tries the next hop."
     },
     "NEWTON_STEP_BITS": {
       "value": 20,

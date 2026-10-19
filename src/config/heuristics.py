@@ -497,9 +497,51 @@ EXTRACTOR_BASE_URL = "https://api.tokenfactory.nebius.com/v1"
 # spans and does not set a price. Temperature stays zero.
 EXTRACTOR_MODEL = "nvidia/Nemotron-3-Ultra-550b-a55b"
 
-# Rationale: fallback chat model when the primary extractor call cannot be
-# completed. One retry, then the quote stays in human review.
+# Rationale: second Nebius chat model. The desk calls it when the Ultra hop
+# times out, gets a server or rate-limit response, or returns a body that is
+# not a mentions object. It does not set a price.
 EXTRACTOR_FALLBACK_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+
+# Rationale: NVIDIA integrate base used only after Nebius itself fails.
+# The Ultra model on this host is not in the chain.
+EXTRACTOR_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+
+# Rationale: NVIDIA chat model for the third hop. It is the Super model.
+# The Ultra model on this host is not called.
+EXTRACTOR_NVIDIA_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+
+# Rationale: seconds allowed for the Nebius Ultra extractor hop. A longer
+# wait does not start; the desk moves to the next hop or to human review.
+EXTRACTOR_TIMEOUT_ULTRA_SECONDS = 12
+
+# Rationale: seconds allowed for the Nebius Super extractor hop. This is
+# the second hop, after Ultra, and it is a policy limit rather than a price.
+EXTRACTOR_TIMEOUT_SUPER_SECONDS = 15
+
+# Rationale: seconds allowed for the NVIDIA Super extractor hop. This hop
+# runs only after Nebius itself fails, and only inside the overall budget.
+EXTRACTOR_TIMEOUT_NVIDIA_SECONDS = 30
+
+# Rationale: overall seconds one quote may spend in the extractor chain.
+# It equals the Ultra, Super, and NVIDIA hop limits added together, so a
+# quote cannot wait longer than the whole chain.
+EXTRACTOR_TIMEOUT_BUDGET_SECONDS = 57
+
+# Rationale: maximum completion tokens sent on every extractor hop. A long
+# supplier message was truncated when the provider default was left in place.
+EXTRACTOR_MAX_OUTPUT_TOKENS = 4096
+
+# Rationale: maximum reasoning tokens sent on every extractor hop. The cap
+# leaves room for the JSON answer inside the output limit above.
+EXTRACTOR_REASONING_BUDGET = 2048
+
+# Rationale: HTTP status that means the extractor was rate limited. That
+# status retries the next hop. It is not a price and not a quote amount.
+EXTRACTOR_HTTP_TOO_MANY = 429
+
+# Rationale: HTTP status at or above this value is a provider failure. The
+# desk retries the next hop. Client errors below it are recorded as well.
+EXTRACTOR_HTTP_SERVER = 500
 
 # Rationale: Newton polish step is two to the minus this many bits, times the
 # offer scale. Wide enough that curvature is visible in float64, and short

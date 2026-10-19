@@ -164,6 +164,7 @@ def shadow_from_message(
     decision["model"] = extracted.get("model") or ""
     decision["prompt_sha256"] = extracted.get("prompt_sha256") or ""
     decision["response_sha256"] = extracted.get("response_sha256") or ""
+    decision["attempts"] = list(extracted.get("attempts") or [])
     if extracted.get("error"):
         decision["error"] = extracted["error"]
     return decision

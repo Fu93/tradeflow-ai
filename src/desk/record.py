@@ -70,6 +70,7 @@ class DecisionRecord:
     unconfirmed: int
     checks: tuple[Check, ...]
     extractor_response_sha256: str = ""
+    extractor_attempts: tuple[dict[str, Any], ...] = ()
 
     def eligible(self) -> bool:
         return self.counter is not None and self.unconfirmed == 0 and all(item.passed for item in self.checks)
@@ -79,6 +80,7 @@ class DecisionRecord:
         payload["event_ids"] = list(self.event_ids)
         payload["prices_minor"] = list(self.prices_minor)
         payload["checks"] = [item.as_dict() for item in self.checks]
+        payload["extractor_attempts"] = [dict(item) for item in self.extractor_attempts]
         payload["eligible"] = self.eligible()
         return payload
 
@@ -116,7 +118,7 @@ def build_record(
     optimiser: str = _OPTIMISER,
 ) -> DecisionRecord:
     """Pure. A failed check clears the counter."""
-    digest = fit_digest if fit_digest is not None else hazard_fit_sha256()
+    fit = fit_digest if fit_digest is not None else hazard_fit_sha256()
     accepted = [event for event in events if event.get("status") == "accepted"]
     only_accepted = len(accepted) == len(events) and all(
         (event.get("provenance") or {}).get("review_accepted_by") == "human" for event in accepted
@@ -127,7 +129,7 @@ def build_record(
     tolerance = float(OPT_TOL) * max(1.0, abs(float(ask or 0.0)), abs(float(ceiling)))
     counter_le_ask = counter is None or ask is None or float(counter) <= float(ask) + tolerance
     counter_le_ceiling = counter is None or float(counter) <= float(ceiling) + tolerance
-    fit_pinned = bool(digest)
+    fit_pinned = bool(fit)
     checks = (
         _check("only_accepted_inputs", only_accepted or not events, "every priced input was accepted by a person"),
         _check("currency_matches_deal", currencies_ok and bool(currency), f"deal currency is {currency}"),
@@ -150,10 +152,24 @@ def build_record(
         if (event.get("parsed") or {}).get("unit_price") is not None
     )
     digests: list[str] = []
+    attempts: list[dict[str, Any]] = []
     for event in accepted:
-        digest = str((event.get("provenance") or {}).get("response_sha256") or "")
-        if digest and digest not in digests:
-            digests.append(digest)
+        provenance = event.get("provenance") or {}
+        response_digest = str(provenance.get("response_sha256") or "")
+        if response_digest and response_digest not in digests:
+            digests.append(response_digest)
+        for item in provenance.get("extractor_attempts") or []:
+            if not isinstance(item, dict):
+                continue
+            attempts.append(
+                {
+                    "provider": str(item.get("provider") or ""),
+                    "model": str(item.get("model") or ""),
+                    "status": str(item.get("status") or ""),
+                    "latency_s": float(item.get("latency_s") or 0.0),
+                    "response_sha256": str(item.get("response_sha256") or ""),
+                }
+            )
     return DecisionRecord(
         deal_id=deal_id,
         supplier_id=supplier_id,
@@ -172,11 +188,12 @@ def build_record(
         prior_n=int(prior_n),
         prior_source=prior_source,
         optimiser=optimiser,
-        hazard_fit_sha256=digest,
+        hazard_fit_sha256=fit,
         constants=constants_snapshot(),
         unconfirmed=int(unconfirmed),
         checks=checks,
         extractor_response_sha256=",".join(digests),
+        extractor_attempts=tuple(attempts),
     )
 
 

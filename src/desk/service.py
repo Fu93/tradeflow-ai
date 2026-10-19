@@ -73,6 +73,8 @@ class DraftStale(Exception):
 
 _DEAL_LOCKS: dict[str, threading.Lock] = {}
 _DEAL_LOCKS_GUARD = threading.Lock()
+_EXTRACTOR_THREADS: dict[str, threading.Thread] = {}
+_EXTRACTOR_THREADS_GUARD = threading.Lock()
 
 
 def deal_lock(deal_id: str) -> threading.Lock:
@@ -183,7 +185,7 @@ def ingest_message(
         llm_fields=llm_fields,
     )
     with deal_lock(deal_id):
-        return _ingest_locked(
+        stored = _ingest_locked(
             store,
             deal_id,
             source=source,
@@ -198,6 +200,8 @@ def ingest_message(
             provenance_extra=provenance_extra,
             prepared=prepared,
         )
+    _schedule_extractor(store, deal_id, raw_text, prepared, stored)
+    return stored
 
 
 def _outside_sanity(price: float, deal: dict[str, Any]) -> bool:
@@ -235,14 +239,34 @@ def _prepare_reading(raw_text: str, deal: dict[str, Any], *, llm_fields: dict | 
     multiple = float(UNIT_SANITY_MULTIPLE if deal.get("unit_sanity_multiple") is None else deal["unit_sanity_multiple"])
     high = max(target, ceiling) * multiple
     low = target / multiple if multiple else target
+    from src.desk.extract import configured as extractor_configured
+
     try:
-        shadow = shadow_from_message(
-            raw_text,
-            reading,
-            low=low,
-            high=high,
-            currency=str(deal.get("currency") or DEAL_CURRENCY),
-        )
+        shadow: dict[str, Any]
+        if extractor_configured():
+            shadow = {
+                "would_accept": False,
+                "applied": False,
+                "span_value": None,
+                "rule_value": None,
+                "numeric_field_discarded": False,
+                "auto_accept": False,
+                "extractor_pending": True,
+                "mentions": [],
+                "rejected_rows": 0,
+                "model": "",
+                "prompt_sha256": "",
+                "response_sha256": "",
+                "attempts": [],
+            }
+        else:
+            shadow = shadow_from_message(
+                raw_text,
+                reading,
+                low=low,
+                high=high,
+                currency=str(deal.get("currency") or DEAL_CURRENCY),
+            )
     except Exception:
         shadow = {
             "would_accept": False,
@@ -266,7 +290,7 @@ def _prepare_reading(raw_text: str, deal: dict[str, Any], *, llm_fields: dict | 
     provenance["candidates"] = candidates
     provenance["suggested_token"] = suggested
     reading["provenance"] = provenance
-    return {"reading": reading, "shadow": shadow}
+    return {"reading": reading, "shadow": shadow, "low": low, "high": high}
 
 
 def _quantity_token(raw_text: str, token: str) -> bool:
@@ -330,6 +354,10 @@ def _ingest_locked(
         provenance["response_sha256"] = shadow["response_sha256"]
     if shadow.get("error"):
         provenance["extractor_error"] = shadow["error"]
+    if shadow.get("attempts"):
+        provenance["extractor_attempts"] = list(shadow["attempts"])
+    if shadow.get("extractor_pending"):
+        provenance["extractor_pending"] = True
     if freight is not None:
         parsed["freight"] = float(freight)
     if duty_rate is not None:
@@ -388,11 +416,143 @@ def _ingest_locked(
                 "response_sha256": shadow.get("response_sha256") or "",
                 "rejected_rows": int(shadow.get("rejected_rows") or 0),
                 "numeric_field_discarded": bool(shadow.get("numeric_field_discarded")),
+                "attempts": list(shadow.get("attempts") or []),
+                "pending": bool(shadow.get("extractor_pending")),
             },
         )
     snapshot = publish(store, deal_id)
     _maybe_gmail_drafts(store, deal_id, snapshot)
     return {"duplicate": False, "event": event, "snapshot": store.get_snapshot(deal_id)}
+
+
+def settle_extractor(event_id: str) -> None:
+    """Wait for an in-flight extractor. The wait is outside the deal lock."""
+    from src.desk.extract import EXTRACTOR_TIMEOUT_BUDGET_SECONDS
+
+    with _EXTRACTOR_THREADS_GUARD:
+        thread = _EXTRACTOR_THREADS.get(event_id)
+    if thread is None:
+        return
+    thread.join(timeout=float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS))
+
+
+def _failed_shadow() -> dict[str, Any]:
+    return {
+        "would_accept": False,
+        "applied": False,
+        "auto_accept": False,
+        "error": "extractor_failed",
+        "attempts": [],
+        "response_sha256": "",
+        "model": "",
+        "prompt_sha256": "",
+        "rejected_rows": 0,
+        "numeric_field_discarded": False,
+        "span_value": None,
+        "rule_value": None,
+    }
+
+
+def _apply_extractor_result(
+    store: DeskStore,
+    deal_id: str,
+    event_id: str,
+    shadow: dict[str, Any],
+) -> None:
+    """Merge a finished extractor call. A confirmed price is left as it is."""
+    event = store.event(deal_id, event_id)
+    if event is None:
+        return
+    provenance = dict(event.get("provenance") or {})
+    if not provenance.get("extractor_pending"):
+        return
+    provenance["extractor_pending"] = False
+    provenance["shadow_would_accept"] = bool(shadow.get("would_accept"))
+    provenance["shadow_applied"] = False
+    provenance["auto_accept"] = False
+    provenance["span_value"] = shadow.get("span_value")
+    provenance["rule_value"] = shadow.get("rule_value")
+    provenance["numeric_field_discarded"] = bool(shadow.get("numeric_field_discarded"))
+    if shadow.get("response_sha256"):
+        provenance["response_sha256"] = shadow["response_sha256"]
+    if shadow.get("error"):
+        provenance["extractor_error"] = shadow["error"]
+    provenance["extractor_attempts"] = list(shadow.get("attempts") or [])
+    parsed = dict(event.get("parsed") or {})
+    if event.get("status") == "review":
+        parsed["unit_price"] = None
+    store.set_event_status(
+        event_id,
+        status=str(event.get("status") or "review"),
+        supplier_id=event.get("supplier_id"),
+        parsed=parsed,
+        confidence=str(event.get("confidence") or "low"),
+        provenance=provenance,
+    )
+    store.append_chain(
+        deal_id,
+        "extractor_result",
+        {
+            "model": shadow.get("model") or "",
+            "prompt_sha256": shadow.get("prompt_sha256") or "",
+            "response_sha256": shadow.get("response_sha256") or "",
+            "rejected_rows": int(shadow.get("rejected_rows") or 0),
+            "numeric_field_discarded": bool(shadow.get("numeric_field_discarded")),
+            "attempts": list(shadow.get("attempts") or []),
+            "pending": False,
+        },
+    )
+    publish(store, deal_id)
+
+
+def _schedule_extractor(
+    store: DeskStore,
+    deal_id: str,
+    raw_text: str,
+    prepared: dict[str, Any],
+    stored: dict[str, Any],
+) -> None:
+    shadow = prepared.get("shadow") or {}
+    if not shadow.get("extractor_pending") or stored.get("duplicate"):
+        return
+    event = stored.get("event") or {}
+    event_id = str(event.get("id") or "")
+    if not event_id:
+        return
+    deal = store.get_deal(deal_id) or {}
+    currency = str(deal.get("currency") or DEAL_CURRENCY)
+    reading = prepared.get("reading") or {}
+    low = float(prepared.get("low") or 0.0)
+    high = float(prepared.get("high") or 0.0)
+
+    def _run() -> None:
+        try:
+            from src.desk.shadow import shadow_from_message
+
+            finished = shadow_from_message(
+                raw_text,
+                reading,
+                low=low,
+                high=high,
+                currency=currency,
+            )
+        except Exception as exc:
+            logger.warning("desk extractor failed: %s", type(exc).__name__)
+            finished = _failed_shadow()
+        try:
+            with deal_lock(deal_id):
+                _apply_extractor_result(store, deal_id, event_id, finished)
+        except Exception as exc:
+            logger.warning("desk extractor result was not stored: %s", type(exc).__name__)
+        finally:
+            with _EXTRACTOR_THREADS_GUARD:
+                if _EXTRACTOR_THREADS.get(event_id) is threading.current_thread():
+                    _EXTRACTOR_THREADS.pop(event_id, None)
+
+    thread = threading.Thread(target=_run, name="desk-extractor", daemon=True)
+    with _EXTRACTOR_THREADS_GUARD:
+        _EXTRACTOR_THREADS[event_id] = thread
+    thread.start()
 
 
 def accept_review(
@@ -404,6 +564,7 @@ def accept_review(
     chosen_token: str | None = None,
     reject: bool = False,
 ) -> dict[str, Any]:
+    settle_extractor(event_id)
     with deal_lock(deal_id):
         event = store.event(deal_id, event_id)
         if event is None:

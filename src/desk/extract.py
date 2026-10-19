@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Literal
@@ -18,10 +19,19 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from src.config.heuristics import (
     EXTRACTOR_BASE_URL,
     EXTRACTOR_FALLBACK_MODEL,
+    EXTRACTOR_HTTP_SERVER,
+    EXTRACTOR_HTTP_TOO_MANY,
     EXTRACTOR_MAX_BYTES,
+    EXTRACTOR_MAX_OUTPUT_TOKENS,
     EXTRACTOR_MODEL,
+    EXTRACTOR_NVIDIA_BASE_URL,
+    EXTRACTOR_NVIDIA_MODEL,
+    EXTRACTOR_REASONING_BUDGET,
+    EXTRACTOR_TIMEOUT_BUDGET_SECONDS,
+    EXTRACTOR_TIMEOUT_NVIDIA_SECONDS,
+    EXTRACTOR_TIMEOUT_SUPER_SECONDS,
+    EXTRACTOR_TIMEOUT_ULTRA_SECONDS,
     FIELD_MAX_CHARS,
-    LLM_TIMEOUT_SECONDS,
 )
 
 CLASSES = (
@@ -99,12 +109,44 @@ def configured() -> bool:
     return bool(_env("TRADEFLOW_LLM_API_KEY", "OPENAI_API_KEY"))
 
 
-def _models() -> list[str]:
-    primary = model_name()
-    fallback = EXTRACTOR_FALLBACK_MODEL
-    if fallback and fallback != primary:
-        return [primary, fallback]
-    return [primary]
+class _UnreadableBody(Exception):
+    """The HTTP body was not a JSON object. The digest is the raw bytes."""
+
+    def __init__(self, digest: str) -> None:
+        super().__init__("malformed extractor body")
+        self.digest = digest
+
+
+def _nebius_hops() -> list[dict[str, Any]]:
+    """Ultra, then Super, on the Nebius host. The env model does not replace them."""
+    base = endpoint()
+    keys = ("TRADEFLOW_LLM_API_KEY", "OPENAI_API_KEY")
+    return [
+        {
+            "provider": "nebius",
+            "model": EXTRACTOR_MODEL,
+            "base": base,
+            "timeout": float(EXTRACTOR_TIMEOUT_ULTRA_SECONDS),
+            "keys": keys,
+        },
+        {
+            "provider": "nebius",
+            "model": EXTRACTOR_FALLBACK_MODEL,
+            "base": base,
+            "timeout": float(EXTRACTOR_TIMEOUT_SUPER_SECONDS),
+            "keys": keys,
+        },
+    ]
+
+
+def _nvidia_hop() -> dict[str, Any]:
+    return {
+        "provider": "nvidia",
+        "model": EXTRACTOR_NVIDIA_MODEL,
+        "base": EXTRACTOR_NVIDIA_BASE_URL,
+        "timeout": float(EXTRACTOR_TIMEOUT_NVIDIA_SECONDS),
+        "keys": ("NVIDIA_API_KEY",),
+    }
 
 
 def _chat_url(base: str) -> str:
@@ -199,6 +241,9 @@ def _request_body(message: str, model: str) -> dict[str, Any]:
     return {
         "model": model,
         "temperature": 0,
+        "max_tokens": int(EXTRACTOR_MAX_OUTPUT_TOKENS),
+        "reasoning_budget": int(EXTRACTOR_REASONING_BUDGET),
+        "stream": False,
         "messages": [
             {"role": "system", "content": _SYSTEM},
             {
@@ -207,6 +252,90 @@ def _request_body(message: str, model: str) -> dict[str, Any]:
             },
         ],
     }
+
+
+def _attempt(hop: dict[str, Any], status: str, latency: float, digest: str) -> dict[str, Any]:
+    return {
+        "provider": str(hop["provider"]),
+        "model": str(hop["model"]),
+        "status": status,
+        "latency_s": float(latency),
+        "response_sha256": digest or "",
+    }
+
+
+def _sha(raw: bytes) -> str:
+    if not raw:
+        return ""
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _read_http(exc: urllib.error.HTTPError) -> bytes:
+    try:
+        raw = exc.read()
+    except Exception:
+        return b""
+    if isinstance(raw, bytes):
+        return raw
+    return b""
+
+
+def _http_status(code: int) -> str:
+    if code == int(EXTRACTOR_HTTP_TOO_MANY):
+        return "http_429"
+    if code >= int(EXTRACTOR_HTTP_SERVER):
+        return "http_5xx"
+    return "http_" + str(code)
+
+
+def _exception_status(exc: BaseException) -> tuple[str, str]:
+    if isinstance(exc, _UnreadableBody):
+        return "malformed", exc.digest
+    if isinstance(exc, urllib.error.HTTPError):
+        return _http_status(int(exc.code)), _sha(_read_http(exc))
+    if isinstance(exc, TimeoutError):
+        return "timeout", ""
+    if isinstance(exc, urllib.error.URLError):
+        if isinstance(exc.reason, TimeoutError):
+            return "timeout", ""
+        return "unreachable", ""
+    if isinstance(exc, OSError):
+        return "unreachable", ""
+    return "failed", ""
+
+
+_STATUS_FROM_ERROR = {
+    "extractor_not_object": "not_object",
+    "extractor_malformed": "malformed",
+    "extractor_not_json": "not_json",
+    "extractor_truncated": "truncated",
+    "extractor_too_large": "too_large",
+    "extractor_unreachable": "unreachable",
+    "extractor_failed": "failed",
+}
+
+
+def _status_error(status: str) -> str:
+    mapped = {value: key for key, value in _STATUS_FROM_ERROR.items()}
+    if status in mapped:
+        return mapped[status]
+    if status in {"timeout", "unreachable", "budget"} or status.startswith("http_"):
+        return "extractor_unreachable"
+    return "extractor_failed"
+
+
+def _result_status(result: dict[str, Any]) -> str:
+    error = result.get("error")
+    if not error:
+        return "ok"
+    return _STATUS_FROM_ERROR.get(str(error), "failed")
+
+
+def _arms_nvidia(status: str) -> bool:
+    """A Nebius transport failure opens the NVIDIA hop. A bad body does not."""
+    if status in {"timeout", "unreachable", "failed"}:
+        return True
+    return status.startswith("http_")
 
 
 def _interpret(decoded: Any, model: str) -> dict[str, Any]:
@@ -222,52 +351,100 @@ def _interpret(decoded: Any, model: str) -> dict[str, Any]:
     return result
 
 
-def _post(base: str, body: dict[str, Any]) -> Any:
+def _post(base: str, body: dict[str, Any], timeout: float, keys: tuple[str, ...]) -> Any:
     raw = json.dumps(body).encode("utf-8")
     headers = {"Content-Type": "application/json"}
-    key = _env("TRADEFLOW_LLM_API_KEY", "OPENAI_API_KEY")
+    key = _env(*keys)
     if key:
         headers["Authorization"] = "Bearer " + key
     request = urllib.request.Request(_chat_url(base), data=raw, headers=headers, method="POST")
-    with urllib.request.urlopen(request, timeout=int(LLM_TIMEOUT_SECONDS)) as response:
-        return json.loads(response.read().decode("utf-8"))
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        payload = response.read()
+    try:
+        return json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise _UnreadableBody(_sha(payload)) from exc
+
+
+def _execute_hop(
+    message: str,
+    hop: dict[str, Any],
+    transport: Any,
+    timeout: float,
+) -> tuple[dict[str, Any], str, float, str]:
+    body = _request_body(message, str(hop["model"]))
+    started = time.perf_counter()
+    try:
+        if transport is not None:
+            decoded = transport(body)
+        else:
+            decoded = _post(str(hop["base"]), body, timeout, tuple(hop["keys"]))
+    except Exception as exc:
+        latency = time.perf_counter() - started
+        status, digest = _exception_status(exc)
+        result = _empty(_status_error(status))
+        result["model"] = hop["model"]
+        result["response_sha256"] = digest
+        return result, status, latency, digest
+    latency = time.perf_counter() - started
+    result = _interpret(decoded, str(hop["model"]))
+    status = _result_status(result)
+    digest = str(result.get("response_sha256") or "")
+    return result, status, latency, digest
+
+
+def _stop_for_budget(hop: dict[str, Any], attempts: list[dict[str, Any]]) -> dict[str, Any]:
+    attempts.append(_attempt(hop, "budget", 0.0, ""))
+    result = _empty("extractor_unreachable")
+    result["model"] = hop["model"]
+    return result
 
 
 def extract_mentions(message: str, *, transport=None) -> dict[str, Any]:
-    """Call the endpoint when a key is set. ``transport`` is for tests.
+    """Call the measured chain when a Nebius key is set. ``transport`` is for tests.
 
-    The primary model is tried first. A transport failure retries the fallback
-    model once. A body that is not a mentions object fails closed with a reason.
+    Nebius Ultra, then Nebius Super. NVIDIA Super runs only after Nebius itself
+    fails (timeout, connection, 429, or 5xx) and only when ``NVIDIA_API_KEY``
+    is set. A body that is not a mentions object fails that hop and is tried
+    on the next Nebius model. It does not by itself open the NVIDIA hop.
+    The whole chain stops at the budget. Every hop is recorded.
     """
     if not configured() and transport is None:
         return {"mentions": [], "numeric_field_discarded": False, "configured": False}
+    attempts: list[dict[str, Any]] = []
+    deadline = time.perf_counter() + float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS)
     last = _empty("extractor_failed")
-    for model in _models():
-        body = _request_body(message, model)
-        if transport is not None:
-            try:
-                decoded = transport(body)
-            except Exception:
-                last = _empty("extractor_failed")
-                last["model"] = model
-                continue
-            result = _interpret(decoded, model)
-        else:
-            try:
-                decoded = _post(endpoint(), body)
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
-                last = _empty("extractor_unreachable")
-                last["model"] = model
-                continue
-            except Exception:
-                last = _empty("extractor_failed")
-                last["model"] = model
-                continue
-            result = _from_chat(decoded)
-            result["model"] = model
-        if "error" not in result or result.get("error") not in {"extractor_unreachable", "extractor_failed"}:
-            return result
+    provider_failed = False
+    stopped = False
+    for hop in _nebius_hops():
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            last = _stop_for_budget(hop, attempts)
+            stopped = True
+            break
+        timeout = min(float(hop["timeout"]), remaining)
+        result, status, latency, digest = _execute_hop(message, hop, transport, timeout)
+        attempts.append(_attempt(hop, status, latency, digest))
         last = result
+        if status == "ok":
+            last["attempts"] = list(attempts)
+            return last
+        if _arms_nvidia(status):
+            provider_failed = True
+    if not stopped and provider_failed and _env("NVIDIA_API_KEY"):
+        hop = _nvidia_hop()
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            last = _stop_for_budget(hop, attempts)
+        else:
+            timeout = min(float(hop["timeout"]), remaining)
+            result, status, latency, digest = _execute_hop(message, hop, transport, timeout)
+            attempts.append(_attempt(hop, status, latency, digest))
+            last = result
+            if status == "ok":
+                last["attempts"] = list(attempts)
+                return last
+    last["attempts"] = list(attempts)
     return last
 
 
@@ -293,6 +470,14 @@ def _from_chat(decoded: Any) -> dict[str, Any]:
         return failed
     content = str(message_body.get("content") or "")
     response_sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    finish = str(choices[0].get("finish_reason") or "").casefold()
+    if finish in {"length", "max_tokens"}:
+        failed = dict(failed)
+        failed["error"] = "extractor_truncated"
+        failed["response_sha256"] = response_sha
+        failed["mentions"] = []
+        failed["rejected_rows"] = 1
+        return failed
     if len(content.encode("utf-8")) > int(EXTRACTOR_MAX_BYTES):
         failed = dict(failed)
         failed["error"] = "extractor_too_large"

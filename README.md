@@ -17,7 +17,7 @@ Each desk step has a guard, a test, and a chain record. A failed check withholds
 | Step | Guard | Test | Record |
 |---|---|---|---|
 | T1 Intake | `QuoteIn` extra=forbid; currency from the deal; `raw_sha256` on the event; status stays `review` | `tests/steps/test_t1_intake.py` | `quote_ingested` |
-| T2 Extract | `Mention` extra=forbid; numeric price keys stripped; byte cap; call outside the deal lock; fail closed | `tests/steps/test_t2_extract.py` | `extractor_result` |
+| T2 Extract | `Mention` extra=forbid; numeric price keys stripped; byte cap; the call does not block the desk; fail closed | `tests/steps/test_t2_extract.py` | `extractor_result` |
 | T3 Shadow | would-accept is recorded; `applied` and `auto_accept` stay false | `tests/steps/test_t3_shadow.py` | shadow fields on the quote provenance |
 | T4 Confirm | `review` may become `accepted` or `rejected`; both of those are terminal | `tests/steps/test_t4_confirm.py` | `review` |
 | T5 Reserve | truncated Beta; a later higher ask does not raise the mean; a rejection is a lower bound | `tests/steps/test_t5_reserve.py` | prior alpha, beta, n, source on the decision record |
@@ -41,7 +41,7 @@ Internal notes, filming guides, and older audits are indexed in [docs/internal/R
 
 Desk environment variables (unset means the feature stays off, except the database path and the poll interval):
 
-`TRADEFLOW_API_KEY` `TRADEFLOW_LEGACY` `TRADEFLOW_DESK_DB` `TRADEFLOW_STORE_DIR` `DESK_N_SAMPLES` `DESK_N_GRID` `DESK_SMTP_SEND` `SMTP_HOST` `EMAIL_USERNAME` `EMAIL_PASSWORD` `IMAP_HOST` `IMAP_PORT` `IMAP_SSL` `IMAP_USERNAME` `IMAP_PASSWORD` `IMAP_LOOKBACK_DAYS` `IMAP_POLL_SECONDS` `GMAIL_DRAFTS` `GMAIL_CLIENT_ID` `GMAIL_CLIENT_SECRET` `GMAIL_REFRESH_TOKEN` `TRADEFLOW_LLM_BASE_URL` `OPENAI_BASE_URL` `TRADEFLOW_LLM_MODEL` `OPENAI_MODEL` `TRADEFLOW_LLM_API_KEY` `OPENAI_API_KEY`
+`TRADEFLOW_API_KEY` `TRADEFLOW_LEGACY` `TRADEFLOW_DESK_DB` `TRADEFLOW_STORE_DIR` `DESK_N_SAMPLES` `DESK_N_GRID` `DESK_SMTP_SEND` `SMTP_HOST` `EMAIL_USERNAME` `EMAIL_PASSWORD` `IMAP_HOST` `IMAP_PORT` `IMAP_SSL` `IMAP_USERNAME` `IMAP_PASSWORD` `IMAP_LOOKBACK_DAYS` `IMAP_POLL_SECONDS` `GMAIL_DRAFTS` `GMAIL_CLIENT_ID` `GMAIL_CLIENT_SECRET` `GMAIL_REFRESH_TOKEN` `TRADEFLOW_LLM_BASE_URL` `OPENAI_BASE_URL` `TRADEFLOW_LLM_MODEL` `OPENAI_MODEL` `TRADEFLOW_LLM_API_KEY` `OPENAI_API_KEY` `NVIDIA_API_KEY`
 
 ## Quick start (Docker)
 
