@@ -119,6 +119,38 @@ def test_desk_page_updates_when_mail_arrives():
                 "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
             )
             assert overflow <= 1
+            page.fill("#paste-text", "Price around 33-35 CNY depending on finish.")
+            page.locator("#paste-form button[type=submit]").click()
+            page.locator("#review select").wait_for(timeout=10000)
+            page.locator("#review select").select_option(index=1)
+            chosen = page.locator("#review select").input_value()
+            assert chosen
+            page.wait_for_timeout(2500)
+            assert page.locator("#review select").input_value() == chosen
+            for width in (360, 320):
+                page.set_viewport_size({"width": width, "height": 800})
+                metrics = page.evaluate(
+                    """() => {
+                      const select = document.querySelector('#review select');
+                      const area = document.querySelector('#drafts textarea');
+                      const line = document.querySelector('#events .desk-event p');
+                      return {
+                        selectScroll: select ? select.scrollWidth : 9999,
+                        selectClient: select ? select.clientWidth : 0,
+                        areaClient: area ? area.clientWidth : 0,
+                        areaRows: area ? Number(area.getAttribute('rows')) : 0,
+                        vw: document.documentElement.clientWidth,
+                        line: line ? line.textContent : '',
+                      };
+                    }"""
+                )
+                assert metrics["selectScroll"] <= metrics["vw"] + 1
+                assert metrics["selectClient"] <= metrics["vw"]
+                assert metrics["areaRows"] >= 8
+                assert metrics["areaClient"] >= width - 80
+                assert " UTC" in metrics["line"]
+                stamp = metrics["line"].split("·")[0].replace("UTC", "")
+                assert "T" not in stamp
             page.evaluate("sessionStorage.setItem('tfDeskDeal', '%s')" % ("ab" * 16))
             page.reload(wait_until="domcontentloaded")
             page.get_by_text("fresh disk").wait_for(timeout=10000)

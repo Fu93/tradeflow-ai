@@ -84,6 +84,16 @@ def _language(texts: list[str]) -> str:
     return "zh" if cjk > latin else "en"
 
 
+def _references(prior: str | None, message_id: str) -> str:
+    parts: list[str] = []
+    for token in str(prior or "").split():
+        if token and token not in parts:
+            parts.append(token)
+    if message_id and message_id not in parts:
+        parts.append(message_id)
+    return " ".join(parts)
+
+
 def _draft_body(product: str, counter: float, quantity: int, language: str) -> str:
     if language == "zh":
         return (
@@ -189,6 +199,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             beliefs=hazard_beliefs,
             rng=np.random.default_rng(int(deal["seed"])),
             round_index=rounds,
+            snap_to_grid=True,
         )
     else:
         basis = "unit_price"
@@ -279,6 +290,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
 
     for card in cards:
         if card["latest_quote"] is None or card["counter"] is None:
+            store.supersede_open_drafts(deal["id"], card["id"])
             continue
         history = by_supplier.get(card["id"]) or []
         language = _language([event.get("raw_text") or "" for event in history])
@@ -294,7 +306,10 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             message_id = (event.get("provenance") or {}).get("message_id")
             if message_id:
                 reply_to = str(message_id)
-                references = str((event.get("provenance") or {}).get("references") or message_id)
+                references = _references(
+                    (event.get("provenance") or {}).get("references"),
+                    str(message_id),
+                )
                 break
         store.replace_open_draft(
             deal["id"],

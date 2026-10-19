@@ -1,5 +1,6 @@
 (function () {
   const POLL_MS = 2000;
+  const reviewChoice = new Map();
 
   function apiKey() {
     const field = document.getElementById("api-key");
@@ -129,7 +130,10 @@
     } catch (err) {
       formError.textContent = err.status === 404
         ? "This deal is not in the desk database. A fresh disk does not keep the previous deal. Open a new one."
-        : err.message;
+        : err.status === 401
+          ? "The desk needs the API key configured on this server."
+          : err.message;
+      if (err.status === 401) form.hidden = false;
       if (err.status === 404) {
         window.clearInterval(timer);
         timer = 0;
@@ -203,6 +207,13 @@
     });
   }
 
+  function formatWhen(value) {
+    const text = String(value || "");
+    const match = text.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+    if (!match) return text;
+    return match[1] + " " + match[2] + " UTC";
+  }
+
   function renderReview(items, suppliers) {
     const root = document.getElementById("review");
     clear(root);
@@ -211,8 +222,10 @@
       return;
     }
     items.forEach((item) => {
+      const saved = reviewChoice.get(item.id) || {};
       const block = document.createElement("div");
       block.className = "desk-event";
+      block.dataset.event = item.id;
       const reason = (item.provenance && item.provenance.review_reason) || item.confidence || "review";
       line(block, (item.source || "quote") + " · " + reason);
       const pre = document.createElement("pre");
@@ -222,7 +235,7 @@
       const tokens = provenance.candidates && provenance.candidates.length
         ? provenance.candidates
         : (provenance.tokens || []);
-      let chosen = "";
+      let chosen = saved.token || "";
       if (tokens.length) {
         const picks = document.createElement("div");
         picks.className = "desk-actions";
@@ -230,8 +243,10 @@
           const pick = document.createElement("button");
           pick.type = "button";
           pick.textContent = token;
+          if (token === chosen) pick.disabled = true;
           pick.addEventListener("click", () => {
             chosen = token;
+            reviewChoice.set(item.id, { supplierId: select.value, token: token });
             Array.prototype.forEach.call(picks.children, (node) => {
               node.disabled = node === pick;
             });
@@ -251,6 +266,11 @@
         option.textContent = supplier.name;
         if (item.supplier_id && item.supplier_id === supplier.id) option.selected = true;
         select.appendChild(option);
+      });
+      if (saved.supplierId) select.value = saved.supplierId;
+      select.addEventListener("change", () => {
+        const prev = reviewChoice.get(item.id) || {};
+        reviewChoice.set(item.id, { supplierId: select.value, token: prev.token || chosen });
       });
       const actions = document.createElement("div");
       actions.className = "desk-actions";
@@ -280,6 +300,7 @@
         headers: headers(true),
         body: JSON.stringify(payload),
       });
+      reviewChoice.delete(eventId);
       show(snapshot);
     } catch (err) {
       line(block, err.message);
@@ -297,7 +318,7 @@
       const block = document.createElement("div");
       block.className = "desk-event";
       const fixture = item.provenance && item.provenance.fixture ? " · " + item.provenance.fixture : "";
-      line(block, (item.received_at || "") + " · " + (item.source || "") + " · " + (item.status || "") + fixture);
+      line(block, formatWhen(item.received_at) + " · " + (item.source || "") + " · " + (item.status || "") + fixture);
       const pre = document.createElement("pre");
       pre.textContent = item.raw_text || "";
       block.appendChild(pre);
@@ -322,7 +343,7 @@
       line(block, name + " · " + draftState(draft));
       const area = document.createElement("textarea");
       area.readOnly = true;
-      area.rows = 4;
+      area.rows = 8;
       area.value = draft.body || "";
       block.appendChild(area);
       const copy = document.createElement("button");
@@ -330,7 +351,7 @@
       copy.textContent = "Copy draft";
       copy.addEventListener("click", () => copyText(draft.body || ""));
       block.appendChild(copy);
-      if (draft.status === "draft") {
+      if (draft.status === "draft" || draft.status === "failed") {
         const send = document.createElement("button");
         send.type = "button";
         send.textContent = "Approve and send";
@@ -342,6 +363,7 @@
   }
 
   function draftState(draft) {
+    if (draft.status === "sending") return "sending";
     if (draft.status === "failed") return "send failed" + (draft.send_error ? ": " + draft.send_error : "");
     if (draft.status === "sent" && draft.transmitted) return "handed to the mail server";
     if (draft.status === "sent") return "recorded sent without a mail-server receipt";

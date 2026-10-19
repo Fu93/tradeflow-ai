@@ -264,7 +264,7 @@ def accept_review(
         if chosen_token:
             price = price_from_token(event["raw_text"], chosen_token)
             if price is None:
-                raise DeskRejected("That amount is not in the raw text.")
+                raise DeskRejected("That amount is not a CNY unit price in the raw text.")
             parsed["unit_price"] = price
             parsed["currency"] = "CNY"
         elif price is None:
@@ -314,7 +314,7 @@ def _maybe_gmail_drafts(store: DeskStore, deal_id: str, snapshot: dict[str, Any]
                 draft["body"],
                 to=None if supplier is None else supplier.get("address"),
                 reply_to=draft.get("reply_to"),
-                references=draft.get("reply_to"),
+                references=draft.get("references_header") or draft.get("reply_to"),
             )
             gmail_id = mailbox.create_gmail_draft(
                 opener,
@@ -412,50 +412,25 @@ async def send_draft(
             raise KeyError(draft_id)
         if draft["status"] == "sent" and draft.get("transmitted"):
             return draft
-        if draft["status"] in {"superseded", "failed"}:
+        if draft["status"] in {"superseded", "sending"}:
             raise DraftStale("This draft changed. Read the new text and approve it again.")
         digest = draft_digest(draft["body"])
         if body_sha256 != digest:
+            raise DraftStale("This draft changed. Read the new text and approve it again.")
+        if draft["status"] not in {"draft", "failed", "approved"}:
             raise DraftStale("This draft changed. Read the new text and approve it again.")
         deal = store.get_deal(draft["deal_id"])
         supplier = store.supplier(draft["deal_id"], draft["supplier_id"])
         if deal is None or supplier is None:
             raise KeyError(draft_id)
         message_id = f"<desk.{draft_id}.v{int(draft.get('version') or 1)}@tradeflow.local>"
-        if smtp_enabled():
-            fn = sender or transmit
-            try:
-                transmitted = bool(
-                    await fn(
-                        supplier["address"],
-                        draft["body"],
-                        str(deal["product"]),
-                        message_id=message_id,
-                        reply_to=draft.get("reply_to"),
-                        references=draft.get("references_header"),
-                    )
-                )
-            except TypeError:
-                transmitted = bool(await fn(supplier["address"], draft["body"], str(deal["product"])))
-            if not transmitted:
-                store.mark_draft(
-                    draft_id,
-                    status="failed",
-                    transmitted=False,
-                    error="SMTP send failed",
-                    message_id=message_id,
-                )
-                publish(store, draft["deal_id"])
-                failed = store.get_draft(draft_id)
-                return failed or draft
-            store.mark_draft(
-                draft_id,
-                status="sent",
-                transmitted=True,
-                error=None,
-                message_id=message_id,
-            )
-        else:
+        recipient = supplier["address"]
+        body = draft["body"]
+        product = str(deal["product"])
+        reply_to = draft.get("reply_to")
+        references = draft.get("references_header")
+        deal_id = draft["deal_id"]
+        if not smtp_enabled():
             store.mark_draft(
                 draft_id,
                 status="approved",
@@ -463,9 +438,55 @@ async def send_draft(
                 error=None,
                 message_id=message_id,
             )
-        publish(store, draft["deal_id"])
-        updated = store.get_draft(draft_id)
-        return updated or draft
+            publish(store, deal_id)
+            updated = store.get_draft(draft_id)
+            return updated or draft
+        if not store.claim_draft_send(draft_id, message_id):
+            raise DraftStale("This draft changed. Read the new text and approve it again.")
+    fn = sender or transmit
+    try:
+        try:
+            transmitted = bool(
+                await fn(
+                    recipient,
+                    body,
+                    product,
+                    message_id=message_id,
+                    reply_to=reply_to,
+                    references=references,
+                )
+            )
+        except TypeError:
+            transmitted = bool(await fn(recipient, body, product))
+    except Exception:
+        store.mark_draft(
+            draft_id,
+            status="failed",
+            transmitted=False,
+            error="SMTP send failed",
+            message_id=message_id,
+        )
+        publish(store, deal_id)
+        raise
+    if not transmitted:
+        store.mark_draft(
+            draft_id,
+            status="failed",
+            transmitted=False,
+            error="SMTP send failed",
+            message_id=message_id,
+        )
+    else:
+        store.mark_draft(
+            draft_id,
+            status="sent",
+            transmitted=True,
+            error=None,
+            message_id=message_id,
+        )
+    publish(store, deal_id)
+    updated = store.get_draft(draft_id)
+    return updated or draft
 
 
 def _external_id(item: dict[str, Any]) -> str:
@@ -489,6 +510,25 @@ def _route_deals(store: DeskStore, sender: str, deal_id: str | None) -> list[str
     return matched
 
 
+def _seen_key(mailbox_key: str, deal_id: str) -> str:
+    return f"{mailbox_key}:{deal_id}"
+
+
+def _skip_for_poll(desk: DeskStore, mailbox_key: str, deal_id: str | None) -> set[str]:
+    """Skip ids this poll has already stored.
+
+    A deal-scoped poll only skips that deal's ingested ids. A poll of every
+    deal skips an id only after every current deal has stored it, so one
+    deal's poll cannot hide another deal's mail.
+    """
+    if deal_id:
+        return desk.mailbox_ids(_seen_key(mailbox_key, deal_id))
+    seen = [desk.mailbox_ids(_seen_key(mailbox_key, deal["id"])) for deal in desk.list_deals()]
+    if not seen:
+        return set()
+    return set.intersection(*seen)
+
+
 def ingest_mailbox_items(
     store: DeskStore,
     items: list[dict[str, Any]],
@@ -501,12 +541,6 @@ def ingest_mailbox_items(
     for item in items:
         external = item.get("external_id") or _external_id(item)
         targets = _route_deals(store, item.get("sender") or "", deal_id)
-        if mailbox_key:
-            store.remember_mailbox(mailbox_key, external)
-            uid_key = item.get("uid")
-            validity = item.get("uidvalidity")
-            if uid_key and validity:
-                store.remember_mailbox(mailbox_key, f"uid:{validity}:{uid_key}")
         if not targets:
             counts["ignored"] += 1
             continue
@@ -529,11 +563,20 @@ def ingest_mailbox_items(
             )
             if result.get("duplicate"):
                 counts["duplicates"] += 1
-                continue
-            counts["ingested"] += 1
-            event = result.get("event") or {}
-            if event.get("status") == "review":
-                counts["review"] += 1
+            else:
+                counts["ingested"] += 1
+                event = result.get("event") or {}
+                if event.get("status") == "review":
+                    counts["review"] += 1
+            if mailbox_key:
+                store.remember_mailbox(_seen_key(mailbox_key, target), external)
+                uid_key = item.get("uid")
+                validity = item.get("uidvalidity")
+                if uid_key and validity:
+                    store.remember_mailbox(
+                        _seen_key(mailbox_key, target),
+                        f"uid:{validity}:{uid_key}",
+                    )
     return counts
 
 
@@ -557,7 +600,7 @@ def poll_imap_once(
         username=settings["username"],
         password=settings["password"],
         use_ssl=bool(settings["use_ssl"]),
-        skip_ids=desk.mailbox_ids(mailbox_key),
+        skip_ids=_skip_for_poll(desk, mailbox_key, deal_id),
     )
     counts = ingest_mailbox_items(
         desk,
@@ -578,7 +621,7 @@ def poll_gmail_once(store: DeskStore | None = None, *, deal_id: str | None = Non
         return {"status": "no-deals", "ingested": 0, "review": 0, "duplicates": 0}
     client = opener or urllib_opener()
     mailbox_key = "gmail"
-    items = mailbox.pull_gmail_window(client, skip_ids=desk.mailbox_ids(mailbox_key))
+    items = mailbox.pull_gmail_window(client, skip_ids=_skip_for_poll(desk, mailbox_key, deal_id))
     counts = ingest_mailbox_items(
         desk,
         items,

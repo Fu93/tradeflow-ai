@@ -1,9 +1,14 @@
 (function () {
   const POLL_MS = 2000;
 
+  let confirmPage = "";
+  let askedPage = "";
+
   function headers() {
+    const input = document.getElementById("desk-api-key");
+    const key = input && input.value.trim();
     const value = { "Content-Type": "application/json" };
-    if (typeof TF_API_KEY === "string" && TF_API_KEY) value["X-API-Key"] = TF_API_KEY;
+    if (key) value["X-API-Key"] = key;
     return value;
   }
 
@@ -42,9 +47,12 @@
     chrome.storage.local.get(keys, (stored) => done(stored || {}));
   }
 
-  function storageSet(value) {
-    if (!globalThis.chrome || !chrome.storage || !chrome.storage.local) return;
-    chrome.storage.local.set(value);
+  function storageSet(value, done) {
+    if (!globalThis.chrome || !chrome.storage || !chrome.storage.local) {
+      if (done) done();
+      return;
+    }
+    chrome.storage.local.set(value, () => { if (done) done(); });
   }
 
   function setStatus(text) {
@@ -72,9 +80,9 @@
     }
     suppliers.forEach((supplier) => {
       const item = document.createElement("li");
-      const rank = supplier.rank == null ? "—" : String(supplier.rank);
       const quote = supplier.latest_quote == null ? "no quote" : money(supplier.latest_quote, supplier.currency || "CNY");
-      item.textContent = rank + ". " + supplier.name + " · " + quote;
+      const label = supplier.rank == null ? supplier.name : String(supplier.rank) + ". " + supplier.name;
+      item.textContent = label + " · " + quote;
       ranking.appendChild(item);
       const row = document.createElement("p");
       const counter = supplier.counter == null ? "withheld" : money(supplier.counter, "CNY");
@@ -119,6 +127,10 @@
     if (empty) empty.hidden = true;
     try {
       const response = await fetch(apiBase() + "/api/v1/desk/deals/" + dealId, { headers: headers() });
+      if (response.status === 401) {
+        setStatus("The API key was rejected. Enter the key this server expects.");
+        return;
+      }
       if (!response.ok) {
         setStatus("Desk request failed.");
         return;
@@ -131,46 +143,64 @@
 
   function bind() {
     const input = document.getElementById("desk-deal-id");
+    const keyInput = document.getElementById("desk-api-key");
     const button = document.getElementById("btn-desk-import");
     const copy = document.getElementById("btn-desk-copy");
     const select = document.getElementById("desk-supplier");
     if (!input || !button) return;
-    storageGet(["tfDeskDeal", "tfDeskSupplier", "tfDeskSupplierConfirmed"], (stored) => {
+    storageGet(["tfDeskDeal", "tfDeskSupplier", "tfApiKey"], (stored) => {
       if (stored.tfDeskDeal) input.value = stored.tfDeskDeal;
-      if (stored.tfDeskSupplierConfirmed && stored.tfDeskSupplier && select) select.value = stored.tfDeskSupplier;
+      if (stored.tfApiKey && keyInput && !keyInput.value) keyInput.value = stored.tfApiKey;
+      if (stored.tfDeskSupplier && select) select.value = stored.tfDeskSupplier;
       refresh();
     });
     input.addEventListener("change", () => {
       storageSet({ tfDeskDeal: input.value.trim() });
       refresh();
     });
+    if (keyInput) {
+      const saveKey = () => storageSet({ tfApiKey: keyInput.value.trim() });
+      keyInput.addEventListener("change", saveKey);
+      keyInput.addEventListener("input", saveKey);
+    }
     if (select) select.addEventListener("change", () => {
       rememberSupplier(true);
+      confirmPage = askedPage;
       refresh();
     });
     button.addEventListener("click", () => {
-      storageSet({ tfDeskDeal: input.value.trim() });
+      const remembered = { tfDeskDeal: input.value.trim(), tfApiKey: keyInput ? keyInput.value.trim() : "" };
+      const send = () => {
       if (!globalThis.chrome || !chrome.runtime || !chrome.runtime.sendMessage) {
         setStatus("Import runs inside the extension.");
         return;
       }
-      chrome.runtime.sendMessage({ type: "IMPORT_DESK_QUOTE" }, (resp) => {
+      chrome.runtime.sendMessage({ type: "IMPORT_DESK_QUOTE", confirmPage: confirmPage }, (resp) => {
         if (chrome.runtime.lastError) {
           setStatus("Import did not reach the page.");
           return;
         }
         if (!resp || !resp.ok) {
+          if (resp && resp.page) {
+            askedPage = resp.page;
+            confirmPage = "";
+          }
           if (resp && resp.reason === "captcha") setStatus("Captcha is on screen. Import paused.");
-          else if (resp && resp.reason === "no-deal") setStatus("Link a deal first.");
-          else if (resp && resp.reason === "ambiguous") setStatus("This page matches more than one supplier. Choose the thread, then import again.");
+          else if (resp && resp.reason === "api-key") setStatus("The API key was rejected. Enter the key this server expects.");
+          else if (resp && resp.reason === "no-deal") setStatus("Enter the deal id first.");
+          else if (resp && resp.reason === "ambiguous") setStatus("This page matches more than one supplier. Choose one of those threads, then import again.");
           else if (resp && resp.reason === "unmapped") setStatus("This page does not name a supplier on the deal. Choose the thread, then import again.");
           else setStatus("No supplier message on screen.");
           return;
         }
+        confirmPage = "";
+        askedPage = "";
         if (resp.simulated) setStatus("Imported a simulated test message. It stays in review until you accept a figure.");
         else setStatus("Imported the visible message.");
         refresh();
       });
+      };
+      storageSet(remembered, send);
     });
     if (copy) copy.addEventListener("click", () => {
       const draft = document.getElementById("desk-draft");

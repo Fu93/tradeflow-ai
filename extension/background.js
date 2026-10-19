@@ -4,16 +4,16 @@
  * and FastAPI backend proxy.
  */
 
+import { matchSuppliers } from "./desk_match.js";
+
 const API_BASE_URL = "http://localhost:8000";
 
 // ---------------------------------------------------------------------------
 // Security: outbound auth (H9)
 // ---------------------------------------------------------------------------
-// The backend gates /api/v1/* behind X-API-Key and the /webhook/* routes behind
-// X-Webhook-Token. Both checks are fail-open in sandbox when the server has no
-// secret configured, so leaving these empty keeps the demo working (no header is
-// sent at all when empty). An operator who configures TRADEFLOW_API_KEY /
-// TRADEFLOW_WEBHOOK_TOKEN must fill in the matching value here.
+// Copilot routes stay quiet until a key is configured in this file. The live
+// desk does not use that constant: its key is typed into the desk tab and
+// stored as tfApiKey.
 const TF_API_KEY = "";
 const TF_WEBHOOK_TOKEN = "";
 
@@ -388,36 +388,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (type === "IMPORT_DESK_QUOTE") {
-    importLatestVisible().then(sendResponse);
+    importLatestVisible(message).then(sendResponse);
     return true;
   }
 });
 
-function foldDeskName(value) {
-  return String(value || "").normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+function deskHeaders(key) {
+  const headers = { "Content-Type": "application/json" };
+  if (key) headers["X-API-Key"] = key;
+  return headers;
 }
 
-function matchSuppliers(suppliers, page) {
-  const hay = foldDeskName([page && page.shop, page && page.title, page && page.url].filter(Boolean).join("\n"));
-  return (suppliers || []).filter((supplier) => {
-    const name = foldDeskName(supplier.name);
-    const address = foldDeskName(supplier.address);
-    if (name && hay.indexOf(name) >= 0) return true;
-    if (address && hay.indexOf(address) >= 0) return true;
-    return false;
-  });
+async function supplierTab() {
+  const active = await chrome.tabs.query({ active: true, currentWindow: true });
+  const current = active && active[0];
+  if (current && current.id && current.url && /^https?:/i.test(current.url)) return current;
+  const all = await chrome.tabs.query({ currentWindow: true });
+  const pages = (all || []).filter((tab) => tab.url && /^https?:/i.test(tab.url));
+  return pages.length ? pages[pages.length - 1] : current;
 }
 
-async function importLatestVisible() {
+async function importLatestVisible(message) {
   const stored = await new Promise((resolve) => {
     chrome.storage.local.get(
-      ["tfDeskDeal", "tfDeskSupplier", "tfDeskSupplierConfirmed"],
+      ["tfDeskDeal", "tfDeskSupplier", "tfApiKey"],
       (value) => resolve(value || {})
     );
   });
   if (!stored.tfDeskDeal) return { ok: false, reason: "no-deal" };
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  const tab = tabs && tabs[0];
+  const tab = await supplierTab();
   if (!tab || !tab.id) return { ok: false, reason: "no-tab" };
   const resp = await new Promise((resolve) => {
     chrome.tabs.sendMessage(tab.id, { type: "IMPORT_VISIBLE_QUOTE" }, (reply) => {
@@ -429,19 +428,28 @@ async function importLatestVisible() {
     });
   });
   if (!resp || !resp.ok || !resp.text) return resp || { ok: false, reason: "empty" };
+  const key = stored.tfApiKey || "";
   const dealRes = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${stored.tfDeskDeal}`, {
-    headers: jsonHeaders(),
+    headers: key ? { "X-API-Key": key } : {},
   });
+  if (dealRes.status === 401) return { ok: false, reason: "api-key", status: 401 };
   if (!dealRes.ok) return { ok: false, reason: "no-deal", status: dealRes.status };
   const snapshot = await dealRes.json();
   const matches = matchSuppliers(snapshot.suppliers || [], resp);
+  const pageUrl = resp.url || "";
+  const confirmPage = message && message.confirmPage ? message.confirmPage : "";
+  const picked = stored.tfDeskSupplier || "";
+  const confirmedHere = !!(confirmPage && confirmPage === pageUrl && picked);
   let supplierId = null;
   if (matches.length === 1) supplierId = matches[0].id;
-  else if (stored.tfDeskSupplierConfirmed && stored.tfDeskSupplier) supplierId = stored.tfDeskSupplier;
+  else if (matches.length > 1 && confirmedHere && matches.some((supplier) => supplier.id === picked)) {
+    supplierId = picked;
+  } else if (matches.length === 0 && confirmedHere) supplierId = picked;
   else {
     return {
       ok: false,
       reason: matches.length > 1 ? "ambiguous" : "unmapped",
+      page: pageUrl,
       names: (matches.length ? matches : snapshot.suppliers || []).map((supplier) => supplier.name),
     };
   }
@@ -453,9 +461,10 @@ async function importLatestVisible() {
   };
   const res = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${stored.tfDeskDeal}/quotes`, {
     method: "POST",
-    headers: jsonHeaders(),
+    headers: deskHeaders(key),
     body: JSON.stringify(quote),
   });
+  if (res.status === 401) return { ok: false, reason: "api-key", status: 401 };
   return {
     ok: res.ok,
     status: res.status,

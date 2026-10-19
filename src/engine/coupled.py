@@ -2,9 +2,10 @@
 
 One shared set of scenarios (common random numbers, one cost factor) is
 drawn for the round. Each supplier's offer is chosen on a fixed grid. The
-outside option inside that choice is the best rival landed quote, which is
-recallable: a better rival quote raises the floor on our surplus and cannot
-raise what we offer this supplier.
+auction path scores the outside option the way it did before the desk: the
+rival cap may sit between grid points. The desk path snaps that cap onto the
+grid and scores the offers that remain with no outside option, so a tighter
+rival cap only removes candidates and cannot raise another offer.
 
 The search is receding-horizon. It picks the next offer, not a five-round
 script. Reported Monte Carlo figures are the joint evaluation of that offer
@@ -227,12 +228,22 @@ def _master_grid(floor: float, ceiling: float, n_grid: int) -> np.ndarray:
     return np.linspace(float(floor), float(ceiling), n_grid)
 
 
-def _candidates(grid: np.ndarray, hi: float) -> np.ndarray:
-    """Fixed grid points at or under ``hi``, plus ``hi`` itself when it is lower."""
+def _candidates(grid: np.ndarray, hi: float, *, snap_to_grid: bool = False) -> np.ndarray:
+    """Grid points at or under ``hi``.
+
+    The auction path also keeps ``hi`` when it falls between grid points.
+    The desk path uses ``hi`` only when no grid point is at or below it, so
+    a tighter cap removes candidates and cannot add an off-grid point.
+    """
+    eps = float(np.finfo(np.float64).eps)
     if hi < float(grid[0]):
         return np.array([float(hi)], dtype=np.float64)
-    kept = grid[grid <= float(hi) + float(np.finfo(np.float64).eps)]
-    if kept.size == 0 or kept[-1] < float(hi) - float(np.finfo(np.float64).eps):
+    kept = grid[grid <= float(hi) + eps]
+    if snap_to_grid:
+        if kept.size == 0:
+            return np.array([float(hi)], dtype=np.float64)
+        return kept
+    if kept.size == 0 or kept[-1] < float(hi) - eps:
         kept = np.unique(np.concatenate([kept, np.array([float(hi)], dtype=np.float64)]))
     return kept
 
@@ -500,6 +511,7 @@ def solve_coupled(
     round_index: int = 1,
     floor: float = OFFER_GRID_FLOOR,
     rho: float = SHARED_FACTOR_RHO,
+    snap_to_grid: bool = False,
 ) -> dict[str, Any]:
     """Choose one offer per supplier. Prices are normalised to the target."""
     started = time.perf_counter()
@@ -535,12 +547,10 @@ def solve_coupled(
             rival_unit_cap = other - float(kappas[i])
         hi = min(float(quotes[i]), float(ceiling), float(rival_unit_cap))
         hi = max(hi, float(np.finfo(np.float64).tiny))
-        candidates = _candidates(grid, hi)
-        # A cheaper rival lowers ``hi`` and raises ``batna``. Putting that
-        # batna inside each candidate's surplus lets a higher offer catch
-        # up, and one grid step is several currency units. The rival is
-        # allowed to remove offers above ``hi``. It does not re-rank the
-        # offers that remain, so those are scored with no outside option.
+        candidates = _candidates(grid, hi, snap_to_grid=snap_to_grid)
+        # The auction scores the outside option, matching the previous
+        # offer. The desk snaps ``hi`` onto the grid and scores what remains
+        # with no outside option, so a tighter rival cannot re-rank it.
         scored = _score_candidates(
             reserves=scenarios["reserves"][i],
             uniforms=scenarios["uniforms"][i],
@@ -548,7 +558,7 @@ def solve_coupled(
             quote=float(quotes[i]),
             kappa=float(kappas[i]),
             candidates=candidates,
-            batna_surplus=0.0,
+            batna_surplus=0.0 if snap_to_grid else batna,
             ceiling=float(ceiling),
             effect=beliefs[i].mean_effect(),
             risk_tolerance=risk_tolerance,

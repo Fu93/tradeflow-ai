@@ -5,6 +5,7 @@ import asyncio
 import json
 import queue
 import re
+import ssl
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 from src.app.security import require_desk_mutation
+from src.desk.mailbox import MailboxError
 from src.config.heuristics import BREAKDOWN_TRIP_THRESHOLD, RISK_TOLERANCE_FLOOR, RISK_TOLERANCE_MAX
 from src.desk.names import supplier_name_key
 from src.desk.service import (
@@ -128,7 +130,7 @@ def register_desk_routes(api_v1: APIRouter) -> None:
             raise _rejected(exc) from exc
 
     @api_v1.get("/desk/deals/{deal_id}")
-    def get_deal(deal_id: str):
+    def get_deal(deal_id: str, _: str = Depends(require_desk_mutation)):
         _ident(deal_id)
         store = get_store()
         if store.get_deal(deal_id) is None:
@@ -215,9 +217,16 @@ def register_desk_routes(api_v1: APIRouter) -> None:
             return poll_imap_once(get_store(), deal_id=body.deal_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="No such deal") from exc
+        except MailboxError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except ssl.SSLError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="The mail server certificate could not be verified.",
+            ) from exc
 
     @api_v1.get("/desk/deals/{deal_id}/stream")
-    async def stream_deal(deal_id: str):
+    async def stream_deal(deal_id: str, _: str = Depends(require_desk_mutation)):
         _ident(deal_id)
         store = get_store()
         if store.get_deal(deal_id) is None:

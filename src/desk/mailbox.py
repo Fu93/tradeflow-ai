@@ -164,39 +164,75 @@ def pull_window(
     """
     known = skip_ids or set()
     found: list[dict[str, Any]] = []
-    client = _open_imap(host, port, username, password, use_ssl)
     try:
-        status, _data = client.select("INBOX", readonly=True)
-        if status != "OK":
-            raise MailboxError("IMAP EXAMINE failed")
-        uidvalidity = _uidvalidity(client)
-        since = _since_token(lookback_days())
-        status, data = client.uid("SEARCH", None, "SINCE", since)
-        if status != "OK" or not data or not data[0]:
-            return found, uidvalidity
-        for uid in data[0].split():
-            uid_text = uid.decode("ascii", "replace") if isinstance(uid, bytes) else str(uid)
-            fetched, payload = client.uid("FETCH", uid_text, "(BODY.PEEK[])")
-            if fetched != "OK":
-                continue
-            raw = _rfc822_from_fetch(payload or [])
-            if raw is None:
-                continue
-            item = parse_rfc822(raw)
-            item["raw"] = raw
-            item["uid"] = uid_text
-            item["uidvalidity"] = uidvalidity
-            external = item["message_id"] or f"uid:{uidvalidity}:{uid_text}"
-            item["external_id"] = external
-            if external in known or f"uid:{uidvalidity}:{uid_text}" in known:
-                continue
-            found.append(item)
-    finally:
+        client = _open_imap(host, port, username, password, use_ssl)
+    except ssl.SSLError as exc:
+        raise MailboxError("The mail server certificate could not be verified.") from exc
+    except (imaplib.IMAP4.error, OSError) as exc:
+        raise MailboxError("The mailbox could not be read.") from exc
+    try:
         try:
-            client.logout()
-        except Exception:  # noqa: BLE001
-            pass
+            status, _data = client.select("INBOX", readonly=True)
+            if status != "OK":
+                raise MailboxError("IMAP EXAMINE failed")
+            uidvalidity = _uidvalidity(client)
+            since = _since_token(lookback_days())
+            status, data = client.uid("SEARCH", None, "SINCE", since)
+            if status != "OK" or not data or not data[0]:
+                return found, uidvalidity
+            for uid in data[0].split():
+                uid_text = uid.decode("ascii", "replace") if isinstance(uid, bytes) else str(uid)
+                uid_key = f"uid:{uidvalidity}:{uid_text}"
+                if uid_key in known:
+                    continue
+                header_id = _header_message_id(client, uid_text)
+                if header_id and header_id in known:
+                    continue
+                fetched, payload = client.uid("FETCH", uid_text, "(BODY.PEEK[])")
+                if fetched != "OK":
+                    continue
+                raw = _rfc822_from_fetch(payload or [])
+                if raw is None:
+                    continue
+                item = parse_rfc822(raw)
+                item["raw"] = raw
+                item["uid"] = uid_text
+                item["uidvalidity"] = uidvalidity
+                external = item["message_id"] or uid_key
+                item["external_id"] = external
+                if external in known or uid_key in known:
+                    continue
+                found.append(item)
+        finally:
+            try:
+                client.logout()
+            except Exception:  # noqa: BLE001
+                pass
+    except MailboxError:
+        raise
+    except ssl.SSLError as exc:
+        raise MailboxError("The mail server certificate could not be verified.") from exc
+    except (imaplib.IMAP4.error, OSError) as exc:
+        raise MailboxError("The mailbox could not be read.") from exc
     return found, uidvalidity
+
+
+def _header_message_id(client: imaplib.IMAP4, uid_text: str) -> str:
+    """Message-ID from the header, so a known id is not fetched again."""
+    try:
+        fetched, payload = client.uid("FETCH", uid_text, "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])")
+    except (imaplib.IMAP4.error, OSError):
+        return ""
+    if fetched != "OK":
+        return ""
+    raw = _rfc822_from_fetch(payload or [])
+    if not raw:
+        return ""
+    head = raw.split(b"\r\n\r\n", 1)[0]
+    match = re.search(br"(?im)^message-id:\s*(<[^>\r\n]+>)", head)
+    if match is None:
+        return ""
+    return match.group(1).decode("ascii", "replace").strip()
 
 
 def _request(opener, url: str, *, token: str | None = None, data: bytes | None = None, method: str | None = None):
@@ -238,10 +274,20 @@ def refresh_access_token(opener) -> str:
 
 
 def gmail_list_recent(opener, token: str) -> list[str]:
-    query = urllib.parse.urlencode({"q": f"newer_than:{lookback_days()}d"})
-    url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages?{query}"
-    payload = _read_json(_request(opener, url, token=token))
-    return [str(item["id"]) for item in payload.get("messages") or [] if item.get("id")]
+    ids: list[str] = []
+    page: str | None = None
+    for _page in range(5):
+        params = {"q": f"newer_than:{lookback_days()}d"}
+        if page:
+            params["pageToken"] = page
+        query = urllib.parse.urlencode(params)
+        url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages?{query}"
+        payload = _read_json(_request(opener, url, token=token))
+        ids.extend(str(item["id"]) for item in payload.get("messages") or [] if item.get("id"))
+        page = payload.get("nextPageToken") or None
+        if not page:
+            break
+    return ids
 
 
 def gmail_get_raw(opener, token: str, message_id: str) -> bytes:

@@ -45,6 +45,20 @@ def test_mock_chat_import_respects_captcha(tmp_path, monkeypatch):
             ).map((row) => row.id)"""
         )
         assert ambiguous == ["a", "b"]
+        sandbox = page.evaluate(
+            """() => tradeflowMatchSuppliers(
+                [{id: 's', name: 'sandbox'}],
+                tradeflowImportPayload(document)
+            ).map((row) => row.id)"""
+        )
+        assert sandbox == []
+        contact = page.evaluate(
+            """() => tradeflowMatchSuppliers(
+                [{id: 'c', name: 'Li Wei', address: 'li@example.test'}],
+                {shop: '', contact: 'Li Wei, sales', title: 'simulated supplier sandbox', url: 'http://localhost/mock_chat.html'}
+            ).map((row) => row.id)"""
+        )
+        assert contact == ["c"]
         page.click("#btn-sim-captcha")
         blocked = page.evaluate("() => tradeflowImportPayload(document)")
         assert blocked["ok"] is False

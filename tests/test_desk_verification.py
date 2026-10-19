@@ -179,6 +179,8 @@ def test_drafts_follow_the_supplier_language_and_thread(desk_env):
     assert "engine" not in chinese["body"].lower()
     assert "cvar" not in chinese["body"].lower()
     assert chinese["reply_to"] == "<ningbo-1@example.test>"
+    assert "<root@example.test>" in (chinese["references_header"] or "")
+    assert "<ningbo-1@example.test>" in (chinese["references_header"] or "")
     ingest_message(
         store,
         deal_id,
@@ -282,9 +284,14 @@ def test_desk_mutations_require_a_real_key_and_a_boolean(desk_env, monkeypatch):
             headers={"X-API-Key": KEY},
         )
         assert sent.status_code == 422, sent.text
+    demo_read = client.get(
+        f"/api/v1/desk/deals/{deal_id}",
+        headers={"X-API-Key": "SANDBOX-DEMO-TOKEN"},
+    )
+    assert demo_read.status_code == 401
     monkeypatch.delenv("TRADEFLOW_API_KEY", raising=False)
     open_read = client.get(f"/api/v1/desk/deals/{deal_id}")
-    assert open_read.status_code == 200
+    assert open_read.status_code == 401
     blocked = client.post("/api/v1/desk/deals", json=body)
     assert blocked.status_code == 401
     monkeypatch.setenv("TRADEFLOW_API_KEY", KEY)
@@ -370,6 +377,7 @@ def test_a_better_rival_does_not_raise_the_other_offer():
             n_samples=400,
             n_grid=8,
             rng=np.random.default_rng(seed),
+            snap_to_grid=True,
         )
         improved = quotes.copy()
         improved[1] = 31.0 / 28.0
@@ -381,6 +389,7 @@ def test_a_better_rival_does_not_raise_the_other_offer():
             n_samples=400,
             n_grid=8,
             rng=np.random.default_rng(seed),
+            snap_to_grid=True,
         )
         delta = after["offers"][0] - before["offers"][0]
         worst = max(worst, delta)
@@ -394,6 +403,7 @@ def test_a_better_rival_does_not_raise_the_other_offer():
         n_samples=5000,
         n_grid=20,
         rng=np.random.default_rng(3),
+        snap_to_grid=True,
     )
     tighter = solve_coupled(
         np.array([30.0 / 28.0, 31.0 / 28.0]),
@@ -403,6 +413,7 @@ def test_a_better_rival_does_not_raise_the_other_offer():
         n_samples=5000,
         n_grid=20,
         rng=np.random.default_rng(3),
+        snap_to_grid=True,
     )
     print("SOLVER rival delta_max=%.6f rises=%s budget_delta=%.6f" % (
         worst,
@@ -464,7 +475,10 @@ def test_extension_posts_raw_text_and_does_not_default_the_supplier():
     block = background[start:]
     assert "suppliers[0]" not in block
     assert "matchSuppliers(" in block
-    assert "tfDeskSupplierConfirmed" in block
+    assert "confirmPage" in block
+    assert "tfApiKey" in block
+    assert 'reason: "api-key"' in block
+    assert "tfDeskSupplierConfirmed" not in block
     panel = (ROOT / "extension" / "styles.css").read_text(encoding="utf-8")
     assert "white-space: nowrap" in panel
     assert "body.is-desk" in panel

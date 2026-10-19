@@ -13,6 +13,8 @@ services:
     dockerContext: .
     healthCheckPath: /health
     envVars:
+      # Sandbox is the auction demo. Desk reads still require TRADEFLOW_API_KEY.
+      # This file does not contain a token that can read supplier mail.
       - key: TRADEFLOW_ENV
         value: sandbox
       - key: TRADEFLOW_SOLVER_BACKEND

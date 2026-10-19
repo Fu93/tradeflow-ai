@@ -379,27 +379,45 @@ class DeskStore:
         id instead of rewriting the text the person may already have read.
         """
         with self._lock:
-            existing = self.conn.execute(
+            rows = self.conn.execute(
                 """
                 SELECT * FROM drafts
-                WHERE deal_id = ? AND supplier_id = ? AND status = 'draft'
-                ORDER BY created_at DESC LIMIT 1
+                WHERE deal_id = ? AND supplier_id = ?
+                ORDER BY created_at DESC, id DESC
                 """,
                 (deal_id, supplier_id),
-            ).fetchone()
-            if existing and existing["body"] == body:
-                row = self.conn.execute(
-                    "SELECT * FROM drafts WHERE id = ?",
-                    (existing["id"],),
-                ).fetchone()
-                return dict(row)
+            ).fetchall()
+            for existing in rows:
+                if existing["body"] == body and existing["status"] in {
+                    "draft",
+                    "sent",
+                    "approved",
+                    "sending",
+                    "failed",
+                }:
+                    self.conn.execute(
+                        """
+                        UPDATE drafts SET status = 'superseded'
+                        WHERE deal_id = ? AND supplier_id = ? AND status = 'draft' AND id != ?
+                        """,
+                        (deal_id, supplier_id, existing["id"]),
+                    )
+                    self.conn.commit()
+                    row = self.conn.execute(
+                        "SELECT * FROM drafts WHERE id = ?",
+                        (existing["id"],),
+                    ).fetchone()
+                    return dict(row)
             version = 1
-            if existing:
-                version = int(existing["version"] or 1) + 1
-                self.conn.execute(
-                    "UPDATE drafts SET status = 'superseded' WHERE id = ?",
-                    (existing["id"],),
-                )
+            if rows:
+                version = max(int(row["version"] or 1) for row in rows) + 1
+            self.conn.execute(
+                """
+                UPDATE drafts SET status = 'superseded'
+                WHERE deal_id = ? AND supplier_id = ? AND status = 'draft'
+                """,
+                (deal_id, supplier_id),
+            )
             draft_id = uuid.uuid4().hex
             now = _now()
             digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
@@ -429,6 +447,32 @@ class DeskStore:
                 (draft_id,),
             ).fetchone()
             return dict(row)
+
+    def supersede_open_drafts(self, deal_id: str, supplier_id: str) -> None:
+        """A withheld or missing counter must not leave the old text sendable."""
+        with self._lock:
+            self.conn.execute(
+                """
+                UPDATE drafts SET status = 'superseded'
+                WHERE deal_id = ? AND supplier_id = ? AND status = 'draft'
+                """,
+                (deal_id, supplier_id),
+            )
+            self.conn.commit()
+
+    def claim_draft_send(self, draft_id: str, message_id: str) -> bool:
+        """One in-flight send per draft. A second caller does not send again."""
+        with self._lock:
+            cursor = self.conn.execute(
+                """
+                UPDATE drafts
+                SET status = 'sending', message_id = ?
+                WHERE id = ? AND status IN ('draft', 'failed', 'approved')
+                """,
+                (message_id, draft_id),
+            )
+            self.conn.commit()
+            return cursor.rowcount == 1
 
     def set_gmail_draft(self, draft_id: str, *, gmail_id: str | None, error: str | None) -> None:
         with self._lock:

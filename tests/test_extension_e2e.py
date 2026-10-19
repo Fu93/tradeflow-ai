@@ -65,7 +65,7 @@ def wait_for_port(port: int, seconds: float = 40.0) -> bool:
     return False
 
 
-def start_backend():
+def start_backend(api_key=None):
     """Start the FastAPI backend exactly as documented, isolated store."""
     tmp = tempfile.mkdtemp(prefix="tf_ext_backend_")
     env = dict(os.environ)
@@ -73,8 +73,14 @@ def start_backend():
     env["PYTHONPATH"] = REPO
     env["TRADEFLOW_DB_PATH"] = os.path.join(tmp, "sessions.db")
     env["TRADEFLOW_STORE_DIR"] = os.path.join(tmp, "sessions_json")
-    env.pop("TRADEFLOW_API_KEY", None)
     env.pop("TRADEFLOW_WEBHOOK_TOKEN", None)
+    if api_key:
+        env["TRADEFLOW_API_KEY"] = api_key
+        env["TRADEFLOW_DESK_DB"] = os.path.join(tmp, "desk.db")
+        env["DESK_N_SAMPLES"] = "40"
+        env["DESK_N_GRID"] = "8"
+    else:
+        env.pop("TRADEFLOW_API_KEY", None)
     log = open(os.path.join(tmp, "backend.log"), "w", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "-m", "src.app.main"],
@@ -808,6 +814,85 @@ def main() -> int:
                 check("no uncaught page errors on the sandbox page",
                       not any("PAGEERROR" in c for c in console),
                       "; ".join(c for c in console if "PAGEERROR" in c)[:200])
+
+                if backend is not None:
+                    print("\n[8] Desk import uses the key typed into the panel")
+                    import urllib.request
+                    try:
+                        backend.terminate()
+                        backend.wait(timeout=10)
+                    except Exception:
+                        try:
+                            backend.kill()
+                        except Exception:
+                            pass
+                    if backend_log is not None:
+                        try:
+                            backend_log.close()
+                        except Exception:
+                            pass
+                    deadline = time.time() + 15
+                    while time.time() < deadline and port_open(BACKEND_PORT):
+                        time.sleep(0.2)
+                    previous_tmp = backend_tmp
+                    desk_key = "desk-extension-e2e-key"
+                    backend, backend_tmp, backend_log = start_backend(api_key=desk_key)
+                    if previous_tmp:
+                        shutil.rmtree(previous_tmp, ignore_errors=True)
+                    came_up = wait_for_port(BACKEND_PORT)
+                    check("keyed desk backend came up", came_up, "port 8000")
+                    deal_id = ""
+                    if came_up:
+                        payload = json.dumps({
+                            "product": "umbrella",
+                            "quantity": 1000,
+                            "target_price": 12,
+                            "ceiling_price": 20,
+                            "risk_tolerance": 0.5,
+                            "suppliers": [
+                                {"name": "浙江頂尖雨具製造實業有限公司", "address": "ningbo@example.test"},
+                                {"name": "Wenzhou", "address": "wenzhou@example.test"},
+                                {"name": "Yiwu", "address": "yiwu@example.test"},
+                                {"name": "Foshan", "address": "foshan@example.test"},
+                            ],
+                        }).encode()
+                        request = urllib.request.Request(
+                            f"http://127.0.0.1:{BACKEND_PORT}/api/v1/desk/deals",
+                            data=payload,
+                            headers={"Content-Type": "application/json", "X-API-Key": desk_key},
+                        )
+                        with urllib.request.urlopen(request, timeout=60) as response:
+                            created = json.loads(response.read().decode())
+                        deal_id = created["deal"]["id"]
+                        sp.locator("#tab-desk").click()
+                        sp.locator("#desk-api-key").fill(desk_key)
+                        sp.locator("#desk-deal-id").fill(deal_id)
+                        page.bring_to_front()
+                        page.locator("#btn-sim-quote").click()
+                        sp.evaluate("() => document.getElementById('btn-desk-import').click()")
+                        status = ""
+                        for _wait in range(40):
+                            status = sp.locator("#desk-import-status").inner_text()
+                            if status:
+                                break
+                            time.sleep(0.25)
+                        check(
+                            "typed API key imports the visible simulated message",
+                            "simulated" in status.lower(),
+                            status,
+                        )
+                        quoted = urllib.request.Request(
+                            f"http://127.0.0.1:{BACKEND_PORT}/api/v1/desk/deals/{deal_id}",
+                            headers={"X-API-Key": desk_key},
+                        )
+                        with urllib.request.urlopen(quoted, timeout=30) as response:
+                            snapshot = json.loads(response.read().decode())
+                        review = snapshot.get("review") or []
+                        check(
+                            "imported message stays in review",
+                            any((item.get("provenance") or {}).get("simulated") for item in review),
+                            f"review={len(review)}",
+                        )
 
             finally:
                 ctx.close()

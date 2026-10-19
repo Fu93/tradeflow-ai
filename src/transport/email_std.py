@@ -6,6 +6,7 @@
 3. 離線自適應：若未配置 SMTP/IMAP 伺服器，自動降級為 Mock 本地記憶體佇列，保證離線 Demo 100% 暢通。
 """
 from __future__ import annotations
+import asyncio
 import os
 import smtplib
 import imaplib
@@ -86,15 +87,17 @@ class EmailStdTransport(BaseTransport):
             msg["References"] = meta.get("references") or meta["in_reply_to"]
 
         msg.attach(MIMEText(content, "plain", "utf-8"))
+        return await asyncio.to_thread(self._deliver_smtp, msg)
 
+    def _deliver_smtp(self, msg: MIMEMultipart) -> bool:
         context = ssl.create_default_context()
         try:
             if self.use_ssl:
-                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=15, context=context) as server:
+                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=12, context=context) as server:
                     server.login(self.username, self.password)
                     server.send_message(msg)
             else:
-                with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=15) as server:
+                with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=12) as server:
                     server.starttls(context=context)
                     server.login(self.username, self.password)
                     server.send_message(msg)
