@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 
-from src.config.heuristics import PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD
+from src.config.heuristics import DESK_N_GRID, DESK_N_SAMPLES, PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD
 from src.desk.store import DeskStore
 from src.engine.bayesian_v2 import robust_bayes_update
 from src.engine.coupled import solve_coupled
@@ -27,8 +27,18 @@ LANDED_NOTE = "Ranking uses landed cost."
 
 
 def solver_budget() -> tuple[int, int]:
-    samples = _bounded_int(os.environ.get("DESK_N_SAMPLES", "200"), default=200, low=1, high=20000)
-    grid = _bounded_int(os.environ.get("DESK_N_GRID", "8"), default=8, low=2, high=40)
+    samples = _bounded_int(
+        os.environ.get("DESK_N_SAMPLES", str(DESK_N_SAMPLES)),
+        default=int(DESK_N_SAMPLES),
+        low=1,
+        high=20000,
+    )
+    grid = _bounded_int(
+        os.environ.get("DESK_N_GRID", str(DESK_N_GRID)),
+        default=int(DESK_N_GRID),
+        low=2,
+        high=40,
+    )
     return samples, grid
 
 
@@ -62,16 +72,27 @@ def _components(parsed: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _draft_body(product: str, counter: float | None) -> str:
-    if counter is None:
+def _language(texts: list[str]) -> str:
+    cjk = 0
+    latin = 0
+    for text in texts:
+        for char in text:
+            if "\u4e00" <= char <= "\u9fff":
+                cjk += 1
+            elif ("A" <= char <= "Z") or ("a" <= char <= "z"):
+                latin += 1
+    return "zh" if cjk > latin else "en"
+
+
+def _draft_body(product: str, counter: float, quantity: int, language: str) -> str:
+    if language == "zh":
         return (
-            f"Thank you. For {product} the engine withheld a counter because "
-            "the walk-away risk is above the cap. This draft is not sent until "
-            "you approve it."
+            f"您好，关于{product}，我们可以按每件 {counter:.2f} 元、"
+            f"数量 {quantity} 继续。请确认是否可以安排。"
         )
     return (
-        f"Thank you. For {product} our counter is {counter:.2f} CNY. "
-        "This draft is not sent until you approve it."
+        f"Hello, for {product} we can proceed at {counter:.2f} CNY per unit "
+        f"for {quantity} units. Please confirm if that works."
     )
 
 
@@ -155,7 +176,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
                 kappas.append(0.0 if adder is None else float(adder) / target)
         else:
             kappas = [0.0 for _row in active]
-        round_index = max(len(by_supplier[row["id"]]) for row in active)
+        rounds = [len(by_supplier[row["id"]]) for row in active]
         solved = solve_coupled(
             np.asarray(quotes, dtype=np.float64),
             np.asarray(means, dtype=np.float64),
@@ -167,7 +188,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             risk_tolerance=float(deal["risk_tolerance"]),
             beliefs=hazard_beliefs,
             rng=np.random.default_rng(int(deal["seed"])),
-            round_index=int(round_index),
+            round_index=rounds,
         )
     else:
         basis = "unit_price"
@@ -257,12 +278,31 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         card["rank"] = by_id[card["id"]]["rank"]
 
     for card in cards:
-        if card["latest_quote"] is None and card["counter"] is None:
+        if card["latest_quote"] is None or card["counter"] is None:
             continue
-        body = _draft_body(str(deal["product"]), card["counter"] if card["latest_quote"] is not None else None)
-        if card["latest_quote"] is None:
-            continue
-        store.replace_open_draft(deal["id"], card["id"], body)
+        history = by_supplier.get(card["id"]) or []
+        language = _language([event.get("raw_text") or "" for event in history])
+        body = _draft_body(
+            str(deal["product"]),
+            float(card["counter"]),
+            int(deal["quantity"]),
+            language,
+        )
+        reply_to = None
+        references = None
+        for event in reversed(history):
+            message_id = (event.get("provenance") or {}).get("message_id")
+            if message_id:
+                reply_to = str(message_id)
+                references = str((event.get("provenance") or {}).get("references") or message_id)
+                break
+        store.replace_open_draft(
+            deal["id"],
+            card["id"],
+            body,
+            reply_to=reply_to,
+            references_header=references,
+        )
 
     mc = None
     stop = False
@@ -311,6 +351,11 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
                 "sent_at": draft["sent_at"],
                 "gmail_draft_id": draft["gmail_draft_id"],
                 "gmail_error": draft["gmail_error"],
+                "version": int(draft.get("version") or 1),
+                "body_sha256": draft.get("body_sha256"),
+                "send_error": draft.get("send_error"),
+                "reply_to": draft.get("reply_to"),
+                "message_id": draft.get("message_id"),
             }
         )
     payload = {

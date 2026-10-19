@@ -29,5 +29,13 @@ services:
         sync: false
       - key: TRADEFLOW_API_KEY
         sync: false
+      - key: DESK_N_SAMPLES
+        value: "5000"
+      - key: DESK_N_GRID
+        value: "20"
+      - key: IMAP_SSL
+        value: "1"
+      - key: IMAP_LOOKBACK_DAYS
+        value: "14"
       - key: TRADEFLOW_WEBHOOK_TOKEN
         sync: false

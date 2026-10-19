@@ -7,14 +7,17 @@ import queue
 import re
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
+from src.app.security import require_desk_mutation
 from src.config.heuristics import BREAKDOWN_TRIP_THRESHOLD, RISK_TOLERANCE_FLOOR, RISK_TOLERANCE_MAX
+from src.desk.names import supplier_name_key
 from src.desk.service import (
     BUS,
     DeskRejected,
+    DraftStale,
     SendRefused,
     accept_review,
     create_deal,
@@ -55,7 +58,7 @@ class DealIn(BaseModel):
     def _bounds(self):
         if self.target_price > self.ceiling_price:
             raise ValueError("The target must be at or below the ceiling.")
-        names = [item.name.strip().casefold() for item in self.suppliers]
+        names = [supplier_name_key(item.name) for item in self.suppliers]
         if len(names) != len(set(names)):
             raise ValueError("Duplicate supplier name. Each supplier needs its own name.")
         addresses = [item.address.strip().casefold() for item in self.suppliers]
@@ -75,27 +78,26 @@ class QuoteIn(BaseModel):
     duty_rate: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     fees: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     external_id: str | None = Field(default=None, max_length=500)
+    simulated: bool = False
 
 
 class ReviewIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    supplier_id: str
+    supplier_id: str | None = None
+    action: str = "accept"
+    chosen_token: str | None = Field(default=None, max_length=80)
 
 
 class SendIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    human_approved: bool
+    human_approved: StrictBool
+    body_sha256: str = Field(min_length=64, max_length=64)
 
 
 class PollIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     channel: str = "imap"
     deal_id: str | None = None
-    host: str | None = None
-    port: int | None = Field(default=None, ge=1, le=65535)
-    username: str | None = None
-    password: str | None = None
-    use_ssl: bool | None = None
 
 
 def _ident(value: str) -> str:
@@ -110,7 +112,7 @@ def _rejected(exc: DeskRejected) -> HTTPException:
 
 def register_desk_routes(api_v1: APIRouter) -> None:
     @api_v1.post("/desk/deals")
-    def post_deal(body: DealIn):
+    def post_deal(body: DealIn, _: str = Depends(require_desk_mutation)):
         try:
             return create_deal(
                 get_store(),
@@ -137,7 +139,7 @@ def register_desk_routes(api_v1: APIRouter) -> None:
         return snapshot
 
     @api_v1.post("/desk/deals/{deal_id}/quotes")
-    def post_quote(deal_id: str, body: QuoteIn):
+    def post_quote(deal_id: str, body: QuoteIn, _: str = Depends(require_desk_mutation)):
         _ident(deal_id)
         if body.supplier_id is not None:
             _ident(body.supplier_id)
@@ -154,6 +156,7 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 duty_rate=body.duty_rate,
                 fees=body.fees,
                 external_id=body.external_id,
+                provenance_extra={"simulated": True} if body.simulated else None,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="No such deal") from exc
@@ -162,29 +165,46 @@ def register_desk_routes(api_v1: APIRouter) -> None:
         return result
 
     @api_v1.post("/desk/deals/{deal_id}/review/{event_id}")
-    def post_review(deal_id: str, event_id: str, body: ReviewIn):
+    def post_review(deal_id: str, event_id: str, body: ReviewIn, _: str = Depends(require_desk_mutation)):
         _ident(deal_id)
         _ident(event_id)
-        _ident(body.supplier_id)
+        if body.action not in {"accept", "reject"}:
+            raise HTTPException(status_code=422, detail="Review action must be accept or reject.")
+        if body.supplier_id is not None:
+            _ident(body.supplier_id)
         try:
-            return accept_review(get_store(), deal_id, event_id, body.supplier_id)
+            return accept_review(
+                get_store(),
+                deal_id,
+                event_id,
+                body.supplier_id,
+                chosen_token=body.chosen_token,
+                reject=body.action == "reject",
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="No such review item") from exc
         except DeskRejected as exc:
             raise _rejected(exc) from exc
 
     @api_v1.post("/desk/drafts/{draft_id}/send")
-    async def post_send(draft_id: str, body: SendIn):
+    async def post_send(draft_id: str, body: SendIn, _: str = Depends(require_desk_mutation)):
         _ident(draft_id)
         try:
-            return await send_draft(get_store(), draft_id, human_approved=body.human_approved)
+            return await send_draft(
+                get_store(),
+                draft_id,
+                human_approved=body.human_approved,
+                body_sha256=body.body_sha256,
+            )
         except SendRefused as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except DraftStale as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="No such draft") from exc
 
     @api_v1.post("/desk/poll")
-    def post_poll(body: PollIn):
+    def post_poll(body: PollIn, _: str = Depends(require_desk_mutation)):
         if body.deal_id is not None:
             _ident(body.deal_id)
         try:
@@ -192,15 +212,7 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 return poll_gmail_once(get_store(), deal_id=body.deal_id)
             if body.channel != "imap":
                 raise HTTPException(status_code=422, detail="Poll channel must be imap or gmail.")
-            return poll_imap_once(
-                get_store(),
-                deal_id=body.deal_id,
-                host=body.host,
-                port=body.port,
-                username=body.username,
-                password=body.password,
-                use_ssl=body.use_ssl,
-            )
+            return poll_imap_once(get_store(), deal_id=body.deal_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="No such deal") from exc
 

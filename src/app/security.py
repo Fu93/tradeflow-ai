@@ -128,3 +128,24 @@ def require_webhook_token(supplied: Optional[str] = Depends(webhook_auth_header)
             detail="Unauthorized: Invalid or missing X-Webhook-Token header in production mode. Access denied.",
         )
     return supplied
+
+
+def require_desk_mutation(supplied: Optional[str] = Depends(api_key_header)):
+    """Desk writes, sends, and mailbox polls need the API key in every mode.
+
+    The rest of the sandbox API stays open for the demo. These routes can
+    send mail or open a socket, so an empty sandbox key is not enough.
+    """
+    configured = os.getenv("TRADEFLOW_API_KEY", "").strip()
+    if not configured:
+        raise HTTPException(
+            status_code=401,
+            detail="Desk changes need TRADEFLOW_API_KEY on the server.",
+        )
+    provided = (supplied or "").strip()
+    if len(provided) != len(configured) or not hmac.compare_digest(provided, configured):
+        raise HTTPException(
+            status_code=401,
+            detail="Desk changes need a valid X-API-Key.",
+        )
+    return supplied

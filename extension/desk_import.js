@@ -25,14 +25,36 @@
     return false;
   }
 
+  function tradeflowFold(value) {
+    return String(value || "").normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+  }
+
+  function tradeflowMatchSuppliers(suppliers, page) {
+    const hay = tradeflowFold([page && page.shop, page && page.title, page && page.url].filter(Boolean).join("\n"));
+    return (suppliers || []).filter((supplier) => {
+      const name = tradeflowFold(supplier.name);
+      const address = tradeflowFold(supplier.address);
+      if (name && hay.indexOf(name) >= 0) return true;
+      if (address && hay.indexOf(address) >= 0) return true;
+      return false;
+    });
+  }
+
   function tradeflowImportPayload(doc) {
     if (tradeflowCaptchaVisible(doc)) return { ok: false, reason: "captcha" };
     const text = tradeflowLatestSupplierText(doc);
     if (!text) return { ok: false, reason: "empty" };
-    return { ok: true, text: text };
+    const root = roots(doc);
+    const shopNode = root.querySelector(".supplier-name, [data-shop-name]");
+    const shop = shopNode ? (shopNode.innerText || shopNode.textContent || "").trim() : "";
+    const title = (root.title || "").trim();
+    const href = root.location && root.location.href ? root.location.href : "";
+    const simulated = /mock_chat\.html/i.test(href) || /simulated/i.test(title) || !!root.querySelector(".sim-banner");
+    return { ok: true, text: text, shop: shop, title: title, url: href, simulated: simulated };
   }
 
   globalThis.tradeflowLatestSupplierText = tradeflowLatestSupplierText;
   globalThis.tradeflowCaptchaVisible = tradeflowCaptchaVisible;
   globalThis.tradeflowImportPayload = tradeflowImportPayload;
+  globalThis.tradeflowMatchSuppliers = tradeflowMatchSuppliers;
 })();

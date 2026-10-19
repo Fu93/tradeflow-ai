@@ -7,6 +7,15 @@
     return value;
   }
 
+  function hazardText(supplier) {
+    const figure = supplier.hazard_figure === "upper" ? supplier.hazard_upper : supplier.hazard;
+    if (figure == null || figure !== figure) return "no data";
+    const shown = Math.round(Number(figure) * 1000) / 10;
+    const label = supplier.hazard_figure === "upper" ? " upper bound" : "";
+    const prior = supplier.prior_driven ? " prior-driven" : "";
+    return shown.toFixed(1) + "%" + label + prior;
+  }
+
   function money(value, currency) {
     if (value == null || value !== value) return "no data";
     const negative = value < 0;
@@ -58,7 +67,7 @@
     });
     if (!suppliers.length) {
       const item = document.createElement("li");
-      item.textContent = "No live desk linked.";
+      item.textContent = "No quotes on this deal.";
       ranking.appendChild(item);
     }
     suppliers.forEach((supplier) => {
@@ -68,14 +77,16 @@
       item.textContent = rank + ". " + supplier.name + " · " + quote;
       ranking.appendChild(item);
       const row = document.createElement("p");
-      const figure = supplier.hazard_figure === "upper" ? supplier.hazard_upper : supplier.hazard;
       const counter = supplier.counter == null ? "withheld" : money(supplier.counter, "CNY");
-      const hazard = figure == null ? "no data" : money(figure);
-      row.textContent = supplier.name + " counter " + counter + ", hazard " + hazard;
+      row.textContent = supplier.name + " counter " + counter + ", hazard " + hazardText(supplier);
       counters.appendChild(row);
     });
     const current = select.value;
     clear(select);
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "Choose a supplier";
+    select.appendChild(blank);
     suppliers.forEach((supplier) => {
       const option = document.createElement("option");
       option.value = supplier.id;
@@ -88,10 +99,13 @@
     draft.value = match ? match.body : "";
   }
 
-  function rememberSupplier() {
+  function rememberSupplier(confirmed) {
     const select = document.getElementById("desk-supplier");
     if (!select) return;
-    storageSet({ tfDeskSupplier: select.value });
+    storageSet({
+      tfDeskSupplier: select.value,
+      tfDeskSupplierConfirmed: !!(confirmed && select.value),
+    });
   }
 
   async function refresh() {
@@ -121,9 +135,9 @@
     const copy = document.getElementById("btn-desk-copy");
     const select = document.getElementById("desk-supplier");
     if (!input || !button) return;
-    storageGet(["tfDeskDeal", "tfDeskSupplier"], (stored) => {
+    storageGet(["tfDeskDeal", "tfDeskSupplier", "tfDeskSupplierConfirmed"], (stored) => {
       if (stored.tfDeskDeal) input.value = stored.tfDeskDeal;
-      if (stored.tfDeskSupplier && select) select.value = stored.tfDeskSupplier;
+      if (stored.tfDeskSupplierConfirmed && stored.tfDeskSupplier && select) select.value = stored.tfDeskSupplier;
       refresh();
     });
     input.addEventListener("change", () => {
@@ -131,12 +145,11 @@
       refresh();
     });
     if (select) select.addEventListener("change", () => {
-      rememberSupplier();
+      rememberSupplier(true);
       refresh();
     });
     button.addEventListener("click", () => {
       storageSet({ tfDeskDeal: input.value.trim() });
-      rememberSupplier();
       if (!globalThis.chrome || !chrome.runtime || !chrome.runtime.sendMessage) {
         setStatus("Import runs inside the extension.");
         return;
@@ -148,11 +161,14 @@
         }
         if (!resp || !resp.ok) {
           if (resp && resp.reason === "captcha") setStatus("Captcha is on screen. Import paused.");
-          else if (resp && resp.reason === "no-deal") setStatus("Choose a deal and a supplier first.");
+          else if (resp && resp.reason === "no-deal") setStatus("Link a deal first.");
+          else if (resp && resp.reason === "ambiguous") setStatus("This page matches more than one supplier. Choose the thread, then import again.");
+          else if (resp && resp.reason === "unmapped") setStatus("This page does not name a supplier on the deal. Choose the thread, then import again.");
           else setStatus("No supplier message on screen.");
           return;
         }
-        setStatus("Imported the visible message.");
+        if (resp.simulated) setStatus("Imported a simulated test message. It stays in review until you accept a figure.");
+        else setStatus("Imported the visible message.");
         refresh();
       });
     });

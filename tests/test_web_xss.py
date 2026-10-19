@@ -758,15 +758,25 @@ class TestCommandDispatchNoFalseSuccess(unittest.TestCase):
 
     def test_dispatch_posts_the_field_name_the_server_reads(self):
         """main.py reads body.get("command") or body.get("command_text")."""
+        start = self.background.find('if (msg.type === "DISPATCH_OVERRIDE_COMMAND")')
+        end = self.background.find('if (port.name.startsWith("tf-content")')
+        block = self.background[start:end]
+        self.assertGreater(start, 0)
+        self.assertGreater(end, start)
         self.assertIn(
             "command:",
-            self.background,
-            "background.js must post `command`, the field /webhook/mobile-command reads",
+            block,
+            "the command dispatcher must post `command`, the field /webhook/mobile-command reads",
         )
         self.assertNotIn(
             "raw_text:",
+            block,
+            "the command dispatcher must not post `raw_text`; that field is ignored and the call returns HTTP 400",
+        )
+        self.assertIn(
+            "raw_text:",
             self.background,
-            "background.js still posts `raw_text`, which the server ignores -> HTTP 400",
+            "the desk import posts raw_text, which /api/v1/desk quotes actually reads",
         )
 
     def test_dispatch_checks_res_ok_and_reports_real_status(self):

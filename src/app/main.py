@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import unicodedata
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from enum import Enum
@@ -55,6 +54,7 @@ from src.config.heuristics import (
     SUPERVISOR_MIN_PRICE_RATIO,
     public_payload as heuristics_payload,
 )
+from src.desk.names import supplier_name_key
 from src.sim.scenarios import UMBRELLA, public_payload as simulation_payload
 from ..engine.backend import describe_solver_backend, resolve_use_gpu
 from ..engine.llm_config import llm_status
@@ -228,17 +228,6 @@ def _readable_validation_detail(detail):
         cleaned.append(item)
     return cleaned
 
-
-def supplier_name_key(name: str) -> str:
-    """Identity for a supplier name: NFKC, casefold, one space between words.
-
-    Full-width letters match ASCII. A repeated space does not make a second
-    supplier. Combining marks dropped after casefold so dotted capital I
-    matches i.
-    """
-    folded = unicodedata.normalize("NFKC", str(name)).casefold()
-    without_marks = "".join(ch for ch in folded if not unicodedata.combining(ch))
-    return " ".join(without_marks.split())
 
 # [REGRESSION] 原本 allow_origins=["*"] 搭配 allow_credentials=True —— 這是明確的
 # 反模式：任意網站都能帶著憑證呼叫本 API。改為顯式白名單：本機儀表板

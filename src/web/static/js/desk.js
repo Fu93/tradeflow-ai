@@ -1,11 +1,21 @@
 (function () {
-  const TF_API_KEY = "";
   const POLL_MS = 2000;
+
+  function apiKey() {
+    const field = document.getElementById("api-key");
+    const typed = field && field.value.trim();
+    if (typed) {
+      sessionStorage.setItem("tfApiKey", typed);
+      return typed;
+    }
+    return sessionStorage.getItem("tfApiKey") || localStorage.getItem("tfApiKey") || "";
+  }
 
   function headers(json) {
     const value = {};
     if (json) value["Content-Type"] = "application/json";
-    if (TF_API_KEY) value["X-API-Key"] = TF_API_KEY;
+    const key = apiKey();
+    if (key) value["X-API-Key"] = key;
     return value;
   }
 
@@ -32,7 +42,7 @@
 
   function detailMessage(body) {
     if (!body) return "Request failed";
-    if (typeof body.detail === "string") return body.detail;
+    if (typeof body.detail === "string") return body.detail.replace(/^Value error,\s*/, "");
     if (Array.isArray(body.detail)) {
       return body.detail.map((item) => item.msg || "invalid").join(" ");
     }
@@ -64,13 +74,12 @@
   function suppliersFrom(text) {
     const rows = text.split("\n").map((item) => item.trim()).filter(Boolean);
     return rows.map((row) => {
-      const comma = row.indexOf(",");
+      const comma = row.lastIndexOf(",");
       if (comma < 1) return null;
-      return {
-        name: row.slice(0, comma).trim(),
-        address: row.slice(comma + 1).trim(),
-        channel: "email",
-      };
+      const address = row.slice(comma + 1).trim();
+      const name = row.slice(0, comma).trim();
+      if (!address || address.indexOf("@") < 1) return null;
+      return { name: name, address: address, channel: "email" };
     });
   }
 
@@ -118,8 +127,24 @@
       const snapshot = await request("/api/v1/desk/deals/" + dealId, { headers: headers(false) });
       show(snapshot);
     } catch (err) {
-      formError.textContent = err.message;
+      formError.textContent = err.status === 404
+        ? "This deal is not in the desk database. A fresh disk does not keep the previous deal. Open a new one."
+        : err.message;
+      if (err.status === 404) {
+        window.clearInterval(timer);
+        timer = 0;
+        form.hidden = false;
+      }
     }
+  }
+
+  function hazardText(supplier) {
+    const figure = supplier.hazard_figure === "upper" ? supplier.hazard_upper : supplier.hazard;
+    if (figure == null || figure !== figure) return "no data";
+    const shown = Math.round(Number(figure) * 1000) / 10;
+    const label = supplier.hazard_figure === "upper" ? " upper bound" : "";
+    const prior = supplier.prior_driven ? " prior-driven" : "";
+    return shown.toFixed(1) + "%" + label + prior;
   }
 
   function show(snapshot) {
@@ -169,14 +194,11 @@
         ? money(supplier.landed_cost, "CNY")
         : "no data";
       line(card, "Landed cost: " + landed);
-      const belief = money(supplier.belief_mean) + " ± " + money(supplier.belief_std);
-      line(card, "Belief (" + (supplier.belief_label || "prior") + "): " + belief);
-      const figure = supplier.hazard_figure === "upper" ? supplier.hazard_upper : supplier.hazard;
+      const belief = money(supplier.belief_mean) + " x target ± " + money(supplier.belief_std);
+      line(card, "Reserve belief (" + (supplier.belief_label || "prior") + "): " + belief);
       const counter = supplier.counter == null ? "withheld" : money(supplier.counter, "CNY");
       line(card, "Counter: " + counter);
-      const hazard = figure == null ? "no data" : money(figure);
-      const prior = supplier.prior_driven ? " prior-driven" : "";
-      line(card, "Hazard: " + hazard + prior);
+      line(card, "Walk-away hazard: " + hazardText(supplier));
       root.appendChild(card);
     });
   }
@@ -191,33 +213,72 @@
     items.forEach((item) => {
       const block = document.createElement("div");
       block.className = "desk-event";
-      line(block, (item.source || "quote") + " · " + (item.confidence || ""));
+      const reason = (item.provenance && item.provenance.review_reason) || item.confidence || "review";
+      line(block, (item.source || "quote") + " · " + reason);
       const pre = document.createElement("pre");
       pre.textContent = item.raw_text || "";
       block.appendChild(pre);
+      const provenance = item.provenance || {};
+      const tokens = provenance.candidates && provenance.candidates.length
+        ? provenance.candidates
+        : (provenance.tokens || []);
+      let chosen = "";
+      if (tokens.length) {
+        const picks = document.createElement("div");
+        picks.className = "desk-actions";
+        tokens.forEach((token) => {
+          const pick = document.createElement("button");
+          pick.type = "button";
+          pick.textContent = token;
+          pick.addEventListener("click", () => {
+            chosen = token;
+            Array.prototype.forEach.call(picks.children, (node) => {
+              node.disabled = node === pick;
+            });
+          });
+          picks.appendChild(pick);
+        });
+        block.appendChild(picks);
+      }
       const select = document.createElement("select");
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "Choose a supplier";
+      select.appendChild(blank);
       suppliers.forEach((supplier) => {
         const option = document.createElement("option");
         option.value = supplier.id;
         option.textContent = supplier.name;
+        if (item.supplier_id && item.supplier_id === supplier.id) option.selected = true;
         select.appendChild(option);
       });
+      const actions = document.createElement("div");
+      actions.className = "desk-actions";
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = "Accept onto supplier";
-      button.addEventListener("click", () => accept(item.id, select.value, block));
-      block.appendChild(select);
-      block.appendChild(button);
+      button.textContent = "Accept";
+      button.addEventListener("click", () => accept(item.id, select.value, chosen, false, block));
+      const reject = document.createElement("button");
+      reject.type = "button";
+      reject.textContent = "Reject";
+      reject.addEventListener("click", () => accept(item.id, select.value, chosen, true, block));
+      actions.appendChild(select);
+      actions.appendChild(button);
+      actions.appendChild(reject);
+      block.appendChild(actions);
       root.appendChild(block);
     });
   }
 
-  async function accept(eventId, supplierId, block) {
+  async function accept(eventId, supplierId, chosenToken, reject, block) {
+    const payload = { action: reject ? "reject" : "accept" };
+    if (!reject) payload.supplier_id = supplierId || null;
+    if (chosenToken) payload.chosen_token = chosenToken;
     try {
       const snapshot = await request("/api/v1/desk/deals/" + dealId + "/review/" + eventId, {
         method: "POST",
         headers: headers(true),
-        body: JSON.stringify({ supplier_id: supplierId }),
+        body: JSON.stringify(payload),
       });
       show(snapshot);
     } catch (err) {
@@ -249,7 +310,7 @@
     clear(root);
     const names = {};
     suppliers.forEach((supplier) => { names[supplier.id] = supplier.name; });
-    const open = drafts.filter((draft) => draft.status === "draft" || draft.status === "sent");
+    const open = drafts.filter((draft) => draft.status !== "superseded");
     if (!open.length) {
       line(root, "No drafts yet.");
       return;
@@ -258,13 +319,12 @@
       const block = document.createElement("div");
       block.className = "desk-event";
       const name = names[draft.supplier_id] || "Supplier";
-      let state = "draft, not sent";
-      if (draft.status === "sent" && draft.transmitted) state = "handed to the mail server";
-      else if (draft.status === "sent") state = "approved here, not transmitted";
-      line(block, name + " · " + state);
-      const pre = document.createElement("pre");
-      pre.textContent = draft.body || "";
-      block.appendChild(pre);
+      line(block, name + " · " + draftState(draft));
+      const area = document.createElement("textarea");
+      area.readOnly = true;
+      area.rows = 4;
+      area.value = draft.body || "";
+      block.appendChild(area);
       const copy = document.createElement("button");
       copy.type = "button";
       copy.textContent = "Copy draft";
@@ -274,11 +334,19 @@
         const send = document.createElement("button");
         send.type = "button";
         send.textContent = "Approve and send";
-        send.addEventListener("click", () => approve(draft.id));
+        send.addEventListener("click", () => approve(draft.id, area.value, block));
         block.appendChild(send);
       }
       root.appendChild(block);
     });
+  }
+
+  function draftState(draft) {
+    if (draft.status === "failed") return "send failed" + (draft.send_error ? ": " + draft.send_error : "");
+    if (draft.status === "sent" && draft.transmitted) return "handed to the mail server";
+    if (draft.status === "sent") return "recorded sent without a mail-server receipt";
+    if (draft.status === "approved") return "approved here, not transmitted";
+    return "draft, not sent";
   }
 
   function copyText(text) {
@@ -287,18 +355,31 @@
     }
   }
 
-  async function approve(draftId) {
+  async function digestHex(text) {
+    const bytes = new TextEncoder().encode(text);
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    const view = new Uint8Array(digest);
+    let hex = "";
+    for (let index = 0; index < view.length; index += 1) {
+      hex += view[index].toString(16).padStart(2, "0");
+    }
+    return hex;
+  }
+
+  async function approve(draftId, body, block) {
     const ok = window.confirm("Send this draft? It leaves this desk only after you confirm.");
     if (!ok) return;
     try {
+      const bodySha = await digestHex(body);
       await request("/api/v1/desk/drafts/" + draftId + "/send", {
         method: "POST",
         headers: headers(true),
-        body: JSON.stringify({ human_approved: true }),
+        body: JSON.stringify({ human_approved: true, body_sha256: bodySha }),
       });
       refresh();
     } catch (err) {
-      formError.textContent = err.message;
+      if (block) line(block, err.message);
+      else formError.textContent = err.message;
     }
   }
 

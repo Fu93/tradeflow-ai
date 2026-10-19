@@ -479,7 +479,15 @@ body.is-error .scroll { opacity: 0.7; }
   line-height: 16px;
   font-weight: 500;
 }
-.tabbar [role="tab"] span { min-width: 0; overflow-wrap: anywhere; }
+.tabbar [role="tab"] span { min-width: 0; overflow-wrap: normal; white-space: nowrap; }
+@media (max-width: 400px) {
+  .tabbar [role="tab"] svg { display: none; }
+  .tabbar [role="tab"] { font-size: 12px; padding: 4px 2px; gap: 2px; }
+}
+body.is-desk .action-bar,
+body.is-desk #teaching-empty,
+body.is-desk #status-badge,
+body.is-desk #loading-skeleton { display: none; }
 .tabbar [role="tab"][aria-selected="true"] {
   background: var(--surface);
   color: var(--accent);

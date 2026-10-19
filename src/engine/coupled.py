@@ -457,7 +457,7 @@ def evaluate_vector(
             quote=float(quotes[i]),
             offer=float(offers[i]),
             reserve=float(reserve_means[i]),
-            round_index=round_index,
+            round_index=_round_for(round_index, i),
         )
         pred["scenario_mean"] = float(per_hazard[i])
         hazards.append(pred)
@@ -476,6 +476,13 @@ def evaluate_vector(
         "n_samples": n,
         "hazards": hazards,
     }
+
+
+def _round_for(round_index, index: int) -> float:
+    """One round clock per supplier. A scalar is the auction's shared round."""
+    if isinstance(round_index, (int, float)):
+        return float(round_index)
+    return float(round_index[index])
 
 
 def solve_coupled(
@@ -529,6 +536,11 @@ def solve_coupled(
         hi = min(float(quotes[i]), float(ceiling), float(rival_unit_cap))
         hi = max(hi, float(np.finfo(np.float64).tiny))
         candidates = _candidates(grid, hi)
+        # A cheaper rival lowers ``hi`` and raises ``batna``. Putting that
+        # batna inside each candidate's surplus lets a higher offer catch
+        # up, and one grid step is several currency units. The rival is
+        # allowed to remove offers above ``hi``. It does not re-rank the
+        # offers that remain, so those are scored with no outside option.
         scored = _score_candidates(
             reserves=scenarios["reserves"][i],
             uniforms=scenarios["uniforms"][i],
@@ -536,7 +548,7 @@ def solve_coupled(
             quote=float(quotes[i]),
             kappa=float(kappas[i]),
             candidates=candidates,
-            batna_surplus=batna,
+            batna_surplus=0.0,
             ceiling=float(ceiling),
             effect=beliefs[i].mean_effect(),
             risk_tolerance=risk_tolerance,
@@ -550,7 +562,7 @@ def solve_coupled(
             belief=beliefs[i],
             batna_surplus=batna,
             cap=cap,
-            round_index=float(round_index),
+            round_index=_round_for(round_index, i),
         )
         choice["batna_surplus"] = batna
         choice["hi"] = hi
@@ -566,7 +578,7 @@ def solve_coupled(
         beliefs=beliefs,
         reserve_means=means,
         risk_tolerance=risk_tolerance,
-        round_index=float(round_index),
+        round_index=round_index,
     )
     reservations = []
     for i in range(k):

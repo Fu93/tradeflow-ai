@@ -1413,6 +1413,7 @@ function selectTab(name) {
   const scroll = document.getElementById("scroll");
   if (scroll && currentTabName) scrollMem[currentTabName] = scroll.scrollTop;
   currentTabName = name;
+  document.body.classList.toggle("is-desk", name === "desk");
   document.querySelectorAll("[data-tab]").forEach((tab) => {
     const on = tab.dataset.tab === name;
     tab.setAttribute("aria-selected", on ? "true" : "false");

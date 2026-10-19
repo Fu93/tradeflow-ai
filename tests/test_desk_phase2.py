@@ -242,8 +242,16 @@ def test_missing_landed_components_are_not_zero(tmp_path):
     store.close()
 
 
+def _imap_env(monkeypatch, fixture):
+    monkeypatch.setenv("IMAP_HOST", "127.0.0.1")
+    monkeypatch.setenv("IMAP_PORT", str(fixture.port))
+    monkeypatch.setenv("IMAP_USERNAME", "desk")
+    monkeypatch.setenv("IMAP_PASSWORD", "desk")
+    monkeypatch.setenv("IMAP_SSL", "0")
+
+
 def test_imap_drop_recomputes_and_dedups(tmp_path, monkeypatch):
-    from src.desk.imap_fixture import ImapFixture
+    from tests.imap_fixture import ImapFixture
     from src.desk.service import poll_imap_once
 
     sent = []
@@ -257,36 +265,21 @@ def test_imap_drop_recomputes_and_dedups(tmp_path, monkeypatch):
     fixture = ImapFixture()
     store = _open_store(tmp_path)
     try:
+        _imap_env(monkeypatch, fixture)
         for name in ("ningbo.eml", "wenzhou.eml", "yiwu.eml", "foshan.eml"):
             fixture.append((FIXTURES / name).read_bytes())
         snapshot = _deal(store)
         deal_id = snapshot["deal"]["id"]
-        first = poll_imap_once(
-            store,
-            deal_id=deal_id,
-            host="127.0.0.1",
-            port=fixture.port,
-            username="desk",
-            password="desk",
-            use_ssl=False,
-        )
+        first = poll_imap_once(store, deal_id=deal_id)
         assert first["status"] == "ok"
         assert first["ingested"] == 4
-        assert all(message["seen"] for message in fixture.messages)
+        assert all(message["seen"] is False for message in fixture.messages)
         rows = _by_name(store.get_snapshot(deal_id))
         assert rows["Yiwu"]["latest_quote"] == 14.90
         assert rows["Yiwu"]["rank"] == 1
         before = {name: row["counter"] for name, row in rows.items()}
         fixture.append((FIXTURES / "ningbo-followup.eml").read_bytes())
-        second = poll_imap_once(
-            store,
-            deal_id=deal_id,
-            host="127.0.0.1",
-            port=fixture.port,
-            username="desk",
-            password="desk",
-            use_ssl=False,
-        )
+        second = poll_imap_once(store, deal_id=deal_id)
         assert second["ingested"] == 1
         updated = _by_name(store.get_snapshot(deal_id))
         assert updated["Ningbo"]["latest_quote"] == 13.40
@@ -298,32 +291,16 @@ def test_imap_drop_recomputes_and_dedups(tmp_path, monkeypatch):
             new = row["counter"]
             if old is not None:
                 assert new is None or new <= old
-        third = poll_imap_once(
-            store,
-            deal_id=deal_id,
-            host="127.0.0.1",
-            port=fixture.port,
-            username="desk",
-            password="desk",
-            use_ssl=False,
-        )
+        third = poll_imap_once(store, deal_id=deal_id)
         assert third["ingested"] == 0
         external = [event["external_id"] for event in store.events(deal_id)]
         assert len(external) == len(set(external)) == 5
         fixture.append((FIXTURES / "unknown.eml").read_bytes())
-        poll_imap_once(
-            store,
-            deal_id=deal_id,
-            host="127.0.0.1",
-            port=fixture.port,
-            username="desk",
-            password="desk",
-            use_ssl=False,
-        )
-        review = [event for event in store.events(deal_id) if event["status"] == "review"]
-        assert review
-        assert review[-1]["supplier_id"] is None
-        assert "12.10" in review[-1]["raw_text"]
+        ignored = poll_imap_once(store, deal_id=deal_id)
+        assert ignored["ignored"] >= 1
+        assert ignored["ingested"] == 0
+        stored = store.events(deal_id)
+        assert all("12.10" not in event["raw_text"] for event in stored)
         assert all(row["latest_quote"] != 12.10 for row in _by_name(store.get_snapshot(deal_id)).values())
         assert sent == []
     finally:
@@ -332,15 +309,15 @@ def test_imap_drop_recomputes_and_dedups(tmp_path, monkeypatch):
 
 
 def test_nothing_is_sent_without_approval(tmp_path, monkeypatch):
-    from src.desk.service import SendRefused, ingest_message, send_draft, transmit
+    from src.desk.service import DraftStale, SendRefused, draft_digest, ingest_message, send_draft, transmit
 
     store = _open_store(tmp_path)
     snapshot = _deal(store)
     deal_id = snapshot["deal"]["id"]
     calls = []
 
-    async def spy(recipient, body, product):
-        calls.append((recipient, product, body))
+    async def spy(recipient, body, product, **kwargs):
+        calls.append((recipient, product, body, kwargs))
         return True
 
     async def boom(*_args, **_kwargs):
@@ -356,13 +333,14 @@ def test_nothing_is_sent_without_approval(tmp_path, monkeypatch):
         external_id="<gate-a@example.test>",
     )
     draft = store.drafts(deal_id)[0]
+    digest = draft_digest(draft["body"])
     with pytest.raises(SendRefused):
-        asyncio.run(send_draft(store, draft["id"], human_approved=False, sender=spy))
+        asyncio.run(send_draft(store, draft["id"], human_approved=False, body_sha256=digest, sender=spy))
     assert calls == []
     assert store.get_draft(draft["id"])["status"] == "draft"
-    approved = asyncio.run(send_draft(store, draft["id"], human_approved=True, sender=spy))
+    approved = asyncio.run(send_draft(store, draft["id"], human_approved=True, body_sha256=digest, sender=spy))
     assert calls == []
-    assert approved["status"] == "sent"
+    assert approved["status"] == "approved"
     assert approved["human_approved"] == 1
     assert approved["transmitted"] == 0
     monkeypatch.setenv("DESK_SMTP_SEND", "1")
@@ -378,9 +356,41 @@ def test_nothing_is_sent_without_approval(tmp_path, monkeypatch):
     )
     pending = [item for item in store.drafts(deal_id) if item["status"] == "draft"]
     assert pending
-    sent = asyncio.run(send_draft(store, pending[0]["id"], human_approved=True, sender=spy))
+    pending_body = pending[0]["body"]
+    sent = asyncio.run(
+        send_draft(
+            store,
+            pending[0]["id"],
+            human_approved=True,
+            body_sha256=draft_digest(pending_body),
+            sender=spy,
+        )
+    )
     assert len(calls) == 1
+    assert calls[0][2] == pending_body
     assert sent["transmitted"] == 1
+    assert sent["status"] == "sent"
+    ningbo = _by_name(snapshot)["Ningbo"]["id"]
+    ingest_message(
+        store,
+        deal_id,
+        source="paste",
+        raw_text="单价 13.10 元",
+        supplier_id=ningbo,
+        external_id="<gate-b@example.test>",
+    )
+    fresh = [item for item in store.drafts(deal_id) if item["supplier_id"] == ningbo and item["status"] == "draft"]
+    assert fresh
+    with pytest.raises(DraftStale):
+        asyncio.run(
+            send_draft(
+                store,
+                fresh[0]["id"],
+                human_approved=True,
+                body_sha256=digest,
+                sender=spy,
+            )
+        )
     assert transmit is not None
     store.close()
 
@@ -453,7 +463,7 @@ def test_gmail_reads_and_drafts_without_send(tmp_path, monkeypatch):
             return _Response(body)
 
     opener = _Opener()
-    items = mailbox.pull_gmail_unread(opener)
+    items = mailbox.pull_gmail_window(opener)
     assert items[0]["sender"] == "ningbo@example.test"
     assert "15.60" in items[0]["body"]
     draft_id = mailbox.create_gmail_draft(opener, "token", b"draft")
@@ -475,8 +485,8 @@ from pathlib import Path
 tmp = tempfile.mkdtemp(prefix="tf_desk_rss_")
 os.environ["TRADEFLOW_DESK_DB"] = str(Path(tmp) / "desk.db")
 os.environ["TRADEFLOW_ENV"] = "sandbox"
-os.environ["DESK_N_SAMPLES"] = "200"
-os.environ["DESK_N_GRID"] = "8"
+os.environ["DESK_N_SAMPLES"] = "5000"
+os.environ["DESK_N_GRID"] = "20"
 os.environ.pop("TRADEFLOW_API_KEY", None)
 os.environ.pop("IMAP_HOST", None)
 
@@ -549,7 +559,7 @@ print(json.dumps({
         cwd=str(ROOT),
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=180,
         check=False,
     )
     assert proc.returncode == 0, proc.stderr[-2000:]

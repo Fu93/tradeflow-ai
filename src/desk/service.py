@@ -5,12 +5,14 @@ import asyncio
 import hashlib
 import logging
 import os
+import threading
 from email.message import EmailMessage
 from typing import Any, Awaitable, Callable
 
 from src.config.heuristics import BREAKDOWN_TRIP_THRESHOLD, RISK_TOLERANCE_FLOOR, RISK_TOLERANCE_MAX
 from src.desk import mailbox, recompute
-from src.desk.parse import parse_quote
+from src.desk.names import supplier_name_key
+from src.desk.parse import parse_quote, price_from_token
 from src.desk.store import DeskRejected, DeskStore, get_store
 
 logger = logging.getLogger("tradeflow.desk")
@@ -21,6 +23,23 @@ Sender = Callable[[str, str, str], Awaitable[bool]]
 
 class SendRefused(Exception):
     """A draft was not approved by a person."""
+
+
+class DraftStale(Exception):
+    """The approved text is no longer the draft on the desk."""
+
+
+_DEAL_LOCKS: dict[str, threading.Lock] = {}
+_DEAL_LOCKS_GUARD = threading.Lock()
+
+
+def deal_lock(deal_id: str) -> threading.Lock:
+    with _DEAL_LOCKS_GUARD:
+        lock = _DEAL_LOCKS.get(deal_id)
+        if lock is None:
+            lock = threading.Lock()
+            _DEAL_LOCKS[deal_id] = lock
+        return lock
 
 
 def _address_key(value: str) -> str:
@@ -61,7 +80,7 @@ def create_deal(
         raise DeskRejected("Each supplier needs a name.")
     if any(not address for address in addresses):
         raise DeskRejected("Each supplier needs an address.")
-    folded_names = [name.casefold() for name in names]
+    folded_names = [supplier_name_key(name) for name in names]
     if len(folded_names) != len(set(folded_names)):
         raise DeskRejected("Duplicate supplier name. Each supplier needs its own name.")
     folded_addresses = [address.casefold() for address in addresses]
@@ -108,6 +127,38 @@ def ingest_message(
 ) -> dict[str, Any]:
     if source not in SOURCES:
         raise DeskRejected("Quote source must be email, chat-import, or paste.")
+    with deal_lock(deal_id):
+        return _ingest_locked(
+            store,
+            deal_id,
+            source=source,
+            raw_text=raw_text,
+            sender=sender,
+            supplier_id=supplier_id,
+            llm_fields=llm_fields,
+            freight=freight,
+            duty_rate=duty_rate,
+            fees=fees,
+            external_id=external_id,
+            provenance_extra=provenance_extra,
+        )
+
+
+def _ingest_locked(
+    store: DeskStore,
+    deal_id: str,
+    *,
+    source: str,
+    raw_text: str,
+    sender: str | None,
+    supplier_id: str | None,
+    llm_fields: dict | None,
+    freight: float | None,
+    duty_rate: float | None,
+    fees: float | None,
+    external_id: str | None,
+    provenance_extra: dict | None,
+) -> dict[str, Any]:
     deal = store.get_deal(deal_id)
     if deal is None:
         raise KeyError(deal_id)
@@ -131,6 +182,7 @@ def ingest_message(
         provenance["sender"] = sender
     if provenance_extra:
         provenance.update(provenance_extra)
+    simulated = bool(provenance.get("simulated"))
     try:
         matched = _match_supplier(store.suppliers(deal_id), sender, supplier_id)
     except DeskRejected:
@@ -138,14 +190,20 @@ def ingest_message(
     status = reading["status"]
     confidence = reading["confidence"]
     linked = matched["id"] if matched is not None else None
-    if status == "accepted" and linked is None:
+    if simulated:
         status = "review"
         confidence = "low"
         parsed["unit_price"] = None
-        provenance["review_reason"] = "unknown sender"
+        provenance["review_reason"] = "simulated test fixture"
+        provenance["simulated"] = True
+    elif status == "accepted" and linked is None:
+        status = "review"
+        confidence = "low"
+        parsed["unit_price"] = None
+        provenance["review_reason"] = provenance.get("review_reason") or "unknown sender"
     elif status != "accepted":
         parsed["unit_price"] = None
-        provenance["review_reason"] = "low confidence"
+        provenance["review_reason"] = provenance.get("review_reason") or "low confidence"
     event = store.insert_event(
         deal_id=deal_id,
         supplier_id=linked,
@@ -166,30 +224,67 @@ def ingest_message(
     return {"duplicate": False, "event": event, "snapshot": store.get_snapshot(deal_id)}
 
 
-def accept_review(store: DeskStore, deal_id: str, event_id: str, supplier_id: str) -> dict[str, Any]:
-    event = store.event(deal_id, event_id)
-    if event is None:
-        raise KeyError(event_id)
-    supplier = store.supplier(deal_id, supplier_id)
-    if supplier is None:
-        raise DeskRejected("That supplier is not on this deal.")
-    reading = parse_quote(event["raw_text"], llm_fields=None)
-    if reading["status"] != "accepted" or reading["parsed"].get("unit_price") is None:
-        raise DeskRejected("This quote has no single traceable price, so it stays in review.")
-    provenance = dict(event["provenance"])
-    provenance["review_accepted_by"] = "human"
-    provenance["review_reason"] = None
-    store.set_event_status(
-        event_id,
-        status="accepted",
-        supplier_id=supplier_id,
-        parsed=reading["parsed"],
-        confidence="high",
-        provenance=provenance,
-    )
-    store.touch(deal_id)
-    publish(store, deal_id)
-    return store.get_snapshot(deal_id) or {}
+def accept_review(
+    store: DeskStore,
+    deal_id: str,
+    event_id: str,
+    supplier_id: str | None,
+    *,
+    chosen_token: str | None = None,
+    reject: bool = False,
+) -> dict[str, Any]:
+    with deal_lock(deal_id):
+        event = store.event(deal_id, event_id)
+        if event is None or event["status"] not in {"review", "accepted"}:
+            raise KeyError(event_id)
+        if reject:
+            provenance = dict(event["provenance"])
+            provenance["review_rejected_by"] = "human"
+            parsed = dict(event["parsed"])
+            parsed["unit_price"] = None
+            store.set_event_status(
+                event_id,
+                status="rejected",
+                supplier_id=event.get("supplier_id"),
+                parsed=parsed,
+                confidence="low",
+                provenance=provenance,
+            )
+            store.touch(deal_id)
+            publish(store, deal_id)
+            return store.get_snapshot(deal_id) or {}
+        if not supplier_id:
+            raise DeskRejected("Choose the supplier this quote belongs to.")
+        supplier = store.supplier(deal_id, supplier_id)
+        if supplier is None:
+            raise DeskRejected("That supplier is not on this deal.")
+        reading = parse_quote(event["raw_text"], llm_fields=None)
+        parsed = dict(reading["parsed"])
+        price = parsed.get("unit_price")
+        if chosen_token:
+            price = price_from_token(event["raw_text"], chosen_token)
+            if price is None:
+                raise DeskRejected("That amount is not in the raw text.")
+            parsed["unit_price"] = price
+            parsed["currency"] = "CNY"
+        elif price is None:
+            raise DeskRejected("Pick one amount from the raw text before accepting.")
+        provenance = dict(event["provenance"])
+        provenance["review_accepted_by"] = "human"
+        provenance["review_reason"] = None
+        if chosen_token:
+            provenance["chosen_token"] = chosen_token
+        store.set_event_status(
+            event_id,
+            status="accepted",
+            supplier_id=supplier_id,
+            parsed=parsed,
+            confidence="high",
+            provenance=provenance,
+        )
+        store.touch(deal_id)
+        publish(store, deal_id)
+        return store.get_snapshot(deal_id) or {}
 
 
 def publish(store: DeskStore, deal_id: str) -> dict[str, Any]:
@@ -208,12 +303,25 @@ def _maybe_gmail_drafts(store: DeskStore, deal_id: str, snapshot: dict[str, Any]
         logger.warning("Gmail draft setup failed: %s", type(exc).__name__)
         return
     product = str((snapshot.get("deal") or {}).get("product") or "")
+    suppliers = {row["id"]: row for row in store.suppliers(deal_id)}
     for draft in snapshot.get("drafts") or []:
-        if draft.get("status") != "draft" or draft.get("gmail_draft_id"):
+        if draft.get("status") != "draft":
             continue
+        supplier = suppliers.get(draft.get("supplier_id"))
         try:
-            raw = _draft_rfc822(product, draft["body"])
-            gmail_id = mailbox.create_gmail_draft(opener, token, raw)
+            raw = _draft_rfc822(
+                product,
+                draft["body"],
+                to=None if supplier is None else supplier.get("address"),
+                reply_to=draft.get("reply_to"),
+                references=draft.get("reply_to"),
+            )
+            gmail_id = mailbox.create_gmail_draft(
+                opener,
+                token,
+                raw,
+                draft_id=draft.get("gmail_draft_id"),
+            )
             store.set_gmail_draft(draft["id"], gmail_id=gmail_id or None, error=None)
         except Exception as exc:  # noqa: BLE001
             store.set_gmail_draft(draft["id"], gmail_id=None, error=type(exc).__name__)
@@ -225,9 +333,21 @@ def urllib_opener():
     return urllib.request.build_opener()
 
 
-def _draft_rfc822(product: str, body: str) -> bytes:
+def _draft_rfc822(
+    product: str,
+    body: str,
+    *,
+    to: str | None = None,
+    reply_to: str | None = None,
+    references: str | None = None,
+) -> bytes:
     message = EmailMessage()
     message["Subject"] = f"Counter for {product}"
+    if to:
+        message["To"] = to
+    if reply_to:
+        message["In-Reply-To"] = reply_to
+        message["References"] = references or reply_to
     message.set_content(body)
     return message.as_bytes()
 
@@ -238,7 +358,15 @@ def smtp_enabled() -> bool:
     return all(os.environ.get(key, "").strip() for key in ("SMTP_HOST", "EMAIL_USERNAME", "EMAIL_PASSWORD"))
 
 
-async def transmit(recipient: str, body: str, product: str) -> bool:
+async def transmit(
+    recipient: str,
+    body: str,
+    product: str,
+    *,
+    message_id: str | None = None,
+    reply_to: str | None = None,
+    references: str | None = None,
+) -> bool:
     """Hand an already-approved draft to SMTP. Not used unless smtp_enabled()."""
     from src.transport.email_std import EmailStdTransport
 
@@ -250,9 +378,19 @@ async def transmit(recipient: str, body: str, product: str) -> bool:
             recipient,
             body,
             subject=f"Counter for {product}",
-            metadata={"human_approved": True, "product": product},
+            metadata={
+                "human_approved": True,
+                "product": product,
+                "message_id": message_id,
+                "in_reply_to": reply_to,
+                "references": references,
+            },
         )
     )
+
+
+def draft_digest(body: str) -> str:
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
 async def send_draft(
@@ -260,6 +398,7 @@ async def send_draft(
     draft_id: str,
     *,
     human_approved: bool,
+    body_sha256: str,
     sender: Sender | None = None,
 ) -> dict[str, Any]:
     if human_approved is not True:
@@ -267,19 +406,66 @@ async def send_draft(
     draft = store.get_draft(draft_id)
     if draft is None:
         raise KeyError(draft_id)
-    if draft["status"] == "sent":
-        return draft
-    deal = store.get_deal(draft["deal_id"])
-    supplier = store.supplier(draft["deal_id"], draft["supplier_id"])
-    if deal is None or supplier is None:
-        raise KeyError(draft_id)
-    transmitted = False
-    if smtp_enabled():
-        fn = sender or transmit
-        transmitted = bool(await fn(supplier["address"], draft["body"], str(deal["product"])))
-    store.mark_sent(draft_id, transmitted=transmitted)
-    updated = store.get_draft(draft_id)
-    return updated or draft
+    with deal_lock(draft["deal_id"]):
+        draft = store.get_draft(draft_id)
+        if draft is None:
+            raise KeyError(draft_id)
+        if draft["status"] == "sent" and draft.get("transmitted"):
+            return draft
+        if draft["status"] in {"superseded", "failed"}:
+            raise DraftStale("This draft changed. Read the new text and approve it again.")
+        digest = draft_digest(draft["body"])
+        if body_sha256 != digest:
+            raise DraftStale("This draft changed. Read the new text and approve it again.")
+        deal = store.get_deal(draft["deal_id"])
+        supplier = store.supplier(draft["deal_id"], draft["supplier_id"])
+        if deal is None or supplier is None:
+            raise KeyError(draft_id)
+        message_id = f"<desk.{draft_id}.v{int(draft.get('version') or 1)}@tradeflow.local>"
+        if smtp_enabled():
+            fn = sender or transmit
+            try:
+                transmitted = bool(
+                    await fn(
+                        supplier["address"],
+                        draft["body"],
+                        str(deal["product"]),
+                        message_id=message_id,
+                        reply_to=draft.get("reply_to"),
+                        references=draft.get("references_header"),
+                    )
+                )
+            except TypeError:
+                transmitted = bool(await fn(supplier["address"], draft["body"], str(deal["product"])))
+            if not transmitted:
+                store.mark_draft(
+                    draft_id,
+                    status="failed",
+                    transmitted=False,
+                    error="SMTP send failed",
+                    message_id=message_id,
+                )
+                publish(store, draft["deal_id"])
+                failed = store.get_draft(draft_id)
+                return failed or draft
+            store.mark_draft(
+                draft_id,
+                status="sent",
+                transmitted=True,
+                error=None,
+                message_id=message_id,
+            )
+        else:
+            store.mark_draft(
+                draft_id,
+                status="approved",
+                transmitted=False,
+                error=None,
+                message_id=message_id,
+            )
+        publish(store, draft["deal_id"])
+        updated = store.get_draft(draft_id)
+        return updated or draft
 
 
 def _external_id(item: dict[str, Any]) -> str:
@@ -300,24 +486,34 @@ def _route_deals(store: DeskStore, sender: str, deal_id: str | None) -> list[str
             if _address_key(supplier["address"]) == key and key:
                 matched.append(deal["id"])
                 break
-    if matched:
-        return matched
-    if deal_id and deals:
-        return [deal_id]
-    if deals:
-        return [deals[0]["id"]]
-    return []
+    return matched
 
 
-def ingest_mailbox_items(store: DeskStore, items: list[dict[str, Any]], *, deal_id: str | None, channel: str) -> dict[str, int]:
-    counts = {"ingested": 0, "review": 0, "duplicates": 0}
+def ingest_mailbox_items(
+    store: DeskStore,
+    items: list[dict[str, Any]],
+    *,
+    deal_id: str | None,
+    channel: str,
+    mailbox_key: str | None = None,
+) -> dict[str, int]:
+    counts = {"ingested": 0, "review": 0, "duplicates": 0, "ignored": 0}
     for item in items:
+        external = item.get("external_id") or _external_id(item)
         targets = _route_deals(store, item.get("sender") or "", deal_id)
+        if mailbox_key:
+            store.remember_mailbox(mailbox_key, external)
+            uid_key = item.get("uid")
+            validity = item.get("uidvalidity")
+            if uid_key and validity:
+                store.remember_mailbox(mailbox_key, f"uid:{validity}:{uid_key}")
         if not targets:
+            counts["ignored"] += 1
             continue
         extra = {
             "channel": channel,
             "message_id": item.get("message_id"),
+            "references": item.get("references"),
             "subject": item.get("subject"),
             "fixture": item.get("fixture"),
         }
@@ -345,39 +541,31 @@ def poll_imap_once(
     store: DeskStore | None = None,
     *,
     deal_id: str | None = None,
-    host: str | None = None,
-    port: int | None = None,
-    username: str | None = None,
-    password: str | None = None,
-    use_ssl: bool | None = None,
 ) -> dict[str, Any]:
     desk = store or get_store()
     if deal_id and desk.get_deal(deal_id) is None:
         raise KeyError(deal_id)
-    if host is None:
-        settings = mailbox.imap_settings_from_env()
-        if settings is None:
-            return {"status": "not_configured", "ingested": 0, "review": 0, "duplicates": 0}
-    else:
-        settings = {
-            "host": host,
-            "port": int(port or 143),
-            "username": username or "",
-            "password": password or "",
-            "use_ssl": bool(use_ssl),
-        }
-    if not _route_deals(desk, "", deal_id) and not desk.list_deals() and not deal_id:
-        return {"status": "no-deals", "ingested": 0, "review": 0, "duplicates": 0}
+    settings = mailbox.imap_settings_from_env()
+    if settings is None:
+        return {"status": "not_configured", "ingested": 0, "review": 0, "duplicates": 0, "ignored": 0}
     if deal_id is None and not desk.list_deals():
-        return {"status": "no-deals", "ingested": 0, "review": 0, "duplicates": 0}
-    items = mailbox.pull_unseen(
+        return {"status": "no-deals", "ingested": 0, "review": 0, "duplicates": 0, "ignored": 0}
+    mailbox_key = f"imap:{settings['host']}:{settings['username']}"
+    items, _uidvalidity = mailbox.pull_window(
         host=settings["host"],
         port=int(settings["port"]),
         username=settings["username"],
         password=settings["password"],
         use_ssl=bool(settings["use_ssl"]),
+        skip_ids=desk.mailbox_ids(mailbox_key),
     )
-    counts = ingest_mailbox_items(desk, items, deal_id=deal_id, channel="imap")
+    counts = ingest_mailbox_items(
+        desk,
+        items,
+        deal_id=deal_id,
+        channel="imap",
+        mailbox_key=mailbox_key,
+    )
     counts["status"] = "ok"
     return counts
 
@@ -389,8 +577,15 @@ def poll_gmail_once(store: DeskStore | None = None, *, deal_id: str | None = Non
     if deal_id is None and not desk.list_deals():
         return {"status": "no-deals", "ingested": 0, "review": 0, "duplicates": 0}
     client = opener or urllib_opener()
-    items = mailbox.pull_gmail_unread(client)
-    counts = ingest_mailbox_items(desk, items, deal_id=deal_id, channel="gmail")
+    mailbox_key = "gmail"
+    items = mailbox.pull_gmail_window(client, skip_ids=desk.mailbox_ids(mailbox_key))
+    counts = ingest_mailbox_items(
+        desk,
+        items,
+        deal_id=deal_id,
+        channel="gmail",
+        mailbox_key=mailbox_key,
+    )
     counts["status"] = "ok"
     return counts
 

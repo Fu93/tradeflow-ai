@@ -37,7 +37,7 @@ def _wait_health(port: int) -> bool:
 
 
 def test_desk_page_updates_when_mail_arrives():
-    from src.desk.imap_fixture import ImapFixture
+    from tests.imap_fixture import ImapFixture
 
     fixture = ImapFixture()
     port = _free_port()
@@ -57,9 +57,9 @@ def test_desk_page_updates_when_mail_arrives():
             "IMAP_POLL_SECONDS": "1",
             "DESK_N_SAMPLES": "200",
             "DESK_N_GRID": "8",
+            "TRADEFLOW_API_KEY": "desk-ui-key",
         }
     )
-    env.pop("TRADEFLOW_API_KEY", None)
     env.pop("GMAIL_CLIENT_ID", None)
     env.pop("DESK_SMTP_SEND", None)
     log_path = os.path.join(tmp, "server.log")
@@ -86,6 +86,7 @@ def test_desk_page_updates_when_mail_arrives():
             page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded")
             assert page.locator('a[href="/desk"]').count() == 1
             page.goto(f"http://127.0.0.1:{port}/desk", wait_until="domcontentloaded")
+            page.fill("#api-key", "desk-ui-key")
             page.fill("#product", "umbrella")
             page.fill("#quantity", "1000")
             page.fill("#target", "12")
@@ -95,7 +96,7 @@ def test_desk_page_updates_when_mail_arrives():
                 "#suppliers",
                 "\n".join(
                     [
-                        "Ningbo, ningbo@example.test",
+                        "Ningbo Co., Ltd., ningbo@example.test",
                         "Wenzhou, wenzhou@example.test",
                         "Yiwu, yiwu@example.test",
                         "Foshan, foshan@example.test",
@@ -106,14 +107,22 @@ def test_desk_page_updates_when_mail_arrives():
             page.wait_for_selector("#board:not([hidden])", timeout=15000)
             for name in ("ningbo.eml", "wenzhou.eml", "yiwu.eml", "foshan.eml"):
                 fixture.append((FIXTURES / name).read_bytes())
+            page.get_by_text("Ningbo Co., Ltd.").first.wait_for(timeout=15000)
             page.get_by_text("15.60 CNY").first.wait_for(timeout=20000)
-            page.get_by_text("email").first.wait_for(timeout=5000)
+            hazard = page.locator(".desk-card").first.inner_text()
+            assert "%" in hazard
+            assert "prior-driven" in hazard
+            page.locator("#events").get_by_text("email").first.wait_for(timeout=5000)
             fixture.append((FIXTURES / "ningbo-followup.eml").read_bytes())
             page.get_by_text("13.40 CNY").first.wait_for(timeout=20000)
             overflow = page.evaluate(
                 "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
             )
             assert overflow <= 1
+            page.evaluate("sessionStorage.setItem('tfDeskDeal', '%s')" % ("ab" * 16))
+            page.reload(wait_until="domcontentloaded")
+            page.get_by_text("fresh disk").wait_for(timeout=10000)
+            assert page.locator("#desk-form").is_visible()
             browser.close()
     finally:
         proc.terminate()

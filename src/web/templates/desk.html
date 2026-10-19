@@ -21,13 +21,14 @@
     <p>Four or five suppliers. A new accepted quote recomputes the desk. Replies stay drafts until you approve a send.</p>
 
     <form id="desk-form" class="desk-form">
+      <label>API key <input id="api-key" name="api-key" type="password" autocomplete="off" /></label>
       <label>Product <input id="product" name="product" required maxlength="200" /></label>
       <label>Quantity <input id="quantity" name="quantity" type="number" min="1" required /></label>
       <label>Target <input id="target" name="target" type="number" min="0" step="any" required /></label>
       <label>Ceiling <input id="ceiling" name="ceiling" type="number" min="0" step="any" required /></label>
       <label>Risk tolerance <input id="risk" name="risk" type="number" min="0" step="any" placeholder="leave blank for the configured default" /></label>
-      <label>Suppliers, one per line: name, email
-        <textarea id="suppliers" rows="5" required placeholder="name, email"></textarea>
+      <label>Suppliers, one per line. The last comma separates the email, so a name may contain commas.
+        <textarea id="suppliers" rows="5" required placeholder="Ningbo Co., Ltd., sales@example.test"></textarea>
       </label>
       <div class="desk-actions">
         <button type="submit">Open desk</button>

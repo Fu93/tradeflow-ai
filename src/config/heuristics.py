@@ -322,6 +322,13 @@ HAZARD_U_POINTS = 64
 # market quote.
 OFFER_GRID_FLOOR = 0.50
 
+# Rationale: desk solve budget. Five thousand shared scenarios and a
+# 20-point grid match the auction counters on the checked seeds, and the
+# reported standard errors sit on the seed-to-seed spread. The auction
+# default of 20_000 stays on the auction path. Not a market quote.
+DESK_N_SAMPLES = 5000
+DESK_N_GRID = 20
+
 # Rationale: weight on CVaR of buyer loss in the coupled objective. It does
 # not scale with the hazard cap. Assumption, not fitted.
 CVAR_WEIGHT = 0.35

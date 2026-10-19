@@ -1,6 +1,7 @@
 """SQLite desk. One file, reopened after a restart."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -108,9 +109,25 @@ class DeskStore:
                 computed_at TEXT NOT NULL,
                 elapsed_ms INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS mailbox_seen (
+                mailbox_key TEXT NOT NULL,
+                external_id TEXT NOT NULL,
+                PRIMARY KEY (mailbox_key, external_id)
+            );
             """
         )
+        self._ensure_column("drafts", "version", "INTEGER NOT NULL DEFAULT 1")
+        self._ensure_column("drafts", "body_sha256", "TEXT")
+        self._ensure_column("drafts", "send_error", "TEXT")
+        self._ensure_column("drafts", "reply_to", "TEXT")
+        self._ensure_column("drafts", "references_header", "TEXT")
+        self._ensure_column("drafts", "message_id", "TEXT")
         self.conn.commit()
+
+    def _ensure_column(self, table: str, column: str, ddl: str) -> None:
+        found = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
+        if column not in found:
+            self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
     def create_deal(
         self,
@@ -347,7 +364,20 @@ class DeskStore:
                 return None
             return json.loads(row["payload_json"])
 
-    def replace_open_draft(self, deal_id: str, supplier_id: str, body: str) -> dict[str, Any]:
+    def replace_open_draft(
+        self,
+        deal_id: str,
+        supplier_id: str,
+        body: str,
+        *,
+        reply_to: str | None = None,
+        references_header: str | None = None,
+    ) -> dict[str, Any]:
+        """Freeze the previous draft when the text changes.
+
+        Approval is the hash of one version. A new quote inserts a new draft
+        id instead of rewriting the text the person may already have read.
+        """
         with self._lock:
             existing = self.conn.execute(
                 """
@@ -357,32 +387,41 @@ class DeskStore:
                 """,
                 (deal_id, supplier_id),
             ).fetchone()
-            if existing:
-                if existing["body"] != body:
-                    self.conn.execute(
-                        """
-                        UPDATE drafts
-                        SET body = ?, gmail_draft_id = NULL, gmail_error = NULL
-                        WHERE id = ?
-                        """,
-                        (body, existing["id"]),
-                    )
-                    self.conn.commit()
+            if existing and existing["body"] == body:
                 row = self.conn.execute(
                     "SELECT * FROM drafts WHERE id = ?",
                     (existing["id"],),
                 ).fetchone()
                 return dict(row)
+            version = 1
+            if existing:
+                version = int(existing["version"] or 1) + 1
+                self.conn.execute(
+                    "UPDATE drafts SET status = 'superseded' WHERE id = ?",
+                    (existing["id"],),
+                )
             draft_id = uuid.uuid4().hex
             now = _now()
+            digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
             self.conn.execute(
                 """
                 INSERT INTO drafts (
                     id, deal_id, supplier_id, body, status, human_approved,
-                    transmitted, created_at, sent_at, gmail_draft_id, gmail_error
-                ) VALUES (?, ?, ?, ?, 'draft', 0, 0, ?, NULL, NULL, NULL)
+                    transmitted, created_at, sent_at, gmail_draft_id, gmail_error,
+                    version, body_sha256, reply_to, references_header
+                ) VALUES (?, ?, ?, ?, 'draft', 0, 0, ?, NULL, NULL, NULL, ?, ?, ?, ?)
                 """,
-                (draft_id, deal_id, supplier_id, body, now),
+                (
+                    draft_id,
+                    deal_id,
+                    supplier_id,
+                    body,
+                    now,
+                    version,
+                    digest,
+                    reply_to,
+                    references_header,
+                ),
             )
             self.conn.commit()
             row = self.conn.execute(
@@ -419,15 +458,51 @@ class DeskStore:
             ).fetchone()
             return dict(row) if row else None
 
-    def mark_sent(self, draft_id: str, *, transmitted: bool) -> None:
+    def mark_draft(
+        self,
+        draft_id: str,
+        *,
+        status: str,
+        transmitted: bool,
+        error: str | None = None,
+        message_id: str | None = None,
+    ) -> None:
         with self._lock:
             self.conn.execute(
                 """
                 UPDATE drafts
-                SET status = 'sent', human_approved = 1, transmitted = ?, sent_at = ?
+                SET status = ?, human_approved = 1, transmitted = ?, sent_at = ?,
+                    send_error = ?, message_id = COALESCE(?, message_id)
                 WHERE id = ?
                 """,
-                (1 if transmitted else 0, _now(), draft_id),
+                (
+                    status,
+                    1 if transmitted else 0,
+                    _now(),
+                    error,
+                    message_id,
+                    draft_id,
+                ),
+            )
+            self.conn.commit()
+
+    def mailbox_ids(self, mailbox_key: str) -> set[str]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT external_id FROM mailbox_seen WHERE mailbox_key = ?",
+                (mailbox_key,),
+            ).fetchall()
+            return {str(row["external_id"]) for row in rows}
+
+    def remember_mailbox(self, mailbox_key: str, external_id: str) -> None:
+        with self._lock:
+            self.conn.execute(
+                """
+                INSERT INTO mailbox_seen (mailbox_key, external_id)
+                VALUES (?, ?)
+                ON CONFLICT(mailbox_key, external_id) DO NOTHING
+                """,
+                (mailbox_key, external_id),
             )
             self.conn.commit()
 

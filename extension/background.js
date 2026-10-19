@@ -393,11 +393,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+function foldDeskName(value) {
+  return String(value || "").normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function matchSuppliers(suppliers, page) {
+  const hay = foldDeskName([page && page.shop, page && page.title, page && page.url].filter(Boolean).join("\n"));
+  return (suppliers || []).filter((supplier) => {
+    const name = foldDeskName(supplier.name);
+    const address = foldDeskName(supplier.address);
+    if (name && hay.indexOf(name) >= 0) return true;
+    if (address && hay.indexOf(address) >= 0) return true;
+    return false;
+  });
+}
+
 async function importLatestVisible() {
   const stored = await new Promise((resolve) => {
-    chrome.storage.local.get(["tfDeskDeal", "tfDeskSupplier"], (value) => resolve(value || {}));
+    chrome.storage.local.get(
+      ["tfDeskDeal", "tfDeskSupplier", "tfDeskSupplierConfirmed"],
+      (value) => resolve(value || {})
+    );
   });
-  if (!stored.tfDeskDeal || !stored.tfDeskSupplier) return { ok: false, reason: "no-deal" };
+  if (!stored.tfDeskDeal) return { ok: false, reason: "no-deal" };
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   const tab = tabs && tabs[0];
   if (!tab || !tab.id) return { ok: false, reason: "no-tab" };
@@ -411,16 +429,39 @@ async function importLatestVisible() {
     });
   });
   if (!resp || !resp.ok || !resp.text) return resp || { ok: false, reason: "empty" };
-  // The desk quote field is assembled so this file does not contain the
-  // webhook key the command dispatcher must not post.
-  const quote = { source: "chat-import", supplier_id: stored.tfDeskSupplier };
-  quote["raw_" + "text"] = resp.text;
+  const dealRes = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${stored.tfDeskDeal}`, {
+    headers: jsonHeaders(),
+  });
+  if (!dealRes.ok) return { ok: false, reason: "no-deal", status: dealRes.status };
+  const snapshot = await dealRes.json();
+  const matches = matchSuppliers(snapshot.suppliers || [], resp);
+  let supplierId = null;
+  if (matches.length === 1) supplierId = matches[0].id;
+  else if (stored.tfDeskSupplierConfirmed && stored.tfDeskSupplier) supplierId = stored.tfDeskSupplier;
+  else {
+    return {
+      ok: false,
+      reason: matches.length > 1 ? "ambiguous" : "unmapped",
+      names: (matches.length ? matches : snapshot.suppliers || []).map((supplier) => supplier.name),
+    };
+  }
+  const quote = {
+    source: "chat-import",
+    raw_text: resp.text,
+    supplier_id: supplierId,
+    simulated: !!resp.simulated,
+  };
   const res = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${stored.tfDeskDeal}/quotes`, {
     method: "POST",
     headers: jsonHeaders(),
     body: JSON.stringify(quote),
   });
-  return { ok: res.ok, status: res.status };
+  return {
+    ok: res.ok,
+    status: res.status,
+    simulated: !!resp.simulated,
+    supplierId,
+  };
 }
 
 if (chrome.commands && chrome.commands.onCommand) {
