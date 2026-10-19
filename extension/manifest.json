@@ -44,7 +44,7 @@
         "http://localhost/*",
         "http://127.0.0.1/*"
       ],
-      "js": ["content.js"],
+      "js": ["desk_import.js", "content.js"],
       "run_at": "document_idle"
     }
   ],
@@ -59,6 +59,12 @@
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
+    }
+  },
+  "commands": {
+    "import-latest": {
+      "suggested_key": { "default": "Alt+Shift+I" },
+      "description": "Import the visible supplier message into the live desk"
     }
   },
   "content_security_policy": {

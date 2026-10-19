@@ -167,7 +167,26 @@ async def _lifespan(app: FastAPI):
     logger.info("Warming up Stage-1 classifier (ONNX/vocab/regex)...")
     await asyncio.to_thread(_warmup_stage1)
     logger.info("Stage-1 warmup complete.")
-    yield
+    stop_desk = asyncio.Event()
+    desk_poll = None
+    try:
+        from src.desk.service import poll_forever, polling_enabled
+
+        if polling_enabled():
+            desk_poll = asyncio.create_task(poll_forever(stop_desk))
+            logger.info("Desk mailbox poller started.")
+    except Exception:
+        logger.warning("Desk mailbox poller was not started.", exc_info=True)
+    try:
+        yield
+    finally:
+        stop_desk.set()
+        if desk_poll is not None:
+            desk_poll.cancel()
+            try:
+                await desk_poll
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(
@@ -2362,6 +2381,9 @@ if static_path.exists():
 # 先把 /api/v1 認證 router 註冊進 app，再掛上 web 的 /api/v1 子路由。
 # [REGRESSION] 舊版逐條端點掛門禁，因此 routes_web.py 內的四條 /api/v1 路由
 # （stream / config / test-push）完全沒被 gate。現在全部由帶依賴的 router 承接。
+from src.desk.routes import register_desk_routes
+
+register_desk_routes(api_v1)
 app.include_router(api_v1)
 app.include_router(web_api_v1_router)
 # 開放路由：儀表板 HTML（GET /）與刻意豁免的 SSE 串流。

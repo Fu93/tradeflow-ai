@@ -1,0 +1,10 @@
+From: Foshan <foshan@example.test>
+To: buyer@example.test
+Subject: Umbrella quote
+Date: Thu, 15 Oct 2026 09:03:00 +0000
+Message-ID: <foshan-a@example.test>
+X-TradeFlow-Fixture: labelled test fixture, not a factory quote
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+单价 15.10 元

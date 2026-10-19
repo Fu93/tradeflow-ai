@@ -1,0 +1,10 @@
+From: Wenzhou <wenzhou@example.test>
+To: buyer@example.test
+Subject: Umbrella quote
+Date: Thu, 15 Oct 2026 09:01:00 +0000
+Message-ID: <wenzhou-a@example.test>
+X-TradeFlow-Fixture: labelled test fixture, not a factory quote
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+单价 16.20 元

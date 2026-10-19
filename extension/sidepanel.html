@@ -85,6 +85,9 @@
         <span>Rounds</span>
         <span id="rounds-count" class="tab-count"></span>
       </button>
+      <button type="button" role="tab" id="tab-desk" aria-selected="false" aria-controls="panel-desk" tabindex="-1" data-tab="desk">
+        <span>Desk</span>
+      </button>
     </div>
 
     <main class="scroll" id="scroll">
@@ -316,6 +319,27 @@
         </div>
       </div>
 
+      <div id="panel-desk" role="tabpanel" aria-labelledby="tab-desk" tabindex="0" hidden>
+        <section class="desk-block">
+          <h2>Live desk</h2>
+          <p id="desk-empty" class="desk-note">No live desk linked.</p>
+          <label class="desk-note" for="desk-deal-id">Deal id</label>
+          <input id="desk-deal-id" type="text" autocomplete="off" spellcheck="false" />
+          <label class="desk-note" for="desk-supplier">Supplier thread</label>
+          <select id="desk-supplier"></select>
+          <button type="button" id="btn-desk-import">Import visible message</button>
+          <p id="desk-import-status" class="desk-note" role="status"></p>
+          <h2>Ranking</h2>
+          <ol id="desk-ranking" class="desk-list"></ol>
+          <h2>Counters</h2>
+          <div id="desk-counters"></div>
+          <h2>Draft to copy</h2>
+          <textarea id="desk-draft" class="desk-draft" readonly rows="4"></textarea>
+          <button type="button" id="btn-desk-copy">Copy draft</button>
+          <p class="desk-note">Copy the draft. This panel does not send.</p>
+        </section>
+      </div>
+
       <p id="live-summary" class="sr-only" aria-live="polite"></p>
     </main>
 
@@ -352,5 +376,6 @@
   </div>
   <script src="market_intel.js"></script>
   <script src="sidepanel.js"></script>
+  <script src="desk_panel.js"></script>
 </body>
 </html>

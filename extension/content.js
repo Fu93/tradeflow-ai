@@ -1186,6 +1186,20 @@
     observerManager.start();
   }
 
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (!message || message.type !== "IMPORT_VISIBLE_QUOTE") return;
+      const payload = typeof tradeflowImportPayload === "function"
+        ? tradeflowImportPayload(document)
+        : { ok: false, reason: "empty" };
+      if (!payload.ok && detectCaptchaChallenge()) {
+        sendResponse({ ok: false, reason: "captcha" });
+        return;
+      }
+      sendResponse(payload);
+    });
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", setup);
   } else {

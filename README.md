@@ -115,6 +115,24 @@ flowchart LR
 
 The solver updates a reserve-price belief and searches opening prices and concession curves. The Chrome extension shows a decision card. The buyer copies and sends. Nothing in the extension clicks Send.
 
+## Live supplier desk
+
+A deal keeps four or five supplier threads in SQLite (`TRADEFLOW_DESK_DB`, or `desk.db` under `TRADEFLOW_STORE_DIR`, or `data/desk.db`). Each quote stores its source (`email`, `chat-import`, or `paste`), the raw text, the parsed fields, the time, and provenance. An accepted quote updates that supplier's reserve belief from the full accepted history and runs the coupled solver again. The page at `/desk` polls the snapshot. The same snapshot is available as a server-sent stream for a client that can send the API key.
+
+Mailbox intake is read-only.
+
+- IMAP: `IMAP_HOST`, `IMAP_PORT` (993 with SSL), `IMAP_USERNAME`, `IMAP_PASSWORD`, `IMAP_SSL` (1), `IMAP_POLL_SECONDS` (60). The poller starts only when host, username, and password are all set. Gmail app passwords use IMAP with SSL.
+- Gmail API, optional: `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`. Ingestion lists and reads messages and leaves them unread; a message id already stored is not applied again. `GMAIL_DRAFTS=1` creates a Gmail draft. The desk does not call the send method.
+- A reply is a draft. `DESK_SMTP_SEND=1` together with `SMTP_HOST`, `EMAIL_USERNAME`, and `EMAIL_PASSWORD` is what hands an approved draft to SMTP. Without that flag, approval marks the draft on this desk and leaves the text to copy. Nothing is sent from ingest, from a poll, or from the extension.
+
+Low-confidence parses and unknown senders stay on the review queue and are left out of the solve. The reader is the deterministic quote reader. A model JSON may be submitted and is discarded for price. Walk-away hazard stays prior-driven until a person records a continue or a walk-away; quote text is not turned into one of those events.
+
+The Chrome extension adds a Desk tab. One click, or Alt+Shift+I, imports the supplier message that is visible in the open chat. It does not crawl, type, or press Send. A visible captcha pauses that import. The panel shows the ranking, the counter and risk, and a draft to copy.
+
+`DESK_N_SAMPLES` and `DESK_N_GRID` set the desk solver budget. The auction defaults are unchanged. Tests cover an in-process IMAP server, the mock chat import, the price and approval gates, and the resident set of a five-supplier update. That test prints the resident set and the elapsed time; this file does not copy them.
+
+On Render's free plan the disk is ephemeral, so `TRADEFLOW_DESK_DB` does not survive spin-down unless a disk is attached. The desk is built to stay inside the same 512 MB instance as the rest of the app.
+
 ## AMD integration
 
 Three buckets. They are not interchangeable.

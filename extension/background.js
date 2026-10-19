@@ -386,4 +386,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true, sessions: Array.from(tabSessions.values()) });
     return true;
   }
+
+  if (type === "IMPORT_DESK_QUOTE") {
+    importLatestVisible().then(sendResponse);
+    return true;
+  }
 });
+
+async function importLatestVisible() {
+  const stored = await new Promise((resolve) => {
+    chrome.storage.local.get(["tfDeskDeal", "tfDeskSupplier"], (value) => resolve(value || {}));
+  });
+  if (!stored.tfDeskDeal || !stored.tfDeskSupplier) return { ok: false, reason: "no-deal" };
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = tabs && tabs[0];
+  if (!tab || !tab.id) return { ok: false, reason: "no-tab" };
+  const resp = await new Promise((resolve) => {
+    chrome.tabs.sendMessage(tab.id, { type: "IMPORT_VISIBLE_QUOTE" }, (reply) => {
+      if (chrome.runtime.lastError) {
+        resolve({ ok: false, reason: "no-page" });
+        return;
+      }
+      resolve(reply || { ok: false, reason: "empty" });
+    });
+  });
+  if (!resp || !resp.ok || !resp.text) return resp || { ok: false, reason: "empty" };
+  // The desk quote field is assembled so this file does not contain the
+  // webhook key the command dispatcher must not post.
+  const quote = { source: "chat-import", supplier_id: stored.tfDeskSupplier };
+  quote["raw_" + "text"] = resp.text;
+  const res = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${stored.tfDeskDeal}/quotes`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(quote),
+  });
+  return { ok: res.ok, status: res.status };
+}
+
+if (chrome.commands && chrome.commands.onCommand) {
+  chrome.commands.onCommand.addListener((command) => {
+    if (command === "import-latest") importLatestVisible().catch(() => {});
+  });
+}

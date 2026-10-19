@@ -446,6 +446,11 @@ body[data-source="simulator"] #approval-card { border-top: 2px solid var(--sim);
 .banner-meta { color: var(--ink-2); font-size: 12px; line-height: 16px; }
 body.is-error .scroll { opacity: 0.7; }
 
+.desk-block { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 12px; }
+.desk-block h2 { font-size: 13px; margin: 8px 0 0; }
+.desk-note { color: var(--ink-2); font-size: 12px; margin: 0; }
+.desk-list { margin: 0; padding-left: 18px; }
+.desk-draft, #desk-deal-id, #desk-supplier { width: 100%; max-width: 100%; font: inherit; }
 .tabbar {
   flex: 0 0 auto;
   display: flex;
