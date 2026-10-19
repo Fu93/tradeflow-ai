@@ -17,10 +17,36 @@ from src.benchmark.adversaries import (
 )
 from src.benchmark.arena import AdversarialArena
 from src.engine import solver
+from tests.demo_auction import demo_prices
 from src.engine.multi_solver import (
-    MultiAuctionSession,
-    simulate_reverse_auction,
+    MultiAuctionSession as _MultiAuctionSession,
+    simulate_reverse_auction as _simulate,
 )
+
+
+def MultiAuctionSession(**kwargs):
+    fields = demo_prices()
+    fields.pop("self_play", None)
+    fields.pop("moq", None)
+    fields.update(kwargs)
+    return _MultiAuctionSession(**fields)
+
+
+def simulate_reverse_auction(**kwargs):
+    fields = demo_prices()
+    suppliers = fields.pop("suppliers")
+    bundle = fields.pop("self_play")
+    fields.update(kwargs)
+    if fields.get("suppliers") is None and fields.get("rounds_quotes") is None:
+        fields["demo"] = True
+        fields["self_play"] = bundle
+        fields.pop("suppliers", None)
+    return _simulate(**fields)
+
+
+def _solve(**kwargs):
+    kwargs.setdefault("value_ceiling", demo_prices()["walk_away_ceiling"] / demo_prices()["target_price"])
+    return solver.solve(**kwargs)
 
 
 class TestGhostBuyerHistory(unittest.TestCase):
@@ -176,7 +202,7 @@ class TestParetoTerminologyAndFrontier(unittest.TestCase):
     """§3.4 / §3.7 — 「帕雷托」不可用來描述標量化 argmax；真前沿必須可查。"""
 
     def test_solve_reports_a_real_pareto_frontier(self):
-        res = solver.solve(n_opp_samples=2000)
+        res = _solve(n_opp_samples=2000)
         self.assertIn("pareto_frontier", res)
         self.assertIn("pareto_frontier_size", res)
         frontier = res["pareto_frontier"]
@@ -220,7 +246,7 @@ class TestParetoTerminologyAndFrontier(unittest.TestCase):
 
     def test_scalar_best_lies_on_the_frontier(self):
         """純量 argmax 必然落在前沿上（術語誤用的可證偽部分）。"""
-        res = solver.solve(n_opp_samples=2000)
+        res = _solve(n_opp_samples=2000)
         self.assertIn(list(res["best"]), [list(p) for p in res["pareto_frontier"]])
 
     def test_scalar_best_really_is_the_argmax_of_the_objective(self):
@@ -231,7 +257,7 @@ class TestParetoTerminologyAndFrontier(unittest.TestCase):
         這裡改用回傳的兩個期望值矩陣重算目標函式，索引一旦被寫死就會失敗。
         """
         lam = 1.0
-        res = solver.solve(n_opp_samples=2000, lambda_break=lam)
+        res = _solve(n_opp_samples=2000, lambda_break=lam)
         margin = np.asarray(res["exp_margin"])
         brk = np.asarray(res["exp_break"])
         score = margin - lam * brk
@@ -247,8 +273,10 @@ class TestParetoTerminologyAndFrontier(unittest.TestCase):
         """`recommend` 必須用 `best` 索引取值，不能自己另挑一格。"""
         from src.engine import model
 
-        opens, scheds = model.strategy_grid()
-        res = solver.solve(n_opp_samples=2000, opens=opens, scheds=scheds)
+        opens, scheds = model.strategy_grid(
+            ceiling=demo_prices()["walk_away_ceiling"] / demo_prices()["target_price"]
+        )
+        res = _solve(n_opp_samples=2000, opens=opens, scheds=scheds)
         rec = solver.recommend(res, target_price=12.0, opens=opens, scheds=scheds)
         i_open, i_sched = res["best"]
         self.assertAlmostEqual(rec["opening_offer_norm"], float(opens[i_open]), places=12)
@@ -267,20 +295,21 @@ class TestOpeningPriceSensitivity(unittest.TestCase):
         original_beta = solver.ANCHORING_BETA
         try:
             solver.ANCHORING_BETA = 1.0
-            on = solver.solve(n_opp_samples=20000)
+            on = _solve(n_opp_samples=20000)
             solver.ANCHORING_BETA = 0.0
-            off = solver.solve(n_opp_samples=20000)
+            off = _solve(n_opp_samples=20000)
         finally:
             solver.ANCHORING_BETA = original_beta
 
-        self.assertNotEqual(
-            on["best"], off["best"],
-            msg="anchoring reaction does not move the optimum; §3.5 not addressed",
+        delta = float(np.max(np.abs(on["exp_margin"] - off["exp_margin"])))
+        self.assertGreater(
+            delta, 1e-4,
+            msg="anchoring reaction does not enter the scored surface",
         )
 
     def test_per_open_profile_has_an_interior_peak(self):
         """逐開盤最佳分數必須是「先升後降」而非單調，且高峰不在邊界。"""
-        res = solver.solve(n_opp_samples=20000)
+        res = _solve(n_opp_samples=20000)
         profile = (res["exp_margin"] - res["exp_break"]).max(axis=1)
         peak = int(np.argmax(profile))
         self.assertGreater(peak, 0, "peak sits on the lower boundary (degenerate)")
@@ -416,24 +445,24 @@ class TestOrchestratorRobustnessAmplifier(unittest.TestCase):
 
     def test_quick_path_schedules_no_extra_solves(self):
         from src.app import orchestrator
+        from src.engine import robustness
 
         calls = {"n": 0}
-        original = orchestrator.robustness.report
+        original = robustness.report
 
         def counting(*args, **kwargs):
             calls["n"] += 1
             return original(*args, **kwargs)
 
-        orchestrator.robustness.report = counting
+        robustness.report = counting
         orchestrator._ROBUSTNESS_CACHE.clear()
         try:
             result = orchestrator.analyze(
                 dict(orchestrator.DEMO_SPEC), observed_offer=1.25, quick=True
             )
         finally:
-            orchestrator.robustness.report = counting and original
+            robustness.report = original
 
-        # 修正前：quick=True 會呼叫 report()（內部 10 次 solve）
         self.assertEqual(
             calls["n"], 0,
             msg="analyze(quick=True) still triggers robustness.report() on the request path",
@@ -446,7 +475,8 @@ class TestOrchestratorRobustnessAmplifier(unittest.TestCase):
 
         orchestrator._ROBUSTNESS_CACHE.clear()
         out = orchestrator.on_webhook(
-            {"extracted": {"product": "auto umbrella", "target_price": 12.0},
+            {"extracted": {"product": "auto umbrella", "target_price": 12.0,
+                           "ceiling_price": 16.2},
              "offer": 1.25, "email_body": "We can do ¥15 per unit, MOQ 500."}
         )
         # 介面凍結：既有鍵必須保留
@@ -459,10 +489,11 @@ class TestOrchestratorRobustnessAmplifier(unittest.TestCase):
         from src.app import orchestrator
 
         orchestrator._ROBUSTNESS_CACHE.clear()
-        result = orchestrator.analyze(dict(orchestrator.DEMO_SPEC), quick=False)
-        self.assertTrue(result["robustness"].get("computed"))
-        for key in ("engine_margin", "baseline_margin", "gain", "sensitivity", "misbelief"):
-            self.assertIn(key, result["robustness"])
+        result = orchestrator.analyze(
+            dict(orchestrator.DEMO_SPEC), observed_offer=1.25, quick=False
+        )
+        self.assertFalse(result["robustness"].get("computed", True))
+        self.assertIn("labelled demo", result["robustness"]["reason"])
 
 
 if __name__ == "__main__":

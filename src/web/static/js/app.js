@@ -1235,6 +1235,8 @@ async function runMultiAuction() {
       auctionBody.suppliers = live.suppliers;
       auctionBody.rounds_quotes = [live.quotes];
       auctionBody.n_rounds = 1;
+    } else {
+      auctionBody.demo = true;
     }
     let target = readAuctionMoney("auctionTarget");
     let ceiling = readAuctionMoney("auctionCeiling");

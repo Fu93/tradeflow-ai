@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field, field_validator
 
-from src.config.heuristics import PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD, SILENCE_CONCESSION_RATIO
+from src.config.heuristics import SILENCE_CONCESSION_RATIO
 
 
 # 會話識別碼白名單 (Session id whitelist)。
@@ -75,10 +75,11 @@ class SessionSpec(BaseModel):
     product_name: str = Field(..., min_length=1, max_length=512)
     target_price: float = Field(..., gt=0.0, allow_inf_nan=False)
     ceiling_price: float = Field(..., gt=0.0, allow_inf_nan=False)
-    moq: int = Field(default=500, ge=1, le=10_000_000)
+    moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)
     max_rounds: int = Field(default=5, ge=1, le=100)
-    prior_reserve_mean: float = Field(default=PRIOR_RESERVE_MEAN, gt=0.0, allow_inf_nan=False)
-    prior_reserve_std: float = Field(default=PRIOR_RESERVE_STD, gt=0.0, allow_inf_nan=False)
+    prior_reserve_mean: Optional[float] = Field(default=None, gt=0.0, allow_inf_nan=False)
+    prior_reserve_std: Optional[float] = Field(default=None, gt=0.0, allow_inf_nan=False)
+    expected_markup: Optional[float] = Field(default=None, ge=0.0, allow_inf_nan=False)
     supplier_id: str = Field(default="default_supplier", max_length=256)
     supplier_channel: str = Field(default="web_chat", max_length=64)
     corporate_mandate: Optional[Dict[str, Any]] = None

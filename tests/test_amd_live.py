@@ -50,6 +50,14 @@ class TestPriceGuard(unittest.TestCase):
             )
 
         client = TestClient(api_main.app)
+        for sid in ("GUARD_QUIET", "GUARD_LOUD"):
+            created = client.post("/api/v1/sessions", json={
+                "session_id": sid,
+                "product_name": "Sample",
+                "target_price": 12.0,
+                "ceiling_price": 16.2,
+            })
+            self.assertEqual(created.status_code, 200, created.text)
         with patch.object(InboundIntentClassifier, "classify", staticmethod(fake_classify)):
             quiet = client.post(
                 "/api/v1/sessions/GUARD_QUIET/round",

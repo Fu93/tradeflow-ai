@@ -47,16 +47,6 @@ DEAL_TOLERANCE = 0.02
 # multiplies acceptance by 1/e. Chosen, not fitted.
 DEAL_DECAY_SCALE = 0.05
 
-# Rationale: an opening gap above this is treated as an aggressive open
-# and adds break probability. Normalised to the target.
-OPENING_GAP_BREAK = 0.32
-
-# Rationale: extra break probability when the opening gap is large.
-OPENING_BREAK_BASE = 0.20
-
-# Rationale: bluff weight on that extra break probability.
-OPENING_BREAK_BLUFF = 0.30
-
 # Rationale: payoff penalty subtracted once per unit of break probability.
 BREAK_PENALTY = 0.10
 
@@ -67,11 +57,13 @@ OPPONENT_GAP_SHARE = 0.45
 # Rationale: cap on an effective per-round concession rate.
 CONCESSION_RATE_CAP = 0.95
 
-# Rationale: default belief that the supplier's reserve sits 8% above the
-# buyer's target, before any offer is observed. Not a market prior.
+# Rationale: labelled suggestion for a reserve prior, shown in the desk
+# before the user saves one. The desk, /round, and the auction do not apply
+# it unless the request includes it. It is not a market measurement.
 PRIOR_RESERVE_MEAN = 1.08
 
-# Rationale: default width of that belief. Not a measured standard deviation.
+# Rationale: labelled width that accompanies that suggestion. Applied only
+# when the user submits a prior and does not submit a width.
 PRIOR_RESERVE_STD = 0.10
 
 # Rationale: noise used when sampling a reserve around its type centre.
@@ -83,9 +75,6 @@ SAMPLE_AXIS_NOISE = 0.10
 # Rationale: lower clip for sampled urgency and concession.
 PARAM_FLOOR = 0.05
 
-# Rationale: upper clip for a sampled concession rate.
-CONC_CAP = 0.95
-
 # Rationale: belief-meter map. raw = BASE + VAR * variance_reduction - CV * cv,
 # then clipped. A display score, not a confidence interval.
 BELIEF_CONF_BASE = 0.75
@@ -94,16 +83,36 @@ BELIEF_CONF_CV = 0.80
 BELIEF_CONF_LO = 0.50
 BELIEF_CONF_HI = 0.98
 
-# Rationale: Bayesian observation noise, prior that a quote is genuine,
-# and the normalised domain of a plausible quote. Chosen, not fitted.
+# Rationale: scale of the Student-t observation in the reserve update.
+# A numerical robustness setting, not a measured quote error.
 BAYES_OBS_NOISE = 0.06
-BAYES_PRIOR_CLEAN = 0.85
-BAYES_DOMAIN_MIN = 0.80
-BAYES_DOMAIN_MAX = 2.50
+
+# Rationale: degrees of freedom of that Student-t. A heavy-tailed
+# robustness setting so a far quote is down-weighted and still moves the
+# mean. Not an economic claim about suppliers.
+STUDENT_T_DF = 4.0
+
+# Rationale: normal consistency constant for the median absolute deviation,
+# 1 / Phi^{-1}(0.75). A published identity used when a scale is estimated
+# from the user's own quotes.
+MAD_NORMAL_CONSISTENCY = 1.4826
 
 # Rationale: markup subtracted from an observed offer before the reserve
-# update. A modelling assumption, not a supplier's stated margin.
+# update. Applied only when the user sets it. Zero means the quote and the
+# reserve are not split apart.
 BAYES_MARKUP = 0.08
+
+# Rationale: central credible mass reported with a Student-t reserve belief.
+# The conventional 95% reporting level. Not a fitted coverage rate.
+CREDIBLE_MASS = 0.95
+
+# Rationale: the one-half in the Student-t incomplete-beta shape and in the
+# Gaussian KL. An identity, not a fitted weight.
+ONE_HALF = 0.5
+
+# Rationale: bisection bracket for a standard Student-t quantile, in
+# standard deviations. A numerical guard, not a price.
+STUDENT_T_BRACKET = 1000.0
 
 # Rationale: standard-normal quantile for a two-sided 95% interval
 # (Phi^{-1}(0.975)). A published identity, not a fitted coefficient.
@@ -248,9 +257,9 @@ FIXED_BASELINE_CONCESSION = 0.05
 PLAUSIBLE_OFFER_MIN = 5.0
 PLAUSIBLE_OFFER_MAX = 30.0
 
-# Rationale: when the real-model buyer is within this normalised step of the
-# supplier, the benchmark records the supplier's price. A scoring rule, not
-# a quote.
+# Rationale: when the offline real-model benchmark is within this
+# normalised step of the supplier, it records the supplier's price.
+# A scoring rule for that script, not a live-desk quote.
 BENCHMARK_FINAL_STEP = 0.01
 
 # Rationale: normal quantile used by the Wilson interval in benchmark_stats,
@@ -289,10 +298,6 @@ HAZARD_ROUND = 0.0
 # not assumed.
 HAZARD_N_ALT = 0.0
 
-# Rationale: extra logit slope when a sampled bluff multiplies the reserve
-# gap. Assumption, not fitted.
-HAZARD_BLUFF = 0.6
-
 # Rationale: prior standard deviation of the per-supplier hazard random
 # effect. Hierarchical shrinkage before any walk-away is observed.
 # Assumption, not estimated.
@@ -322,6 +327,15 @@ HAZARD_U_POINTS = 64
 # market quote.
 OFFER_GRID_FLOOR = 0.50
 
+# Rationale: how many times the user's MOQ a planning mandate may stretch
+# when the user did not set a separate maximum. A labelled volume policy,
+# not a factory limit.
+MOQ_HEADROOM_MULTIPLE = 2
+
+# Rationale: sample budget for one /round or /negotiate solve. A numerical
+# budget, not a price.
+ROUND_N_SAMPLES = 2000
+
 # Rationale: desk solve budget. Five thousand shared scenarios and a
 # 20-point grid match the auction counters on the checked seeds, and the
 # reported standard errors sit on the seed-to-seed spread. The auction
@@ -329,13 +343,11 @@ OFFER_GRID_FLOOR = 0.50
 DESK_N_SAMPLES = 5000
 DESK_N_GRID = 20
 
-# Rationale: weight on CVaR of buyer loss in the coupled objective. It does
-# not scale with the hazard cap. Assumption, not fitted.
-CVAR_WEIGHT = 0.35
-
-# Rationale: fraction of the cost sample in the upper CVaR tail. Separate
-# from the user's hazard cap, so one number does not drive both. A
-# conventional tail, not a fitted walk-away rate.
+# Rationale: fraction of the cost sample in the upper CVaR tail. The tail
+# is reported. It is not a term in the offer score, because on this
+# one-step accept-or-reject objective the tail sat on the ceiling for
+# almost every candidate and could not change the offer.
+# A conventional reporting tail, not a fitted walk-away rate.
 CVAR_TAIL_FRACTION = 0.05
 
 # Rationale: smallest accepted user risk tolerance. Below this the hazard
@@ -390,6 +402,16 @@ SHARED_FACTOR_RHO = 0.0
 COUPLED_SWEEPS = 1
 
 
+def _sigmoid(value: float) -> float:
+    import math
+
+    if value >= 0:
+        z = math.exp(-value)
+        return 1.0 / (1.0 + z)
+    z = math.exp(value)
+    return z / (1.0 + z)
+
+
 def public_payload() -> dict:
     """Numbers the dashboard and the extension are allowed to display."""
     return {
@@ -402,9 +424,21 @@ def public_payload() -> dict:
         "cvar_tail_fraction": CVAR_TAIL_FRACTION,
         "caution_risk_threshold": CAUTION_RISK_THRESHOLD,
         "hazard_status": "prior-driven",
+        "hazard_intercept": HAZARD_INTERCEPT,
+        "hazard_tau": HAZARD_SUPPLIER_TAU,
+        "hazard_quote_gap": HAZARD_QUOTE_GAP,
+        "hazard_baseline_rate": _sigmoid(HAZARD_INTERCEPT),
+        "hazard_baseline_low": _sigmoid(HAZARD_INTERCEPT - HAZARD_SUPPLIER_TAU),
+        "hazard_baseline_high": _sigmoid(HAZARD_INTERCEPT + HAZARD_SUPPLIER_TAU),
+        "hazard_min_events": HAZARD_MIN_EVENTS,
+        "prior_reserve_suggestion": PRIOR_RESERVE_MEAN,
+        "prior_reserve_std_suggestion": PRIOR_RESERVE_STD,
+        "student_t_df": STUDENT_T_DF,
+        "weitzman_search_cost": WEITZMAN_SEARCH_COST,
         "hazard_note": (
             "Walk-away hazard uses assumed logistic coefficients in "
             "src/config/heuristics.py. No public dataset was fitted. "
+            "The baseline rate and its spread are labelled assumptions. "
             "The default cap is user policy, not an estimated rate."
         ),
         "ladder_edge_lo": LADDER_EDGE_LO,

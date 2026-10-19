@@ -11,7 +11,9 @@ offline 模式（印出草稿而不真呼叫），保證 demo 在任何環境能
 """
 from __future__ import annotations
 import os
-from ..engine import solve, recommend, bayes_update, model, robustness, viz, proposal
+from ..engine import bayes_update, proposal
+from ..engine.bayesian_v2 import robust_location
+from ..engine.one_step import one_step_counter
 from .demo_data import DEMO_SPEC
 
 # [修正 §6.6] 穩健性報告快取：robustness.report() 內部會跑 10 次以上 solve()。
@@ -41,47 +43,105 @@ def _robustness_placeholder(target_price: float) -> dict:
     }
 
 
-def robustness_report(target_price: float, n_samples: int, force: bool = False):
-    """取得（並快取）穩健性報告。`force=False` 時，快取命中即回傳。"""
-    key = (float(target_price), int(n_samples))
+def robustness_report(target_price: float, n_samples: int, force: bool = False, value_ceiling: float | None = None):
+    """Legacy demo grid. The live webhook does not call this."""
+    if value_ceiling is None:
+        raise ValueError("robustness_report requires value_ceiling")
+    from ..engine import robustness
+    key = (float(target_price), int(n_samples), float(value_ceiling))
     if not force and key in _ROBUSTNESS_CACHE:
         return _ROBUSTNESS_CACHE[key]
-    txt, data = robustness.report(target_price=target_price, n_samples=n_samples)
+    txt, data = robustness.report(
+        target_price=target_price, n_samples=n_samples, value_ceiling=value_ceiling,
+    )
     data = dict(data)
     data["computed"] = True
     _ROBUSTNESS_CACHE[key] = data
     return data
 
 
-def analyze(spec: dict, observed_offer: float | None = None, quick: bool = False):
-    """跑引擎，回傳建議 + 穩健性摘要 + 讓步提案。
+def analyze(spec: dict, observed_offer: float | None = None, quick: bool = False, demo: bool = False):
+    """One-step counter for a caller-supplied target, ceiling, and quote.
 
-    [修正 §6.6] `quick=True` 時**不再**在請求路徑上重算 robustness.report()。
-    行為差異：`result["robustness"]["computed"]` 為 False 且欄位為 placeholder；
-    需要完整報告的離線路徑請用 quick=False（或先呼叫 robustness_report()）。
+    ``demo=True`` is the only path that fills a missing target or ceiling
+    from the labelled simulated mandate.
     """
-    post_mean = spec.get("prior_reserve_mean", DEMO_SPEC["prior_reserve_mean"])
-    post_std = spec.get("prior_reserve_std", DEMO_SPEC["prior_reserve_std"])
-    if observed_offer is not None:
-        post_mean, post_std = bayes_update(post_mean, post_std, observed_offer)
-    n_samples = spec.get("n_samples", DEMO_SPEC["n_samples"])
-    res = solve(n_opp_samples=n_samples,
-                lambda_break=spec.get("lambda_break", DEMO_SPEC["lambda_break"]),
-                reserve_mean=post_mean, reserve_std=post_std)
-    rec = recommend(res, target_price=spec.get("target_price", DEMO_SPEC["target_price"]))
-
-    target_price = spec.get("target_price", DEMO_SPEC["target_price"])
+    spec = dict(spec)
+    target = spec.get("target_price")
+    ceiling = spec.get("walk_away_ceiling", spec.get("ceiling_price"))
+    if demo and (target is None or ceiling is None):
+        target = target if target is not None else DEMO_SPEC["target_price"]
+        ceiling = ceiling if ceiling is not None else DEMO_SPEC["ceiling_price"]
+        spec["label"] = "simulated"
+    if target is None or ceiling is None:
+        raise ValueError("target_price and a ceiling are required")
+    quote_price = spec.get("quote_price")
+    if quote_price is None and observed_offer is not None:
+        quote_price = float(observed_offer) * float(target)
+    if quote_price is None:
+        raise ValueError("a supplier quote is required")
+    markup = float(spec.get("expected_markup") or 0.0)
+    width_source = "quote_location"
+    if spec.get("prior_reserve_mean") is None:
+        post_mean, post_std = robust_location([float(quote_price) / float(target) - markup])
+    else:
+        post_mean = float(spec["prior_reserve_mean"])
+        raw_std = spec.get("prior_reserve_std")
+        if raw_std is None:
+            if not demo:
+                raise ValueError(
+                    "prior_reserve_std is required when prior_reserve_mean is set"
+                )
+            raw_std = DEMO_SPEC["prior_reserve_std"]
+            width_source = "labelled_demo"
+        else:
+            width_source = "user"
+        post_std = float(raw_std)
+        if observed_offer is not None:
+            post_mean, post_std = bayes_update(
+                post_mean, post_std, float(observed_offer), estimated_markup=markup,
+            )
+    n_samples = spec.get("n_samples")
+    rec = one_step_counter(
+        quote=float(quote_price),
+        target=float(target),
+        ceiling=float(ceiling),
+        mean=float(post_mean),
+        std=float(post_std),
+        n_samples=n_samples,
+        risk_tolerance=spec.get("risk_tolerance"),
+    )
     force_on_webhook = os.environ.get("TRADEFLOW_ROBUSTNESS_ON_WEBHOOK") == "1"
     if quick and not force_on_webhook:
-        # 不再呼叫 robustness.report()（10+ 次 solve）；只用快取，缺快取則回 placeholder。
-        rob = _ROBUSTNESS_CACHE.get((float(target_price), 2000)) or _robustness_placeholder(target_price)
+        rob = _ROBUSTNESS_CACHE.get((float(target), 2000)) or _robustness_placeholder(float(target))
     else:
-        # 穩健性網格在完整路徑下降採樣至 2,000（耗時 2.4s vs 17.5s）
-        rob_samples = 2000 if quick else n_samples
-        rob = robustness_report(target_price=target_price, n_samples=rob_samples)
-    prop = proposal.build_proposal(spec, observed_offer=observed_offer)
-    return {"recommendation": rec, "posterior_reserve_mean": post_mean,
-            "posterior_reserve_std": post_std, "robustness": rob, "proposal": prop}
+        rob = _robustness_placeholder(float(target))
+        rob["reason"] = (
+            "The live path does not run the legacy robustness grid. "
+            "That grid is the labelled demo CLI."
+        )
+    prop = proposal.build_proposal(
+        {
+            "target_price": float(target),
+            "walk_away_ceiling": float(ceiling),
+            "prior_reserve_mean": float(post_mean),
+            "prior_reserve_std": float(post_std),
+            "quote_price": float(quote_price),
+            "n_samples": n_samples,
+        },
+        observed_offer=None,
+    )
+    rec = dict(rec)
+    rec["concession_curve"] = prop["concession_curve"]
+    return {
+        "recommendation": rec,
+        "posterior_reserve_mean": float(post_mean),
+        "posterior_reserve_std": float(post_std),
+        "robustness": rob,
+        "proposal": prop,
+        "data_class": spec.get("label") or "user_supplied",
+        "prior_width_source": width_source,
+    }
 
 
 def draft_email(notes: str, reply_to: str | None = None) -> str:
@@ -102,15 +162,22 @@ def on_webhook(payload: dict) -> dict:
 
     payload: {extracted: {product, target_price, qty, ...}, offer: 歸一化回價?}
     """
-    spec = dict(DEMO_SPEC)
-    spec.update({k: v for k, v in payload.get("extracted", {}).items()
-                 if k in ("target_price", "n_samples", "lambda_break",
-                          "prior_reserve_mean", "prior_reserve_std")})
+    extracted = payload.get("extracted") or {}
+    spec = {
+        "target_price": extracted.get("target_price"),
+        "walk_away_ceiling": extracted.get("walk_away_ceiling") or extracted.get("ceiling_price"),
+        "n_samples": extracted.get("n_samples"),
+        "prior_reserve_mean": extracted.get("prior_reserve_mean"),
+        "prior_reserve_std": extracted.get("prior_reserve_std"),
+        "product": extracted.get("product"),
+    }
     offer = payload.get("offer")
-    result = analyze(spec, observed_offer=offer, quick=True)
+    result = analyze(spec, observed_offer=offer, quick=True, demo=bool(payload.get("demo")))
     rec = result["recommendation"]
+    opening = rec.get("opening_offer_price")
+    opening_text = "withheld" if opening is None else f"¥{opening:.2f}"
     notes = (f"Supplier offer analysis (product={spec.get('product')}): "
-             f"recommended opening ¥{rec['opening_offer_price']:.2f}, "
+             f"recommended opening {opening_text}, "
              f"concession curve {rec['concession_curve']}, "
              f"expected margin ¥{rec['expected_margin_price']:.2f}/unit, "
              f"breakdown prob {rec['breakdown_prob']:.1%}. "
@@ -121,9 +188,10 @@ def on_webhook(payload: dict) -> dict:
 
 
 if __name__ == "__main__":
-    from src.sim.scenarios import SUPPLIER_REPLIES, UMBRELLA
+    from .demo_data import SUPPLIER_REPLIES
     payload = {
-        "extracted": {"product": UMBRELLA.name, "target_price": UMBRELLA.target},
+        "demo": True,
+        "extracted": {"product": DEMO_SPEC["product"], "target_price": DEMO_SPEC["target_price"]},
         "offer": SUPPLIER_REPLIES[0],
         "email_body": (
             "Simulated supplier reply for the offline self-check. "

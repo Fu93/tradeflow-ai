@@ -254,6 +254,28 @@
     );
   }
 
+  // A round is posted only when this page shows a target and a ceiling.
+  // The extension does not invent a mandate.
+  function readPageMandate() {
+    const root = document.getElementById("tf-mandate");
+    if (!root) return null;
+    const read = (field) => {
+      const el = root.querySelector(`[data-tf-field="${field}"]`);
+      return el ? String(el.value || "").trim() : "";
+    };
+    const target = Number(read("target"));
+    const ceiling = Number(read("ceiling"));
+    if (!Number.isFinite(target) || target <= 0 || !Number.isFinite(ceiling) || ceiling <= 0) {
+      return null;
+    }
+    return {
+      targetPrice: target,
+      ceilingPrice: ceiling,
+      productName: read("product") || "page product",
+      mandateLabel: root.getAttribute("data-tf-label") || "",
+    };
+  }
+
   function extractPriceFromText(text) {
     if (!text) return null;
     const patterns = [
@@ -1049,10 +1071,18 @@
     const offer = extractPriceFromText(rawText);
     if (!offer) return;
 
+    const mandate = readPageMandate();
+    if (!mandate) {
+      overlayEl.updateStatus(
+        "MANDATE REQUIRED",
+        "#f59e0b",
+        "Set a target and a ceiling on this page. No round is sent without them."
+      );
+      return;
+    }
+
     console.log(`[TradeFlow Copilot] Detected quote ¥${offer} in session ${sessionContext.sessionId}`);
-    // [誠實揭露] 決策核心是向量化 Expectimax（+ Bayesian v2 信念更新），
-    // 不是 MCTS。舊字串 "Bayesian MCTS" 是錯誤的演算法宣稱，demo 時會被看見。
-    overlayEl.updateStatus("ENGINE SOLVING...", "#38bdf8", `Processing quote ¥${offer} via Expectimax + Bayesian v2`);
+    overlayEl.updateStatus("ENGINE SOLVING...", "#38bdf8", `Processing quote ¥${offer} via one-step lookahead`);
 
     // 3. Dispatch to background via Port
     // V1 (F6) CONFIRMED: neither content.js nor background.js ever sent a `mode`
@@ -1066,6 +1096,11 @@
       offer: offer,
       context: rawText,
       mode: overlayEl._state.mode === "copilot" ? "copilot" : "autopilot",
+      targetPrice: mandate.targetPrice,
+      ceilingPrice: mandate.ceilingPrice,
+      productName: mandate.productName,
+      mandateLabel: mandate.mandateLabel,
+      supplierId: sessionContext.supplierId,
     });
   }
 

@@ -13,8 +13,12 @@ import numpy as np
 from .engine import solve, recommend, bayes_update, model, robustness, viz, benchmark
 from .benchmark import AdversarialArena
 from .engine.multi_solver import simulate_reverse_auction
-from .app.demo_data import DEMO_SPEC, SUPPLIER_REPLIES
+from .app.demo_data import DEMO_SPEC, SUPPLIER_REPLIES, self_play_bundle
+from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS
 from src.sim.scenarios import UMBRELLA
+from .engine.model import bind_archetypes
+
+bind_archetypes(OPPONENT_TYPE_ROWS, OPPONENT_TYPE_NAMES)
 
 # Windows consoles default to cp1252 / cp936, which mangled ¥ and — in earlier
 # runs (the operator saw "?12.51"). Force UTF-8 output where the stream allows it.
@@ -37,7 +41,8 @@ def run_demo():
         t0 = time.perf_counter()
         res = solve(n_opp_samples=DEMO_SPEC["n_samples"],
                     lambda_break=DEMO_SPEC["lambda_break"],
-                    reserve_mean=post_mean, reserve_std=post_std)
+                    reserve_mean=post_mean, reserve_std=post_std,
+                    value_ceiling=DEMO_SPEC["ceiling_price"] / DEMO_SPEC["target_price"])
         dt = time.perf_counter() - t0
         rec = recommend(res, target_price=DEMO_SPEC["target_price"])
         trace.append({"round": round_i + 1, "mean": post_mean, "std": post_std,
@@ -61,7 +66,9 @@ def run_demo():
     # 不是迴圈執行次數；一次向量化廣播就求完整個張量。舊版把 480 寫成魔法數
     # 並稱其為 measured rollouts，容易讀成「執行了 960 萬次 rollout」。
     from .engine import model as _model
-    _opens, _scheds = _model.strategy_grid()
+    _opens, _scheds = _model.strategy_grid(
+        ceiling=DEMO_SPEC["ceiling_price"] / DEMO_SPEC["target_price"]
+    )
     tensor_positions = DEMO_SPEC["n_samples"] * len(_opens) * len(_scheds)
     elapsed = sum(r["dt"] for r in trace)
     print("\n[Conclusion] Engine turns 'value of waiting' into an executable concession schedule.")
@@ -78,7 +85,11 @@ def run_demo():
 
 def run_robustness(n=20000):
     print("=== Robustness analysis (n_samples=%d) ===" % n)
-    txt, _ = robustness.report(target_price=DEMO_SPEC["target_price"], n_samples=n)
+    txt, _ = robustness.report(
+        target_price=DEMO_SPEC["target_price"],
+        n_samples=n,
+        value_ceiling=DEMO_SPEC["ceiling_price"] / DEMO_SPEC["target_price"],
+    )
     print(txt)
 
 
@@ -88,21 +99,35 @@ def run_figures():
     # 信念更新 + 後驗分布
     trace = run_demo()
     p1, p2 = viz.save_all(trace[-1]["mean"], trace[-1]["std"], trace,
-                          target_price=DEMO_SPEC["target_price"], out_dir="results")
+                          target_price=DEMO_SPEC["target_price"],
+                          ceiling=DEMO_SPEC["ceiling_price"] / DEMO_SPEC["target_price"],
+                          out_dir="results")
     print(f"  saved: {p1}\n  saved: {p2}")
     # 後驗分解（4 類供應商）— Wow#1 加強
     p6 = "results/prior_decomp.png"
     viz.plot_prior_decomp(trace[-1]["mean"], trace[-1]["std"],
-                          target_price=DEMO_SPEC["target_price"], save_path=p6)
+                          target_price=DEMO_SPEC["target_price"],
+                          ceiling=DEMO_SPEC["ceiling_price"] / DEMO_SPEC["target_price"],
+                          save_path=p6)
     print(f"  saved: {p6}")
     # Benchmark（CPU 實測 + MI300X 投影）
-    rows = benchmark.run()
+    rows = benchmark.run(
+        target_price=DEMO_SPEC["target_price"],
+        walk_away_ceiling=DEMO_SPEC["ceiling_price"],
+        value_ceiling=DEMO_SPEC["ceiling_price"] / DEMO_SPEC["target_price"],
+        self_play=self_play_bundle(),
+        moq=DEMO_SPEC["moq"],
+    )
     p3 = benchmark.save_json(rows)
     p4 = "results/benchmark.png"
     viz.plot_benchmark(rows, p4)
     print(f"  saved: {p3}\n  saved: {p4}")
     # 穩健性（多基準 + prior 敏感度）
-    _, rob = robustness.report(target_price=DEMO_SPEC["target_price"], n_samples=20000)
+    _, rob = robustness.report(
+        target_price=DEMO_SPEC["target_price"],
+        n_samples=20000,
+        value_ceiling=DEMO_SPEC["ceiling_price"] / DEMO_SPEC["target_price"],
+    )
     p5 = "results/robustness.png"
     viz.plot_robustness(rob, p5)
     print(f"  saved: {p5}")
@@ -153,6 +178,8 @@ def run_multi_supplier_demo(out_dir="results"):
         walk_away_ceiling=UMBRELLA.ceiling,
         moq=UMBRELLA.moq,
         n_samples=20000,
+        demo=True,
+        self_play=self_play_bundle(),
     )
     total_elapsed = time.perf_counter() - t0
 
@@ -276,7 +303,13 @@ def run_sandbox_demo(host: str = "127.0.0.1", port: int = 8000):
 def run_benchmark():
     """執行硬體基準評測 (Hardware Profiling & AMD Roofline Model)。"""
     print("=== TradeFlow Hardware Profiling & AMD Instinct MI300X Audit ===")
-    report = benchmark.run()
+    report = benchmark.run(
+        target_price=DEMO_SPEC["target_price"],
+        walk_away_ceiling=DEMO_SPEC["ceiling_price"],
+        value_ceiling=DEMO_SPEC["ceiling_price"] / DEMO_SPEC["target_price"],
+        self_play=self_play_bundle(),
+        moq=DEMO_SPEC["moq"],
+    )
     p_json = benchmark.save_json(report)
     p_img = "results/benchmark.png"
     viz.plot_benchmark(report, p_img)

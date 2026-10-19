@@ -2,11 +2,26 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from src.app.demo_data import self_play_bundle
 from src.engine import benchmark, robustness, viz
+
+_BUNDLE = self_play_bundle()
+_CEILING = _BUNDLE["ceiling"] / _BUNDLE["target"]
+
+
+def _run(**extra):
+    return benchmark.run(
+        target_price=_BUNDLE["target"],
+        walk_away_ceiling=_BUNDLE["ceiling"],
+        value_ceiling=_CEILING,
+        self_play=_BUNDLE,
+        moq=_BUNDLE["moq"],
+        **extra,
+    )
 
 
 def test_benchmark_runs():
-    res = benchmark.run(n_list=(2000,))
+    res = _run(n_list=(2000,))
     grid = res["single_supplier_grid"]
     row = grid[0]
     assert row["rollouts"] > 0
@@ -29,10 +44,10 @@ def test_benchmark_runs():
 
 def test_figures_no_error():
     # 回歸：不寫檔也應可產生 figure 物件
-    rows = benchmark.run(n_list=(2000, 10000))
+    rows = _run(n_list=(2000, 10000))
     fig1 = viz.plot_benchmark(rows)
     assert fig1 is not None
-    _, rob = robustness.report(n_samples=2000)
+    _, rob = robustness.report(n_samples=2000, target_price=_BUNDLE["target"], value_ceiling=_CEILING)
     fig2 = viz.plot_robustness(rob)
     assert fig2 is not None
     # report() 必須同時回傳兩類敏感度（場景敏感度與信念錯誤）
@@ -47,7 +62,7 @@ def test_misbelief_sensitivity_structure():
     """
     from src.engine.robustness import misbelief_sensitivity
 
-    res = misbelief_sensitivity(n_samples=3000)
+    res = misbelief_sensitivity(n_samples=3000, value_ceiling=_CEILING)
     assert len(res) == 3
     factors = [f for f, _, _, _ in res]
     assert factors == [0.5, 1.0, 1.5]

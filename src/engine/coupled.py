@@ -1,15 +1,17 @@
-"""Coupled sample-average expectimax for several suppliers at once.
+"""One-step lookahead over sampled accept-or-reject scenarios.
 
 One shared set of scenarios (common random numbers, one cost factor) is
 drawn for the round. Each supplier's offer is chosen on a fixed grid. The
-auction path scores the outside option the way it did before the desk: the
-rival cap may sit between grid points. The desk path snaps that cap onto the
-grid and scores the offers that remain with no outside option, so a tighter
-rival cap only removes candidates and cannot raise another offer.
+auction path scores the outside option: the rival cap may sit between grid
+points. The desk path snaps that cap onto the grid and scores the offers
+that remain with no outside option, so a tighter rival cap only removes
+candidates and cannot raise another offer.
 
-The search is receding-horizon. It picks the next offer, not a five-round
-script. Reported Monte Carlo figures are the joint evaluation of that offer
-vector: standard errors, P(deal), expected surplus, CVaR, and regret.
+The search picks the next offer. It does not roll out later rounds, so it
+is not a multi-ply expectimax. Rejection and walking away both score the
+outside option, which is zero on the desk, so a feasible offer that is
+higher also scores higher. Reported Monte Carlo figures are the joint
+evaluation of that offer vector.
 """
 from __future__ import annotations
 
@@ -23,11 +25,11 @@ from src.config.heuristics import (
     BREAKDOWN_TRIP_THRESHOLD,
     COUPLED_SWEEPS,
     CVAR_TAIL_FRACTION,
-    CVAR_WEIGHT,
     DEFAULT_SOLVER_SEED,
+    DESK_N_GRID,
     OFFER_GRID_FLOOR,
+    ROUND_N_SAMPLES,
     OFFER_TIE_BREAK,
-    SAMPLE_AXIS_NOISE,
     SHARED_FACTOR_RHO,
     TACTIC_PRICE_TIE,
     TACTIC_SIDELINE_RATIO,
@@ -44,7 +46,6 @@ from src.engine.hazard import (
     sigmoid,
 )
 from src.engine.solver import EXPECTIMAX_SAMPLE_CHUNK
-from src.sim.archetypes import OPPONENT_TYPE_ROWS
 
 
 def risk_cap(risk_tolerance: float | None) -> float:
@@ -52,12 +53,6 @@ def risk_cap(risk_tolerance: float | None) -> float:
     if risk_tolerance is None:
         return float(BREAKDOWN_TRIP_THRESHOLD)
     return float(risk_tolerance)
-
-
-def cvar_weight(risk_tolerance: float | None) -> float:
-    """Fixed weight. Risk tolerance is the hazard cap, not the CVaR tail."""
-    del risk_tolerance
-    return float(CVAR_WEIGHT)
 
 
 def _phi(t: float) -> float:
@@ -188,35 +183,27 @@ def sample_joint_scenarios(
     n_samples: int,
     rho: float = SHARED_FACTOR_RHO,
 ) -> dict[str, np.ndarray]:
-    """One joint draw. Supplier i's reserve uses only i's belief and the shared noise.
+    """One joint draw. Supplier i's reserve is mean + std × shock.
 
-    ``stds`` is the relative shock used by ``model.sample_opponents`` (a
-    posterior standard deviation on a mean near 1 is treated as a fraction
-    of that mean). Rival quotes do not enter this draw.
+    ``stds`` are absolute posterior scales, not fractions of the mean.
+    The shared-factor loadings are ``sqrt(1-ρ)`` and ``sqrt(ρ)``, so the
+    correlation of the shocks is ρ and each shock has variance 1.
     """
     means = np.asarray(means, dtype=np.float64)
     stds = np.asarray(stds, dtype=np.float64)
     k = int(means.shape[0])
     n = int(n_samples)
+    rho = min(max(float(rho), 0.0), 1.0)
     eps = rng.standard_normal((k, n))
     shared = rng.standard_normal(n)
     uniforms = rng.random((k, n))
-    rows = np.asarray(OPPONENT_TYPE_ROWS, dtype=np.float64)
-    type_ids = rng.integers(0, int(rows.shape[0]), size=(k, n))
-    bluff = np.clip(
-        rows[type_ids, 2] + SAMPLE_AXIS_NOISE * rng.standard_normal((k, n)),
-        0.0,
-        1.0,
-    )
-    idio = math.sqrt(max(0.0, 1.0 - float(rho) * float(rho)))
-    common = math.sqrt(max(0.0, float(rho)))
-    shock = stds[:, None] * (idio * eps + common * shared[None, :])
-    reserves = np.maximum(means[:, None] * (1.0 + shock), np.finfo(np.float64).tiny)
+    idio = math.sqrt(max(0.0, 1.0 - rho))
+    common = math.sqrt(max(0.0, rho))
+    shock = idio * eps + common * shared[None, :]
+    reserves = np.maximum(means[:, None] + stds[:, None] * shock, np.finfo(np.float64).tiny)
     return {
         "reserves": reserves,
         "uniforms": uniforms,
-        "bluff": bluff,
-        "type_ids": type_ids,
         "shared_factor": shared,
     }
 
@@ -263,7 +250,6 @@ def _score_candidates(
     *,
     reserves: np.ndarray,
     uniforms: np.ndarray,
-    bluff: np.ndarray,
     quote: float,
     kappa: float,
     candidates: np.ndarray,
@@ -271,6 +257,9 @@ def _score_candidates(
     ceiling: float,
     effect: float,
     risk_tolerance: float | None,
+    intercept: float | None = None,
+    quote_gap_coef: float | None = None,
+    reserve_gap_coef: float | None = None,
 ) -> dict[str, np.ndarray]:
     """Vectorised expectimax of one supplier's offer grid. Chunked on scenarios."""
     s = int(reserves.shape[0])
@@ -287,8 +276,10 @@ def _score_candidates(
             np,
             g_reserve=g_res,
             g_quote=g_quote,
-            bluff=bluff[start:end, None],
             effect=effect,
+            intercept=intercept,
+            quote_gap_coef=quote_gap_coef,
+            reserve_gap_coef=reserve_gap_coef,
         )
         hazard = sigmoid(np, logit)
         accept = (candidates[None, :] >= res[:, None]) & (uniforms[start:end, None] >= hazard)
@@ -300,13 +291,11 @@ def _score_candidates(
     mean_surplus, _ = _mean_se_rows(surplus)
     mean_hazard = hazard_sum / s
     p_accept = deal_sum / s
-    weight = cvar_weight(risk_tolerance)
-    tail = float(CVAR_TAIL_FRACTION)
-    cvar = np.empty(g, dtype=np.float64)
-    for column in range(g):
-        # Loss is forgone surplus: the ceiling value minus the realised surplus.
-        cvar[column] = _cvar_upper(float(ceiling) - surplus[:, column], tail)
-    score = mean_surplus - weight * cvar - candidates * float(OFFER_TIE_BREAK)
+    del risk_tolerance
+    # CVaR is reported on the chosen vector. It is not in this score: with
+    # rejection worth the outside option, the tail was the ceiling on nearly
+    # every candidate, so a weight on it could not move the offer.
+    score = mean_surplus - candidates * float(OFFER_TIE_BREAK)
     return {
         "score": score,
         "mean_surplus": mean_surplus,
@@ -412,7 +401,6 @@ def evaluate_vector(
     """Joint Monte Carlo of a fixed offer vector. Chunked on the scenario axis."""
     reserves = scenarios["reserves"]
     uniforms = scenarios["uniforms"]
-    bluff = scenarios["bluff"]
     k, n = reserves.shape
     offers = np.asarray(offers, dtype=np.float64)
     kappas = np.asarray(kappas, dtype=np.float64)
@@ -434,8 +422,10 @@ def evaluate_vector(
                 np,
                 g_reserve=g_res,
                 g_quote=g_quote,
-                bluff=bluff[i, start:end],
                 effect=beliefs[i].mean_effect(),
+                intercept=beliefs[i].intercept,
+                quote_gap_coef=beliefs[i].quote_gap_coef,
+                reserve_gap_coef=beliefs[i].reserve_gap_coef,
             )
             hazard = sigmoid(np, logit)
             per_hazard[i] += float(np.sum(hazard))
@@ -503,8 +493,8 @@ def solve_coupled(
     *,
     ceiling: float,
     kappas: np.ndarray | None = None,
-    n_samples: int = 2000,
-    n_grid: int = 20,
+    n_samples: int = ROUND_N_SAMPLES,
+    n_grid: int = DESK_N_GRID,
     risk_tolerance: float | None = None,
     beliefs: list[HazardBelief] | None = None,
     rng: np.random.Generator | None = None,
@@ -512,6 +502,7 @@ def solve_coupled(
     floor: float = OFFER_GRID_FLOOR,
     rho: float = SHARED_FACTOR_RHO,
     snap_to_grid: bool = False,
+    search_cost: float | None = None,
 ) -> dict[str, Any]:
     """Choose one offer per supplier. Prices are normalised to the target."""
     started = time.perf_counter()
@@ -554,7 +545,6 @@ def solve_coupled(
         scored = _score_candidates(
             reserves=scenarios["reserves"][i],
             uniforms=scenarios["uniforms"][i],
-            bluff=scenarios["bluff"][i],
             quote=float(quotes[i]),
             kappa=float(kappas[i]),
             candidates=candidates,
@@ -562,6 +552,9 @@ def solve_coupled(
             ceiling=float(ceiling),
             effect=beliefs[i].mean_effect(),
             risk_tolerance=risk_tolerance,
+            intercept=beliefs[i].intercept,
+            quote_gap_coef=beliefs[i].quote_gap_coef,
+            reserve_gap_coef=beliefs[i].reserve_gap_coef,
         )
         cells += int(scored["cells"])
         choice = _choose_offer(
@@ -592,13 +585,11 @@ def solve_coupled(
     )
     reservations = []
     for i in range(k):
-        # Same absolute scale as the scenario draw: shock = std * mean.
-        sigma = abs(float(stds[i]) * float(means[i]))
-        sigma = max(sigma, float(np.finfo(np.float64).tiny))
-        # Kappa is a known adder, so the reservation that is compared with
-        # a landed quote lives on the landed scale.
+        # Same absolute scale as the scenario draw: reserve = mean + std × shock.
+        sigma = max(abs(float(stds[i])), float(np.finfo(np.float64).tiny))
+        cost = float(WEITZMAN_SEARCH_COST if search_cost is None else search_cost)
         reservations.append(
-            weitzman_reservation(float(means[i]) + float(kappas[i]), sigma)
+            weitzman_reservation(float(means[i]) + float(kappas[i]), sigma, cost=cost)
         )
     order = sorted(range(k), key=lambda i: (reservations[i], float(landed[i]), i))
     tactics = classify_tactics(quotes, ceiling)
@@ -639,7 +630,7 @@ def solve_coupled(
         "elapsed_seconds": elapsed,
         "mc": metrics,
         "risk_tolerance": cap,
-        "cvar_weight": cvar_weight(risk_tolerance),
+        "solver": "one-step lookahead over sampled accept-or-reject scenarios",
         "hazard_provenance": dict(PROVENANCE),
         "prior_driven": all(item.prior_driven for item in beliefs),
         "n_samples": int(n_samples),

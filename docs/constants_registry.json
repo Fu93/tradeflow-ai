@@ -1,0 +1,839 @@
+{
+  "categories": {
+    "c": "cited official identity or statistical constant",
+    "d": "labelled user-adjustable policy or labelled assumption",
+    "n": "numerical or display guard"
+  },
+  "constants": {
+    "YOUR_CEILING": {
+      "value": 1.35,
+      "category": "d",
+      "justification": "Legacy demo opening-grid bound. The live desk and /round do not read it."
+    },
+    "GRID_EDGE_INSET": {
+      "value": 0.02,
+      "category": "n",
+      "justification": "inset so the highest opening sits just under YOUR_CEILING."
+    },
+    "BREAKDOWN_TRIP_THRESHOLD": {
+      "value": 0.15,
+      "category": "d",
+      "justification": "safety gate. At this breakdown probability the engine stops proposing and waits for a person. Not fitted to factory data."
+    },
+    "CAUTION_RISK_THRESHOLD": {
+      "value": 0.06,
+      "category": "d",
+      "justification": "display band for a mild walk-away hazard. It sits just above the zero-gap prior (the logistic intercept) and below the trip cap, so a small opening gap is labelled caution. Not a measured rate and not a second trip. The old 0.08 band was chosen for 1 - p_deal, which sat higher."
+    },
+    "ANCHORING_REF": {
+      "value": 0.1,
+      "category": "d",
+      "justification": "neutral opening gap (normalised) for the anchoring reaction."
+    },
+    "ANCHORING_BETA": {
+      "value": 1.0,
+      "category": "d",
+      "justification": "how strongly an opening gap changes the opponent's concession. 1.0 means a gap one full target-unit away scales the concession by that amount. Setting this to 0 restores the pre-anchoring payoff. Not fitted."
+    },
+    "ANCHORING_CLIP": {
+      "value": [
+        0.5,
+        1.5
+      ],
+      "category": "d",
+      "justification": "clip on the anchoring multiplier so a wild gap cannot zero or explode the concession rate. Chosen bounds, not a fit."
+    },
+    "DEAL_TOLERANCE": {
+      "value": 0.02,
+      "category": "d",
+      "justification": "a final gap at or under 2% of the target counts as a deal."
+    },
+    "DEAL_DECAY_SCALE": {
+      "value": 0.05,
+      "category": "d",
+      "justification": "exponential scale of deal probability. Each extra 5% of gap multiplies acceptance by 1/e. Chosen, not fitted."
+    },
+    "BREAK_PENALTY": {
+      "value": 0.1,
+      "category": "d",
+      "justification": "payoff penalty subtracted once per unit of break probability."
+    },
+    "OPPONENT_GAP_SHARE": {
+      "value": 0.45,
+      "category": "d",
+      "justification": "fraction of the remaining gap the opponent is assumed to eat, before bluff scales it down. Chosen, not fitted."
+    },
+    "CONCESSION_RATE_CAP": {
+      "value": 0.95,
+      "category": "d",
+      "justification": "cap on an effective per-round concession rate."
+    },
+    "PRIOR_RESERVE_MEAN": {
+      "value": 1.08,
+      "category": "d",
+      "justification": "Labelled suggestion only. The desk and /round do not apply it unless the request sets a prior."
+    },
+    "PRIOR_RESERVE_STD": {
+      "value": 0.1,
+      "category": "d",
+      "justification": "Labelled suggestion for the width when a caller sets a mean and not a width. Not a fitted posterior."
+    },
+    "SAMPLE_NOISE": {
+      "value": 0.08,
+      "category": "d",
+      "justification": "noise used when sampling a reserve around its type centre."
+    },
+    "SAMPLE_AXIS_NOISE": {
+      "value": 0.1,
+      "category": "d",
+      "justification": "noise on urgency, bluff, and concession when sampling opponents."
+    },
+    "PARAM_FLOOR": {
+      "value": 0.05,
+      "category": "n",
+      "justification": "lower clip for sampled urgency and concession."
+    },
+    "BELIEF_CONF_BASE": {
+      "value": 0.75,
+      "category": "d",
+      "justification": "belief-meter map. raw = BASE + VAR * variance_reduction - CV * cv, then clipped. A display score, not a confidence interval."
+    },
+    "BELIEF_CONF_VAR": {
+      "value": 0.35,
+      "category": "d",
+      "justification": "BELIEF_CONF_VAR"
+    },
+    "BELIEF_CONF_CV": {
+      "value": 0.8,
+      "category": "d",
+      "justification": "BELIEF_CONF_CV"
+    },
+    "BELIEF_CONF_LO": {
+      "value": 0.5,
+      "category": "d",
+      "justification": "BELIEF_CONF_LO"
+    },
+    "BELIEF_CONF_HI": {
+      "value": 0.98,
+      "category": "d",
+      "justification": "BELIEF_CONF_HI"
+    },
+    "BAYES_OBS_NOISE": {
+      "value": 0.06,
+      "category": "d",
+      "justification": "scale of the Student-t observation in the reserve update. A numerical robustness setting, not a measured quote error."
+    },
+    "STUDENT_T_DF": {
+      "value": 4.0,
+      "category": "n",
+      "justification": "degrees of freedom of that Student-t. A heavy-tailed robustness setting so a far quote is down-weighted and still moves the mean. Not an economic claim about suppliers."
+    },
+    "MAD_NORMAL_CONSISTENCY": {
+      "value": 1.4826,
+      "category": "c",
+      "justification": "1/Phi^{-1}(0.75), so a normal median absolute deviation matches the standard deviation (Rousseeuw and Croux)."
+    },
+    "BAYES_MARKUP": {
+      "value": 0.08,
+      "category": "d",
+      "justification": "Labelled suggestion. The update uses zero unless the caller sets a markup."
+    },
+    "CREDIBLE_MASS": {
+      "value": 0.95,
+      "category": "c",
+      "justification": "Conventional 95% central credible mass. A reporting convention, not a fitted coverage rate."
+    },
+    "Z_95": {
+      "value": 1.95996,
+      "category": "c",
+      "justification": "Phi^{-1}(0.975), the standard-normal quantile for a two-sided 95% interval."
+    },
+    "CONCESSION_FLAT_RATES": {
+      "value": [
+        0.05,
+        0.1,
+        0.15,
+        0.2
+      ],
+      "category": "d",
+      "justification": "flat concession rates on the five-round search grid."
+    },
+    "CONCESSION_RAMPS": {
+      "value": [
+        [
+          0.03,
+          0.27
+        ],
+        [
+          0.27,
+          0.03
+        ],
+        [
+          0.06,
+          0.2
+        ],
+        [
+          0.2,
+          0.06
+        ]
+      ],
+      "category": "d",
+      "justification": "(start, end) linear concession ramps on that same grid."
+    },
+    "CONCESSION_FIXED_ROWS": {
+      "value": [
+        [
+          0.08,
+          0.1,
+          0.12,
+          0.14,
+          0.16
+        ],
+        [
+          0.16,
+          0.14,
+          0.12,
+          0.1,
+          0.08
+        ],
+        [
+          0.1,
+          0.08,
+          0.12,
+          0.1,
+          0.1
+        ],
+        [
+          0.12,
+          0.14,
+          0.1,
+          0.12,
+          0.1
+        ]
+      ],
+      "category": "d",
+      "justification": "shaped five-round curves so the grid contains front-loaded and back-loaded concessions. Not transcripts."
+    },
+    "LEAD_DAY_SHADOW": {
+      "value": 0.15,
+      "category": "d",
+      "justification": "buyer planning defaults for logrolling when a session does not override them. Shadow prices and rates are not supplier quotes."
+    },
+    "BASELINE_DEPOSIT_PCT": {
+      "value": 0.3,
+      "category": "d",
+      "justification": "BASELINE_DEPOSIT_PCT"
+    },
+    "MAX_DEPOSIT_PCT": {
+      "value": 0.5,
+      "category": "d",
+      "justification": "MAX_DEPOSIT_PCT"
+    },
+    "BUYER_CAPITAL_RATE": {
+      "value": 0.08,
+      "category": "d",
+      "justification": "BUYER_CAPITAL_RATE"
+    },
+    "SUPPLIER_RELIEF_RATE": {
+      "value": 0.22,
+      "category": "d",
+      "justification": "SUPPLIER_RELIEF_RATE"
+    },
+    "EXCESS_HOLDING_RATE": {
+      "value": 0.05,
+      "category": "d",
+      "justification": "EXCESS_HOLDING_RATE"
+    },
+    "PLANNING_MOLD_FEE": {
+      "value": 3000.0,
+      "category": "d",
+      "justification": "planning figure used only inside the buyer's own surplus math when nobody has quoted a mold fee. It must not be described as the supplier's price. Uncalibrated."
+    },
+    "VOLUME_DISCOUNT_RATIO": {
+      "value": 0.08,
+      "category": "d",
+      "justification": "VOLUME_DISCOUNT_RATIO"
+    },
+    "SUPPLIER_COST_RATIO": {
+      "value": 0.82,
+      "category": "d",
+      "justification": "SUPPLIER_COST_RATIO"
+    },
+    "RUSH_COST_COEFFICIENT": {
+      "value": 0.08,
+      "category": "d",
+      "justification": "RUSH_COST_COEFFICIENT"
+    },
+    "RUSH_COST_EXPONENT": {
+      "value": 1.25,
+      "category": "d",
+      "justification": "RUSH_COST_EXPONENT"
+    },
+    "MOLD_SURPLUS_SHARE": {
+      "value": 0.5,
+      "category": "d",
+      "justification": "share of an unquoted planning mold fee counted as buyer surplus. Not a received waiver."
+    },
+    "MOQ_STRETCH": {
+      "value": 1.5,
+      "category": "d",
+      "justification": "volume-trade stretch offered against the supplier's stated MOQ."
+    },
+    "INVENTORY_HOLDING_DAYS": {
+      "value": 90.0,
+      "category": "d",
+      "justification": "assumed days of inventory when turning an annual holding rate into a unit cost. Not this buyer's measured turnover."
+    },
+    "DAILY_LEAD_PENALTY": {
+      "value": 0.003,
+      "category": "d",
+      "justification": "DAILY_LEAD_PENALTY"
+    },
+    "TCO_MARKDOWN_RATE": {
+      "value": 0.08,
+      "category": "d",
+      "justification": "TCO_MARKDOWN_RATE"
+    },
+    "TCO_MARKDOWN_EXP": {
+      "value": 1.2,
+      "category": "d",
+      "justification": "TCO_MARKDOWN_EXP"
+    },
+    "TCO_UNFAVORABLE_PREMIUM": {
+      "value": 1.05,
+      "category": "d",
+      "justification": "TCO_UNFAVORABLE_PREMIUM"
+    },
+    "TCO_CRISIS_RATE": {
+      "value": 0.015,
+      "category": "d",
+      "justification": "TCO_CRISIS_RATE"
+    },
+    "TCO_CRISIS_EXPONENT": {
+      "value": 1.75,
+      "category": "d",
+      "justification": "TCO_CRISIS_EXPONENT"
+    },
+    "TCO_CRISIS_DELAY_START": {
+      "value": 5.0,
+      "category": "d",
+      "justification": "delay, in days, after which the crisis term starts, and the scale of that term. Chosen shape, not a contract clause."
+    },
+    "TCO_CRISIS_DELAY_SCALE": {
+      "value": 10.0,
+      "category": "d",
+      "justification": "TCO_CRISIS_DELAY_SCALE"
+    },
+    "SILENCE_CONCESSION_RATIO": {
+      "value": 0.97,
+      "category": "d",
+      "justification": "a new offer at or under 97% of the previous one ends a silence hold. A 3% move was chosen as \"a real concession\". Not fitted."
+    },
+    "SUPERVISOR_MIN_PRICE_RATIO": {
+      "value": 0.5,
+      "category": "n",
+      "justification": "a supervisor numeric override below half the target is refused."
+    },
+    "DEPOSIT_HARD_CAP": {
+      "value": 0.6,
+      "category": "n",
+      "justification": "hard safety cap on a deposit fraction, stricter than the business default on the mandate. An input bound, not a quote."
+    },
+    "API_NORM_CAP": {
+      "value": 100.0,
+      "category": "n",
+      "justification": "upper bounds on API numeric fields so one request cannot ask the solver to treat an unbounded price as real."
+    },
+    "API_EXTRACTED_PRICE_CAP": {
+      "value": 1000.0,
+      "category": "n",
+      "justification": "Numerical guard."
+    },
+    "API_PRICE_CAP": {
+      "value": 1000000.0,
+      "category": "n",
+      "justification": "Numerical guard."
+    },
+    "API_MARKUP_CAP": {
+      "value": 10.0,
+      "category": "n",
+      "justification": "Numerical guard."
+    },
+    "STAGNATION_PREMIUM": {
+      "value": 1.05,
+      "category": "d",
+      "justification": "ratios used when comparing an offer to the target. 1.05 is \"a little above target\", 1.02 is \"close enough to call a deal\"."
+    },
+    "NEAR_DEAL_RATIO": {
+      "value": 1.02,
+      "category": "d",
+      "justification": "NEAR_DEAL_RATIO"
+    },
+    "PRICE_MATCH_RATIO": {
+      "value": 0.02,
+      "category": "d",
+      "justification": "PRICE_MATCH_RATIO"
+    },
+    "MIN_MENTIONED_PRICE": {
+      "value": 0.1,
+      "category": "n",
+      "justification": "clamps for a price or fee mentioned in text, so a parsed token cannot become an unbounded float. Not a market range."
+    },
+    "MAX_MENTIONED_PRICE": {
+      "value": 50000.0,
+      "category": "n",
+      "justification": "Numerical guard."
+    },
+    "MAX_MENTIONED_MOLD_FEE": {
+      "value": 100000000.0,
+      "category": "n",
+      "justification": "Numerical guard."
+    },
+    "REGEX_CONF_OFFLINE": {
+      "value": 0.95,
+      "category": "d",
+      "justification": "pattern-ladder scores. A regex hit is not a calibrated probability. The number only ranks which rule fired."
+    },
+    "REGEX_CONF_SPEC": {
+      "value": 0.9,
+      "category": "d",
+      "justification": "REGEX_CONF_SPEC"
+    },
+    "REGEX_CONF_IDENTITY": {
+      "value": 0.92,
+      "category": "d",
+      "justification": "REGEX_CONF_IDENTITY"
+    },
+    "REGEX_CONF_DEAL": {
+      "value": 0.9,
+      "category": "d",
+      "justification": "REGEX_CONF_DEAL"
+    },
+    "REGEX_CONF_POVERTY": {
+      "value": 0.85,
+      "category": "d",
+      "justification": "REGEX_CONF_POVERTY"
+    },
+    "REGEX_CONF_VOLUME": {
+      "value": 0.85,
+      "category": "d",
+      "justification": "REGEX_CONF_VOLUME"
+    },
+    "REGEX_CONF_TAX": {
+      "value": 0.85,
+      "category": "d",
+      "justification": "REGEX_CONF_TAX"
+    },
+    "REGEX_CONF_UNRECOGNIZED": {
+      "value": 0.3,
+      "category": "d",
+      "justification": "REGEX_CONF_UNRECOGNIZED"
+    },
+    "ONNX_ACCEPT_CONFIDENCE": {
+      "value": 0.7,
+      "category": "d",
+      "justification": "ONNX_ACCEPT_CONFIDENCE"
+    },
+    "LLM_DEFAULT_CONFIDENCE": {
+      "value": 0.85,
+      "category": "d",
+      "justification": "LLM_DEFAULT_CONFIDENCE"
+    },
+    "FIELD_DEFAULT_CONFIDENCE": {
+      "value": 0.8,
+      "category": "d",
+      "justification": "FIELD_DEFAULT_CONFIDENCE"
+    },
+    "POSTERIOR_STD_PLACEHOLDER": {
+      "value": 0.1,
+      "category": "d",
+      "justification": "POSTERIOR_STD_PLACEHOLDER"
+    },
+    "PRICE_MENTION_TOLERANCE": {
+      "value": 0.05,
+      "category": "n",
+      "justification": "relative tolerance when two parsed prices are treated as the same mention."
+    },
+    "MENTION_CONFUSION_TOLERANCE": {
+      "value": 0.01,
+      "category": "n",
+      "justification": "a parsed number within one percent of a deposit is treated as that deposit, not as a lead time in days."
+    },
+    "GUARDRAIL_CEILING_MULTIPLE": {
+      "value": 1.5,
+      "category": "d",
+      "justification": "guardrail ceiling used when a tactical object is built without a session ceiling. 1.5 times the authorised price. A safety multiple, not a quote."
+    },
+    "LADDER_EDGE_LO": {
+      "value": 0.06,
+      "category": "d",
+      "justification": "ladder label spacing, as a fraction of the target-to-ceiling span, so tick labels do not collide with the two end labels."
+    },
+    "LADDER_EDGE_HI": {
+      "value": 0.94,
+      "category": "d",
+      "justification": "LADDER_EDGE_HI"
+    },
+    "LADDER_STEP_FINE": {
+      "value": 0.1,
+      "category": "d",
+      "justification": "LADDER_STEP_FINE"
+    },
+    "LADDER_STEP_MID": {
+      "value": 0.5,
+      "category": "d",
+      "justification": "LADDER_STEP_MID"
+    },
+    "ROBUSTNESS_CONCESSIONS": {
+      "value": [
+        0.03,
+        0.05,
+        0.1,
+        0.15
+      ],
+      "category": "d",
+      "justification": "concession rates the robustness report sweeps. A sensitivity grid, not a claim about a supplier."
+    },
+    "ROBUSTNESS_FACTORS": {
+      "value": [
+        0.5,
+        1.0,
+        1.5
+      ],
+      "category": "d",
+      "justification": "ROBUSTNESS_FACTORS"
+    },
+    "ROBUSTNESS_STABLE_BREAK": {
+      "value": 0.15,
+      "category": "d",
+      "justification": "ROBUSTNESS_STABLE_BREAK"
+    },
+    "ROBUSTNESS_STABLE_GAP": {
+      "value": 0.05,
+      "category": "d",
+      "justification": "ROBUSTNESS_STABLE_GAP"
+    },
+    "ROBUSTNESS_BREAK_MULTIPLE": {
+      "value": 2.0,
+      "category": "d",
+      "justification": "ROBUSTNESS_BREAK_MULTIPLE"
+    },
+    "FIXED_BASELINE_CONCESSION": {
+      "value": 0.05,
+      "category": "d",
+      "justification": "baseline fixed concession used by the robustness comparison."
+    },
+    "PLAUSIBLE_OFFER_MIN": {
+      "value": 5.0,
+      "category": "d",
+      "justification": "offers outside this yuan band in the real-model benchmark are recorded as parse failures. They are not imputed. The band is a unit check, not a market range."
+    },
+    "PLAUSIBLE_OFFER_MAX": {
+      "value": 30.0,
+      "category": "d",
+      "justification": "PLAUSIBLE_OFFER_MAX"
+    },
+    "BENCHMARK_FINAL_STEP": {
+      "value": 0.01,
+      "category": "d",
+      "justification": "when the offline real-model benchmark is within this normalised step of the supplier, it records the supplier's price. A scoring rule for that script, not a live-desk quote."
+    },
+    "WILSON_Z": {
+      "value": 1.96,
+      "category": "c",
+      "justification": "Wilson score normal quantile for a 95% interval."
+    },
+    "WILSON_ALPHA": {
+      "value": 0.05,
+      "category": "c",
+      "justification": "One-sided 5% tail used by the Wilson interval and the Clopper-Pearson bound."
+    },
+    "ONNX_LOGREG_C": {
+      "value": 3.0,
+      "category": "n",
+      "justification": "logistic-regression settings for the on-device intent export. Training hyperparameters, not a measured accuracy."
+    },
+    "ONNX_TEMPERATURE": {
+      "value": 1.2,
+      "category": "n",
+      "justification": "Numerical guard."
+    },
+    "HAZARD_INTERCEPT": {
+      "value": -2.9,
+      "category": "d",
+      "justification": "Labelled walk-away baseline. No recorded outcomes were fitted. The desk exposes it."
+    },
+    "HAZARD_QUOTE_GAP": {
+      "value": 3.4,
+      "category": "d",
+      "justification": "Labelled coefficient on the gap between the quote and the offer. The desk exposes it."
+    },
+    "HAZARD_RESERVE_GAP": {
+      "value": 2.2,
+      "category": "d",
+      "justification": "logit slope on max(reserve - offer, 0) / reserve. Positive, so the same offer is riskier against a higher reserve. Assumption, not fitted."
+    },
+    "HAZARD_RECIPROCITY": {
+      "value": 0.8,
+      "category": "d",
+      "justification": "logit slope on a reciprocity violation. Assumption. With no concession history the term is zero."
+    },
+    "HAZARD_ROUND": {
+      "value": 0.0,
+      "category": "d",
+      "justification": "logit slope on the round index. Zero because the sign of time pressure is not assumed without observed walk-aways."
+    },
+    "HAZARD_N_ALT": {
+      "value": 0.0,
+      "category": "d",
+      "justification": "logit slope on the number of better rival quotes. Zero. Competition enters through the outside option. A direct hazard sign is not assumed."
+    },
+    "HAZARD_SUPPLIER_TAU": {
+      "value": 0.35,
+      "category": "d",
+      "justification": "Labelled supplier spread around the baseline. The desk exposes the resulting rate band."
+    },
+    "HAZARD_U_HALF": {
+      "value": 2.0,
+      "category": "n",
+      "justification": "half-width of the random-effect grid. A support for the logit shift, not a price."
+    },
+    "HAZARD_LOGIT_CLIP": {
+      "value": 20.0,
+      "category": "n",
+      "justification": "clip on the hazard logit so an extreme gap cannot overflow the sigmoid. Not a price."
+    },
+    "HAZARD_CREDIBLE_ALPHA": {
+      "value": 0.05,
+      "category": "n",
+      "justification": "tail mass outside the central credible interval. 0.05 leaves a 95% interval. The upper end is the conservative prior-driven reading."
+    },
+    "HAZARD_MIN_EVENTS": {
+      "value": 30,
+      "category": "n",
+      "justification": "below this many observed continue or walk-away events the hazard is labelled prior-driven. A disclosure rule, not a fitted size."
+    },
+    "HAZARD_U_POINTS": {
+      "value": 64,
+      "category": "n",
+      "justification": "number of points on the random-effect grid."
+    },
+    "OFFER_GRID_FLOOR": {
+      "value": 0.5,
+      "category": "n",
+      "justification": "lowest normalised offer on the coupled grid, where 1 is the target. A supplier quote below this floor can still be accepted. Not a market quote."
+    },
+    "MOQ_HEADROOM_MULTIPLE": {
+      "value": 2,
+      "category": "d",
+      "justification": "Labelled cap when a user mandate sets a MOQ and omits max_allowed_moq."
+    },
+    "ROUND_N_SAMPLES": {
+      "value": 2000,
+      "category": "n",
+      "justification": "sample budget for one /round or /negotiate solve. A numerical budget, not a price."
+    },
+    "DESK_N_SAMPLES": {
+      "value": 5000,
+      "category": "n",
+      "justification": "desk solve budget. Five thousand shared scenarios and a 20-point grid match the auction counters on the checked seeds, and the reported standard errors sit on the seed-to-seed spread. The auction default of 20_000 stays on the auction path. Not a market quote."
+    },
+    "DESK_N_GRID": {
+      "value": 20,
+      "category": "n",
+      "justification": "Numerical guard."
+    },
+    "CVAR_TAIL_FRACTION": {
+      "value": 0.05,
+      "category": "d",
+      "justification": "Reported joint tail only. It is not a term in the offer score."
+    },
+    "RISK_TOLERANCE_FLOOR": {
+      "value": 0.01,
+      "category": "d",
+      "justification": "smallest accepted user risk tolerance. Below this the hazard cap is not a meaningful policy. A bound, not a measured rate."
+    },
+    "RISK_TOLERANCE_MAX": {
+      "value": 0.5,
+      "category": "d",
+      "justification": "largest accepted user risk tolerance. A cap of one would disable the hazard limit on ordinary openings. A policy bound, not a measured rate."
+    },
+    "WEITZMAN_SEARCH_COST": {
+      "value": 0.02,
+      "category": "d",
+      "justification": "Labelled search cost. The desk can replace it."
+    },
+    "WEITZMAN_BISECTION_ITERS": {
+      "value": 64,
+      "category": "n",
+      "justification": "bisection steps for the Weitzman reservation. Sixty-four halvings put the root well inside a double's spacing on a bracket a few units wide. A numerical budget, not a price."
+    },
+    "WEITZMAN_BRACKET_SIGMAS": {
+      "value": 8,
+      "category": "n",
+      "justification": "how many belief standard deviations the Weitzman bracket extends on each side of the mean. The root sits below the mean when the search cost is smaller than the expected improvement at the mean. A bracket width, not a price."
+    },
+    "DEFAULT_SOLVER_SEED": {
+      "value": 20261013,
+      "category": "n",
+      "justification": "default NumPy seed when a coupled solve is not given one. Reproducibility only. Not a price."
+    },
+    "OFFER_TIE_BREAK": {
+      "value": 1e-06,
+      "category": "n",
+      "justification": "subtracted from the coupled score per unit of offer so equal surplus prefers the lower offer. A numerical epsilon, not a price."
+    },
+    "TACTIC_PRICE_TIE": {
+      "value": 0.0001,
+      "category": "n",
+      "justification": "quotes within this gap of the cheapest quote share the lean-in label. A display band, not a price."
+    },
+    "TACTIC_SIDELINE_RATIO": {
+      "value": 1.12,
+      "category": "d",
+      "justification": "a quote above this multiple of the cheapest quote is labelled sideline. Display band carried forward from the previous hand-set rule. Not a price and not a fitted threshold."
+    },
+    "SHARED_FACTOR_RHO": {
+      "value": 0.0,
+      "category": "d",
+      "justification": "Labelled correlation of reserve shocks. Zero is independence. The loading uses sqrt(rho)."
+    },
+    "COUPLED_SWEEPS": {
+      "value": 1,
+      "category": "n",
+      "justification": "passes of the coupled offer search. The outside option is the rival quote, which does not move inside the pass, so a second pass would repeat the same decision and inflate the cell count. One pass is the search budget."
+    },
+    "ONE_HALF": {
+      "value": 0.5,
+      "category": "c",
+      "justification": "The one-half in the Student-t incomplete-beta shape and in the Gaussian KL. An identity."
+    },
+    "STUDENT_T_BRACKET": {
+      "value": 1000.0,
+      "category": "n",
+      "justification": "Bisection bracket for a standard Student-t quantile. A numerical guard."
+    }
+  },
+  "inline": [
+    {
+      "file": "src/engine/bayesian_v2.py",
+      "value": 0.5,
+      "justification": "Student-t CDF identity: half the regularised beta tail."
+    },
+    {
+      "file": "src/engine/bayesian_v2.py",
+      "value": 20,
+      "justification": "IRLS passes for the robust location. Numerical guard."
+    },
+    {
+      "file": "src/engine/bayesian_v2.py",
+      "value": 80,
+      "justification": "Student-t quantile bisection steps. Numerical guard."
+    },
+    {
+      "file": "src/engine/bayesian_v2.py",
+      "value": 200,
+      "justification": "Lentz continued-fraction iterations. Numerical guard."
+    },
+    {
+      "file": "src/engine/bayesian_v2.py",
+      "value": 1000.0,
+      "justification": "Student-t quantile search bracket. Numerical guard."
+    },
+    {
+      "file": "src/engine/solver.py",
+      "value": 512,
+      "justification": "Opponent-sample chunk. Numerical guard."
+    },
+    {
+      "file": "src/engine/solver.py",
+      "value": 20000,
+      "justification": "Legacy CLI sample default. The live desk does not use this default."
+    },
+    {
+      "file": "src/engine/solver.py",
+      "value": 20261013,
+      "justification": "Legacy solver seed, same value as DEFAULT_SOLVER_SEED."
+    },
+    {
+      "file": "src/engine/multi_solver.py",
+      "value": 6,
+      "justification": "Legacy opening-count default. Numerical grid size."
+    },
+    {
+      "file": "src/engine/multi_solver.py",
+      "value": 12,
+      "justification": "Legacy schedule-count default. Numerical grid size."
+    },
+    {
+      "file": "src/engine/multi_solver.py",
+      "value": 20,
+      "justification": "Legacy grid default. Numerical grid size."
+    },
+    {
+      "file": "src/engine/multi_solver.py",
+      "value": 40,
+      "justification": "Legacy opening-count default. Numerical grid size."
+    },
+    {
+      "file": "src/engine/multi_solver.py",
+      "value": 42,
+      "justification": "Auction demo seed. Numerical guard."
+    },
+    {
+      "file": "src/engine/multi_solver.py",
+      "value": 20000,
+      "justification": "Auction sample default. Numerical budget."
+    },
+    {
+      "file": "src/engine/multi_solver.py",
+      "value": 50000,
+      "justification": "Legacy wrapper sample default. Numerical budget."
+    },
+    {
+      "file": "src/desk/recompute.py",
+      "value": 20,
+      "justification": "Drafts shown on a card. Display cap."
+    },
+    {
+      "file": "src/desk/recompute.py",
+      "value": 40,
+      "justification": "Desk grid upper bound. Numerical budget."
+    },
+    {
+      "file": "src/desk/recompute.py",
+      "value": 100,
+      "justification": "Events returned on the snapshot. Display cap."
+    },
+    {
+      "file": "src/desk/recompute.py",
+      "value": 1000,
+      "justification": "Elapsed milliseconds. Unit conversion."
+    },
+    {
+      "file": "src/desk/recompute.py",
+      "value": 20000,
+      "justification": "Desk sample upper bound. Numerical budget."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 6,
+      "justification": "Characters after a range when screening dates. Parser guard."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 7,
+      "justification": "Digit length at which a range is treated as a phone. Parser guard."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 8,
+      "justification": "Characters before a range when screening phones. Parser guard."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 12,
+      "justification": "Characters after a range when screening phones. Parser guard."
+    }
+  ]
+}

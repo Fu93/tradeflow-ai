@@ -74,6 +74,28 @@
       padding: 8px 16px;
       text-align: center;
     }
+    .mandate {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: center;
+      padding: 8px 16px;
+      background: #fff6ea;
+      border-bottom: 1px solid var(--rule);
+      font-size: 12px;
+      color: var(--ink-soft);
+    }
+    .mandate-label { font-weight: 600; color: #7c2d12; }
+    .mandate label { display: inline-flex; align-items: center; gap: 6px; }
+    .mandate input {
+      width: 8em;
+      font: inherit;
+      color: var(--ink);
+      background: var(--sheet);
+      border: 1px solid #b7a894;
+      border-radius: 8px;
+      padding: 4px 6px;
+    }
     .chat-header {
       padding: 16px 18px 12px;
       border-bottom: 1px solid var(--rule);
@@ -210,6 +232,12 @@
     <div class="sim-banner">
       SIMULATED DATA — not a real supplier, not a real quote. Mock sandbox for extension testing only.
     </div>
+    <form id="tf-mandate" class="mandate" data-tf-label="simulated sandbox mandate" autocomplete="off">
+      <span class="mandate-label">Simulated mandate — this page only</span>
+      <label>Product <input data-tf-field="product" value="umbrella"></label>
+      <label>Target CNY <input data-tf-field="target" type="number" min="0" step="0.01" value="12"></label>
+      <label>Ceiling CNY <input data-tf-field="ceiling" type="number" min="0" step="0.01" value="16.2"></label>
+    </form>
     <div class="chat-header">
       <div>
         <div class="supplier-name">浙江頂尖雨具製造實業有限公司 — hypothetical test counterparty</div>

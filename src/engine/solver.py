@@ -22,7 +22,6 @@ from src.config.heuristics import (
     CONCESSION_RATE_CAP,
     DEAL_DECAY_SCALE,
     DEAL_TOLERANCE,
-    HAZARD_BLUFF,
     HAZARD_INTERCEPT,
     HAZARD_LOGIT_CLIP,
     HAZARD_QUOTE_GAP,
@@ -30,7 +29,6 @@ from src.config.heuristics import (
     OPPONENT_GAP_SHARE,
 )
 from .hazard import sigmoid
-from src.sim.scenarios import UMBRELLA
 from . import model
 from .backend import resolve_use_gpu
 
@@ -158,7 +156,6 @@ def _expectimax_chunk(xp, reserve, urgency, bluff, conc, opens, scheds, value_ce
     denom = xp.maximum(res, xp.asarray(np.finfo(np.float64).tiny))
     g_reserve = first_gap / denom
     logit = HAZARD_INTERCEPT + (HAZARD_RESERVE_GAP + HAZARD_QUOTE_GAP) * g_reserve
-    logit = logit + HAZARD_BLUFF * blf * g_reserve
     logit = xp.clip(logit, -HAZARD_LOGIT_CLIP, HAZARD_LOGIT_CLIP)
     p_break = sigmoid(xp, logit)
     p_break = xp.broadcast_to(p_break, (n, n_open, n_sched))
@@ -199,8 +196,17 @@ def solve(
     xp = _xp(use_gpu)
     if rng is None:
         rng = np.random.default_rng(20261013)
+    if value_ceiling is None:
+        raise ValueError(
+            "solve requires value_ceiling. The legacy grid does not invent a walk-away multiple."
+        )
+    if model.OPP_TYPES is None:
+        raise ValueError(
+            "The legacy sampler needs opponent rows from the labelled demo path. "
+            "Bind them before calling solve."
+        )
     if opens is None or scheds is None:
-        opens, scheds = model.strategy_grid()
+        opens, scheds = model.strategy_grid(ceiling=float(value_ceiling))
 
     reserve, urgency, bluff, conc = model.sample_opponents(
         rng, n_opp_samples, prior_mix,
@@ -208,8 +214,6 @@ def solve(
     )
     n_open = len(opens)
     n_sched = len(scheds)
-    if value_ceiling is None:
-        value_ceiling = float(model.YOUR_CEILING)
     sum_pay = np.zeros((n_open, n_sched), dtype=np.float64)
     sum_brk = np.zeros((n_open, n_sched), dtype=np.float64)
     for start in range(0, int(n_opp_samples), EXPECTIMAX_SAMPLE_CHUNK):
@@ -251,6 +255,7 @@ def solve(
         # 僅新增鍵（介面凍結允許）；標量化 argmax 與真前沿的量化差距。
         "pareto_frontier": frontier,
         "pareto_frontier_size": len(frontier),
+        "value_ceiling": float(value_ceiling),
     }
 
 
@@ -315,11 +320,10 @@ def recommend(solve_result, target_price=None, opens=None, scheds=None):
     現在 recommend() 接受並沿用 solve() 使用的同一份 opens/scheds。
     """
     if target_price is None:
-        # Omitted price means the simulated umbrella mandate, not a market quote.
-        target_price = UMBRELLA.target
+        raise ValueError("recommend requires target_price. It does not fill in a demo mandate.")
     i_open, i_sched = solve_result["best"]
     if opens is None or scheds is None:
-        opens, scheds = model.strategy_grid()
+        opens, scheds = model.strategy_grid(ceiling=float(solve_result["value_ceiling"]))
     return {
         "opening_offer_norm": float(opens[i_open]),
         "opening_offer_price": float(opens[i_open] * target_price),

@@ -122,6 +122,31 @@ class DeskStore:
         self._ensure_column("drafts", "reply_to", "TEXT")
         self._ensure_column("drafts", "references_header", "TEXT")
         self._ensure_column("drafts", "message_id", "TEXT")
+        for column, ddl in (
+            ("hazard_intercept", "REAL"),
+            ("hazard_tau", "REAL"),
+            ("hazard_quote_gap", "REAL"),
+            ("reserve_prior_mean", "REAL"),
+            ("reserve_prior_std", "REAL"),
+            ("expected_markup", "REAL"),
+            ("search_cost", "REAL"),
+            ("include_unverified", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            self._ensure_column("deals", column, ddl)
+        self.conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS hazard_outcomes (
+                id TEXT PRIMARY KEY,
+                deal_id TEXT NOT NULL,
+                supplier_id TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                quote REAL,
+                offer REAL,
+                agreed_price REAL,
+                created_at TEXT NOT NULL
+            );
+            """
+        )
         self.conn.commit()
 
     def _ensure_column(self, table: str, column: str, ddl: str) -> None:
@@ -537,6 +562,115 @@ class DeskStore:
                 (mailbox_key,),
             ).fetchall()
             return {str(row["external_id"]) for row in rows}
+
+    def set_policy(self, deal_id: str, fields: dict[str, Any]) -> None:
+        allowed = {
+            "hazard_intercept",
+            "hazard_tau",
+            "hazard_quote_gap",
+            "reserve_prior_mean",
+            "reserve_prior_std",
+            "expected_markup",
+            "search_cost",
+            "include_unverified",
+        }
+        updates = {key: fields[key] for key in allowed if key in fields}
+        if not updates:
+            return
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        with self._lock:
+            self.conn.execute(
+                f"UPDATE deals SET {assignments}, updated_at = ? WHERE id = ?",
+                (*updates.values(), _now(), deal_id),
+            )
+            self.conn.commit()
+
+    def insert_outcome(
+        self,
+        *,
+        deal_id: str,
+        supplier_id: str,
+        outcome: str,
+        quote: float | None,
+        offer: float | None,
+        agreed_price: float | None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            outcome_id = uuid.uuid4().hex
+            created = _now()
+            self.conn.execute(
+                """
+                INSERT INTO hazard_outcomes (
+                    id, deal_id, supplier_id, outcome, quote, offer, agreed_price, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    outcome_id,
+                    deal_id,
+                    supplier_id,
+                    outcome,
+                    None if quote is None else float(quote),
+                    None if offer is None else float(offer),
+                    None if agreed_price is None else float(agreed_price),
+                    created,
+                ),
+            )
+            self.conn.commit()
+            return {
+                "id": outcome_id,
+                "deal_id": deal_id,
+                "supplier_id": supplier_id,
+                "outcome": outcome,
+                "quote": quote,
+                "offer": offer,
+                "agreed_price": agreed_price,
+                "created_at": created,
+            }
+
+    def outcomes(self, deal_id: str, supplier_id: str | None = None) -> list[dict[str, Any]]:
+        with self._lock:
+            if supplier_id is None:
+                rows = self.conn.execute(
+                    """
+                    SELECT * FROM hazard_outcomes
+                    WHERE deal_id = ?
+                    ORDER BY created_at, id
+                    """,
+                    (deal_id,),
+                ).fetchall()
+            else:
+                rows = self.conn.execute(
+                    """
+                    SELECT * FROM hazard_outcomes
+                    WHERE deal_id = ? AND supplier_id = ?
+                    ORDER BY created_at, id
+                    """,
+                    (deal_id, supplier_id),
+                ).fetchall()
+            return [dict(row) for row in rows]
+
+    def agreed_multiples(self) -> list[float]:
+        """Closed prices divided by that deal's target. Markup is not split out."""
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT outcomes.agreed_price AS agreed_price, deals.target_price AS target_price
+                FROM hazard_outcomes AS outcomes
+                JOIN deals ON deals.id = outcomes.deal_id
+                WHERE outcomes.outcome = 'agreed'
+                  AND outcomes.agreed_price IS NOT NULL
+                  AND deals.target_price > 0
+                """
+            ).fetchall()
+            return [float(row["agreed_price"]) / float(row["target_price"]) for row in rows]
+
+    def set_hazard_counts(self, supplier_id: str, events: int, walks: int) -> None:
+        with self._lock:
+            self.conn.execute(
+                "UPDATE suppliers SET hazard_events = ?, hazard_walks = ? WHERE id = ?",
+                (int(events), int(walks), supplier_id),
+            )
+            self.conn.commit()
 
     def remember_mailbox(self, mailbox_key: str, external_id: str) -> None:
         with self._lock:

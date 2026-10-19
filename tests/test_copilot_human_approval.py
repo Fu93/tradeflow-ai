@@ -114,7 +114,10 @@ class TestCopilotHumanApproval(unittest.TestCase):
         app_data = app_res.json()
 
         self.assertEqual(app_data["status"], "approved")
-        self.assertEqual(app_data["autopilot_state"], "COPILOT_MONITORING")
+        if app_data["applied_price"] + 1e-9 >= 14.20:
+            self.assertEqual(app_data["autopilot_state"], "DEAL_CLOSED")
+        else:
+            self.assertEqual(app_data["autopilot_state"], "COPILOT_MONITORING")
         self.assertIsNotNone(app_data["applied_price"])
         self.assertIn("¥", app_data["reply_text"])
 

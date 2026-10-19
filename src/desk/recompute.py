@@ -8,16 +8,24 @@ from typing import Any
 
 import numpy as np
 
-from src.config.heuristics import DESK_N_GRID, DESK_N_SAMPLES, PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD
+from src.config.heuristics import (
+    DESK_N_GRID,
+    DESK_N_SAMPLES,
+    HAZARD_INTERCEPT,
+    HAZARD_MIN_EVENTS,
+    HAZARD_QUOTE_GAP,
+    HAZARD_SUPPLIER_TAU,
+    WEITZMAN_SEARCH_COST,
+)
 from src.desk.store import DeskStore
-from src.engine.bayesian_v2 import robust_bayes_update
+from src.engine.bayesian_v2 import empirical_bayes_prior, robust_bayes_update, robust_location
 from src.engine.coupled import solve_coupled
-from src.engine.hazard import HazardBelief
+from src.engine.hazard import HazardBelief, baseline_rates
 from src.engine.landed import landed_unit_cost, ranking_basis
 
 HAZARD_NOTE = (
-    "Walk-away hazard stays prior-driven until a person records a continue "
-    "or a walk-away. Quote text is not turned into one of those events."
+    "Walk-away hazard uses the labelled baseline until recorded continue and "
+    "walk-away outcomes reach the event floor. Quote text is not an outcome."
 )
 KAPPA_NOTE = (
     "Missing freight, duty, or fees are not treated as zero. "
@@ -106,6 +114,32 @@ def _draft_body(product: str, counter: float, quantity: int, language: str) -> s
     )
 
 
+def _optional(deal: dict[str, Any], key: str) -> float | None:
+    value = deal.get(key)
+    if value is None:
+        return None
+    return float(value)
+
+
+def _unverified(event: dict[str, Any]) -> bool:
+    provenance = event.get("provenance") or {}
+    return bool(provenance.get("simulated")) or provenance.get("origin") in {"simulated", "fixture"}
+
+
+def _origin(event: dict[str, Any] | None) -> str:
+    if event is None:
+        return "live"
+    provenance = event.get("provenance") or {}
+    origin = provenance.get("origin")
+    if origin in {"fixture", "simulated", "live"}:
+        return str(origin)
+    if provenance.get("simulated"):
+        return "simulated"
+    if provenance.get("fixture"):
+        return "fixture"
+    return "live"
+
+
 def _hold_previous(row: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any]:
     if not previous:
         return row
@@ -134,27 +168,78 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     previous_rows = {row["id"]: row for row in previous.get("suppliers") or []}
     suppliers = store.suppliers(deal_id)
     events = store.events(deal_id)
-    accepted = [event for event in events if event["status"] == "accepted" and event.get("supplier_id")]
     by_supplier: dict[str, list[dict[str, Any]]] = {row["id"]: [] for row in suppliers}
-    for event in accepted:
-        by_supplier.setdefault(event["supplier_id"], []).append(event)
+    for event in events:
+        if event.get("supplier_id"):
+            by_supplier.setdefault(event["supplier_id"], []).append(event)
 
     target = float(deal["target_price"])
     ceiling = float(deal["ceiling_price"])
-    beliefs_state: dict[str, tuple[float, float, int]] = {}
-    for row in suppliers:
-        mean = float(PRIOR_RESERVE_MEAN)
-        std = float(PRIOR_RESERVE_STD)
-        history = by_supplier.get(row["id"]) or []
-        for event in history:
-            observed = float(event["parsed"]["unit_price"]) / target
-            updated = robust_bayes_update(mean, std, observed)
-            mean = float(updated.posterior_mean)
-            std = _std_or_tiny(float(updated.posterior_std))
-        beliefs_state[row["id"]] = (mean, std, len(history))
-        store.set_belief(row["id"], mean, std)
+    include_unverified = bool(deal.get("include_unverified"))
+    markup = _optional(deal, "expected_markup")
+    markup_value = 0.0 if markup is None else markup
+    user_prior = _optional(deal, "reserve_prior_mean")
+    user_std = _optional(deal, "reserve_prior_std")
+    closed = store.agreed_multiples()
+    if user_prior is not None:
+        prior_mean = user_prior
+        prior_std = user_std if user_std is not None else _std_or_tiny(0.0)
+        prior_source = "user"
+    elif closed:
+        prior_mean, prior_std = empirical_bayes_prior(closed)
+        prior_source = "empirical_bayes"
+    else:
+        prior_mean = None
+        prior_std = None
+        prior_source = "quote_location"
 
-    active = [row for row in suppliers if by_supplier.get(row["id"])]
+    def decision_events(supplier_id: str) -> list[dict[str, Any]]:
+        rows = [
+            event for event in (by_supplier.get(supplier_id) or [])
+            if event.get("status") == "accepted"
+        ]
+        if include_unverified:
+            return rows
+        return [event for event in rows if not _unverified(event)]
+
+    beliefs_state: dict[str, tuple[float | None, float | None, int, str]] = {}
+    for row in suppliers:
+        history = decision_events(row["id"])
+        observations = [
+            float(event["parsed"]["unit_price"]) / target - markup_value
+            for event in history
+            if event.get("parsed", {}).get("unit_price") is not None
+        ]
+        if prior_mean is not None and prior_std is not None and observations:
+            mean = float(prior_mean)
+            std = _std_or_tiny(float(prior_std))
+            for observed in observations:
+                updated = robust_bayes_update(
+                    mean,
+                    std,
+                    observed + markup_value,
+                    estimated_markup=markup_value,
+                    markup_identified=markup is not None,
+                )
+                mean = float(updated.posterior_mean)
+                std = _std_or_tiny(float(updated.posterior_std))
+            label = prior_source
+        elif prior_mean is not None and prior_std is not None:
+            mean, std, label = float(prior_mean), _std_or_tiny(float(prior_std)), prior_source
+        elif observations:
+            mean, std = robust_location(observations)
+            std = _std_or_tiny(std)
+            label = "quote_location"
+        else:
+            mean, std, label = None, None, "no data"
+        beliefs_state[row["id"]] = (mean, std, len(observations), label)
+        if mean is not None and std is not None:
+            store.set_belief(row["id"], mean, std)
+
+    active = [
+        row for row in suppliers
+        if beliefs_state[row["id"]][0] is not None and decision_events(row["id"])
+    ]
     samples, grid = solver_budget()
     solved: dict[str, Any] | None = None
     index_of: dict[str, int] = {}
@@ -165,19 +250,34 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         stds = []
         kappas = []
         hazard_beliefs = []
+        intercept = _optional(deal, "hazard_intercept")
+        tau = _optional(deal, "hazard_tau")
+        quote_gap = _optional(deal, "hazard_quote_gap")
         for index, row in enumerate(active):
             index_of[row["id"]] = index
-            latest = by_supplier[row["id"]][-1]
+            latest = decision_events(row["id"])[-1]
             unit = float(latest["parsed"]["unit_price"])
             quotes.append(unit / target)
-            mean, std, _count = beliefs_state[row["id"]]
-            means.append(mean)
-            stds.append(std)
+            mean, std, _count, _label = beliefs_state[row["id"]]
+            means.append(float(mean))
+            stds.append(float(std))
             landed = _components(latest["parsed"])
             landed_rows.append(landed)
-            belief = HazardBelief()
-            belief.n_events = int(row.get("hazard_events") or 0)
-            belief.n_walks = int(row.get("hazard_walks") or 0)
+            belief = HazardBelief(
+                intercept=intercept,
+                tau=tau,
+                quote_gap_coef=quote_gap,
+            )
+            for outcome in store.outcomes(deal_id, row["id"]):
+                if outcome.get("quote") is None or outcome.get("offer") is None:
+                    continue
+                belief.update(
+                    walked=outcome["outcome"] == "walk_away",
+                    quote=float(outcome["quote"]) / target,
+                    offer=float(outcome["offer"]) / target,
+                    reserve=float(mean),
+                )
+            store.set_hazard_counts(row["id"], belief.n_events, belief.n_walks)
             hazard_beliefs.append(belief)
         basis = ranking_basis(landed_rows)
         if basis == "landed_cost":
@@ -200,6 +300,11 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             rng=np.random.default_rng(int(deal["seed"])),
             round_index=rounds,
             snap_to_grid=True,
+            search_cost=(
+                float(WEITZMAN_SEARCH_COST)
+                if _optional(deal, "search_cost") is None
+                else float(deal["search_cost"])
+            ),
         )
     else:
         basis = "unit_price"
@@ -207,7 +312,9 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     cards = []
     for row in suppliers:
         history = by_supplier.get(row["id"]) or []
-        mean, std, observations = beliefs_state[row["id"]]
+        usable = decision_events(row["id"])
+        mean, std, observations, label = beliefs_state[row["id"]]
+        latest_any = history[-1] if history else None
         card: dict[str, Any] = {
             "id": row["id"],
             "name": row["name"],
@@ -220,7 +327,12 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "belief_mean": mean,
             "belief_std": std,
             "belief_observations": observations,
-            "belief_label": "prior" if observations == 0 else "posterior",
+            "belief_label": label,
+            "markup_identified": markup is not None,
+            "origin": _origin(latest_any),
+            "simulated": _origin(latest_any) == "simulated",
+            "fixture": _origin(latest_any) == "fixture",
+            "excluded_from_decision": bool(history) and not usable and not include_unverified,
             "prior_driven": True,
             "counter": None,
             "blocked": False,
@@ -228,18 +340,22 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "hazard_upper": None,
             "hazard_figure": None,
             "rank": None,
-            "accepted_event_ids": [event["id"] for event in history],
+            "accepted_event_ids": [
+                event["id"] for event in history if event.get("status") == "accepted"
+            ],
             "counter_held": False,
         }
-        if history:
-            latest = history[-1]
-            parsed = latest["parsed"]
+        display = usable[-1] if usable else latest_any
+        if display is not None and display.get("parsed", {}).get("unit_price") is not None:
+            parsed = display["parsed"]
             card["latest_quote"] = parsed.get("unit_price")
             card["currency"] = parsed.get("currency") or "CNY"
             landed = _components(parsed)
             card["landed_cost"] = landed.get("landed_cost")
             card["landed_status"] = landed.get("status") or "no data"
-        if solved is not None and row["id"] in index_of:
+        if card["excluded_from_decision"]:
+            card["rank"] = None
+        elif solved is not None and row["id"] in index_of:
             index = index_of[row["id"]]
             blocked = bool(solved["blocked"][index])
             offer = float(solved["offers"][index]) * target
@@ -268,7 +384,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     ) if any(card["latest_quote"] is not None for card in cards) else "unit_price"
 
     def sort_key(card: dict[str, Any]) -> tuple:
-        if card["latest_quote"] is None:
+        if card["latest_quote"] is None or card.get("excluded_from_decision"):
             return (1, 0.0, card["name"], card["id"])
         if basis == "landed_cost" and card["landed_cost"] is not None:
             cost = float(card["landed_cost"])
@@ -279,7 +395,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     ordered = sorted(cards, key=sort_key)
     rank = 0
     for card in ordered:
-        if card["latest_quote"] is None:
+        if card["latest_quote"] is None or card.get("excluded_from_decision"):
             card["rank"] = None
             continue
         rank += 1
@@ -373,6 +489,15 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
                 "message_id": draft.get("message_id"),
             }
         )
+    intercept = float(HAZARD_INTERCEPT if _optional(deal, "hazard_intercept") is None else deal["hazard_intercept"])
+    tau = float(HAZARD_SUPPLIER_TAU if _optional(deal, "hazard_tau") is None else deal["hazard_tau"])
+    quote_gap = float(HAZARD_QUOTE_GAP if _optional(deal, "hazard_quote_gap") is None else deal["hazard_quote_gap"])
+    rates = baseline_rates(intercept, tau)
+    recorded = store.outcomes(deal_id)
+    assumption_source = "user" if any(
+        deal.get(key) is not None
+        for key in ("hazard_intercept", "hazard_tau", "hazard_quote_gap")
+    ) else "labelled policy"
     payload = {
         "deal": {
             "id": deal["id"],
@@ -382,6 +507,27 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "ceiling_price": deal["ceiling_price"],
             "risk_tolerance": deal["risk_tolerance"],
             "seed": deal["seed"],
+            "include_unverified": include_unverified,
+            "expected_markup": markup,
+            "reserve_prior_mean": user_prior,
+            "reserve_prior_std": user_std,
+            "search_cost": _optional(deal, "search_cost"),
+        },
+        "hazard_assumptions": {
+            "intercept": intercept,
+            "tau": tau,
+            "quote_gap": quote_gap,
+            "baseline_rate": rates["baseline"],
+            "baseline_low": rates["low"],
+            "baseline_high": rates["high"],
+            "source": assumption_source,
+            "min_events": int(HAZARD_MIN_EVENTS),
+            "recorded_outcomes": len(recorded),
+            "prior_driven": len(recorded) < int(HAZARD_MIN_EVENTS),
+            "note": (
+                "Baseline rate is the logistic of the intercept at a zero gap. "
+                "Low and high move that intercept by the supplier spread."
+            ),
         },
         "ranking_basis": basis,
         "kappa_note": LANDED_NOTE if basis == "landed_cost" else KAPPA_NOTE,

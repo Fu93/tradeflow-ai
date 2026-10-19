@@ -393,8 +393,11 @@ class TestInputBounds(_IsolatedCase):
         self.assertEqual(r.status_code, 422)
 
     def test_valid_bounded_request_still_works(self):
-        r = self.c.post("/api/v1/multi-auction/run", json={"n_samples": 200, "n_rounds": 1})
-        self.assertEqual(r.status_code, 200)
+        r = self.c.post("/api/v1/multi-auction/run", json={
+            "demo": True, "n_samples": 200, "n_rounds": 1,
+        })
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertTrue(r.json()["simulated"])
 
 
 # ---------------------------------------------------------------------------
@@ -429,6 +432,7 @@ class TestHumanInTheLoop(_IsolatedCase):
     def test_default_round_does_not_reach_deal_closed_without_approval(self):
         """The exact audit 5.1 reproduction, now with the default (no mode sent)."""
         sid = "sec-hitl-default"
+        self.c.post("/api/v1/sessions", json=_valid_spec(sid))
         r = self.c.post(
             f"/api/v1/sessions/{sid}/round",
             json={"opponent_raw_text": _AUTOPILOT_DEAL_TEXT, "opponent_offer_price": 12.00},
@@ -441,6 +445,7 @@ class TestHumanInTheLoop(_IsolatedCase):
 
     def test_autopilot_deal_candidate_still_requires_human_approval(self):
         sid = "sec-hitl-autopilot"
+        self.c.post("/api/v1/sessions", json=_valid_spec(sid))
         r = self.c.post(
             f"/api/v1/sessions/{sid}/round",
             json={
@@ -460,6 +465,7 @@ class TestHumanInTheLoop(_IsolatedCase):
 
     def test_deal_closed_requires_approve_endpoint(self):
         sid = "sec-hitl-approve"
+        self.c.post("/api/v1/sessions", json=_valid_spec(sid))
         self.c.post(
             f"/api/v1/sessions/{sid}/round",
             json={"opponent_raw_text": "¥14.00 最低", "opponent_offer_price": 14.0},
@@ -775,7 +781,9 @@ class TestNumericValidation(_IsolatedCase):
         self.assertEqual(r.status_code, 422)
 
     def test_valid_bayesian_update_still_works(self):
-        r = self.c.post("/api/v1/bayesian/update", json={"observed_offer": 1.25})
+        r = self.c.post("/api/v1/bayesian/update", json={
+            "prior_mean": 1.08, "prior_std": 0.10, "observed_offer": 1.25,
+        })
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["status"], "ok")
 
@@ -824,16 +832,18 @@ class TestNoInternalLeakInErrors(_IsolatedCase):
     """[9.F] detail=str(e) leaked absolute paths and credential values."""
 
     def test_engine_failure_detail_is_generic(self):
-        original = api_main.solve
+        original = api_main.one_step_counter
 
         def boom(*a, **kw):
             raise RuntimeError(r"internal failure at C:\secret\path with api_key=SHOULDNOTLEAK")
 
-        api_main.solve = boom
+        api_main.one_step_counter = boom
         try:
-            r = self.c.post("/negotiate", json={"target_price": 12.0, "n_samples": 100})
+            r = self.c.post("/negotiate", json={
+                "target_price": 12.0, "ceiling_price": 16.2, "observed_offer": 1.25, "n_samples": 100,
+            })
         finally:
-            api_main.solve = original
+            api_main.one_step_counter = original
         self.assertEqual(r.status_code, 500)
         body = r.text
         self.assertNotIn("SHOULDNOTLEAK", body)

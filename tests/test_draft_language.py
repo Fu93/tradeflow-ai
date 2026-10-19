@@ -49,7 +49,7 @@ class TestDraftLanguage(unittest.TestCase):
         api_main.session_mgr.create_session(spec)
         opened = self.client.post(
             f"/api/v1/sessions/{session_id}/round",
-            json={"opponent_raw_text": text, "mode": "copilot"},
+            json={"opponent_raw_text": text, "opponent_offer_price": 14.80, "mode": "copilot"},
             headers=self.headers,
         )
         self.assertEqual(opened.status_code, 200, opened.text[:400])

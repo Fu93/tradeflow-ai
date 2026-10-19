@@ -1,54 +1,44 @@
-"""Offline walkthrough spec.
+"""LABELLED DEMO PATH.
 
-The built-in numbers come from src.sim.scenarios (a simulated mandate) and
-src.config.heuristics. seed_data/price_anchor.json overrides the product,
-target, and MOQ when that file is present. Neither source is a live quote.
+These numbers are simulated mandates. Decision routes do not read them
+unless the caller sets an explicit demo flag. seed_data/price_anchor.json
+is not loaded: its target is not derived from the market block.
 """
 from __future__ import annotations
 
 from src.config.heuristics import PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD
-from src.sim.scenarios import SUPPLIER_REPLIES, UMBRELLA
+from src.sim.scenarios import SUPPLIER_REPLIES, UMBRELLA, public_payload as simulation_payload
+from src.sim.self_play import BUYER_OPENING_NORM, SELF_PLAY_NAMES, SELF_PLAY_SPECS
 
 FALLBACK_TARGET_PRICE = UMBRELLA.target
 FALLBACK_MOQ = UMBRELLA.moq
 FALLBACK_PRODUCT = UMBRELLA.name
+FALLBACK_CEILING = UMBRELLA.ceiling
 
 DEMO_SPEC = {
     "product": FALLBACK_PRODUCT,
     "target_price": FALLBACK_TARGET_PRICE,
+    "ceiling_price": FALLBACK_CEILING,
     "moq": FALLBACK_MOQ,
     "n_samples": 20_000,
     "lambda_break": 1.0,
     "prior_reserve_mean": PRIOR_RESERVE_MEAN,
     "prior_reserve_std": PRIOR_RESERVE_STD,
+    "label": "simulated",
 }
 
-# 動態從真實種子市場資料庫讀取基準設定
-import json
-import os
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_ANCHOR_PATH = os.path.join(_HERE, "..", "..", "seed_data", "price_anchor.json")
-if os.path.exists(_ANCHOR_PATH):
-    try:
-        with open(_ANCHOR_PATH, encoding="utf-8") as _f:
-            _anchor = json.load(_f)
-            if "target_price_cny" in _anchor:
-                DEMO_SPEC["target_price"] = float(_anchor["target_price_cny"])
-            if "moq" in _anchor:
-                DEMO_SPEC["moq"] = int(_anchor["moq"])
-            if "product" in _anchor:
-                DEMO_SPEC["product"] = str(_anchor["product"])
-    except Exception:
-        pass
-else:
-    # 沒有種子檔時明確說出來，不要讓內建備援值冒充行情。
-    import logging as _logging
-    _logging.getLogger("tradeflow.demo_data").warning(
-        "seed_data/price_anchor.json not found; DEMO_SPEC falls back to the built-in "
-        "assumptions (target=%.2f, moq=%d). These are NOT market data.",
-        FALLBACK_TARGET_PRICE, FALLBACK_MOQ,
-    )
+def self_play_bundle() -> dict:
+    """Scripted auction opponents. Simulated. Not a factory quote."""
+    return {
+        "names": [dict(item) for item in SELF_PLAY_NAMES],
+        "specs": [dict(item) for item in SELF_PLAY_SPECS],
+        "opening": float(BUYER_OPENING_NORM),
+        "target": float(UMBRELLA.target),
+        "ceiling": float(UMBRELLA.ceiling),
+        "moq": int(UMBRELLA.moq),
+        "label": "simulated",
+    }
 
 # Scripted normalised replies. Defined in src.sim.scenarios and re-exported
 # so the CLI walkthrough keeps its import path. Not a supplier transcript.

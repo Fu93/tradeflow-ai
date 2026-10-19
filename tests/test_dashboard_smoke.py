@@ -477,7 +477,7 @@ def test_draft_language_on_the_desk(live_server):
             page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded", timeout=60000)
             page.wait_for_selector("#decisionReply")
 
-            def open_round(session_id, text):
+            def open_round(session_id, text, quote=None):
                 created = _post_json(
                     page,
                     "/api/v1/sessions",
@@ -491,10 +491,14 @@ def test_draft_language_on_the_desk(live_server):
                     },
                 )
                 assert created["status"] == 200, created
+                body = {"opponent_raw_text": text, "mode": "copilot"}
+                # English USD text has no CNY unit. The caller supplies the quote.
+                if quote is not None:
+                    body["opponent_offer_price"] = quote
                 rounded = _post_json(
                     page,
                     f"/api/v1/sessions/{session_id}/round",
-                    {"opponent_raw_text": text, "mode": "copilot"},
+                    body,
                 )
                 assert rounded["status"] == 200, rounded
                 return rounded["body"]
@@ -516,7 +520,7 @@ def test_draft_language_on_the_desk(live_server):
                     timeout=15000,
                 )
 
-            english_round = open_round("DRAFT_EN_01", english)
+            english_round = open_round("DRAFT_EN_01", english, quote=14.80)
             price = english_round["recommended_offer_price"]
             label = f"CNY {price:.2f}"
             assert label in english_round["reply_text"]

@@ -335,8 +335,11 @@ class TestPriceIndependence(unittest.TestCase):
         self.assertTrue(body["circuit_tripped"])
         self.assertTrue(body["pending_human_approval"])
         self.assertIsNone(body["reply_text"])
-        price = body["action_object"]["authorized_price"]
-        self.assertLessEqual(price, 16.2)
+        action = body.get("action_object")
+        if action is None:
+            self.assertIsNone(body.get("recommended_offer_price"))
+        else:
+            self.assertLessEqual(action["authorized_price"], 16.2)
 
 
 class TestSimulationBenchmark(unittest.TestCase):
@@ -371,7 +374,13 @@ class TestSimulationBenchmark(unittest.TestCase):
 
 class TestDirectAuctionStillRuns(unittest.TestCase):
     def test_omitted_quotes_stay_simulated_and_quoted_rows_do_not(self):
-        simulated = simulate_reverse_auction(n_samples=200, n_rounds=1, target_price=12.0, walk_away_ceiling=16.2)
+        with self.assertRaises(ValueError):
+            simulate_reverse_auction(n_samples=200, n_rounds=1, target_price=12.0, walk_away_ceiling=16.2)
+        from src.app.demo_data import self_play_bundle
+        simulated = simulate_reverse_auction(
+            n_samples=200, n_rounds=1, target_price=12.0, walk_away_ceiling=16.2,
+            demo=True, self_play=self_play_bundle(),
+        )
         self.assertTrue(simulated["simulated"])
         quoted = simulate_reverse_auction(
             n_samples=200,

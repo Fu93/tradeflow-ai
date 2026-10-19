@@ -12,7 +12,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 from src.config.heuristics import (  # noqa: E402
     CVAR_TAIL_FRACTION,
-    CVAR_WEIGHT,
     PRIOR_RESERVE_MEAN,
     WEITZMAN_SEARCH_COST,
 )
@@ -72,10 +71,11 @@ class TestWeitzmanRoot(unittest.TestCase):
             n_grid=4,
             rng=np.random.default_rng(3),
         )
-        expected = weitzman_reservation(0.50 + 0.25, abs(0.10 * 0.50))
-        clamped = weitzman_reservation(0.50 + 0.25, 0.10 * max(0.50, 1.0))
-        self.assertAlmostEqual(result["weitzman_index"][0], expected, places=6)
-        self.assertGreater(abs(result["weitzman_index"][0] - clamped), 1e-3)
+        # sigma is the absolute posterior scale, not std × mean.
+        absolute = weitzman_reservation(0.50 + 0.25, abs(0.10))
+        relative = weitzman_reservation(0.50 + 0.25, abs(0.10 * 0.50))
+        self.assertAlmostEqual(result["weitzman_index"][0], absolute, places=6)
+        self.assertGreater(abs(result["weitzman_index"][0] - relative), 1e-3)
 
 
 class TestLandedBasis(unittest.TestCase):
@@ -337,7 +337,8 @@ class TestAuctionValidation(unittest.TestCase):
         self.assertLess(mean, cap)
         self.assertGreaterEqual(upper, cap)
         self.assertAlmostEqual(mean, 0.054897, places=4)
-        self.assertAlmostEqual(upper, 0.096797, places=4)
+        # Linear interpolation of the hazard grid, not the nearest grid point.
+        self.assertAlmostEqual(upper, 0.095788, places=4)
         self.assertEqual(len(info["hazard_figure"]), 4)
         self.assertTrue(all(figure == "upper" for figure in info["hazard_figure"]))
 
@@ -449,8 +450,8 @@ class TestCvarAndCells(unittest.TestCase):
         )
         self.assertAlmostEqual(tight["mc"]["tail_fraction"], CVAR_TAIL_FRACTION)
         self.assertAlmostEqual(loose["mc"]["tail_fraction"], CVAR_TAIL_FRACTION)
-        self.assertAlmostEqual(tight["cvar_weight"], CVAR_WEIGHT)
-        self.assertAlmostEqual(loose["cvar_weight"], CVAR_WEIGHT)
+        self.assertNotIn("cvar_weight", tight)
+        self.assertNotIn("cvar_weight", loose)
         self.assertEqual(tight["sweeps"], 1)
         k = 4
         self.assertLessEqual(

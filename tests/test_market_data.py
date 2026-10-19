@@ -290,12 +290,13 @@ def test_auction_attaches_context_without_changing_the_winner():
     assert "market_context" not in inspect.signature(simulate_reverse_auction).parameters
     client = TestClient(api_main.app)
     with_context = {
+        "demo": True,
         "n_samples": 400,
         "n_rounds": 1,
         "product_name": "Custom Carbon Auto Umbrella",
         "hs_code": "6601",
     }
-    without_context = {"n_samples": 400, "n_rounds": 1}
+    without_context = {"demo": True, "n_samples": 400, "n_rounds": 1}
     left = client.post("/api/v1/multi-auction/run", json=with_context)
     right = client.post("/api/v1/multi-auction/run", json=without_context)
     assert left.status_code == 200

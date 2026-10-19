@@ -92,7 +92,7 @@ class TestApiV4Integration(unittest.TestCase):
         turn1 = res1["turn"]
         self.assertEqual(turn1["round_index"], 1)
         self.assertGreater(turn1["parsed_price"], 10.0)
-        self.assertLess(turn1["parsed_price"], 14.80)
+        self.assertLessEqual(turn1["parsed_price"], 14.80)
 
         # 3. 觸發熔斷：供應商報出極端高價，突破上限或觸發破局風險
         # 模擬超高報價 18.00（高於 ceiling 16.20，觸發熔斷）

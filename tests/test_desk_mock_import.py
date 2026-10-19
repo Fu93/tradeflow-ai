@@ -97,6 +97,7 @@ def test_mock_chat_import_respects_captcha(tmp_path, monkeypatch):
             "raw_text": payload["text"],
             "supplier_id": supplier_id,
             "simulated": True,
+            "page_url": "http://localhost/mock_chat.html",
         },
         headers=headers,
     )

@@ -15,9 +15,15 @@ from typing import Any
 from src.engine.bilingual import InboundIntentClassifier
 from src.engine.quote_fields import price_the_solver_may_use
 
-_TOKEN = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:[.,]\d+)?")
+_NUM = (
+    r"(?<![\d.,])(?:"
+    r"\d{1,3}(?:\.\d{3})+,\d+|"
+    r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|"
+    r"\d+(?:[.,]\d+)?"
+    r")(?![\d.,])"
+)
+_TOKEN = re.compile(_NUM)
 _PRICE_KEYS = ("price", "unit_price", "mentioned_price", "quoted_amount", "cny_amount")
-_NUM = r"(?:\d{1,3}(?:,\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)"
 _QUOTE_SPLIT = re.compile(
     r"(?im)^(?:-----original message-----|-----\s*转发邮件\s*-----|----\s*转发邮件\s*----|"
     r"-{6,}\s*forwarded message\s*-{6,}|原始邮件|发件人\s*[:：]|from\s*:|on .+wrote:\s*)$"
@@ -65,9 +71,11 @@ def numeric_tokens(text: str) -> list[tuple[str, float]]:
 
 def _number(token: str) -> float | None:
     text = token.strip()
-    if re.fullmatch(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?", text):
+    if re.fullmatch(r"\d{1,3}(?:\.\d{3})+,\d+", text):
+        text = text.replace(".", "").replace(",", ".")
+    elif re.fullmatch(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?", text):
         text = text.replace(",", "")
-    elif re.fullmatch(r"\d+,\d{2}", text):
+    elif re.fullmatch(r"\d+,\d+", text):
         text = text.replace(",", ".")
     else:
         text = text.replace(",", "")

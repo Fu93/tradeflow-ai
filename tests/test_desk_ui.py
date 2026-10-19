@@ -108,25 +108,35 @@ def test_desk_page_updates_when_mail_arrives():
             for name in ("ningbo.eml", "wenzhou.eml", "yiwu.eml", "foshan.eml"):
                 fixture.append((FIXTURES / name).read_bytes())
             page.get_by_text("Ningbo Co., Ltd.").first.wait_for(timeout=15000)
-            page.get_by_text("15.60 CNY").first.wait_for(timeout=20000)
-            hazard = page.locator(".desk-card").first.inner_text()
-            assert "%" in hazard
-            assert "prior-driven" in hazard
+            page.get_by_text("Record: fixture").first.wait_for(timeout=20000)
+            page.get_by_text("Excluded from the decision").first.wait_for(timeout=5000)
+            assert "15.60 CNY" not in page.locator(".desk-card").first.inner_text()
+            sensitivity = page.locator("#hazard-sensitivity").inner_text()
+            assert "%" in sensitivity
+            assert "Labelled baseline" in sensitivity
+            assert "Prior-driven" in sensitivity
             page.locator("#events").get_by_text("email").first.wait_for(timeout=5000)
+            page.locator("#paste-supplier").select_option(index=1)
+            page.fill("#paste-text", "单价 14.80 元")
+            page.locator("#paste-form button[type=submit]").click()
+            page.get_by_text("14.80 CNY").first.wait_for(timeout=15000)
+            page.locator(".desk-card", has_text="14.80 CNY").get_by_role("button", name="Record continue").click()
+            page.get_by_text("Recorded outcomes: 1").wait_for(timeout=10000)
             fixture.append((FIXTURES / "ningbo-followup.eml").read_bytes())
-            page.get_by_text("13.40 CNY").first.wait_for(timeout=20000)
+            page.locator("#events").get_by_text("13.40").first.wait_for(timeout=20000)
             overflow = page.evaluate(
                 "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
             )
             assert overflow <= 1
             page.fill("#paste-text", "Price around 33-35 CNY depending on finish.")
             page.locator("#paste-form button[type=submit]").click()
-            page.locator("#review select").wait_for(timeout=10000)
-            page.locator("#review select").select_option(index=1)
-            chosen = page.locator("#review select").input_value()
+            review = page.locator("#review select").last
+            review.wait_for(timeout=10000)
+            review.select_option(index=1)
+            chosen = review.input_value()
             assert chosen
             page.wait_for_timeout(2500)
-            assert page.locator("#review select").input_value() == chosen
+            assert page.locator("#review select").last.input_value() == chosen
             for width in (360, 320):
                 page.set_viewport_size({"width": width, "height": 800})
                 metrics = page.evaluate(

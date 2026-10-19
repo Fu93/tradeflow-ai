@@ -1,73 +1,174 @@
-"""TradeFlow v5 — 嚴謹高斯-均勻混合似然貝氏推斷引擎。
+"""Reserve update with a heavy-tailed observation.
 
-數理本質：
-1. 雙模態生成模型：區分「真實商務要約 (Z=1)」與「試探性/漫天要價離群噪聲 (Z=0)」。
-2. 責任度權重 (w_t)：依據先驗分佈與觀測噪聲計算真實要約的後驗概率；惡意試探報價使 w_t -> 0。
-3. 封閉矩匹配 (Closed-Form Moment Matching)：結合高斯共軛更新，並在離群噪聲下嚴格守恆方差，杜絕虛假信息增益。
-4. 校準概率與置信區間：標準常態分佈累積函數 CDF 計算精確成交概率，給出 95% 雙邊貝氏置信區間。
+The observation model is a Student-t around the prior mean plus the user's
+markup. A quote far from that centre is down-weighted by the usual
+Student-t weight ``(ν+1)/(ν+z²)`` and still moves the mean. The reported
+interval and P(deal) use that same Student-t, not a normal interval around
+a mixture that has already discarded the quote.
+
+Markup and reserve are not separately identified from quotes alone. The
+markup is zero unless the user sets it or a closed deal supplies a price.
 """
 from __future__ import annotations
+
 import math
-from typing import Tuple, Dict, Any, Optional
+from typing import Any, Optional, Sequence, Tuple
+
 from pydantic import BaseModel, Field
 
 from src.config.heuristics import (
-    BAYES_DOMAIN_MAX,
-    BAYES_DOMAIN_MIN,
-    BAYES_MARKUP,
     BAYES_OBS_NOISE,
-    BAYES_PRIOR_CLEAN,
-    Z_95,
+    CREDIBLE_MASS,
+    MAD_NORMAL_CONSISTENCY,
+    ONE_HALF,
+    STUDENT_T_BRACKET,
+    STUDENT_T_DF,
 )
 
 
 class BayesianBeliefState(BaseModel):
-    posterior_mean: float = Field(..., description="後驗底價均值乘數")
-    posterior_std: float = Field(..., description="後驗底價不確定性標準差")
-    clean_responsibility: float = Field(..., description="本次觀測屬於真實商務報價的後驗概率 w_t")
-    credible_interval_95: Tuple[float, float] = Field(..., description="95% 貝氏置信區間 [Lower, Upper]")
-    info_gain_bits: float = Field(..., description="香農信息增益 (Kullback-Leibler 散度，單位: bits)")
-    # [P0 修正] 允許 None：當本輪沒有新報價可評估、且呼叫端也未提供 our_next_offer
-    # 時，成交概率是「未計算」而非 0。顯示層應渲染為 "—"，不可捏造數值。
+    posterior_mean: float = Field(..., description="Posterior mean of the reserve multiple")
+    posterior_std: float = Field(..., description="Posterior scale of that reserve")
+    clean_responsibility: float = Field(..., description="Student-t influence of this quote, in (0, 1]")
+    credible_interval_95: Tuple[float, float] = Field(..., description="Central 95% Student-t interval")
+    info_gain_bits: float = Field(..., description="Gaussian KL approximation of the update, in bits")
     deal_probability: Optional[float] = Field(
         default=None,
-        description="在當前出價下對手接受的校準概率 P(Reserve <= Offer)；無法評估時為 None",
+        description="Student-t probability that the reserve is at or under the offer",
     )
+    interval_model: str = "student_t"
+    robust_weight: float = 1.0
+    markup_identified: bool = False
+
+
+def _log_beta(a: float, b: float) -> float:
+    return math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b)
+
+
+def _betacf(a: float, b: float, x: float) -> float:
+    """Lentz continued fraction for the incomplete beta."""
+    max_iter = 200
+    eps = 3e-12
+    am = 1.0
+    a0 = 1.0
+    b0 = 1.0
+    a1 = 1.0
+    b1 = 1.0 - (a + b) * x / (a + 1.0)
+    if abs(b1) < 1e-30:
+        b1 = 1e-30
+    fraction = a1 / b1
+    for m in range(1, max_iter + 1):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((a + m2 - 1.0) * (a + m2))
+        a0 = (a1 + aa * a0)
+        b0 = (b1 + aa * b0)
+        if abs(b0) < 1e-30:
+            b0 = 1e-30
+        aa = -(a + m) * (a + b + m) * x / ((a + m2) * (a + m2 + 1.0))
+        a1 = a0 + aa * a1
+        b1 = b0 + aa * b1
+        if abs(b1) < 1e-30:
+            b1 = 1e-30
+        a0 /= b1
+        b0 /= b1
+        a1 /= b1
+        b1 = 1.0
+        delta = a1 / a0 if a0 != 0.0 else 1.0
+        fraction *= delta
+        if abs(delta - 1.0) < eps:
+            break
+        am = a1
+    return fraction
+
+
+def regularized_incomplete_beta(a: float, b: float, x: float) -> float:
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    log_bt = a * math.log(x) + b * math.log(1.0 - x) - _log_beta(a, b)
+    front = math.exp(log_bt)
+    if x < (a + 1.0) / (a + b + 2):
+        return front * _betacf(a, b, x) / a
+    return 1.0 - front * _betacf(b, a, 1.0 - x) / b
+
+
+def student_t_cdf(t: float, df: float) -> float:
+    """CDF of a standard Student-t."""
+    if df <= 0.0:
+        return 1.0 if t >= 0.0 else 0.0
+    x = df / (df + t * t)
+    ib = regularized_incomplete_beta(df / 2, ONE_HALF, x)
+    if t >= 0.0:
+        return 1.0 - ONE_HALF * ib
+    return ONE_HALF * ib
+
+
+def student_t_ppf(probability: float, df: float) -> float:
+    """Quantile of a standard Student-t by bisection."""
+    if probability <= 0.0:
+        return -1e6
+    if probability >= 1.0:
+        return 1e6
+    lo, hi = -STUDENT_T_BRACKET, STUDENT_T_BRACKET
+    for _ in range(80):
+        mid = (lo + hi) / 2
+        if student_t_cdf(mid, df) < probability:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def _student_interval(mean: float, scale: float, df: float) -> tuple[float, float]:
+    z = student_t_ppf(1.0 - (1.0 - float(CREDIBLE_MASS)) / 2, df)
+    width = abs(scale) * z
+    return max(0.0, mean - width), mean + width
+
+
+def _deal_probability(offer: float, mean: float, scale: float, df: float) -> float:
+    if scale <= 1e-8:
+        return 1.0 if offer >= mean else 0.0
+    return student_t_cdf((offer - mean) / scale, df)
+
+
+def robust_location(values: Sequence[float], df: float = STUDENT_T_DF) -> tuple[float, float]:
+    """IRLS location and scale of the user's own numbers. Markup is not split out."""
+    clean = [float(item) for item in values if item is not None]
+    if not clean:
+        raise ValueError("robust_location needs at least one number")
+    loc = float(sorted(clean)[len(clean) // 2])
+    deviations = [abs(item - loc) for item in clean]
+    mad = float(sorted(deviations)[len(deviations) // 2])
+    scale = max(mad * float(MAD_NORMAL_CONSISTENCY), float(BAYES_OBS_NOISE))
+    nu = float(df)
+    for _ in range(20):
+        weights = []
+        for item in clean:
+            z = (item - loc) / scale
+            weights.append((nu + 1.0) / (nu + z * z))
+        total = sum(weights)
+        loc = sum(weight * item for weight, item in zip(weights, clean)) / total
+        variance = sum(weight * (item - loc) ** 2 for weight, item in zip(weights, clean))
+        scale = math.sqrt(max(variance / max(len(clean), 1), 1e-12))
+        scale = max(scale, float(BAYES_OBS_NOISE))
+    return loc, scale
 
 
 class RobustBayesianInferenceEngine:
-    """高斯-均勻雙模態混合似然推斷引擎。"""
+    """Student-t observation, one robust Kalman step."""
 
     def __init__(
         self,
         obs_noise_std: float = BAYES_OBS_NOISE,
-        prior_clean_prob: float = BAYES_PRIOR_CLEAN,
-        domain_min: float = BAYES_DOMAIN_MIN,
-        domain_max: float = BAYES_DOMAIN_MAX,
+        degrees_of_freedom: float = STUDENT_T_DF,
     ):
-        """[誠實揭露] 下列為編譯時固定的啟發式常數，非資料擬合：
-        obs_noise_std=0.06、prior_clean_prob=0.85、域 [0.80, 2.50]。
-        全域單例 _default_engine 以這些預設建立，但 update() 逐次接受
-        estimated_markup，可依需求覆寫。」"""
-        self.obs_noise_std = obs_noise_std
-        self.prior_clean_prob = prior_clean_prob
-        self.domain_min = domain_min
-        self.domain_max = domain_max
-        self.uniform_density = 1.0 / max(1e-4, (domain_max - domain_min))
-
-    @staticmethod
-    def _gaussian_pdf(x: float, mean: float, std: float) -> float:
-        """計算一維常態分佈概率密度值 N(x | mean, std^2)。"""
-        if std <= 1e-6:
-            return 1e6 if abs(x - mean) < 1e-4 else 0.0
-        var = std * std
-        denom = math.sqrt(2 * math.pi * var)
-        diff = x - mean
-        return math.exp(-(diff * diff) / (2 * var)) / denom
+        self.obs_noise_std = float(obs_noise_std)
+        self.degrees_of_freedom = float(degrees_of_freedom)
 
     @classmethod
     def normal_cdf(cls, x: float, mean: float, std: float) -> float:
-        """標準常態分佈累積函數 CDF: Phi((x - mean) / std)。"""
+        """Normal CDF kept for callers that still ask for the Gaussian tail."""
         if std <= 1e-7:
             return 1.0 if x >= mean else 0.0
         z = (x - mean) / (std * math.sqrt(2))
@@ -78,101 +179,69 @@ class RobustBayesianInferenceEngine:
         prior_mean: float,
         prior_std: float,
         observed_offer: Optional[float] = None,
-        estimated_markup: float = BAYES_MARKUP,
+        estimated_markup: float = 0.0,
         our_next_offer: Optional[float] = None,
+        markup_identified: bool = False,
     ) -> BayesianBeliefState:
-        """執行混合似然推斷與矩匹配。
+        """One robust step. ``estimated_markup`` defaults to zero.
 
-        Args:
-            prior_mean: 先驗底價均值乘數 (如 1.08)
-            prior_std: 先驗底價不確定性標準差 (如 0.10)
-            observed_offer: 觀測到的供應商報價乘數 (如 1.25)。
-                **[P0 修正]** 可為 None —— 代表「本輪沒有新證據」。呼叫端若
-                已經自行把本輪報價更新進 prior_mean/prior_std（例如 /round
-                第 2 步的 bayes_update），就必須傳 None，否則同一筆證據會被
-                更新兩次，導致同一個回應裡出現兩個不同的後驗。None 時：
-                  - 不做似然更新，後驗 = 先驗；
-                  - 責任度 w_t 記為 1.0（無異常證據可判別）；
-                  - 信息增益為 0 bit；
-                  - 成交概率改用 our_next_offer 評估（若未提供則為 None）。
-            estimated_markup: 預估供應商當前輪次的加成利潤率 m_t (如 0.08)
-            our_next_offer: 我方擬出的下一輪出價乘數 (若提供則計算該出價下的成交概率)
+        A caller who passes the old labelled markup must say so. The engine
+        does not assume 8 percent.
         """
-        # [P0 修正] 無新證據：後驗 = 先驗，只計算依賴後驗的欄位。
+        df = self.degrees_of_freedom
         if observed_offer is None:
-            z_95 = Z_95
-            ci_lower = max(0.0, prior_mean - z_95 * prior_std)
-            ci_upper = prior_mean + z_95 * prior_std
+            low, high = _student_interval(prior_mean, prior_std, df)
             deal_prob = (
-                self.normal_cdf(our_next_offer, prior_mean, prior_std)
+                _deal_probability(our_next_offer, prior_mean, prior_std, df)
                 if our_next_offer is not None else None
             )
             return BayesianBeliefState(
                 posterior_mean=round(prior_mean, 4),
                 posterior_std=round(prior_std, 4),
                 clean_responsibility=1.0,
-                credible_interval_95=(round(ci_lower, 4), round(ci_upper, 4)),
+                credible_interval_95=(round(low, 4), round(high, 4)),
                 info_gain_bits=0.0,
                 deal_probability=None if deal_prob is None else round(deal_prob, 4),
+                interval_model="student_t",
+                robust_weight=1.0,
+                markup_identified=markup_identified,
             )
 
-        # 1. 計算真實要約假設下的邊際似然 (Marginal Likelihood for Genuine Offer)
-        pred_mean = prior_mean + estimated_markup
+        pred_mean = prior_mean + float(estimated_markup)
         pred_var = (prior_std ** 2) + (self.obs_noise_std ** 2)
-        pred_std = math.sqrt(pred_var)
+        pred_std = math.sqrt(max(pred_var, 1e-12))
+        z = (float(observed_offer) - pred_mean) / pred_std
+        weight = (df + 1.0) / (df + z * z)
+        obs_var = (self.obs_noise_std ** 2) / max(weight, 1e-8)
+        kalman = (prior_std ** 2) / ((prior_std ** 2) + obs_var)
+        y_tilde = float(observed_offer) - float(estimated_markup)
+        post_mean = prior_mean + kalman * (y_tilde - prior_mean)
+        post_var = max((1.0 - kalman) * (prior_std ** 2), 1e-12)
+        post_std = math.sqrt(post_var)
+        influence = min(1.0, weight)
 
-        p_y_given_clean = self._gaussian_pdf(observed_offer, pred_mean, pred_std)
-        p_y_given_noise = self.uniform_density
-
-        # 2. 計算責任度 w_t = P(Z_t = 1 | Y_t = y_t)
-        num = self.prior_clean_prob * p_y_given_clean
-        denom = num + (1.0 - self.prior_clean_prob) * p_y_given_noise
-        w_t = num / denom if denom > 1e-12 else 0.0
-
-        # 3. 計算真信號高斯-高斯共軛更新量 (Kalman Gain)
-        y_tilde = observed_offer - estimated_markup
-        kalman_gain = (prior_std ** 2) / pred_var
-        mu_clean = prior_mean + kalman_gain * (y_tilde - prior_mean)
-        var_clean = (1.0 - kalman_gain) * (prior_std ** 2)
-
-        # 4. 混合分佈的一階與二階矩匹配 (Moment Matching)
-        post_mean = (1.0 - w_t) * prior_mean + w_t * mu_clean
-        post_var = (
-            (1.0 - w_t) * (prior_std ** 2)
-            + w_t * var_clean
-            + w_t * (1.0 - w_t) * ((mu_clean - prior_mean) ** 2)
-        )
-        post_std = math.sqrt(max(post_var, 1e-8))
-
-        # 5. 香農信息增益 KL 散度 D_KL(Posterior || Prior) in bits
-        # 兩常態分佈之 KL 散度: ln(s0/s1) + (s1^2 + (m1-m0)^2)/(2*s0^2) - 0.5
         kl_nats = (
             math.log(prior_std / post_std)
             + (post_var + ((post_mean - prior_mean) ** 2)) / (2 * (prior_std ** 2))
-            - 1 / 2
+            - ONE_HALF
         )
         info_gain_bits = max(0.0, kl_nats / math.log(2))
-
-        # 6. 計算 95% 貝氏置信區間 CI_0.95 = [mu - 1.95996*sigma, mu + 1.95996*sigma]
-        z_95 = Z_95
-        ci_lower = max(0.0, post_mean - z_95 * post_std)
-        ci_upper = post_mean + z_95 * post_std
-
-        # 7. 成交概率 P(Reserve <= Offer)
+        low, high = _student_interval(post_mean, post_std, df)
         eval_offer = our_next_offer if our_next_offer is not None else observed_offer
-        deal_prob = self.normal_cdf(eval_offer, post_mean, post_std)
-
+        deal_prob = _deal_probability(float(eval_offer), post_mean, post_std, df)
         return BayesianBeliefState(
             posterior_mean=round(post_mean, 4),
             posterior_std=round(post_std, 4),
-            clean_responsibility=round(w_t, 4),
-            credible_interval_95=(round(ci_lower, 4), round(ci_upper, 4)),
+            clean_responsibility=round(influence, 4),
+            credible_interval_95=(round(low, 4), round(high, 4)),
             info_gain_bits=round(info_gain_bits, 4),
             deal_probability=round(deal_prob, 4),
+            interval_model="student_t",
+            robust_weight=round(weight, 4),
+            markup_identified=markup_identified,
         )
 
 
-# 全域單例便利用法
 _default_engine = RobustBayesianInferenceEngine()
 
 
@@ -180,22 +249,26 @@ def robust_bayes_update(
     prior_mean: float,
     prior_std: float,
     observed_offer: Optional[float] = None,
-    estimated_markup: float = BAYES_MARKUP,
+    estimated_markup: float = 0.0,
     our_next_offer: Optional[float] = None,
+    markup_identified: bool = False,
 ) -> BayesianBeliefState:
-    """提供全域便利用法執行高斯-均勻混合似然推斷。
-
-    observed_offer=None 表示「本輪沒有新證據」——後驗等於傳入的先驗。
-    """
+    """Student-t reserve update. Markup defaults to zero, not to 0.08."""
     return _default_engine.update(
         prior_mean=prior_mean,
         prior_std=prior_std,
         observed_offer=observed_offer,
         estimated_markup=estimated_markup,
         our_next_offer=our_next_offer,
+        markup_identified=markup_identified,
     )
 
 
 def compute_calibrated_deal_prob(offer: float, reserve_mean: float, reserve_std: float) -> float:
-    """計算嚴格的累積常態分佈成交概率 P(Reserve <= Offer)。"""
-    return RobustBayesianInferenceEngine.normal_cdf(offer, reserve_mean, reserve_std)
+    """P(reserve <= offer) under the Student-t belief, not a normal CDF."""
+    return _deal_probability(offer, reserve_mean, reserve_std, STUDENT_T_DF)
+
+
+def empirical_bayes_prior(closed_multiples: Sequence[float]) -> tuple[float, float]:
+    """Grand mean of the user's closed prices divided by their targets."""
+    return robust_location(closed_multiples)

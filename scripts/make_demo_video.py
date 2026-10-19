@@ -258,18 +258,33 @@ def build():
     from src.engine import robustness, benchmark, model, viz
     from src.app import demo_data
 
+    from src.engine.model import bind_archetypes
+    from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS
+    bind_archetypes(OPPONENT_TYPE_ROWS, OPPONENT_TYPE_NAMES)
     tp = demo_data.DEMO_SPEC["target_price"]
+    ceiling_ratio = demo_data.DEMO_SPEC["ceiling_price"] / tp
     replies = demo_data.SUPPLIER_REPLIES
-    # build belief trace (5 rounds) using live engine
+    # Labelled demo walkthrough. These numbers stay inside this script.
     mean, std = demo_data.DEMO_SPEC["prior_reserve_mean"], demo_data.DEMO_SPEC["prior_reserve_std"]
     trace = []
     for off in replies:
-        res = solve(n_opp_samples=demo_data.DEMO_SPEC["n_samples"], reserve_mean=mean, reserve_std=std)
+        res = solve(
+            n_opp_samples=demo_data.DEMO_SPEC["n_samples"],
+            reserve_mean=mean,
+            reserve_std=std,
+            value_ceiling=ceiling_ratio,
+        )
         rec = recommend(res, target_price=tp)
         trace.append({"mean": mean, "std": std, "opening": rec["opening_offer_price"]})
         mean, std = bayes_update(mean, std, off)
-    _, report = robustness.report(target_price=tp, n_samples=20000)
-    bench = benchmark.run()
+    _, report = robustness.report(target_price=tp, n_samples=20000, value_ceiling=ceiling_ratio)
+    bench = benchmark.run(
+        target_price=tp,
+        walk_away_ceiling=demo_data.DEMO_SPEC["ceiling_price"],
+        value_ceiling=ceiling_ratio,
+        self_play=demo_data.self_play_bundle(),
+        moq=demo_data.DEMO_SPEC["moq"],
+    )
 
     seq = []
     seq += frames_disclaimer()

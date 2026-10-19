@@ -24,6 +24,8 @@ from src.desk.service import (
     accept_review,
     create_deal,
     ingest_message,
+    record_outcome,
+    set_assumptions,
     poll_gmail_once,
     poll_imap_once,
     publish,
@@ -81,6 +83,8 @@ class QuoteIn(BaseModel):
     fees: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     external_id: str | None = Field(default=None, max_length=500)
     simulated: bool = False
+    page_url: str | None = Field(default=None, max_length=2000)
+    page_title: str | None = Field(default=None, max_length=500)
 
 
 class ReviewIn(BaseModel):
@@ -94,6 +98,26 @@ class SendIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     human_approved: StrictBool
     body_sha256: str = Field(min_length=64, max_length=64)
+
+
+class OutcomeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    outcome: str
+    quote: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    offer: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    agreed_price: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+
+
+class AssumptionsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    hazard_intercept: float | None = Field(default=None, allow_inf_nan=False)
+    hazard_tau: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    hazard_quote_gap: float | None = Field(default=None, allow_inf_nan=False)
+    reserve_prior_mean: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    reserve_prior_std: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    expected_markup: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    search_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    include_unverified: bool | None = None
 
 
 class PollIn(BaseModel):
@@ -158,7 +182,10 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 duty_rate=body.duty_rate,
                 fees=body.fees,
                 external_id=body.external_id,
-                provenance_extra={"simulated": True} if body.simulated else None,
+                provenance_extra={
+                    "page_url": body.page_url,
+                    "page_title": body.page_title,
+                },
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="No such deal") from exc
@@ -187,6 +214,41 @@ def register_desk_routes(api_v1: APIRouter) -> None:
             raise HTTPException(status_code=404, detail="No such review item") from exc
         except DeskRejected as exc:
             raise _rejected(exc) from exc
+
+    @api_v1.post("/desk/deals/{deal_id}/suppliers/{supplier_id}/outcome")
+    def post_outcome(
+        deal_id: str,
+        supplier_id: str,
+        body: OutcomeIn,
+        _: str = Depends(require_desk_mutation),
+    ):
+        _ident(deal_id)
+        _ident(supplier_id)
+        try:
+            return record_outcome(
+                get_store(),
+                deal_id,
+                supplier_id,
+                outcome=body.outcome,
+                quote=body.quote,
+                offer=body.offer,
+                agreed_price=body.agreed_price,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="No such deal") from exc
+        except DeskRejected as exc:
+            raise _rejected(exc) from exc
+
+    @api_v1.post("/desk/deals/{deal_id}/assumptions")
+    def post_assumptions(deal_id: str, body: AssumptionsIn, _: str = Depends(require_desk_mutation)):
+        _ident(deal_id)
+        fields = body.model_dump(exclude_unset=True)
+        if "include_unverified" in fields and fields["include_unverified"] is not None:
+            fields["include_unverified"] = 1 if fields["include_unverified"] else 0
+        try:
+            return set_assumptions(get_store(), deal_id, fields)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="No such deal") from exc
 
     @api_v1.post("/desk/drafts/{draft_id}/send")
     async def post_send(draft_id: str, body: SendIn, _: str = Depends(require_desk_mutation)):

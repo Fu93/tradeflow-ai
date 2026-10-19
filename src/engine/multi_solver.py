@@ -1,12 +1,12 @@
 """Concurrent negotiation across suppliers.
 
-The offer to each supplier is a coupled expectimax. The best rival landed
-quote is an outside option inside that search, not a label applied after
-it. Breakdown risk on this path is the walk-away hazard.
+The offer to each supplier is a one-step lookahead over sampled
+accept-or-reject scenarios. The best rival landed quote is an outside
+option inside that search. Breakdown risk on this path is the walk-away
+hazard.
 
-When the caller does not supply quotes, the function runs the scripted
-self-play in ``src.sim``. That path is simulated and says so. Scenario
-prices for those archetypes live in the simulation package.
+Self-play runs only when the caller passes ``demo=True`` and a labelled
+self-play bundle. This module does not import scenario prices.
 """
 from __future__ import annotations
 
@@ -15,10 +15,8 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from src.config.heuristics import (
+    BAYES_OBS_NOISE,
     DEFAULT_SOLVER_SEED,
-    PRIOR_RESERVE_MEAN,
-    PRIOR_RESERVE_STD,
-    YOUR_CEILING,
 )
 from src.engine import model
 from src.engine.backend import resolve_use_gpu
@@ -28,9 +26,8 @@ from src.engine.coupled import (
 )
 from src.engine.hazard import HazardBelief
 from src.engine.landed import landed_unit_cost
+from src.engine.bayesian_v2 import robust_location
 from src.engine.solver import bayes_update
-from src.sim.scenarios import UMBRELLA
-from src.sim.self_play import BUYER_OPENING_NORM, SELF_PLAY_NAMES, SELF_PLAY_SPECS
 
 
 def _get_xp(use_gpu: bool):
@@ -60,8 +57,10 @@ class MultiSupplierSolver:
         self.n_opp_samples = int(n_opp_samples)
         self.n_open = int(n_open)
         self.n_sched = int(n_sched)
+        if walk_away_ceiling is None:
+            raise ValueError("walk_away_ceiling is required")
         self.use_gpu = resolve_use_gpu(use_gpu)
-        self.walk_away_ceiling = float(YOUR_CEILING if walk_away_ceiling is None else walk_away_ceiling)
+        self.walk_away_ceiling = float(walk_away_ceiling)
         self.rounds = int(model.ROUNDS if rounds is None else rounds)
         self.risk_tolerance = risk_tolerance
         _, self._backend_name = _get_xp(self.use_gpu)
@@ -183,7 +182,7 @@ class MultiAuctionSession:
         suppliers: Optional[List[Dict[str, Any]]] = None,
         target_price: float | None = None,
         walk_away_ceiling: float | None = None,
-        moq: int = 10000,
+        moq: int | None = None,
         n_samples: int = 20000,
         n_open: int = 20,
         n_sched: int = 6,
@@ -191,21 +190,27 @@ class MultiAuctionSession:
         risk_tolerance: float | None = None,
         seed: int = DEFAULT_SOLVER_SEED,
         base_currency: str = "CNY",
+        prior_mean: float | None = None,
+        prior_std: float | None = None,
+        expected_markup: float = 0.0,
     ):
-        if suppliers is None:
-            suppliers = [dict(item) for item in SELF_PLAY_NAMES]
+        if suppliers is None or target_price is None or walk_away_ceiling is None:
+            raise ValueError(
+                "suppliers, target_price, and walk_away_ceiling are required. "
+                "The labelled demo path passes them explicitly."
+            )
         self.suppliers = [dict(item) for item in suppliers]
         self.k = len(self.suppliers)
-        self.target_price = float(UMBRELLA.target if target_price is None else target_price)
-        self.walk_away_ceiling = float(UMBRELLA.ceiling if walk_away_ceiling is None else walk_away_ceiling)
-        self.moq = int(moq)
+        self.target_price = float(target_price)
+        self.walk_away_ceiling = float(walk_away_ceiling)
+        self.moq = None if moq is None else int(moq)
         self.n_samples = int(n_samples)
         self.use_gpu = resolve_use_gpu(use_gpu)
         self.base_currency = base_currency
         self.risk_tolerance = risk_tolerance
         self.seed = int(seed)
         self._rng = np.random.default_rng(self.seed)
-        ceiling_norm = self.walk_away_ceiling / self.target_price if self.target_price else float(YOUR_CEILING)
+        ceiling_norm = self.walk_away_ceiling / self.target_price
         self.solver = MultiSupplierSolver(
             n_opp_samples=n_samples,
             n_open=n_open,
@@ -214,8 +219,16 @@ class MultiAuctionSession:
             walk_away_ceiling=ceiling_norm,
             risk_tolerance=risk_tolerance,
         )
-        self.prior_means = np.full(self.k, PRIOR_RESERVE_MEAN, dtype=np.float64)
-        self.prior_stds = np.full(self.k, PRIOR_RESERVE_STD, dtype=np.float64)
+        self.user_prior = prior_mean is not None
+        self.expected_markup = float(expected_markup)
+        width = float(prior_std) if prior_std is not None else float(BAYES_OBS_NOISE)
+        if self.user_prior:
+            self.prior_means = np.full(self.k, float(prior_mean), dtype=np.float64)
+            self.prior_stds = np.full(self.k, width, dtype=np.float64)
+        else:
+            self.prior_means = np.ones(self.k, dtype=np.float64)
+            self.prior_stds = np.full(self.k, width, dtype=np.float64)
+        self._observed: List[List[float]] = [[] for _ in range(self.k)]
         self.beliefs = [HazardBelief() for _ in range(self.k)]
         self.inactive: set[int] = set()
         self.current_round = 0
@@ -323,11 +336,18 @@ class MultiAuctionSession:
             if comparable[i] and i not in self.inactive
         ]
         for i in active:
-            mean, std = bayes_update(
-                float(self.prior_means[i]),
-                float(self.prior_stds[i]),
-                float(offers_norm[i]),
-            )
+            observed = float(offers_norm[i])
+            self._observed[i].append(observed)
+            if self.user_prior:
+                mean, std = bayes_update(
+                    float(self.prior_means[i]),
+                    float(self.prior_stds[i]),
+                    observed,
+                    estimated_markup=self.expected_markup,
+                )
+            else:
+                centred = [quote - self.expected_markup for quote in self._observed[i]]
+                mean, std = robust_location(centred)
             self.prior_means[i] = mean
             self.prior_stds[i] = max(std, float(np.finfo(np.float64).tiny))
         if not active:
@@ -492,17 +512,18 @@ class MultiAuctionSession:
         savings_vs_first_quote_pct = (
             (first_best_quote - final_quote) / first_best_quote if first_best_quote else 0.0
         )
-        savings_vs_first_quote_cny = (first_best_quote - final_quote) * self.moq
+        quantity = self.moq
+        savings_vs_first_quote_cny = None if quantity is None else (first_best_quote - final_quote) * quantity
         savings_vs_target_pct = (
             (self.target_price - final_quote) / self.target_price if self.target_price else 0.0
         )
-        savings_vs_target_cny = (self.target_price - final_quote) * self.moq
+        savings_vs_target_cny = None if quantity is None else (self.target_price - final_quote) * quantity
         savings_vs_ceiling_pct = (
             (self.walk_away_ceiling - final_quote) / self.walk_away_ceiling
             if self.walk_away_ceiling
             else 0.0
         )
-        savings_vs_ceiling_cny = (self.walk_away_ceiling - final_quote) * self.moq
+        savings_vs_ceiling_cny = None if quantity is None else (self.walk_away_ceiling - final_quote) * quantity
         return {
             "success": True,
             "k_suppliers": self.k,
@@ -547,7 +568,7 @@ class MultiAuctionSession:
         }
 
 
-def _self_play_agents(n_rounds: int):
+def _self_play_agents(n_rounds: int, specs):
     from ..benchmark.adversaries import (
         BluffingAdversary,
         ConcederAdversary,
@@ -562,7 +583,7 @@ def _self_play_agents(n_rounds: int):
         "bluff": BluffingAdversary,
     }
     agents = []
-    for spec in SELF_PLAY_SPECS:
+    for spec in specs:
         cls = kinds[spec["kind"]]
         agents.append(
             cls(
@@ -577,7 +598,7 @@ def _self_play_agents(n_rounds: int):
 def simulate_reverse_auction(
     target_price: float | None = None,
     walk_away_ceiling: float | None = None,
-    moq: int = 10000,
+    moq: int | None = None,
     n_samples: int = 20000,
     use_gpu: bool | None = None,
     suppliers: Optional[List[Dict[str, Any]]] = None,
@@ -587,15 +608,27 @@ def simulate_reverse_auction(
     risk_tolerance: float | None = None,
     base_currency: str = "CNY",
     round_outcomes: Optional[List[List[Optional[str]]]] = None,
+    demo: bool = False,
+    self_play: Optional[Dict[str, Any]] = None,
+    prior_mean: float | None = None,
+    prior_std: float | None = None,
+    expected_markup: float = 0.0,
 ) -> Dict[str, Any]:
-    """Run a concurrent round, or the scripted self-play when no quotes were given.
+    """Run a concurrent round.
 
-    A missing quote matrix is simulated. Passing ``rounds_quotes`` (or a
-    ``quote`` on each supplier) is the caller's data and is not labelled simulated.
+    ``user_supplied`` requires the caller to pass the target, the ceiling,
+    and the quotes. Self-play runs only with ``demo=True`` and a labelled
+    ``self_play`` bundle, and that result stays ``simulated``.
     """
+    if target_price is None or walk_away_ceiling is None:
+        raise ValueError("target_price and walk_away_ceiling are required")
     user_quotes = rounds_quotes is not None
     if suppliers is None:
-        suppliers = [dict(item) for item in SELF_PLAY_NAMES]
+        if not demo or not self_play:
+            raise ValueError(
+                "Name the suppliers, or set demo=True and pass the labelled self-play bundle."
+            )
+        suppliers = [dict(item) for item in self_play["names"]]
     elif not user_quotes:
         embedded = [item.get("quote") for item in suppliers]
         if embedded and all(item is not None for item in embedded):
@@ -611,6 +644,9 @@ def simulate_reverse_auction(
         risk_tolerance=risk_tolerance,
         seed=seed,
         base_currency=base_currency,
+        prior_mean=prior_mean,
+        prior_std=prior_std,
+        expected_markup=expected_markup,
     )
     if rounds_quotes is not None:
         for index, quotes in enumerate(rounds_quotes):
@@ -618,7 +654,12 @@ def simulate_reverse_auction(
                 session.record_outcomes(round_outcomes[index])
             session.step_round(quotes)
     else:
-        agents = _self_play_agents(n_rounds)
+        if not demo or not self_play:
+            raise ValueError(
+                "Quotes are required. Self-play is only the labelled demo path."
+            )
+        agents = _self_play_agents(n_rounds, self_play["specs"])
+        opening = float(self_play["opening"])
         rng = np.random.default_rng(seed)
         buyer_histories: List[List[float]] = [[] for _ in range(session.k)]
         supp_histories: List[List[float]] = [[] for _ in range(session.k)]
@@ -627,16 +668,17 @@ def simulate_reverse_auction(
             cur_round_quotes = []
             for i in range(session.k):
                 adv = agents[i % len(agents)]
-                b_offer = round_info["counter_offers_mean_norm"] if r > 1 else BUYER_OPENING_NORM
+                b_offer = round_info["counter_offers_mean_norm"] if r > 1 else opening
                 if b_offer is None:
-                    b_offer = BUYER_OPENING_NORM
+                    b_offer = opening
                 buyer_histories[i].append(b_offer)
                 offer_norm = adv.respond(r, b_offer, buyer_histories[i], supp_histories[i], rng)
                 supp_histories[i].append(offer_norm)
                 cur_round_quotes.append(round(float(offer_norm * session.target_price), 2))
             round_info = session.step_round(cur_round_quotes)
     summary = session.get_summary()
-    summary["data_class"] = "user_supplied" if user_quotes else "simulated"
-    summary["simulated"] = not user_quotes
-    summary["solver"] = "coupled sample-average expectimax"
+    simulated = not user_quotes
+    summary["data_class"] = "simulated" if simulated else "user_supplied"
+    summary["simulated"] = simulated
+    summary["solver"] = "one-step lookahead over sampled accept-or-reject scenarios"
     return summary

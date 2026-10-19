@@ -80,7 +80,7 @@ class TestZeroEvidenceRound(_Isolated):
         sid = self._session()
         r = self.c.post(
             f"/api/v1/sessions/{sid}/round",
-            json={"opponent_raw_text": "最低 14.80，不能再低", "mode": "copilot"},
+            json={"opponent_raw_text": "最低 14.80元，不能再低", "mode": "copilot"},
             headers=self.headers,
         )
         self.assertEqual(r.status_code, 200, r.text)
@@ -174,7 +174,7 @@ class TestAuctionSavingsBaseline(_Isolated):
     def test_savings_are_reported_with_explicit_baselines(self):
         r = self.c.post(
             "/api/v1/multi-auction/run",
-            json={"n_samples": 2000},
+            json={"demo": True, "n_samples": 2000},
             headers=self.headers,
         )
         self.assertEqual(r.status_code, 200, r.text)

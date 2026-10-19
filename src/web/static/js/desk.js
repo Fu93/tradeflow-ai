@@ -159,6 +159,7 @@
     document.getElementById("basis-line").textContent =
       "Ranking basis: " + (snapshot.ranking_basis || "unit_price") + ". " + (snapshot.kappa_note || "");
     document.getElementById("hazard-line").textContent = snapshot.hazard_note || "";
+    fillAssumptions(snapshot);
     const cvar = document.getElementById("cvar-line");
     if (snapshot.mc && snapshot.mc.cvar_cost != null) {
       let text = "CVaR " + money(snapshot.mc.cvar_cost, "CNY");
@@ -172,6 +173,94 @@
     renderEvents(snapshot.events || []);
     renderDrafts(snapshot.drafts || [], snapshot.suppliers || []);
     renderPasteSuppliers(snapshot.suppliers || []);
+  }
+
+  function rateText(value) {
+    if (value == null || value !== value) return "no data";
+    return String(Math.round(value * 1000) / 10) + "%";
+  }
+
+  function fillOnce(id, value) {
+    const field = document.getElementById(id);
+    if (!field || field.dataset.filled === "yes" || value == null) return;
+    field.value = String(value);
+    field.dataset.filled = "yes";
+  }
+
+  function fillAssumptions(snapshot) {
+    const box = snapshot.hazard_assumptions || {};
+    const deal = snapshot.deal || {};
+    fillOnce("hazard-intercept", box.intercept);
+    fillOnce("hazard-tau", box.tau);
+    fillOnce("hazard-quote-gap", box.quote_gap);
+    fillOnce("reserve-prior", deal.reserve_prior_mean);
+    fillOnce("reserve-std", deal.reserve_prior_std);
+    fillOnce("expected-markup", deal.expected_markup);
+    fillOnce("search-cost", deal.search_cost);
+    const note = document.getElementById("hazard-sensitivity");
+    if (note) {
+      note.textContent = "Labelled baseline walk-away " + rateText(box.baseline_rate)
+        + " (spread " + rateText(box.baseline_low) + " to " + rateText(box.baseline_high)
+        + "). Source: " + (box.source || "labelled policy")
+        + ". Recorded outcomes: " + String(box.recorded_outcomes || 0)
+        + ". Prior-driven until " + String(box.min_events || 0) + ".";
+    }
+  }
+
+  function outcomeButton(label, outcome, supplierId) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.addEventListener("click", async () => {
+      formError.textContent = "";
+      try {
+        const snapshot = await request(
+          "/api/v1/desk/deals/" + dealId + "/suppliers/" + supplierId + "/outcome",
+          {
+            method: "POST",
+            headers: headers(true),
+            body: JSON.stringify({ outcome: outcome }),
+          }
+        );
+        show(snapshot);
+      } catch (err) {
+        formError.textContent = err.message;
+      }
+    });
+    return button;
+  }
+
+  const assumptions = document.getElementById("assumptions");
+  if (assumptions) {
+    assumptions.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      formError.textContent = "";
+      const payload = {};
+      const take = (id, key) => {
+        const field = document.getElementById(id);
+        if (!field || field.value.trim() === "") return;
+        payload[key] = Number(field.value);
+      };
+      take("hazard-intercept", "hazard_intercept");
+      take("hazard-tau", "hazard_tau");
+      take("hazard-quote-gap", "hazard_quote_gap");
+      take("reserve-prior", "reserve_prior_mean");
+      take("reserve-std", "reserve_prior_std");
+      take("expected-markup", "expected_markup");
+      take("search-cost", "search_cost");
+      const include = document.getElementById("include-unverified");
+      if (include) payload.include_unverified = include.checked;
+      try {
+        const snapshot = await request("/api/v1/desk/deals/" + dealId + "/assumptions", {
+          method: "POST",
+          headers: headers(true),
+          body: JSON.stringify(payload),
+        });
+        show(snapshot);
+      } catch (err) {
+        formError.textContent = err.message;
+      }
+    });
   }
 
   function renderCards(suppliers) {
@@ -193,6 +282,7 @@
       const quote = supplier.latest_quote == null
         ? "no quote"
         : money(supplier.latest_quote, supplier.currency || "CNY");
+      line(card, "Record: " + (supplier.origin || "live"));
       line(card, "Latest quote: " + quote);
       const landed = supplier.landed_status === "complete" && supplier.landed_cost != null
         ? money(supplier.landed_cost, "CNY")
@@ -203,6 +293,14 @@
       const counter = supplier.counter == null ? "withheld" : money(supplier.counter, "CNY");
       line(card, "Counter: " + counter);
       line(card, "Walk-away hazard: " + hazardText(supplier));
+      if (supplier.excluded_from_decision) {
+        line(card, "Excluded from the decision until you include unverified quotes.");
+      }
+      const actions = document.createElement("div");
+      actions.className = "desk-actions";
+      actions.appendChild(outcomeButton("Record continue", "continue", supplier.id));
+      actions.appendChild(outcomeButton("Record walk-away", "walk_away", supplier.id));
+      card.appendChild(actions);
       root.appendChild(card);
     });
   }

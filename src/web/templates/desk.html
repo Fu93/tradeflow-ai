@@ -41,6 +41,21 @@
       <p id="basis-line"></p>
       <p id="hazard-line"></p>
       <p id="cvar-line"></p>
+      <form id="assumptions" class="desk-form">
+        <h2>Walk-away assumptions</h2>
+        <p id="hazard-sensitivity"></p>
+        <label>Baseline intercept <input id="hazard-intercept" type="number" step="any" /></label>
+        <label>Supplier spread <input id="hazard-tau" type="number" step="any" min="0" /></label>
+        <label>Quote-gap coefficient <input id="hazard-quote-gap" type="number" step="any" /></label>
+        <label>Reserve prior mean <input id="reserve-prior" type="number" step="any" min="0" placeholder="blank uses quotes or closed deals" /></label>
+        <label>Reserve prior spread <input id="reserve-std" type="number" step="any" min="0" /></label>
+        <label>Expected markup <input id="expected-markup" type="number" step="any" min="0" placeholder="blank treats markup as unidentified" /></label>
+        <label>Search cost <input id="search-cost" type="number" step="any" min="0" /></label>
+        <label><input id="include-unverified" type="checkbox" /> Include fixture and simulated quotes in the decision</label>
+        <div class="desk-actions">
+          <button type="submit">Save assumptions</button>
+        </div>
+      </form>
       <div id="cards" class="cards"></div>
       <div class="desk-grid">
         <section class="desk-log">

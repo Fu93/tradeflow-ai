@@ -31,6 +31,10 @@ os.environ.setdefault("TRADEFLOW_MARKET_OFFLINE", "1")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.app import main as api_main  # noqa: E402
+from src.engine.model import bind_archetypes  # noqa: E402
+from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS  # noqa: E402
+
+bind_archetypes(OPPONENT_TYPE_ROWS, OPPONENT_TYPE_NAMES)
 
 
 @pytest.fixture(scope="module", autouse=True)

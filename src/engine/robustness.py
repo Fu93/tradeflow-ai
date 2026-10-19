@@ -18,7 +18,6 @@ from src.config.heuristics import (
     ROBUSTNESS_STABLE_BREAK,
     ROBUSTNESS_STABLE_GAP,
 )
-from src.sim.scenarios import UMBRELLA
 from . import model
 from .solver import solve
 
@@ -39,8 +38,15 @@ def _baseline_at_own_best(res_b) -> tuple[float, float, int]:
     return float(res_b["exp_margin"][bi, bj]), float(res_b["exp_break"][bi, bj]), int(bi)
 
 
+def _require_ceiling(value_ceiling: float | None) -> float:
+    if value_ceiling is None:
+        raise ValueError("value_ceiling is required. This report does not invent a walk-away multiple.")
+    return float(value_ceiling)
+
+
 def fixed_baseline_margin(rng, n_samples: int = 20_000, fixed_conc: float = FIXED_BASELINE_CONCESSION,
-                          reserve_mean=PRIOR_RESERVE_MEAN, reserve_std=PRIOR_RESERVE_STD):
+                          reserve_mean=PRIOR_RESERVE_MEAN, reserve_std=PRIOR_RESERVE_STD,
+                          value_ceiling: float | None = None):
     """固定類人基準：每輪固定讓 fixed_conc（如 5%/輪），與我們引擎的同情境期望邊際比。
 
     回傳 (engine_margin, engine_break, baseline_margin, baseline_break, gain)。
@@ -49,35 +55,38 @@ def fixed_baseline_margin(rng, n_samples: int = 20_000, fixed_conc: float = FIXE
     兩邊皆取各自網格上的最優開盤檔（見 `_baseline_at_own_best` 的修正說明）。
     """
     # 引擎解（在 480 策略中選最優）
-    res = solve(n_opp_samples=n_samples, rng=rng, reserve_mean=reserve_mean, reserve_std=reserve_std)
+    ceiling = _require_ceiling(value_ceiling)
+    res = solve(n_opp_samples=n_samples, rng=rng, reserve_mean=reserve_mean, reserve_std=reserve_std, value_ceiling=ceiling)
     i, j = res["best"]
     engine_margin = float(res["exp_margin"][i, j])
     engine_break = float(res["exp_break"][i, j])
 
     # 固定基準：讓步曲線全 fixed_conc（人類常見的「固定讓步」），
     # 開盤檔由基準自己選最優，而非人為指定中間檔。
-    opens, scheds = model.strategy_grid()
+    opens, scheds = model.strategy_grid(ceiling=ceiling)
     scheds_b = np.full_like(scheds, fixed_conc)
     res_b = solve(n_opp_samples=n_samples, opens=opens, scheds=scheds_b,
-                  rng=rng, reserve_mean=reserve_mean, reserve_std=reserve_std)
+                  rng=rng, reserve_mean=reserve_mean, reserve_std=reserve_std, value_ceiling=ceiling)
     baseline_margin, baseline_break, _ = _baseline_at_own_best(res_b)
     return engine_margin, engine_break, baseline_margin, baseline_break, engine_margin - baseline_margin
 
 
-def multi_baseline(rng, n_samples: int = 20_000, reserve_mean=PRIOR_RESERVE_MEAN, reserve_std=PRIOR_RESERVE_STD):
+def multi_baseline(rng, n_samples: int = 20_000, reserve_mean=PRIOR_RESERVE_MEAN, reserve_std=PRIOR_RESERVE_STD,
+                   value_ceiling: float | None = None):
     """多個類人基準對比（不同固定讓步率），回傳 [ {name,margin,break,gain}, ... ]。
 
     每個基準都取自己的最優開盤檔，與引擎的最優選取規則一致。
     """
-    res = solve(n_opp_samples=n_samples, rng=rng, reserve_mean=reserve_mean, reserve_std=reserve_std)
+    ceiling = _require_ceiling(value_ceiling)
+    res = solve(n_opp_samples=n_samples, rng=rng, reserve_mean=reserve_mean, reserve_std=reserve_std, value_ceiling=ceiling)
     i, j = res["best"]
     em = float(res["exp_margin"][i, j]); eb = float(res["exp_break"][i, j])
-    opens, scheds = model.strategy_grid()
+    opens, scheds = model.strategy_grid(ceiling=ceiling)
     out = []
     for conc in ROBUSTNESS_CONCESSIONS:
         sb = np.full_like(scheds, conc)
         rb = solve(n_opp_samples=n_samples, opens=opens, scheds=sb, rng=rng,
-                   reserve_mean=reserve_mean, reserve_std=reserve_std)
+                   reserve_mean=reserve_mean, reserve_std=reserve_std, value_ceiling=ceiling)
         bm, bb, _ = _baseline_at_own_best(rb)
         out.append({"name": f"fixed {conc*100:.0f}%/rd", "margin": bm, "break": bb,
                     "gain": em - bm})
@@ -86,7 +95,7 @@ def multi_baseline(rng, n_samples: int = 20_000, reserve_mean=PRIOR_RESERVE_MEAN
 
 
 def prior_sensitivity(rng, n_samples: int = 20_000, base_mean=PRIOR_RESERVE_MEAN, base_std=PRIOR_RESERVE_STD,
-                      factors=ROBUSTNESS_FACTORS):
+                      factors=ROBUSTNESS_FACTORS, value_ceiling: float | None = None):
     """prior reserve mean/std 在 ±50% 下，引擎「實際推薦策略」的期望邊際與破局率。
 
     回傳 list of (factor, mean, rec_margin, rec_break) —— 量化先驗偏離的後果。
@@ -98,18 +107,19 @@ def prior_sensitivity(rng, n_samples: int = 20_000, base_mean=PRIOR_RESERVE_MEAN
     即先驗是該圖的承載參數（load-bearing parameter）。本函式的作用是**暴露**這一
     依賴性，而非證明穩定；結論須由 report() 依實測值計算，禁止寫死。
     """
+    ceiling = _require_ceiling(value_ceiling)
     out = []
     for f in factors:
         m = base_mean * f
         s = base_std * f
-        res = solve(n_opp_samples=n_samples, rng=rng, reserve_mean=m, reserve_std=s)
+        res = solve(n_opp_samples=n_samples, rng=rng, reserve_mean=m, reserve_std=s, value_ceiling=ceiling)
         i, j = res["best"]
         out.append((f, m, float(res["exp_margin"][i, j]), float(res["exp_break"][i, j])))
     return out
 
 
 def misbelief_sensitivity(n_samples: int = 20_000, base_mean=PRIOR_RESERVE_MEAN, base_std=PRIOR_RESERVE_STD,
-                          beliefs=ROBUSTNESS_FACTORS):
+                          beliefs=ROBUSTNESS_FACTORS, value_ceiling: float | None = None):
     """真正的「信念錯誤」測試 (misbelief test)：現實不變，僅引擎先驗偏移。
 
     與 prior_sensitivity() 的關鍵差別：
@@ -130,12 +140,12 @@ def misbelief_sensitivity(n_samples: int = 20_000, base_mean=PRIOR_RESERVE_MEAN,
     """
     from .solver import solve
     # 現實（基準先驗）下的全策略評估矩陣
-    reality = solve(n_opp_samples=n_samples, reserve_mean=base_mean, reserve_std=base_std)
+    ceiling = _require_ceiling(value_ceiling)
+    reality = solve(n_opp_samples=n_samples, reserve_mean=base_mean, reserve_std=base_std, value_ceiling=ceiling)
     out = []
     for f in beliefs:
         bm, bs = base_mean * f, base_std * f
-        # 引擎在「以為先驗是 bm/bs」的信念下挑策略
-        plan = solve(n_opp_samples=n_samples, reserve_mean=bm, reserve_std=bs)
+        plan = solve(n_opp_samples=n_samples, reserve_mean=bm, reserve_std=bs, value_ceiling=ceiling)
         i, j = plan["best"]
         # 該策略放回現實（基準分布）評估
         out.append((f, bm,
@@ -144,14 +154,14 @@ def misbelief_sensitivity(n_samples: int = 20_000, base_mean=PRIOR_RESERVE_MEAN,
     return out
 
 
-def report(target_price=None, n_samples=20000, seed=20261013):
-    """Produce text + numeric report (for Demo / README / pitch)."""
-    if target_price is None:
-        target_price = UMBRELLA.target
+def report(target_price=None, n_samples=20000, seed=20261013, value_ceiling=None):
+    """Produce text + numeric report (for the labelled demo CLI)."""
+    if target_price is None or value_ceiling is None:
+        raise ValueError("report requires target_price and value_ceiling")
     rng = np.random.default_rng(seed)
-    em, eb, bm, bb, gain = fixed_baseline_margin(rng, n_samples)
-    sens = prior_sensitivity(rng, n_samples)
-    multi = multi_baseline(rng, n_samples)
+    em, eb, bm, bb, gain = fixed_baseline_margin(rng, n_samples, value_ceiling=value_ceiling)
+    sens = prior_sensitivity(rng, n_samples, value_ceiling=value_ceiling)
+    multi = multi_baseline(rng, n_samples, value_ceiling=value_ceiling)
     lines = []
     lines.append("=== TradeFlow Robustness Report ===")
     lines.append(f"Engine recommendation  margin(norm): {em:.3f}   breakdown: {eb:.1%}")
@@ -182,7 +192,7 @@ def report(target_price=None, n_samples=20000, seed=20261013):
         lines.append(f"  prior×{f} (mean={m:.3f}): margin {rm:.3f}   breakdown {rb:.1%}")
     # 信念錯誤測試（現實固定在 base，僅引擎信念偏移）—— 場景敏感度之外的獨立維度。
     # 注意：迴圈變數不可用 bm（會遮蔽上方 baseline_margin 的 bm）。
-    mis = misbelief_sensitivity(n_samples)
+    mis = misbelief_sensitivity(n_samples, value_ceiling=value_ceiling)
     lines.append("Misbelief test (reality fixed at base prior; only the engine's belief shifts):")
     for f_bel, belief_mean, m_mis, b_mis in mis:
         lines.append(f"  belief×{f_bel} (planning mean={belief_mean:.3f}): "

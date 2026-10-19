@@ -194,8 +194,10 @@ def test_mail_is_not_consumed_before_it_can_be_routed(tmp_path, monkeypatch):
         assert scoped["ingested"] == 1
         other = poll_imap_once(store, deal_id=deal_b)
         assert other["ingested"] >= 1
-        quotes = [row["latest_quote"] for row in store.get_snapshot(deal_b)["suppliers"]]
-        assert any(quote is not None for quote in quotes)
+        routed = store.events(deal_b)
+        assert routed
+        assert any(event["provenance"].get("origin") == "fixture" for event in routed)
+        assert any(event["status"] == "review" for event in routed)
         fixture.append((FIXTURES / "unknown.eml").read_bytes())
         ignored = poll_imap_once(store, deal_id=deal_a)
         assert ignored["ignored"] >= 1

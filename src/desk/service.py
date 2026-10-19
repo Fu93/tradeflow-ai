@@ -18,6 +18,28 @@ from src.desk.store import DeskRejected, DeskStore, get_store
 logger = logging.getLogger("tradeflow.desk")
 
 SOURCES = {"email", "chat-import", "paste"}
+OUTCOMES = {"continue", "walk_away", "agreed"}
+
+
+def classify_origin(raw_text: str, extra: dict | None) -> dict[str, Any]:
+    """Fixture and simulated are decided here. A client boolean is not authority."""
+    fields = dict(extra or {})
+    fields.pop("simulated", None)
+    header = str(fields.get("fixture") or "").strip()
+    text = raw_text or ""
+    fixture = bool(header) or ("X-TradeFlow-Fixture" in text)
+    page_url = str(fields.get("page_url") or "")
+    page_title = str(fields.get("page_title") or "")
+    simulated = ("mock_chat.html" in page_url.lower()) or ("simulated" in page_title.lower())
+    fields["fixture"] = header or ("present" if fixture else None)
+    fields["simulated"] = simulated
+    if fixture:
+        fields["origin"] = "fixture"
+    elif simulated:
+        fields["origin"] = "simulated"
+    else:
+        fields["origin"] = "live"
+    return fields
 Sender = Callable[[str, str, str], Awaitable[bool]]
 
 
@@ -180,9 +202,9 @@ def _ingest_locked(
     provenance["source"] = source
     if sender:
         provenance["sender"] = sender
-    if provenance_extra:
-        provenance.update(provenance_extra)
+    provenance.update(classify_origin(raw_text, provenance_extra))
     simulated = bool(provenance.get("simulated"))
+    fixture = provenance.get("origin") == "fixture"
     try:
         matched = _match_supplier(store.suppliers(deal_id), sender, supplier_id)
     except DeskRejected:
@@ -190,12 +212,11 @@ def _ingest_locked(
     status = reading["status"]
     confidence = reading["confidence"]
     linked = matched["id"] if matched is not None else None
-    if simulated:
+    if simulated or fixture:
         status = "review"
         confidence = "low"
         parsed["unit_price"] = None
-        provenance["review_reason"] = "simulated test fixture"
-        provenance["simulated"] = True
+        provenance["review_reason"] = "fixture" if fixture else "simulated test fixture"
     elif status == "accepted" and linked is None:
         status = "review"
         confidence = "low"
@@ -259,7 +280,11 @@ def accept_review(
         if supplier is None:
             raise DeskRejected("That supplier is not on this deal.")
         reading = parse_quote(event["raw_text"], llm_fields=None)
+        previous = dict(event["parsed"])
         parsed = dict(reading["parsed"])
+        for key in ("freight", "duty_rate", "fees"):
+            if previous.get(key) is not None:
+                parsed[key] = previous[key]
         price = parsed.get("unit_price")
         if chosen_token:
             price = price_from_token(event["raw_text"], chosen_token)
@@ -285,6 +310,59 @@ def accept_review(
         store.touch(deal_id)
         publish(store, deal_id)
         return store.get_snapshot(deal_id) or {}
+
+
+def record_outcome(
+    store: DeskStore,
+    deal_id: str,
+    supplier_id: str,
+    *,
+    outcome: str,
+    quote: float | None = None,
+    offer: float | None = None,
+    agreed_price: float | None = None,
+) -> dict[str, Any]:
+    if outcome not in OUTCOMES:
+        raise DeskRejected("Outcome must be continue, walk_away, or agreed.")
+    with deal_lock(deal_id):
+        deal = store.get_deal(deal_id)
+        if deal is None:
+            raise KeyError(deal_id)
+        supplier = store.supplier(deal_id, supplier_id)
+        if supplier is None:
+            raise DeskRejected("That supplier is not on this deal.")
+        if outcome == "agreed" and agreed_price is None:
+            raise DeskRejected("An agreed outcome needs the agreed price.")
+        snapshot = store.get_snapshot(deal_id) or {}
+        card = next(
+            (row for row in (snapshot.get("suppliers") or []) if row.get("id") == supplier_id),
+            None,
+        )
+        if quote is None and card is not None:
+            quote = card.get("latest_quote")
+        if offer is None and card is not None:
+            offer = card.get("counter") if card.get("counter") is not None else card.get("latest_quote")
+        if quote is None or offer is None:
+            raise DeskRejected("Record the quote and the offer this outcome answers.")
+        store.insert_outcome(
+            deal_id=deal_id,
+            supplier_id=supplier_id,
+            outcome=outcome,
+            quote=float(quote),
+            offer=float(offer),
+            agreed_price=None if agreed_price is None else float(agreed_price),
+        )
+        store.touch(deal_id)
+        return publish(store, deal_id)
+
+
+def set_assumptions(store: DeskStore, deal_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+    with deal_lock(deal_id):
+        if store.get_deal(deal_id) is None:
+            raise KeyError(deal_id)
+        store.set_policy(deal_id, fields)
+        store.touch(deal_id)
+        return publish(store, deal_id)
 
 
 def publish(store: DeskStore, deal_id: str) -> dict[str, Any]:

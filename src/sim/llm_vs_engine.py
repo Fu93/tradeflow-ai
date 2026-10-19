@@ -58,6 +58,7 @@ def _solver_bid(opening: float, target: float, ceiling: float, samples: int, see
         reserve_mean=post_mean,
         reserve_std=post_std,
         rng=np.random.default_rng(seed),
+        value_ceiling=ceiling / target,
     )
     recommended = recommend(solved, target_price=target)
     bid = float(recommended["opening_offer_price"])

@@ -131,10 +131,67 @@ function broadcastSessionUpdate(tabId, sessionData) {
   });
 }
 
+const sessionCreates = new Map();
+
+// Create the session from the page mandate. A missing target or ceiling
+// is an error: this worker does not fill in a demo umbrella.
+async function ensureSession(payload) {
+  const sessionId = payload.sessionId;
+  const target = Number(payload.targetPrice);
+  const ceiling = Number(payload.ceilingPrice);
+  if (!sessionId || !Number.isFinite(target) || target <= 0 || !Number.isFinite(ceiling) || ceiling <= 0) {
+    throw new Error("Set a target and a ceiling on this page before posting a round.");
+  }
+  const pending = sessionCreates.get(sessionId);
+  if (pending) {
+    await pending;
+    return;
+  }
+  const job = (async () => {
+    const lookup = await fetch(
+      `${API_BASE_URL}/api/v1/sessions/${encodeURIComponent(sessionId)}`,
+      { headers: jsonHeaders() }
+    );
+    if (lookup.ok) return;
+    if (lookup.status !== 404) {
+      throw new Error(`Engine HTTP ${lookup.status} while reading the session`);
+    }
+    const created = await fetch(`${API_BASE_URL}/api/v1/sessions`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        session_id: sessionId,
+        product_name: payload.productName || "page product",
+        target_price: target,
+        ceiling_price: ceiling,
+        supplier_id: String(payload.supplierId || "page").slice(0, 256),
+        supplier_channel: "web_chat",
+      }),
+    });
+    if (!created.ok) {
+      let detail = "";
+      try {
+        const errBody = await created.json();
+        detail = errBody && errBody.detail ? `: ${errBody.detail}` : "";
+      } catch (_) {
+        detail = "";
+      }
+      throw new Error(`Engine HTTP ${created.status}${detail}`);
+    }
+  })();
+  sessionCreates.set(sessionId, job);
+  try {
+    await job;
+  } finally {
+    sessionCreates.delete(sessionId);
+  }
+}
+
 // Forward offer submission to FastAPI backend
 async function handleOfferSubmission(tabId, payload) {
   const { sessionId, offer, context, mode } = payload;
   try {
+    await ensureSession(payload);
     const res = await fetch(`${API_BASE_URL}/api/v1/sessions/${encodeURIComponent(sessionId)}/round`, {
       method: "POST",
       headers: jsonHeaders(),
@@ -457,7 +514,8 @@ async function importLatestVisible(message) {
     source: "chat-import",
     raw_text: resp.text,
     supplier_id: supplierId,
-    simulated: !!resp.simulated,
+    page_url: resp.url || "",
+    page_title: resp.title || "",
   };
   const res = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${stored.tfDeskDeal}/quotes`, {
     method: "POST",

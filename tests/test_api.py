@@ -81,13 +81,17 @@ class TestAPI(_IsolatedClientCase):
             self.assertTrue(os.path.isfile(os.path.join(root, "extension", rel)))
 
     def test_negotiate(self):
-        r = self.c.post("/negotiate", json={"target_price": 12.0, "n_samples": 2000,
-                                            "observed_offer": 1.25})
-        self.assertEqual(r.status_code, 200)
+        r = self.c.post("/negotiate", json={
+            "target_price": 12.0,
+            "ceiling_price": 16.2,
+            "n_samples": 2000,
+            "observed_offer": 1.25,
+        })
+        self.assertEqual(r.status_code, 200, r.text)
         body = r.json()
         self.assertIn("opening_offer_price", body)
-        # v5 穩健貝氏共軛後驗更新 (取代舊版未校準之線性 0.3*EMA 平滑器)
-        self.assertAlmostEqual(body["posterior_reserve_mean"], 1.144, places=2)
+        # No prior was sent, so the location is the quote itself.
+        self.assertAlmostEqual(body["posterior_reserve_mean"], 1.25, places=2)
 
     def test_webhook_responds_with_draft(self):
         """Webhook 必須回傳草稿與建議，且**不得因外部服務狀態而失敗**。
@@ -102,7 +106,7 @@ class TestAPI(_IsolatedClientCase):
         sandbox 且 token 未配置的前提下測試（fail-open），與 demo 行為一致。
         """
         r = self.c.post("/webhook/evolus", json={
-            "extracted": {"target_price": 12.0},
+            "extracted": {"target_price": 12.0, "ceiling_price": 16.2},
             "offer": 1.25, "email_body": "We can do ¥15, MOQ 500."})
         self.assertEqual(r.status_code, 200)
         body = r.json()
@@ -147,6 +151,13 @@ class TestUnknownFieldRejection(_IsolatedClientCase):
 
     def test_round_accepts_canonical_fields(self):
         """正確欄位名仍須正常運作（確認 422 來自 extra=forbid，而非欄位改名）。"""
+        created = self.c.post("/api/v1/sessions", json={
+            "session_id": "unknown-field-02",
+            "product_name": "Sample",
+            "target_price": 12.0,
+            "ceiling_price": 16.2,
+        })
+        self.assertEqual(created.status_code, 200, created.text)
         r = self.c.post(
             "/api/v1/sessions/unknown-field-02/round",
             json={"opponent_raw_text": "老闆，碰擊布原料暴漲，¥14.80 做不了",

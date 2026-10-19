@@ -22,7 +22,12 @@ class TestMultiSolver(unittest.TestCase):
         """[§3.2 回歸] 首輪 step_round 必須讓各家先驗隨報價分化，且單調。"""
         from src.engine.multi_solver import MultiAuctionSession
 
-        session = MultiAuctionSession(n_samples=2000)
+        session = MultiAuctionSession(
+            suppliers=[{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}],
+            target_price=12.0,
+            walk_away_ceiling=16.2,
+            n_samples=2000,
+        )
         r1 = session.step_round([13.26, 15.60, 15.92, 16.80])
 
         counters = r1["counter_offers_cny"]
@@ -41,7 +46,8 @@ class TestMultiSolver(unittest.TestCase):
         # 先驗必須落在合理支撐區間（不高於本家報價、低於 walk-away 上限）
         priors = [float(x) for x in session.prior_means]
         self.assertTrue(all(p > 0.5 for p in priors), f"implausible priors: {priors}")
-        self.assertTrue(all(p < 1.35 for p in priors), f"priors exceed ceiling: {priors}")
+        for prior, quote in zip(priors, [13.26, 15.60, 15.92, 16.80]):
+            self.assertAlmostEqual(prior, quote / 12.0, places=2)
 
     def test_dynamic_batna_computation(self):
         """測試動態 BATNA 是否根據競爭對手實時報價有效收緊上限。"""
@@ -119,6 +125,7 @@ class TestMultiSolver(unittest.TestCase):
         from src.engine.multi_solver import MultiAuctionSession
 
         session = MultiAuctionSession(
+            suppliers=[{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}],
             target_price=12.0, walk_away_ceiling=16.2, moq=10_000, n_samples=5000,
         )
         session.step_round([13.26, 15.60, 15.92, 16.80])
@@ -151,6 +158,7 @@ class TestMultiSolver(unittest.TestCase):
         from src.engine.multi_solver import MultiAuctionSession
 
         session = MultiAuctionSession(
+            suppliers=[{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}],
             target_price=12.0, walk_away_ceiling=16.2, moq=10_000, n_samples=200,
         )
         session.step_round([10.00, 11.00, 12.00, 13.00])

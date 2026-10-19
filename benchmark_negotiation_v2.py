@@ -151,10 +151,13 @@ if __name__ == "__main__":
         from src.engine import benchmark as engine_benchmark
         from src.engine import model as engine_model
 
-        e_opens, e_scheds = engine_model.strategy_grid()
+        from src.engine.model import bind_archetypes
+        from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS
+        bind_archetypes(OPPONENT_TYPE_ROWS, OPPONENT_TYPE_NAMES)
+        e_opens, e_scheds = engine_model.strategy_grid(ceiling=YOUR_CEILING)
         # 用與本腳本相同的 S；引擎的 tracemalloc 量測即為同一 solve() 家族。
         working_set_mb = engine_benchmark._measure_working_set_mb(
-            S, e_opens, e_scheds, use_gpu=False
+            S, e_opens, e_scheds, use_gpu=False, value_ceiling=YOUR_CEILING,
         )
         working_set_source = "tracemalloc 實測（src.engine.benchmark._measure_working_set_mb）"
     except Exception as exc:  # 引擎不可用時退回明示標註的舊估值

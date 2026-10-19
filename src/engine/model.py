@@ -16,13 +16,19 @@ from src.config.heuristics import (
     PARAM_FLOOR,
     SAMPLE_AXIS_NOISE,
     SAMPLE_NOISE,
-    YOUR_CEILING,
 )
-from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS
-
-# Re-exported from src.config.heuristics and src.sim.archetypes so existing
-# callers can keep reading model.YOUR_CEILING and model.OPP_TYPES.
+# Opponent rows are a labelled demo input. Production decisions do not
+# import them. Call bind_archetypes from the demo path or a test.
 ROUNDS = 5
+OPP_TYPES = None
+OPP_NAMES: list[str] = []
+
+
+def bind_archetypes(rows, names) -> None:
+    """Install demo opponent rows. Live desk and /round do not call this."""
+    global OPP_TYPES, OPP_NAMES
+    OPP_TYPES = np.array(rows, dtype=float)
+    OPP_NAMES = list(names)
 
 
 def breakdown_circuit_tripped(p_break: float, risk_tolerance: float | None = None) -> bool:
@@ -35,11 +41,8 @@ def breakdown_circuit_tripped(p_break: float, risk_tolerance: float | None = Non
     cap = BREAKDOWN_TRIP_THRESHOLD if risk_tolerance is None else float(risk_tolerance)
     return float(p_break) >= cap
 
-OPP_TYPES = np.array(OPPONENT_TYPE_ROWS, dtype=float)
-OPP_NAMES = list(OPPONENT_TYPE_NAMES)
 
-
-def strategy_grid(n_open: int = 40, n_sched: int = 12):
+def strategy_grid(n_open: int = 40, n_sched: int = 12, ceiling: float | None = None):
     """480 條候選策略 = n_open 首輪報價 × n_sched 讓步曲線。
 
     回傳 (opens, scheds)：
@@ -64,7 +67,12 @@ def strategy_grid(n_open: int = 40, n_sched: int = 12):
     `opens[0]` ~ `opens[i_peak]`（約前 7 檔），其餘 30+ 檔在基準先驗下為負分。
     引用「480 條策略網格」時必須一併說明此集中性。
     """
-    opens = np.linspace(1.0, YOUR_CEILING - GRID_EDGE_INSET, n_open)
+    if ceiling is None:
+        raise ValueError("strategy_grid requires the walk-away ceiling.")
+    high = float(ceiling) - float(GRID_EDGE_INSET)
+    if high <= 1.0:
+        high = float(ceiling)
+    opens = np.linspace(1.0, high, n_open)
     rows = [[rate] * ROUNDS for rate in CONCESSION_FLAT_RATES]
     rows.extend(np.linspace(start, end, ROUNDS) for start, end in CONCESSION_RAMPS)
     rows.extend(CONCESSION_FIXED_ROWS)
@@ -81,11 +89,16 @@ def sample_opponents(rng, n_samples: int, prior_mix=None, noise=SAMPLE_NOISE,
         使「供應商回價後」的信念能真正影響後續求解。
     回傳 reserve, urgency, bluff, conc_rate，形狀皆 (n_samples,)。
     """
+    if OPP_TYPES is None:
+        raise ValueError(
+            "sample_opponents needs opponent rows from the labelled demo path."
+        )
+    n_types = int(OPP_TYPES.shape[0])
     if prior_mix is None:
-        prior_mix = np.ones(4) / 4
-    t = rng.choice(4, size=n_samples, p=prior_mix)
+        prior_mix = np.ones(n_types) / n_types
+    t = rng.choice(n_types, size=n_samples, p=prior_mix)
     if reserve_mean is not None and reserve_std is not None:
-        reserve = reserve_mean * (1 + rng.normal(0, reserve_std, n_samples))
+        reserve = reserve_mean + rng.normal(0, reserve_std, n_samples)
     else:
         reserve = OPP_TYPES[t, 0] * (1 + rng.normal(0, noise, n_samples))
     urgency = np.clip(OPP_TYPES[t, 1] + rng.normal(0, SAMPLE_AXIS_NOISE, n_samples), PARAM_FLOOR, 1.0)

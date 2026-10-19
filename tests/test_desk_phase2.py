@@ -70,10 +70,9 @@ def _by_name(snapshot):
 
 
 def test_sqlite_survives_reopen(tmp_path):
-    from src.config.heuristics import PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD
     from src.desk.service import ingest_message
     from src.desk.store import DeskStore
-    from src.engine.bayesian_v2 import robust_bayes_update
+    from src.engine.bayesian_v2 import robust_location
 
     store = _open_store(tmp_path)
     snapshot = _deal(store)
@@ -92,10 +91,10 @@ def test_sqlite_survives_reopen(tmp_path):
     assert events[0]["raw_text"] == "单价 15.60 元"
     assert events[0]["provenance"]["reader"] == "stage1"
     saved = reopened.get_snapshot(deal_id)
-    state = robust_bayes_update(PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD, 15.60 / 12)
+    mean, _std = robust_location([15.60 / 12])
     ningbo = _by_name(saved)["Ningbo"]
-    assert ningbo["belief_mean"] == state.posterior_mean
-    assert ningbo["belief_label"] == "posterior"
+    assert ningbo["belief_mean"] == mean
+    assert ningbo["belief_label"] == "quote_location"
     assert ningbo["belief_observations"] == 1
     reopened.close()
 
@@ -157,8 +156,7 @@ def test_low_confidence_stays_out_of_the_solve(tmp_path):
 
 def test_better_rival_does_not_raise_other_counters(tmp_path):
     from src.desk.service import ingest_message
-    from src.config.heuristics import PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD
-    from src.engine.bayesian_v2 import robust_bayes_update
+    from src.engine.bayesian_v2 import robust_location
 
     store = _open_store(tmp_path)
     snapshot = _deal(store)
@@ -198,10 +196,7 @@ def test_better_rival_does_not_raise_other_counters(tmp_path):
         new = row["counter"]
         if old is not None:
             assert new is None or new <= old
-    mean, std = PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD
-    for price in (15.60, 13.40):
-        state = robust_bayes_update(mean, std, price / 12)
-        mean, std = state.posterior_mean, state.posterior_std
+    mean, _std = robust_location([15.60 / 12, 13.40 / 12])
     assert later["Ningbo"]["belief_mean"] == mean
     assert later["Ningbo"]["belief_observations"] == 2
     store.close()
@@ -275,22 +270,20 @@ def test_imap_drop_recomputes_and_dedups(tmp_path, monkeypatch):
         assert first["ingested"] == 4
         assert all(message["seen"] is False for message in fixture.messages)
         rows = _by_name(store.get_snapshot(deal_id))
-        assert rows["Yiwu"]["latest_quote"] == 14.90
-        assert rows["Yiwu"]["rank"] == 1
-        before = {name: row["counter"] for name, row in rows.items()}
+        assert all(row["latest_quote"] is None for row in rows.values())
+        stored_events = store.events(deal_id)
+        assert stored_events
+        assert all(event["status"] == "review" for event in stored_events)
+        assert all(event["provenance"].get("origin") == "fixture" for event in stored_events)
+        assert all(row.get("fixture") for row in rows.values())
+        assert all(row.get("origin") == "fixture" for row in rows.values())
+        assert all(row.get("excluded_from_decision") for row in rows.values())
         fixture.append((FIXTURES / "ningbo-followup.eml").read_bytes())
         second = poll_imap_once(store, deal_id=deal_id)
         assert second["ingested"] == 1
         updated = _by_name(store.get_snapshot(deal_id))
-        assert updated["Ningbo"]["latest_quote"] == 13.40
-        assert updated["Ningbo"]["rank"] == 1
-        for name, row in updated.items():
-            if name == "Ningbo":
-                continue
-            old = before[name]
-            new = row["counter"]
-            if old is not None:
-                assert new is None or new <= old
+        assert updated["Ningbo"]["latest_quote"] is None
+        assert all(row["counter"] is None for row in updated.values())
         third = poll_imap_once(store, deal_id=deal_id)
         assert third["ingested"] == 0
         external = [event["external_id"] for event in store.events(deal_id)]

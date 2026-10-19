@@ -2,16 +2,17 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from src.config.heuristics import YOUR_CEILING
 from src.engine import solve, recommend, bayes_update, model, proposal
 
 
 def test_strategy_grid():
-    opens, scheds = model.strategy_grid()
+    opens, scheds = model.strategy_grid(ceiling=YOUR_CEILING)
     assert opens.shape[0] == 40 and scheds.shape == (12, model.ROUNDS)
 
 
 def test_solve_runs():
-    res = solve(n_opp_samples=2000, use_gpu=False)
+    res = solve(n_opp_samples=2000, use_gpu=False, value_ceiling=YOUR_CEILING)
     assert res["exp_margin"].shape == (40, 12)
     assert 0.0 <= res["exp_break"][res["best"]] <= 1.0
     rec = recommend(res, target_price=12.0)
@@ -21,11 +22,11 @@ def test_solve_runs():
 
 def test_solve_edge_cases():
     # 極端 prior：std=0（確定對手）不應 NaN/炸
-    res = solve(n_opp_samples=1000, reserve_mean=1.1, reserve_std=0.0, use_gpu=False)
+    res = solve(n_opp_samples=1000, reserve_mean=1.1, reserve_std=0.0, use_gpu=False, value_ceiling=YOUR_CEILING)
     assert res["exp_margin"].shape == (40, 12)
     assert not (res["exp_margin"] != res["exp_margin"]).any()  # 無 NaN
     # 極小樣本
-    res2 = solve(n_opp_samples=10, use_gpu=False)
+    res2 = solve(n_opp_samples=10, use_gpu=False, value_ceiling=YOUR_CEILING)
     assert res2["exp_margin"].shape == (40, 12)
 
 
@@ -35,9 +36,21 @@ def test_bayes_update():
 
 
 def test_proposal():
-    p = proposal.build_proposal({"target_price": 12.0, "n_samples": 1000}, observed_offer=1.25)
-    assert len(p["round_by_round_prices"]) == model.ROUNDS + 1
-    assert p["round_by_round_prices"][0] == p["opening_offer_price"]
+    p = proposal.build_proposal(
+        {
+            "target_price": 12.0,
+            "walk_away_ceiling": 16.2,
+            "prior_reserve_mean": 1.08,
+            "prior_reserve_std": 0.10,
+            "n_samples": 200,
+        },
+        observed_offer=1.25,
+    )
+    assert p["solver"].startswith("one-step")
+    if p["opening_offer_price"] is None:
+        assert p["round_by_round_prices"] == []
+    else:
+        assert p["round_by_round_prices"] == [p["opening_offer_price"]]
     assert p["risk_flag"] in ("APPROVE", "HUMAN_REVIEW")
     assert p["advice_text"]
 

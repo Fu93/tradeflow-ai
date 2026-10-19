@@ -43,6 +43,13 @@ def test_stage1_only_never_makes_network_calls():
 
 def test_round_endpoint_default_does_not_invoke_stage2(client):
     """主輪次端點預設必須走快速路徑。"""
+    created = client.post("/api/v1/sessions", json={
+        "session_id": "async-regression-01",
+        "product_name": "Sample",
+        "target_price": 12.0,
+        "ceiling_price": 16.2,
+    })
+    assert created.status_code == 200, created.text
     t0 = time.perf_counter()
     r = client.post(
         "/api/v1/sessions/async-regression-01/round",
