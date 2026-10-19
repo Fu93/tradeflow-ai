@@ -531,6 +531,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
                 "gmail_error": draft["gmail_error"],
                 "version": int(draft.get("version") or 1),
                 "body_sha256": draft.get("body_sha256"),
+                "decision_id": draft.get("decision_id"),
                 "send_error": draft.get("send_error"),
                 "reply_to": draft.get("reply_to"),
                 "message_id": draft.get("message_id"),

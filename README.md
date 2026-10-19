@@ -10,6 +10,39 @@ The formulas, and the registry for every constant the decision code is allowed t
 
 Track: **Reinvent Commerce** (AMD Developer Hackathon ACT III, lablab.ai). License: MIT.
 
+## What is proven
+
+Each desk step has a guard, a test, and a chain record. A failed check withholds the counter. The language model does not set a price. A person approves every send.
+
+| Step | Guard | Test | Record |
+|---|---|---|---|
+| T1 Intake | `QuoteIn` extra=forbid; currency from the deal; `raw_sha256` on the event; status stays `review` | `tests/steps/test_t1_intake.py` | `quote_ingested` |
+| T2 Extract | `Mention` extra=forbid; numeric price keys stripped; byte cap; call outside the deal lock; fail closed | `tests/steps/test_t2_extract.py` | `extractor_result` |
+| T3 Shadow | would-accept is recorded; `applied` and `auto_accept` stay false | `tests/steps/test_t3_shadow.py` | shadow fields on the quote provenance |
+| T4 Confirm | `review` may become `accepted` or `rejected`; both of those are terminal | `tests/steps/test_t4_confirm.py` | `review` |
+| T5 Reserve | truncated Beta; a later higher ask does not raise the mean; a rejection is a lower bound | `tests/steps/test_t5_reserve.py` | prior alpha, beta, n, source on the decision record |
+| T6 Hazard | one module, `src/engine/hazard_fit.py`; increment is 0 at the ask | `tests/steps/test_t6_hazard.py` | `hazard_fit_sha256` on the decision record |
+| T7 Optimiser | desk calls `decision.choose_offer` only; sample and grid budgets are not inputs | `tests/steps/test_t7_optimiser.py` | optimiser name on the decision record |
+| T8 Draft | pure decide, then `project_open_drafts`; body contains the issued counter | `tests/steps/test_t8_draft.py` | `decision`, then `draft_created` |
+| T9 Send | human approval; `_guard_send` re-derives the counter from the stored record | `tests/steps/test_t9_send.py` | `send_approved`, `send_result` |
+| T10 Audit | SHA-256 chain; append-only; verify endpoint | `tests/steps/test_t10_audit.py` | `GET /api/v1/desk/deals/{id}/audit/verify` |
+| T11 Release | ruff, mypy, 90% phase-1 coverage, hash-pinned locks, pip-audit | `.github/workflows/ci.yml` | CI log |
+
+| Evidence tier | What it covers |
+|---|---|
+| Live | `python scripts/desk_verify.py <base-url>` creates a deal, ingests a fixture email, confirms it, checks the chain, refuses a send without approval, then approves. Exit 0 means every check passed. |
+| Test | `python -m pytest tests` plus `python scripts/mutation_sanity.py` (30 planted bugs in `decision.py`, `reserve.py`, and `shadow.py`). |
+| Fixture | `data/hazard_ebay_bi.json` is the fitted walk-away file. The reserve prior is labelled policy until this supplier has enough of their own responses. |
+| Not claimed | No factory has closed a deal through this prototype. The eBay fit is not a Chinese factory rate. `/round`, `/negotiate`, and the v1 engines stay in `src/legacy/` and mount only when `TRADEFLOW_LEGACY=1`. |
+
+Code freeze after 27 Oct 2026. From 28 Oct through 30 Oct, commits are fixes only.
+
+Internal notes, filming guides, and older audits are indexed in [docs/internal/README.md](docs/internal/README.md).
+
+Desk environment variables (unset means the feature stays off, except the database path and the poll interval):
+
+`TRADEFLOW_API_KEY` `TRADEFLOW_LEGACY` `TRADEFLOW_DESK_DB` `TRADEFLOW_STORE_DIR` `DESK_N_SAMPLES` `DESK_N_GRID` `DESK_SMTP_SEND` `SMTP_HOST` `EMAIL_USERNAME` `EMAIL_PASSWORD` `IMAP_HOST` `IMAP_PORT` `IMAP_SSL` `IMAP_USERNAME` `IMAP_PASSWORD` `IMAP_LOOKBACK_DAYS` `IMAP_POLL_SECONDS` `GMAIL_DRAFTS` `GMAIL_CLIENT_ID` `GMAIL_CLIENT_SECRET` `GMAIL_REFRESH_TOKEN` `TRADEFLOW_LLM_BASE_URL` `OPENAI_BASE_URL` `TRADEFLOW_LLM_MODEL` `OPENAI_MODEL` `TRADEFLOW_LLM_API_KEY` `OPENAI_API_KEY`
+
 ## Quick start (Docker)
 
 ```bash
@@ -27,6 +60,7 @@ Without Docker (use `python3` if `python` is not on your PATH):
 
 ```bash
 python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt  # pytest, ruff, mypy; not the runtime image
 python -m src.app.main
 ```
 
