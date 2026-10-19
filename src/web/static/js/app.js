@@ -74,22 +74,37 @@ function tfMoney(value) {
   return tfAmount(value, "CNY");
 }
 
+function tfGrouped(whole) {
+  return String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+// Piece counts stay whole numbers. Money, including an amount whose currency
+// was not stated, always keeps two decimals.
+function tfCount(value) {
+  const n = tfNum(value, null);
+  if (n === null) return "—";
+  const negative = n < 0;
+  return (negative ? "-" : "") + tfGrouped(Math.round(Math.abs(n)));
+}
+
 function tfAmount(value, currency) {
   const n = tfNum(value, null);
   if (n === null) return "—";
   const negative = n < 0;
-  const abs = Math.abs(n);
-  // Money always shows two decimals, so 35.00 sits next to 34.20.
-  // A blank currency is a count (pieces), which stays a whole number.
-  const money = String(currency || "") !== "";
-  const scale = money ? 100 : 1;
-  const cents = Math.round(abs * scale);
-  const wholeNum = money ? Math.floor(cents / scale) : cents;
-  const frac = money ? String(cents % scale).padStart(2, "0") : "";
-  const whole = String(wholeNum).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  const body = frac ? whole + "." + frac : whole;
+  const scale = 100;
+  const cents = Math.round(Math.abs(n) * scale);
+  const whole = tfGrouped(Math.floor(cents / scale));
+  const frac = String(cents % scale).padStart(2, "0");
   const code = currency ? " " + currency : "";
-  return (negative ? "-" : "") + body + code;
+  return (negative ? "-" : "") + whole + "." + frac + code;
+}
+
+// Solver CVaR is a ratio of the target. Show it in the deal currency.
+function tfDealMoney(ratio, target, currency) {
+  const n = tfNum(ratio, null);
+  const base = tfNum(target, null);
+  if (n === null || base === null) return "no data";
+  return tfAmount(n * base, currency || "CNY");
 }
 
 function tfPct(value) {
@@ -1136,13 +1151,19 @@ function readAuctionMoney(id) {
   return Number.isFinite(n) ? n : NaN;
 }
 
+function tfValidationMessage(msg) {
+  const text = String(msg || "");
+  const prefix = "Value error, ";
+  return text.indexOf(prefix) === 0 ? text.slice(prefix.length) : text;
+}
+
 async function auctionErrorText(res) {
   let detail = "";
   try {
     const body = await res.json();
-    if (typeof body.detail === "string") detail = body.detail;
+    if (typeof body.detail === "string") detail = tfValidationMessage(body.detail);
     else if (Array.isArray(body.detail)) {
-      detail = body.detail.map((item) => (item && item.msg) ? String(item.msg) : "").filter(Boolean).join(" ");
+      detail = body.detail.map((item) => (item && item.msg) ? tfValidationMessage(item.msg) : "").filter(Boolean).join(" ");
     }
   } catch (err) {
     detail = "";
@@ -1364,7 +1385,7 @@ async function runMultiAuction() {
 
     const versusTarget = tfNum(data.savings_vs_target_cny, null);
     const pieceCount = tfNum(data.moq, null);
-    const pieceBasis = pieceCount === null ? "" : ` for ${tfAmount(pieceCount, "")} pcs`;
+    const pieceBasis = pieceCount === null ? "" : ` for ${tfCount(pieceCount)} pcs`;
     const kicker = document.getElementById("auctionKicker");
     if (kicker) {
       kicker.textContent = data.simulated
@@ -1378,6 +1399,7 @@ async function runMultiAuction() {
       ? "Best alternative is the cheapest adjusted offer from the other simulated suppliers, capped by your walk-away ceiling. It can sit above a supplier's own quote when that supplier is the cheaper one. Suppliers who share the same cheapest rival show the same figure. It is not that supplier's private reserve."
       : "Best alternative is the cheapest adjusted offer from the other quotes you pasted, capped by your walk-away ceiling. It can sit above a supplier's own quote when that supplier is the cheaper one. Suppliers who share the same cheapest rival show the same figure. It is not that supplier's private reserve.";
     const mc = data.mc || {};
+    const cvarMoney = tfDealMoney(mc.cvar_cost, data.product_target, "CNY");
     const priorNote = data.prior_driven
       ? "Walk-away hazard is prior-driven until real continue or walk-away events are recorded."
       : "Walk-away hazard includes recorded continue or walk-away events.";
@@ -1390,11 +1412,11 @@ async function runMultiAuction() {
       <p class="${versusTarget !== null && versusTarget < 0 ? "is-negative" : ""}"><strong>Versus your target</strong> (${tfEsc(tfAmount(data.product_target, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_target_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_target_pct))})</p>
       <p class="summary-secondary"><strong>Versus the walk-away ceiling</strong> (${tfEsc(tfAmount(data.walk_away_ceiling, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_ceiling_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_ceiling_pct))})</p>
       <p class="summary-secondary">${tfEsc(altCopy)}</p>
-      ${mc.tail_saturated_at_ceiling ? `<p class="summary-secondary">CVaR cost ${tfEsc(String(mc.cvar_cost ?? "no data"))}. tail saturated at ceiling</p>` : ""}
+      ${mc.tail_saturated_at_ceiling ? `<p class="summary-secondary">CVaR cost ${tfEsc(cvarMoney)} (tail saturated at the ceiling).</p>` : ""}
       <details class="dev-details">
         <summary>Engine notes</summary>
         <p>Search size ${tfEsc(String(tfNum(data.total_rollouts, 0)))} scenario-offer cells. Compute ${tfEsc(data.total_compute_seconds)}s (${tfEsc(data.backend)}). Push first: ${tfEsc(data.push_first || "—")}. Order: ${tfEsc((data.push_order || []).join(", ") || "—")}. ${tfEsc(priorNote)}</p>
-        <p>Monte Carlo: P(deal) ${tfEsc(String(mc.p_deal ?? "no data"))} (SE ${tfEsc(String(mc.p_deal_se ?? "no data"))}), expected surplus ${tfEsc(String(mc.expected_surplus ?? "no data"))} (SE ${tfEsc(String(mc.expected_surplus_se ?? "no data"))}), CVaR cost ${tfEsc(String(mc.cvar_cost ?? "no data"))}${mc.tail_saturated_at_ceiling ? " (tail saturated at ceiling)" : ""}, regret ${tfEsc(String(mc.regret ?? "no data"))}.</p>
+        <p>Monte Carlo: P(deal) ${tfEsc(String(mc.p_deal ?? "no data"))} (SE ${tfEsc(String(mc.p_deal_se ?? "no data"))}), expected surplus ${tfEsc(String(mc.expected_surplus ?? "no data"))} (SE ${tfEsc(String(mc.expected_surplus_se ?? "no data"))}), CVaR cost ${tfEsc(cvarMoney)}${mc.tail_saturated_at_ceiling ? " (tail saturated at the ceiling)" : ""}, regret ${tfEsc(String(mc.regret ?? "no data"))}.</p>
       </details>
     `;
     const customsNote = document.createElement("p");

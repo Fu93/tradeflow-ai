@@ -377,8 +377,10 @@ def test_pasted_quotes_compare_unit_and_landed(live_server):
             assert "least aggressive" in blocked
             assert page.locator("#auctionSummary details").evaluate("el => el.open") is False
             visible = page.locator("#auctionSummary").inner_text()
-            assert "tail saturated at ceiling" in visible
+            assert "tail saturated at the ceiling" in visible
             assert "CVaR cost" in visible
+            assert "CNY" in visible
+            assert "1.3035714285714284" not in visible
 
             page.fill("#riskTolerance", "0.08")
             page.fill(

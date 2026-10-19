@@ -201,6 +201,35 @@ class TestAuctionValidation(unittest.TestCase):
         self.assertEqual(case_pair.status_code, 422, case_pair.text)
         self.assertIn("Duplicate supplier name: a", case_pair.text)
         self.assertIn("Each supplier needs its own name", case_pair.text)
+        self.assertNotIn("Value error,", case_pair.text)
+
+        fullwidth = client.post("/api/v1/multi-auction/run", json={
+            "n_samples": 8,
+            "n_rounds": 1,
+            "suppliers": [{"name": "Ａ"}, {"name": "A"}],
+            "rounds_quotes": [[13.0, 14.0]],
+        })
+        self.assertEqual(fullwidth.status_code, 422, fullwidth.text)
+        self.assertIn("Duplicate supplier name", fullwidth.text)
+        self.assertNotIn("Value error,", fullwidth.text)
+
+        spaced = client.post("/api/v1/multi-auction/run", json={
+            "n_samples": 8,
+            "n_rounds": 1,
+            "suppliers": [{"name": "A B"}, {"name": "A  B"}],
+            "rounds_quotes": [[13.0, 14.0]],
+        })
+        self.assertEqual(spaced.status_code, 422, spaced.text)
+        self.assertIn("Duplicate supplier name", spaced.text)
+
+        dotted = client.post("/api/v1/multi-auction/run", json={
+            "n_samples": 8,
+            "n_rounds": 1,
+            "suppliers": [{"name": "İ"}, {"name": "i"}],
+            "rounds_quotes": [[13.0, 14.0]],
+        })
+        self.assertEqual(dotted.status_code, 422, dotted.text)
+        self.assertIn("Duplicate supplier name", dotted.text)
 
     def test_all_quotes_above_the_ceiling_are_flagged_and_not_actionable(self):
         session = MultiAuctionSession(
@@ -317,10 +346,11 @@ class TestAuctionValidation(unittest.TestCase):
         self.assertIn("hazard_figure", js)
         self.assertNotIn('indexOf("upper bound")', js)
         self.assertNotIn("indexOf('upper bound')", js)
-        note = js.index("tail saturated at ceiling")
+        note = js.index("tail saturated at the ceiling")
         details = js.index('<details class="dev-details">')
         self.assertLess(note, details)
-        self.assertIn("CVaR cost ${tfEsc(String(mc.cvar_cost", js)
+        self.assertIn("tfDealMoney(mc.cvar_cost, data.product_target, \"CNY\")", js)
+        self.assertNotIn("String(mc.cvar_cost", js)
         self.assertNotIn('? "tail saturated at ceiling" :', js)
 
 

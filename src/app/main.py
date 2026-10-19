@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import unicodedata
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from enum import Enum
@@ -191,8 +192,34 @@ async def _safe_validation_error_handler(request: Request, exc: RequestValidatio
 
     return SafeJSONResponse(
         status_code=422,
-        content={"detail": _sanitize_non_finite(jsonable_encoder(exc.errors()))},
+        content={"detail": _readable_validation_detail(_sanitize_non_finite(jsonable_encoder(exc.errors())))},
     )
+
+
+def _readable_validation_detail(detail):
+    """Drop Pydantic's 'Value error, ' prefix so the UI can show the sentence."""
+    if not isinstance(detail, list):
+        return detail
+    cleaned = []
+    prefix = "Value error, "
+    for item in detail:
+        if isinstance(item, dict) and isinstance(item.get("msg"), str) and item["msg"].startswith(prefix):
+            item = dict(item)
+            item["msg"] = item["msg"][len(prefix):]
+        cleaned.append(item)
+    return cleaned
+
+
+def supplier_name_key(name: str) -> str:
+    """Identity for a supplier name: NFKC, casefold, one space between words.
+
+    Full-width letters match ASCII. A repeated space does not make a second
+    supplier. Combining marks dropped after casefold so dotted capital I
+    matches i.
+    """
+    folded = unicodedata.normalize("NFKC", str(name)).casefold()
+    without_marks = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    return " ".join(without_marks.split())
 
 # [REGRESSION] 原本 allow_origins=["*"] 搭配 allow_credentials=True —— 這是明確的
 # 反模式：任意網站都能帶著憑證呼叫本 API。改為顯式白名單：本機儀表板
@@ -1123,7 +1150,7 @@ class MultiAuctionRunRequest(BaseModel):
             seen: dict[str, str] = {}
             for row in self.suppliers:
                 name = row.name.strip()
-                key = name.casefold()
+                key = supplier_name_key(name)
                 if key in seen:
                     raise ValueError(
                         f"Duplicate supplier name: {name}. Each supplier needs its own name."
