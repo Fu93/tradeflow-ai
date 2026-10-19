@@ -1,4 +1,4 @@
-"""Replay each supplier's accepted quotes, then run one coupled solve."""
+"""Replay each supplier's accepted quotes, then choose one offer per supplier."""
 from __future__ import annotations
 
 import os
@@ -22,11 +22,10 @@ from src.config.heuristics import (
 from src.desk.store import DeskStore
 from src.desk.headline import audit_line, confirmed_prices, saving_vs_best_first
 from src.desk.shadow import progress as shadow_progress
-from src.engine.coupled import solve_coupled
+from src.desk.decide import decide_supplier
 from src.engine.decision import HEURISTIC_NOTE
-from src.engine.hazard import HazardBelief, baseline_rates
 from src.engine.hazard_fit import NOTE as HAZARD_TRANSFER_NOTE
-from src.engine.hazard_fit import load_hazard_fit
+from src.engine.hazard_fit import baseline_rates, load_hazard_fit
 from src.engine.landed import landed_unit_cost, ranking_basis
 from src.engine.reserve import ReserveState
 
@@ -86,43 +85,8 @@ def _components(parsed: dict[str, Any]) -> dict[str, Any]:
         freight=parsed.get("freight"),
         duty_rate=parsed.get("duty_rate"),
         fees=parsed.get("fees"),
-        currency=parsed.get("currency") or "CNY",
-        base_currency="CNY",
-    )
-
-
-def _language(texts: list[str]) -> str:
-    cjk = 0
-    latin = 0
-    for text in texts:
-        for char in text:
-            if "\u4e00" <= char <= "\u9fff":
-                cjk += 1
-            elif ("A" <= char <= "Z") or ("a" <= char <= "z"):
-                latin += 1
-    return "zh" if cjk > latin else "en"
-
-
-def _references(prior: str | None, message_id: str) -> str:
-    parts: list[str] = []
-    for token in str(prior or "").split():
-        if token and token not in parts:
-            parts.append(token)
-    if message_id and message_id not in parts:
-        parts.append(message_id)
-    return " ".join(parts)
-
-
-def _draft_body(product: str, counter: float, quantity: int, language: str, currency: str) -> str:
-    amount = f"{counter:.2f}"
-    if language == "zh" and currency == DEAL_CURRENCY:
-        return (
-            f"您好，关于{product}，我们可以按每件 {amount} 元、"
-            f"数量 {quantity} 继续。请确认是否可以安排。"
-        )
-    return (
-        f"Hello, for {product} we can proceed at {amount} {currency} per unit "
-        f"for {quantity} units. Please confirm if that works."
+        currency=parsed.get("currency") or DEAL_CURRENCY,
+        base_currency=DEAL_CURRENCY,
     )
 
 
@@ -361,82 +325,42 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             row for row in suppliers
             if beliefs_state[row["id"]]["state"] is not None and decision_events(row["id"])
         ]
+    # Reported for the desk, and not an input to the counter.
     samples, grid = solver_budget()
-    solved: dict[str, Any] | None = None
-    half_solved: dict[str, Any] | None = None
-    double_solved: dict[str, Any] | None = None
-    index_of: dict[str, int] = {}
+    choices: dict[str, Any] = {}
     landed_rows: list[dict[str, Any]] = []
+    asks: dict[str, float] = {}
     if active:
-        quotes = []
-        means = []
-        stds = []
-        kappas = []
-        hazard_beliefs = []
         fit = load_hazard_fit()
         intercept = _optional(deal, "hazard_intercept")
-        tau = _optional(deal, "hazard_tau")
         quote_gap = _optional(deal, "hazard_quote_gap")
-        decision_intercept = float(fit.intercept if intercept is None else intercept)
-        decision_gap = float(fit.gap_coef if quote_gap is None else quote_gap)
-        for index, row in enumerate(active):
-            index_of[row["id"]] = index
+        decision_intercept = None if intercept is None else float(intercept)
+        decision_gap = None if quote_gap is None else float(quote_gap)
+        for row in active:
             latest = decision_events(row["id"])[-1]
-            unit = float(latest["parsed"]["unit_price"])
-            quotes.append(unit / target)
-            slot = beliefs_state[row["id"]]
-            mean, std = slot["mean"], slot["std"]
-            means.append(float(mean))
-            stds.append(float(std))
-            landed = _components(latest["parsed"])
-            landed_rows.append(landed)
-            belief = HazardBelief(
-                intercept=decision_intercept,
-                tau=tau,
-                quote_gap_coef=decision_gap,
-                reserve_gap_coef=0.0,
+            asks[row["id"]] = float(latest["parsed"]["unit_price"])
+            landed_rows.append(_components(latest["parsed"]))
+            outcomes = store.outcomes(deal_id, row["id"])
+            store.set_hazard_counts(
+                row["id"],
+                len(outcomes),
+                sum(1 for item in outcomes if item.get("outcome") == "walk_away"),
             )
-            for outcome in store.outcomes(deal_id, row["id"]):
-                if outcome.get("quote") is None or outcome.get("offer") is None:
-                    continue
-                belief.update(
-                    walked=outcome["outcome"] == "walk_away",
-                    quote=float(outcome["quote"]) / target,
-                    offer=float(outcome["offer"]) / target,
-                    reserve=float(mean),
-                )
-            store.set_hazard_counts(row["id"], belief.n_events, belief.n_walks)
-            hazard_beliefs.append(belief)
         basis = ranking_basis(landed_rows)
-        if basis == "landed_cost":
-            for index, landed in enumerate(landed_rows):
-                adder = landed.get("adder")
-                kappas.append(0.0 if adder is None else float(adder) / target)
-        else:
-            kappas = [0.0 for _row in active]
-        rounds = [len(by_supplier[row["id"]]) for row in active]
-        search_cost = (
-            float(WEITZMAN_SEARCH_COST)
-            if _optional(deal, "search_cost") is None
-            else float(deal["search_cost"])
-        )
-
-        solved = solve_coupled(
-            np.asarray(quotes, dtype=np.float64),
-            np.asarray(means, dtype=np.float64),
-            np.asarray(stds, dtype=np.float64),
-            ceiling=ceiling / target,
-            kappas=np.asarray(kappas, dtype=np.float64),
-            n_samples=samples,
-            n_grid=grid,
-            risk_tolerance=float(deal["risk_tolerance"]),
-            beliefs=hazard_beliefs,
-            rng=np.random.default_rng(int(deal["seed"])),
-            round_index=rounds,
-            snap_to_grid=True,
-            search_cost=search_cost,
-            reserves=[beliefs_state[row["id"]]["state"] for row in active],
-        )
+        for row in active:
+            rivals = [price for other, price in asks.items() if other != row["id"]]
+            slot = beliefs_state[row["id"]]
+            state = slot["state"].with_reference(float(slot["reference_ask"]))
+            choices[row["id"]] = decide_supplier(
+                ask=asks[row["id"]],
+                rivals=rivals,
+                ceiling=ceiling,
+                state=state,
+                risk_cap=float(deal["risk_tolerance"]),
+                fit=fit,
+                intercept=decision_intercept,
+                gap_coef=decision_gap,
+            )
     else:
         basis = "unit_price"
 
@@ -499,35 +423,34 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             card["landed_status"] = landed.get("status") or "no data"
         if card["excluded_from_decision"]:
             card["rank"] = None
-        elif solved is not None and row["id"] in index_of:
-            index = index_of[row["id"]]
-            blocked = bool(solved["blocked"][index])
-            offer = float(solved["offers"][index]) * target
+        elif row["id"] in choices:
+            choice = choices[row["id"]]
+            blocked = bool(choice.blocked)
             own_quote = float(card["latest_quote"])
-            relation = str(solved["counter_relation"][index])
+            relation = str(choice.counter_relation)
             if blocked or relation == "withheld":
                 counter = None
                 figure = "upper"
                 relation = "withheld"
             else:
-                counter = min(offer, ceiling, own_quote)
+                counter = min(float(choice.default_counter), ceiling, own_quote)
                 figure = "mean"
                 if abs(float(counter) - own_quote) <= float(OPT_TOL) * max(1.0, own_quote):
                     relation = "at_ask"
-            withheld_push = bool(solved.get("push_withheld", [False])[index])
+            withheld_push = bool(choice.push_withheld)
             card["counter"] = counter
             card["push_counter"] = None if blocked or withheld_push else min(
-                float(solved["push_offers"][index]) * target, ceiling, own_quote
+                float(choice.push_counter), ceiling, own_quote
             )
-            card["push_note"] = "" if blocked else str(solved.get("push_note", [""])[index])
+            card["push_note"] = choice.push_note or ""
             card["counter_relation"] = relation
-            card["sensitivity_half"] = None if blocked else min(float(solved["push_half"][index]) * target, ceiling, own_quote)
-            card["sensitivity_double"] = None if blocked else min(float(solved["push_double"][index]) * target, ceiling, own_quote)
+            card["sensitivity_half"] = None if blocked else min(float(choice.push_half), ceiling, own_quote)
+            card["sensitivity_double"] = None if blocked else min(float(choice.push_double), ceiling, own_quote)
             card["blocked"] = blocked
-            card["hazard"] = float(solved["hazards"][index])
-            card["hazard_upper"] = float(solved["hazard_upper"][index])
+            card["hazard"] = float(choice.incremental_hazard)
+            card["hazard_upper"] = float(choice.incremental_hazard)
             card["hazard_figure"] = figure
-            card["prior_driven"] = bool(solved.get("prior_driven", True))
+            card["prior_driven"] = True
             card = _hold_previous(card, previous_rows.get(row["id"]))
         cards.append(card)
 
@@ -560,106 +483,21 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     for card in cards:
         card["rank"] = by_id[card["id"]]["rank"]
 
-    for card in cards:
-        if card["latest_quote"] is None or card["counter"] is None or _walked_away(store.outcomes(deal_id, card["id"])):
-            store.supersede_open_drafts(deal["id"], card["id"])
-            if _walked_away(store.outcomes(deal_id, card["id"])):
-                card["counter"] = None
-                card["push_counter"] = None
-                card["blocked"] = True
-                card["counter_relation"] = "withheld"
-            continue
-        history = by_supplier.get(card["id"]) or []
-        language = _language([event.get("raw_text") or "" for event in history])
-        currency = str(deal.get("currency") or DEAL_CURRENCY)
-        slot = beliefs_state[card["id"]]
-        state = slot.get("state")
-        usable_events = decision_events(card["id"])
-        from src.desk.record import build_record
+    from src.desk.project import project_open_drafts
 
-        record = build_record(
-            deal_id=deal["id"],
-            supplier_id=card["id"],
-            currency=currency,
-            events=usable_events,
-            ask=float(card["latest_quote"]),
-            ceiling=float(deal["ceiling_price"]),
-            offer=float(card["counter"]),
-            counter=float(card["counter"]),
-            push_counter=card.get("push_counter"),
-            half=card.get("sensitivity_half"),
-            double=card.get("sensitivity_double"),
-            prior_alpha=None if state is None else float(state.alpha),
-            prior_beta=None if state is None else float(state.beta),
-            prior_n=0 if state is None else int(state.n_responses),
-            prior_source="" if state is None else state.source,
-            unconfirmed=unconfirmed,
-            hazard_within_cap=not bool(card.get("blocked")),
-        )
-        if record.counter is None:
-            card["counter"] = None
-            card["push_counter"] = None
-            card["counter_relation"] = "withheld"
-            store.supersede_open_drafts(deal["id"], card["id"])
-            continue
-        payload = record.as_dict()
-        decision_id = store.append_decision(payload, record.sha256())
-        store.append_chain(
-            deal["id"],
-            "decision",
-            {"decision_id": decision_id, "record_sha256": record.sha256(), "supplier_id": card["id"]},
-        )
-        card["decision_id"] = decision_id
-        body = _draft_body(
-            str(deal["product"]),
-            float(record.counter),
-            int(deal["quantity"]),
-            language,
-            currency,
-        )
-        reply_to = None
-        references = None
-        for event in reversed(history):
-            message_id = (event.get("provenance") or {}).get("message_id")
-            if message_id:
-                reply_to = str(message_id)
-                references = _references(
-                    (event.get("provenance") or {}).get("references"),
-                    str(message_id),
-                )
-                break
-        draft_row = store.replace_open_draft(
-            deal["id"],
-            card["id"],
-            body,
-            reply_to=reply_to,
-            references_header=references,
-            decision_id=decision_id,
-        )
-        store.append_chain(
-            deal["id"],
-            "draft_created",
-            {
-                "decision_id": decision_id,
-                "draft_id": draft_row["id"],
-                "body_sha256": draft_row.get("body_sha256"),
-            },
-        )
+    project_open_drafts(
+        store,
+        deal,
+        cards,
+        by_supplier=by_supplier,
+        beliefs_state=beliefs_state,
+        decision_events=decision_events,
+        unconfirmed=unconfirmed,
+    )
 
     mc = None
     stop = False
-    stop_reason = "no accepted quotes yet"
-    if solved is not None:
-        metrics = solved.get("mc") or {}
-        cvar = metrics.get("cvar_cost")
-        mc = {
-            "cvar_cost": None if cvar is None else float(cvar) * target,
-            "cvar_se": None if metrics.get("cvar_se") is None else float(metrics["cvar_se"]) * target,
-            "tail_saturated_at_ceiling": bool(metrics.get("tail_saturated_at_ceiling")),
-            "tail_fraction": metrics.get("tail_fraction"),
-        }
-        stop = bool(solved.get("stop"))
-        stop_reason = str(solved.get("stop_reason") or "")
+    stop_reason = "no accepted quotes yet" if not choices else "one offer per supplier; no Monte Carlo"
 
     elapsed_ms = int(round((time.perf_counter() - started) * 1000))
 
@@ -763,7 +601,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         "ranking_basis": basis,
         "kappa_note": LANDED_NOTE if basis == "landed_cost" else KAPPA_NOTE,
         "hazard_note": HAZARD_NOTE,
-        "heuristic": None if solved is None else solved.get("heuristic") or HEURISTIC_NOTE,
+        "heuristic": HEURISTIC_NOTE,
         "suppliers": cards,
         "events": public_events,
         "review": review,

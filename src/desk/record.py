@@ -10,7 +10,7 @@ from typing import Any
 from src.config.heuristics import DEAL_CURRENCY, MINOR_SCALE, OPT_TOL
 
 ROOT = Path(__file__).resolve().parents[2]
-_OPTIMISER = "coupled.solve_coupled"
+_OPTIMISER = "decision.choose_offer"
 
 
 @dataclass(frozen=True)

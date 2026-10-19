@@ -27,6 +27,8 @@ import pytest
 # Session create must not call Comtrade during the suite. A test that needs
 # the live client deletes this variable and passes a fake transport.
 os.environ.setdefault("TRADEFLOW_MARKET_OFFLINE", "1")
+# The suite still exercises v1. A production process leaves this unset.
+os.environ.setdefault("TRADEFLOW_LEGACY", "1")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

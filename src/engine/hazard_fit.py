@@ -80,6 +80,17 @@ def _exp(value: float) -> float:
     return math.exp(value)
 
 
+def baseline_rates(intercept: float, tau: float) -> dict[str, float]:
+    """Labelled sensitivity of the walk-away rate at a zero gap. No reserve-gap term."""
+    centre = float(intercept)
+    spread = abs(float(tau))
+    return {
+        "baseline": sigmoid(centre),
+        "low": sigmoid(centre - spread),
+        "high": sigmoid(centre + spread),
+    }
+
+
 def quote_gap(ask: float, offer: float) -> float:
     ask = max(float(ask), 0.0)
     if ask == 0.0:

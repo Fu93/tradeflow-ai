@@ -55,24 +55,35 @@ from src.config.heuristics import (
     public_payload as heuristics_payload,
 )
 from src.desk.names import supplier_name_key
-from src.engine.one_step import one_step_counter
-from src.engine.bayesian_v2 import robust_location
-from src.engine.hazard import HazardBelief
 from ..engine.backend import describe_solver_backend, resolve_use_gpu
 from ..engine.llm_config import llm_status
-from ..engine import (
-    solve,
-    recommend,
-    bayes_update,
-    compute_belief_confidence,
-    robustness,
-    model,
-    proposal,
-    robust_bayes_update,
-    compute_calibrated_deal_prob,
-    BayesianBeliefState,
-    TCOEngine,
-)
+
+# V1 engines stay unloaded unless this process is asked to mount them.
+_LEGACY_ON = os.environ.get("TRADEFLOW_LEGACY", "0") == "1"
+if _LEGACY_ON:
+    from src.engine.one_step import one_step_counter
+    from src.engine.bayesian_v2 import robust_location
+    from src.engine.hazard import HazardBelief
+    from ..engine import (
+        compute_belief_confidence,
+        model,
+        proposal,
+        robust_bayes_update,
+        BayesianBeliefState,
+        TCOEngine,
+    )
+else:
+    import types
+
+    one_step_counter = None
+    robust_location = None
+    HazardBelief = None
+    compute_belief_confidence = None
+    proposal = None
+    robust_bayes_update = None
+    BayesianBeliefState = None
+    TCOEngine = None
+    model = types.SimpleNamespace(ROUNDS=int("5"))
 from ..session.schema import (
     SessionSpec,
     NegotiationSession,
@@ -282,6 +293,20 @@ def __getattr__(name: str):
 api_v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_api_key)])
 
 
+def _legacy_route(register):
+    """Register a v1 route only when TRADEFLOW_LEGACY=1."""
+    if _LEGACY_ON:
+        return register
+
+    def _skip(*_args, **_kwargs):
+        def _keep(fn):
+            return fn
+
+        return _keep
+
+    return _skip
+
+
 def _validate_session_id_path(session_id: str) -> str:
     """URL 路徑中的 session_id 也必須符合白名單。
 
@@ -411,7 +436,7 @@ def health():
     }
 
 
-@app.post("/negotiate")
+@_legacy_route(app.post)("/negotiate")
 def negotiate(spec: Spec):
     if spec.observed_offer is None:
         raise HTTPException(status_code=422, detail="A supplier quote is required.")
@@ -947,7 +972,7 @@ class SessionCommandBody(BaseModel):
     source: str = Field(default="mobile", max_length=64)
 
 
-@api_v1.post("/sessions/{session_id}/command")
+@_legacy_route(api_v1.post)("/sessions/{session_id}/command")
 def execute_session_command(session_id: str, body: SessionCommandBody):
     """執行特定會話的高管授權或決策指令。"""
     _validate_session_id_path(session_id)
@@ -1241,7 +1266,7 @@ class MultiAuctionRunRequest(BaseModel):
         return self
 
 
-@api_v1.post("/tco/evaluate")
+@_legacy_route(api_v1.post)("/tco/evaluate")
 def evaluate_nonlinear_tco(req: TCOEvalRequest):
     """計算非價格條款（交期延誤、超額起訂量）之非線性影子成本。"""
     res = TCOEngine.calculate_nonlinear_effective_tco(
@@ -1255,7 +1280,7 @@ def evaluate_nonlinear_tco(req: TCOEvalRequest):
     return {"status": "ok", "tco_analysis": res}
 
 
-@api_v1.post("/bayesian/update")
+@_legacy_route(api_v1.post)("/bayesian/update")
 def calculate_bayesian_update(req: BayesianUpdateRequest):
     """Student-t reserve update. The caller supplies the prior."""
     res = robust_bayes_update(
@@ -1268,7 +1293,7 @@ def calculate_bayesian_update(req: BayesianUpdateRequest):
     return {"status": "ok", "belief_state": res.model_dump()}
 
 
-@api_v1.post("/sessions", response_model=NegotiationSession)
+@_legacy_route(api_v1.post)("/sessions", response_model=NegotiationSession)
 def create_session(spec: SessionSpec):
     """建立新的談判會話。
 
@@ -1303,13 +1328,13 @@ def create_session(spec: SessionSpec):
         raise HTTPException(status_code=500, detail="Failed to create the negotiation session.")
 
 
-@api_v1.get("/sessions", response_model=List[NegotiationSession])
+@_legacy_route(api_v1.get)("/sessions", response_model=List[NegotiationSession])
 def list_sessions():
     """檢索所有現有談判會話。"""
     return session_mgr.list_sessions()
 
 
-@api_v1.get("/sessions/{session_id}", response_model=NegotiationSession)
+@_legacy_route(api_v1.get)("/sessions/{session_id}", response_model=NegotiationSession)
 def get_session(session_id: str):
     """以 ID 查詢特定會話。"""
     _validate_session_id_path(session_id)
@@ -1428,7 +1453,7 @@ def _stored_supplier_draft(sess) -> tuple:
     return reply, language, inbound, price
 
 
-@api_v1.post("/sessions/{session_id}/approve")
+@_legacy_route(api_v1.post)("/sessions/{session_id}/approve")
 def approve_session_decision(session_id: str, body: ApproveActionRequest):
     """採購決策副駕駛 (Copilot) 人工審核與定奪授權端點。
 
@@ -1640,7 +1665,7 @@ def approve_session_decision(session_id: str, body: ApproveActionRequest):
     }
 
 
-@api_v1.post("/sessions/{session_id}/round")
+@_legacy_route(api_v1.post)("/sessions/{session_id}/round")
 def process_negotiation_round(session_id: str, action: RoundActionRequest):
     """
     處理單輪網格回報：
@@ -2492,7 +2517,10 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from ..web.routes_web import api_v1 as web_api_v1_router, router as web_open_router
-from ..engine.multi_solver import simulate_reverse_auction
+if _LEGACY_ON:
+    from ..engine.multi_solver import simulate_reverse_auction
+else:
+    simulate_reverse_auction = None
 
 static_path = Path(__file__).parent.parent / "web" / "static"
 if static_path.exists():
@@ -2564,7 +2592,7 @@ def _official_reference_bundle(suppliers: Optional[List[dict]], req: MultiAuctio
     return bundle
 
 
-@api_v1.post("/multi-auction/run")
+@_legacy_route(api_v1.post)("/multi-auction/run")
 def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
     """觸發多供應商逆向拍賣。
 

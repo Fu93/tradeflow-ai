@@ -88,8 +88,8 @@ def test_auction_keeps_the_off_grid_cap_and_the_desk_drops_it():
     assert any(abs(float(point) - hi) < 1e-9 for point in auction)
     assert all(abs(float(point) - hi) > 1e-6 for point in desk)
     assert float(desk[-1]) <= hi
-    source = (ROOT / "src" / "engine" / "coupled.py").read_text(encoding="utf-8")
-    caller = (ROOT / "src" / "engine" / "multi_solver.py").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "legacy" / "coupled.py").read_text(encoding="utf-8")
+    caller = (ROOT / "src" / "legacy" / "multi_solver.py").read_text(encoding="utf-8")
     assert "batna_surplus=0.0 if snap_to_grid else batna" in source
     assert "snap_to_grid" not in caller
 
@@ -221,8 +221,6 @@ def test_withheld_counter_and_sent_draft_are_not_sent_again(tmp_path, monkeypatc
         send_draft,
     )
     from src.desk.store import DeskStore
-    from src.engine.coupled import solve_coupled
-
     monkeypatch.setenv("DESK_N_SAMPLES", "40")
     monkeypatch.setenv("DESK_N_GRID", "8")
     store = DeskStore(str(tmp_path / "desk.db"))
@@ -292,12 +290,31 @@ def test_withheld_counter_and_sent_draft_are_not_sent_again(tmp_path, monkeypatc
     assert again["status"] == "sent"
     assert calls == [1]
 
-    def blocked(*args, **kwargs):
-        solved = solve_coupled(*args, **kwargs)
-        solved["blocked"] = [True for _item in solved["blocked"]]
-        return solved
+    def blocked(**_kwargs):
+        from src.engine.decision import OfferChoice
 
-    monkeypatch.setattr("src.desk.recompute.solve_coupled", blocked)
+        ask = float(_kwargs["ask"])
+        return OfferChoice(
+            default_counter=ask,
+            push_counter=ask,
+            push_half=ask,
+            push_double=ask,
+            acceptance=0.0,
+            incremental_hazard=1.0,
+            objective=0.0,
+            optimiser="withheld",
+            prior_source="",
+            prior_alpha=1.0,
+            prior_beta=1.0,
+            prior_mean=0.5,
+            n_responses=0,
+            outside=ask,
+            blocked=True,
+            counter_relation="withheld",
+            note="withheld for this check",
+        )
+
+    monkeypatch.setattr("src.desk.recompute.decide_supplier", blocked)
     ingest_message(
         store,
         deal_id,

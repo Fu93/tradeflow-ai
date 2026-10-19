@@ -50,7 +50,7 @@ DECISION = (
     "src/desk/headline.py",
 )
 MIN_JUSTIFICATION = 25
-PRODUCTION = ("src/engine", "src/desk", "src/app")
+PRODUCTION = ("src/engine", "src/desk", "src/app", "src/legacy")
 DEMO_IMPORT = "src/app/demo_data.py"
 # 0, 1, and -1 are identities. 2 is the variance factor in a normal density.
 STRUCTURAL = {0, 1, -1, 2}
@@ -135,6 +135,8 @@ def _decision_files() -> list[str]:
     for folder in ("src/engine", "src/desk"):
         for path in sorted((ROOT / folder).rglob("*.py")):
             found.append(path.relative_to(ROOT).as_posix())
+    for path in sorted((ROOT / "src" / "legacy").glob("*.py")):
+        found.append(path.relative_to(ROOT).as_posix())
     for extra in ("src/app/main.py", "src/app/orchestrator.py"):
         if extra not in found:
             found.append(extra)
