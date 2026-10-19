@@ -370,6 +370,10 @@ class MultiAuctionSession:
         counters = []
         block_reasons: List[Optional[str]] = []
         blocked_out: List[bool] = []
+        # "upper" means the card should show hazard_upper. "mean" means the
+        # card should show p_break_array. The desk reads this field; it does
+        # not infer the choice from the wording of block_reasons.
+        hazard_figure: List[str] = []
         above_reason = "every quote is above the walk-away ceiling"
         hazard_reason = (
             "not actionable: the upper bound on walk-away hazard for every "
@@ -379,6 +383,7 @@ class MultiAuctionSession:
             if i not in active:
                 counters.append(None)
                 blocked_out.append(False)
+                hazard_figure.append("mean")
                 if i in self.inactive:
                     block_reasons.append("walked away; removed from the rival set")
                 elif not comparable[i]:
@@ -389,11 +394,13 @@ class MultiAuctionSession:
             if all_above:
                 counters.append(None)
                 blocked_out.append(True)
+                hazard_figure.append("mean")
                 block_reasons.append(above_reason)
                 continue
             if solver_blocked[i]:
                 counters.append(None)
                 blocked_out.append(True)
+                hazard_figure.append("upper")
                 block_reasons.append(hazard_reason)
                 continue
             raw = float(best_offers[i]) * self.target_price
@@ -402,6 +409,7 @@ class MultiAuctionSession:
             cap = min(self.walk_away_ceiling, own_cap)
             counters.append(min(raw, cap))
             blocked_out.append(False)
+            hazard_figure.append("mean")
             block_reasons.append(None)
         actionable = [counter / self.target_price for counter in counters if counter is not None]
         self._last_offers_norm = actionable
@@ -425,6 +433,7 @@ class MultiAuctionSession:
             ],
             "p_break_array": [None if p is None else float(p) for p in _expand(res_active["p_break_array"])],
             "hazard_upper": [None if p is None else float(p) for p in _expand(res_active["hazard_upper"])],
+            "hazard_figure": hazard_figure,
             "counter_offers_cny": counters,
             "counter_offers_mean_norm": mean_norm,
             "rollouts": res_active["total_rollouts"],

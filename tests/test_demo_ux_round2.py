@@ -165,7 +165,7 @@ class TestDeskCopy(unittest.TestCase):
         self.assertNotIn("lead time days", js)
         self.assertIn("These fields are the supplier's numbers, not our price.", js)
         self.assertNotIn("Not recorded.", js)
-        self.assertIn("for ${tfAmount(pieceCount, \"\")} pcs", js)
+        self.assertIn("for ${tfCount(pieceCount)} pcs", js)
         self.assertNotIn("walk-away ceiling</span>", js)
         self.assertIn('Number(s.rounds) === 1 ? "round" : "rounds"', js)
         self.assertIn("white-space: nowrap", css)

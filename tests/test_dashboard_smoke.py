@@ -375,6 +375,12 @@ def test_pasted_quotes_compare_unit_and_landed(live_server):
             assert "risk-tolerance cap" in blocked
             assert "upper bound" in blocked
             assert "least aggressive" in blocked
+            assert page.locator("#auctionSummary details").evaluate("el => el.open") is False
+            visible = page.locator("#auctionSummary").inner_text()
+            assert "tail saturated at the ceiling" in visible
+            assert "CVaR cost" in visible
+            assert "CNY" in visible
+            assert "1.3035714285714284" not in visible
 
             page.fill("#riskTolerance", "0.08")
             page.fill(
@@ -400,6 +406,21 @@ def test_pasted_quotes_compare_unit_and_landed(live_server):
                 }"""
             )
             assert shown is not None and shown >= 8, shown
+
+            page.fill("#riskTolerance", "")
+            page.fill(
+                "#liveQuotes",
+                "\n".join([
+                    "Alpha, 34, 1, 0, 0",
+                    "Beta, 33, 1.2, 0, 0",
+                ]),
+            )
+            page.click("#runAuctionBtn")
+            page.wait_for_selector("#auctionSummary:not(.hidden)", timeout=120000)
+            landed = page.locator("#supplierCards").inner_text()
+            assert "35.00 CNY" in landed
+            assert "34.20 CNY" in landed
+            assert "35 CNY" not in landed.replace("35.00 CNY", "")
         finally:
             browser.close()
 
@@ -417,7 +438,7 @@ def test_preset_prefills_the_auction_mandate(live_server):
                 timeout=15000,
             )
             umbrella = page.locator("#mandatePrice").inner_text()
-            assert "12 CNY" in umbrella
+            assert "12.00 CNY" in umbrella
             assert "16.20 CNY" in umbrella
 
             page.select_option("#presetCategorySelect", "cnc_case")
@@ -427,7 +448,7 @@ def test_preset_prefills_the_auction_mandate(live_server):
                 timeout=15000,
             )
             mandate = page.locator("#mandatePrice").inner_text()
-            assert "28 CNY" in mandate
+            assert "28.00 CNY" in mandate
             assert "36.50 CNY" in mandate
 
             page.fill("#liveQuotes", "")
@@ -435,7 +456,7 @@ def test_preset_prefills_the_auction_mandate(live_server):
             page.wait_for_selector("#auctionSummary:not(.hidden)", timeout=120000)
             summary = page.locator("#auctionSummary").inner_text()
             assert "Versus your target" in summary
-            assert "28 CNY" in summary
+            assert "28.00 CNY" in summary
             assert "36.50 CNY" in summary
             assert "Simulated suppliers" in summary
         finally:
