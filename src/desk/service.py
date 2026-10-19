@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import threading
@@ -11,8 +12,11 @@ from typing import Any, Awaitable, Callable
 
 from src.config.heuristics import (
     BREAKDOWN_TRIP_THRESHOLD,
+    DEAL_CURRENCIES,
+    DEAL_CURRENCY,
     RISK_TOLERANCE_FLOOR,
     RISK_TOLERANCE_MAX,
+    OPT_TOL,
     UNIT_SANITY_MULTIPLE,
 )
 from src.desk import mailbox, recompute
@@ -24,6 +28,11 @@ logger = logging.getLogger("tradeflow.desk")
 
 SOURCES = {"email", "chat-import", "paste"}
 OUTCOMES = {"continue", "walk_away", "agreed"}
+EVENT_TRANSITIONS = {
+    "review": {"accepted", "rejected"},
+    "accepted": set(),
+    "rejected": set(),
+}
 
 
 def classify_origin(raw_text: str, extra: dict | None) -> dict[str, Any]:
@@ -103,6 +112,7 @@ def create_deal(
     risk_tolerance: float | None,
     seed: int,
     suppliers: list[dict[str, str]],
+    currency: str | None = None,
 ) -> dict[str, Any]:
     names = [item["name"].strip() for item in suppliers]
     addresses = [item["address"].strip() for item in suppliers]
@@ -120,6 +130,9 @@ def create_deal(
         raise DeskRejected("Duplicate supplier address. Each supplier needs its own address.")
     if float(target_price) > float(ceiling_price):
         raise DeskRejected("The target must be at or below the ceiling.")
+    code = currency or DEAL_CURRENCY
+    if code not in DEAL_CURRENCIES:
+        raise DeskRejected("Deal currency is not one of the registered currencies.")
     risk = float(BREAKDOWN_TRIP_THRESHOLD if risk_tolerance is None else risk_tolerance)
     if risk < float(RISK_TOLERANCE_FLOOR) or risk > float(RISK_TOLERANCE_MAX):
         raise DeskRejected("Risk tolerance is outside the configured range.")
@@ -130,6 +143,7 @@ def create_deal(
         ceiling_price=float(ceiling_price),
         risk_tolerance=risk,
         seed=int(seed),
+        currency=code,
         suppliers=[
             {
                 "name": item["name"].strip(),
@@ -207,7 +221,7 @@ def _prepare_reading(raw_text: str, deal: dict[str, Any], *, llm_fields: dict | 
             raw_text,
             llm_fields=llm_fields,
             quantity=deal.get("quantity"),
-            deal_currency="CNY",
+            deal_currency=str(deal.get("currency") or DEAL_CURRENCY),
         )
     except Exception:
         reading = {
@@ -221,7 +235,13 @@ def _prepare_reading(raw_text: str, deal: dict[str, Any], *, llm_fields: dict | 
     high = max(target, ceiling) * multiple
     low = target / multiple if multiple else target
     try:
-        shadow = shadow_from_message(raw_text, reading, low=low, high=high)
+        shadow = shadow_from_message(
+            raw_text,
+            reading,
+            low=low,
+            high=high,
+            currency=str(deal.get("currency") or DEAL_CURRENCY),
+        )
     except Exception:
         shadow = {
             "would_accept": False,
@@ -346,6 +366,27 @@ def _ingest_locked(
         existing = store.find_event(deal_id, external_id)
         return {"duplicate": True, "event": existing, "snapshot": store.get_snapshot(deal_id)}
     store.touch(deal_id)
+    if event is not None:
+        store.append_chain(
+            deal_id,
+            "quote_ingested",
+            {
+                "event_id": event["id"],
+                "raw_sha256": event.get("raw_sha256"),
+                "source": source,
+            },
+        )
+        store.append_chain(
+            deal_id,
+            "extractor_result",
+            {
+                "model": shadow.get("model") or "",
+                "prompt_sha256": shadow.get("prompt_sha256") or "",
+                "response_sha256": shadow.get("response_sha256") or "",
+                "rejected_rows": int(shadow.get("rejected_rows") or 0),
+                "numeric_field_discarded": bool(shadow.get("numeric_field_discarded")),
+            },
+        )
     snapshot = publish(store, deal_id)
     _maybe_gmail_drafts(store, deal_id, snapshot)
     return {"duplicate": False, "event": event, "snapshot": store.get_snapshot(deal_id)}
@@ -362,8 +403,11 @@ def accept_review(
 ) -> dict[str, Any]:
     with deal_lock(deal_id):
         event = store.event(deal_id, event_id)
-        if event is None or event["status"] not in {"review", "accepted"}:
+        if event is None:
             raise KeyError(event_id)
+        target = "rejected" if reject else "accepted"
+        if target not in EVENT_TRANSITIONS.get(event["status"], set()):
+            raise DeskRejected("An accepted quote cannot be accepted again.")
         if reject:
             provenance = dict(event["provenance"])
             provenance["review_rejected_by"] = "human"
@@ -380,6 +424,11 @@ def accept_review(
                 provenance=provenance,
             )
             store.touch(deal_id)
+            store.append_chain(
+                deal_id,
+                "review",
+                {"actor": "human", "from": event["status"], "to": "rejected", "event_id": event_id, "token": None},
+            )
             publish(store, deal_id)
             return store.get_snapshot(deal_id) or {}
         if not supplier_id:
@@ -390,7 +439,13 @@ def accept_review(
         deal = store.get_deal(deal_id)
         if deal is None:
             raise KeyError(deal_id)
-        reading = parse_quote(event["raw_text"], llm_fields=None, quantity=deal.get("quantity"))
+        currency = str(deal.get("currency") or DEAL_CURRENCY)
+        reading = parse_quote(
+            event["raw_text"],
+            llm_fields=None,
+            quantity=deal.get("quantity"),
+            deal_currency=currency,
+        )
         previous = dict(event["parsed"])
         parsed = dict(reading["parsed"])
         for key in ("freight", "duty_rate", "fees"):
@@ -400,11 +455,11 @@ def accept_review(
         if chosen_token:
             if _quantity_token(event["raw_text"], chosen_token):
                 raise DeskRejected("That amount is a quantity, not a unit price.")
-            price = price_from_token(event["raw_text"], chosen_token)
+            price = price_from_token(event["raw_text"], chosen_token, deal_currency=currency)
             if price is None:
-                raise DeskRejected("That amount is not a CNY unit price in the raw text.")
+                raise DeskRejected("That amount is not a unit price in the deal currency.")
             parsed["unit_price"] = price
-            parsed["currency"] = "CNY"
+            parsed["currency"] = currency
         elif price is None:
             raise DeskRejected("Pick one amount from the raw text before accepting.")
         if price is None or _outside_sanity(float(price), deal):
@@ -431,6 +486,17 @@ def accept_review(
             provenance=provenance,
         )
         store.touch(deal_id)
+        store.append_chain(
+            deal_id,
+            "review",
+            {
+                "actor": "human",
+                "from": event["status"],
+                "to": "accepted",
+                "event_id": event_id,
+                "token": chosen_token,
+            },
+        )
         publish(store, deal_id)
         return store.get_snapshot(deal_id) or {}
 
@@ -594,6 +660,47 @@ def draft_digest(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
+def _guard_send(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any]) -> dict[str, Any]:
+    """Re-derive the counter from the stored decision. Refuse on any mismatch."""
+    from src.desk.record import clamp_counter
+
+    decision_id = draft.get("decision_id")
+    if not decision_id:
+        raise SendRefused("This draft has no decision record.")
+    stored = store.get_decision(str(decision_id))
+    if stored is None:
+        raise SendRefused("This draft has no decision record.")
+    record = stored["record"]
+    again = hashlib.sha256(
+        json.dumps(record, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+    if again != stored["record_sha256"]:
+        raise SendRefused("The decision record hash does not match.")
+    chain = store.verify_chain(draft["deal_id"])
+    if not chain["ok"]:
+        raise SendRefused("The audit chain does not verify.")
+    if int(record.get("unconfirmed") or 0) > 0:
+        raise SendRefused("Unconfirmed numbers were used. The counter is withheld.")
+    if not all(bool(item.get("passed")) for item in record.get("checks") or []):
+        raise SendRefused("A decision check failed. The counter is withheld.")
+    offer = record.get("offer")
+    ask = record.get("ask")
+    ceiling = deal.get("ceiling_price")
+    counter = record.get("counter")
+    if offer is None or ask is None or counter is None or ceiling is None:
+        raise SendRefused("The stored decision has no counter to re-derive.")
+    recomputed = clamp_counter(float(offer), float(ceiling), float(ask))
+    tolerance = float(OPT_TOL) * max(1.0, abs(float(counter)))
+    if abs(float(counter) - recomputed) > tolerance:
+        raise SendRefused("The stored counter does not match the ceiling and the ask.")
+    rendered = f"{float(counter):.2f}"
+    if rendered not in str(draft.get("body") or ""):
+        raise SendRefused("The draft text does not contain the stored counter.")
+    if float(counter) - float(ceiling) > tolerance:
+        raise SendRefused("The counter is above the current ceiling.")
+    return record
+
+
 async def send_draft(
     store: DeskStore,
     draft_id: str,
@@ -624,6 +731,12 @@ async def send_draft(
         supplier = store.supplier(draft["deal_id"], draft["supplier_id"])
         if deal is None or supplier is None:
             raise KeyError(draft_id)
+        _guard_send(store, draft, deal)
+        store.append_chain(
+            draft["deal_id"],
+            "send_approved",
+            {"draft_id": draft_id, "decision_id": draft.get("decision_id"), "body_sha256": digest},
+        )
         message_id = f"<desk.{draft_id}.v{int(draft.get('version') or 1)}@tradeflow.local>"
         recipient = supplier["address"]
         body = draft["body"]
@@ -638,6 +751,11 @@ async def send_draft(
                 transmitted=False,
                 error=None,
                 message_id=message_id,
+            )
+            store.append_chain(
+                deal_id,
+                "send_result",
+                {"draft_id": draft_id, "status": "approved", "transmitted": False},
             )
             publish(store, deal_id)
             updated = store.get_draft(draft_id)
@@ -667,6 +785,11 @@ async def send_draft(
             error="SMTP send failed",
             message_id=message_id,
         )
+        store.append_chain(
+            deal_id,
+            "send_result",
+            {"draft_id": draft_id, "status": "send_outcome_unknown", "transmitted": False},
+        )
         publish(store, deal_id)
         raise
     if not transmitted:
@@ -685,6 +808,15 @@ async def send_draft(
             error=None,
             message_id=message_id,
         )
+    store.append_chain(
+        deal_id,
+        "send_result",
+        {
+            "draft_id": draft_id,
+            "status": "sent" if transmitted else "failed",
+            "transmitted": bool(transmitted),
+        },
+    )
     publish(store, deal_id)
     updated = store.get_draft(draft_id)
     return updated or draft

@@ -6,7 +6,7 @@ import json
 import queue
 import re
 import ssl
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -14,7 +14,13 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 from src.app.security import require_desk_mutation
 from src.desk.mailbox import MailboxError
-from src.config.heuristics import BREAKDOWN_TRIP_THRESHOLD, RISK_TOLERANCE_FLOOR, RISK_TOLERANCE_MAX
+from src.config.heuristics import (
+    BREAKDOWN_TRIP_THRESHOLD,
+    DEAL_CURRENCY,
+    FIELD_MAX_CHARS,
+    RISK_TOLERANCE_FLOOR,
+    RISK_TOLERANCE_MAX,
+)
 from src.desk.names import supplier_name_key
 from src.desk.service import (
     BUS,
@@ -56,6 +62,7 @@ class DealIn(BaseModel):
         allow_inf_nan=False,
     )
     seed: int = Field(default=11, ge=0, le=2_000_000_000)
+    currency: Literal["CNY", "USD", "EUR"] = DEAL_CURRENCY
     suppliers: list[SupplierIn] = Field(min_length=4, max_length=5)
 
     @model_validator(mode="after")
@@ -71,13 +78,20 @@ class DealIn(BaseModel):
         return self
 
 
+class LlmFieldsIn(BaseModel):
+    """Caller notes only. A price key is rejected by extra=forbid."""
+
+    model_config = ConfigDict(extra="forbid")
+    note: str | None = Field(default=None, max_length=FIELD_MAX_CHARS)
+
+
 class QuoteIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source: str = Field(min_length=1, max_length=40)
     raw_text: str = Field(min_length=1, max_length=20000)
     sender: str | None = Field(default=None, max_length=320)
     supplier_id: str | None = None
-    llm_fields: dict[str, Any] | None = None
+    llm_fields: LlmFieldsIn | None = None
     freight: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     duty_rate: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     fees: float | None = Field(default=None, ge=0, allow_inf_nan=False)
@@ -151,6 +165,7 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 ceiling_price=body.ceiling_price,
                 risk_tolerance=body.risk_tolerance if body.risk_tolerance is not None else BREAKDOWN_TRIP_THRESHOLD,
                 seed=body.seed,
+                currency=body.currency,
                 suppliers=[item.model_dump() for item in body.suppliers],
             )
         except DeskRejected as exc:
@@ -180,7 +195,7 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 raw_text=body.raw_text,
                 sender=body.sender,
                 supplier_id=body.supplier_id,
-                llm_fields=body.llm_fields,
+                llm_fields=None if body.llm_fields is None else body.llm_fields.model_dump(),
                 freight=body.freight,
                 duty_rate=body.duty_rate,
                 fees=body.fees,
@@ -290,6 +305,28 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 status_code=502,
                 detail="The mail server certificate could not be verified.",
             ) from exc
+
+    @api_v1.get("/desk/deals/{deal_id}/audit/verify")
+    def get_audit_verify(deal_id: str, _: str = Depends(require_desk_mutation)):
+        _ident(deal_id)
+        store = get_store()
+        if store.get_deal(deal_id) is None:
+            raise HTTPException(status_code=404, detail="No such deal")
+        return store.verify_chain(deal_id)
+
+    @api_v1.get("/desk/deals/{deal_id}/evidence.json")
+    def get_evidence(deal_id: str, _: str = Depends(require_desk_mutation)):
+        _ident(deal_id)
+        store = get_store()
+        if store.get_deal(deal_id) is None:
+            raise HTTPException(status_code=404, detail="No such deal")
+        chain = store.verify_chain(deal_id)
+        return {
+            "deal_id": deal_id,
+            "ok": chain["ok"],
+            "head": chain["head"],
+            "entries": chain["entries"],
+        }
 
     @api_v1.get("/desk/deals/{deal_id}/stream")
     async def stream_deal(deal_id: str, _: str = Depends(require_desk_mutation)):

@@ -508,6 +508,27 @@ WILSON_QUARTIC = 4
 # not a price.
 SMALL_GAP_KNOT = 0.10
 
+# Rationale: ISO code for the yuan. The deal row stores the currency a
+# decision uses. This constant is the code the parser recognises for 元,
+# and the labelled default when a caller omits the deal currency.
+DEAL_CURRENCY = "CNY"
+
+# Rationale: currencies a deal may store. The decision reads the deal row.
+# It does not pick one of these itself.
+DEAL_CURRENCIES = ["CNY", "USD", "EUR"]
+
+# Rationale: minor units per major unit for the currencies above. Prices in
+# a decision record are stored as integers of this scale. Two decimal places.
+MINOR_SCALE = 100
+
+# Rationale: largest extractor response, in bytes, that is parsed. A larger
+# body is dropped and the quote stays in human review.
+EXTRACTOR_MAX_BYTES = 65536
+
+# Rationale: maximum characters stored for one extractor evidence span or a
+# caller note. Longer text is rejected by the schema. It is not a price.
+FIELD_MAX_CHARS = 500
+
 
 def _sigmoid(value: float) -> float:
     import math

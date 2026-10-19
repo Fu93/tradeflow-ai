@@ -215,12 +215,26 @@ def _for_rules(clause: str) -> str:
     return _EXCLUSION.sub(" ", clause)
 
 
+_USD = re.compile(r"(?i)(?:usd|美元|\$)")
+_EUR = re.compile(r"(?i)(?:eur|欧元|歐元|€)")
+
+
 def _currency_of(pre: str, post: str) -> str | None:
+    from src.config.heuristics import DEAL_CURRENCY
+
     token = f"{pre} {post}"
-    if _FOREIGN.search(token) and not _CNY.search(token):
+    yuan = bool(_CNY.search(token))
+    usd = bool(_USD.search(token))
+    eur = bool(_EUR.search(token))
+    other = bool(_FOREIGN.search(token)) and not usd and not eur
+    if yuan and not (usd or eur or other):
+        return DEAL_CURRENCY
+    if usd and not yuan:
+        return "USD"
+    if eur and not yuan:
+        return "EUR"
+    if usd or eur or other or yuan:
         return "foreign"
-    if _CNY.search(token):
-        return "CNY"
     return None
 
 
@@ -446,7 +460,7 @@ def parse_quote(
     raw_text: str,
     llm_fields: dict | None = None,
     quantity: float | None = None,
-    deal_currency: str = "CNY",
+    deal_currency: str | None = None,
 ) -> dict[str, Any]:
     """Return parsed fields, confidence, status, and provenance.
 
@@ -459,7 +473,9 @@ def parse_quote(
     quoted = InboundIntentClassifier.extract_quoted_price(visible)
     usable = price_the_solver_may_use(None, None, ignored)
     del usable
-    currency = deal_currency or "CNY"
+    from src.config.heuristics import DEAL_CURRENCY
+
+    currency = deal_currency or DEAL_CURRENCY
     units, competing, review_tokens, saw_range = _collect(visible, currency)
     tokens = numeric_tokens(text)
     distinct = _distinct([value for _, value in tokens])
@@ -476,7 +492,7 @@ def parse_quote(
         if chosen is None:
             reason = "more than one price"
     elif competing and not units:
-        reason = "not a CNY unit price" if currency == "CNY" else "not the deal currency"
+        reason = "not the deal currency"
     elif competing:
         reason = "more than one price"
     else:
@@ -489,7 +505,7 @@ def parse_quote(
             reason = None
         else:
             chosen = None
-            reason = reason or "no usable CNY amount"
+            reason = reason or "no usable amount in the deal currency"
     suggested = None
     if chosen is not None:
         suggested = chosen["token"]
@@ -544,12 +560,15 @@ def parse_quote(
     }
 
 
-def price_from_token(raw_text: str, token: str) -> float | None:
+def price_from_token(raw_text: str, token: str, deal_currency: str | None = None) -> float | None:
     """A human may confirm a token when that digit string is in the text and is not a foreign amount.
 
     The grammar may have left the message in review. The confirmation is the
     missing evidence. A token anchored to another currency stays None.
     """
+    from src.config.heuristics import DEAL_CURRENCY
+
+    currency = deal_currency or DEAL_CURRENCY
     if not token or token not in (raw_text or ""):
         return None
     visible = _visible_text(raw_text)
@@ -571,8 +590,17 @@ def price_from_token(raw_text: str, token: str) -> float | None:
             cny_value = value
         elif kind is None:
             bare_value = value
-    if cny_value is not None:
-        return cny_value
-    if foreign:
-        return None
-    return bare_value
+    if currency == DEAL_CURRENCY:
+        if cny_value is not None:
+            return cny_value
+        if foreign:
+            return None
+        return bare_value
+    matched = None
+    for match in _AMOUNT.finditer(visible):
+        if match.group("num") != token:
+            continue
+        kind = _currency_of(match.group("pre") or "", match.group("post") or "")
+        if kind == currency:
+            matched = _settled(token)
+    return matched

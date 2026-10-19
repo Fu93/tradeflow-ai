@@ -10,6 +10,7 @@ import numpy as np
 
 from src.config.heuristics import (
     BAYES_OBS_NOISE,
+    DEAL_CURRENCY,
     DESK_N_GRID,
     DESK_N_SAMPLES,
     HAZARD_MIN_EVENTS,
@@ -112,14 +113,15 @@ def _references(prior: str | None, message_id: str) -> str:
     return " ".join(parts)
 
 
-def _draft_body(product: str, counter: float, quantity: int, language: str) -> str:
-    if language == "zh":
+def _draft_body(product: str, counter: float, quantity: int, language: str, currency: str) -> str:
+    amount = f"{counter:.2f}"
+    if language == "zh" and currency == DEAL_CURRENCY:
         return (
-            f"您好，关于{product}，我们可以按每件 {counter:.2f} 元、"
+            f"您好，关于{product}，我们可以按每件 {amount} 元、"
             f"数量 {quantity} 继续。请确认是否可以安排。"
         )
     return (
-        f"Hello, for {product} we can proceed at {counter:.2f} CNY per unit "
+        f"Hello, for {product} we can proceed at {amount} {currency} per unit "
         f"for {quantity} units. Please confirm if that works."
     )
 
@@ -292,9 +294,11 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             event for event in (by_supplier.get(supplier_id) or [])
             if event.get("status") == "accepted"
         ]
+        live = [event for event in rows if (event.get("provenance") or {}).get("origin") != "simulated"]
+        live = [event for event in live if not (event.get("provenance") or {}).get("simulated")]
         if include_unverified:
-            return rows
-        return [event for event in rows if not _unverified(event)]
+            return live
+        return [event for event in live if not _unverified(event)]
 
     consumed: list[dict[str, Any]] = []
     for row in suppliers:
@@ -489,7 +493,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         if display is not None and display.get("parsed", {}).get("unit_price") is not None:
             parsed = display["parsed"]
             card["latest_quote"] = parsed.get("unit_price")
-            card["currency"] = parsed.get("currency") or "CNY"
+            card["currency"] = str(deal.get("currency") or parsed.get("currency") or DEAL_CURRENCY)
             landed = _components(parsed)
             card["landed_cost"] = landed.get("landed_cost")
             card["landed_status"] = landed.get("status") or "no data"
@@ -567,11 +571,51 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             continue
         history = by_supplier.get(card["id"]) or []
         language = _language([event.get("raw_text") or "" for event in history])
+        currency = str(deal.get("currency") or DEAL_CURRENCY)
+        slot = beliefs_state[card["id"]]
+        state = slot.get("state")
+        usable_events = decision_events(card["id"])
+        from src.desk.record import build_record
+
+        record = build_record(
+            deal_id=deal["id"],
+            supplier_id=card["id"],
+            currency=currency,
+            events=usable_events,
+            ask=float(card["latest_quote"]),
+            ceiling=float(deal["ceiling_price"]),
+            offer=float(card["counter"]),
+            counter=float(card["counter"]),
+            push_counter=card.get("push_counter"),
+            half=card.get("sensitivity_half"),
+            double=card.get("sensitivity_double"),
+            prior_alpha=None if state is None else float(state.alpha),
+            prior_beta=None if state is None else float(state.beta),
+            prior_n=0 if state is None else int(state.n_responses),
+            prior_source="" if state is None else state.source,
+            unconfirmed=unconfirmed,
+            hazard_within_cap=not bool(card.get("blocked")),
+        )
+        if record.counter is None:
+            card["counter"] = None
+            card["push_counter"] = None
+            card["counter_relation"] = "withheld"
+            store.supersede_open_drafts(deal["id"], card["id"])
+            continue
+        payload = record.as_dict()
+        decision_id = store.append_decision(payload, record.sha256())
+        store.append_chain(
+            deal["id"],
+            "decision",
+            {"decision_id": decision_id, "record_sha256": record.sha256(), "supplier_id": card["id"]},
+        )
+        card["decision_id"] = decision_id
         body = _draft_body(
             str(deal["product"]),
-            float(card["counter"]),
+            float(record.counter),
             int(deal["quantity"]),
             language,
+            currency,
         )
         reply_to = None
         references = None
@@ -584,12 +628,22 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
                     str(message_id),
                 )
                 break
-        store.replace_open_draft(
+        draft_row = store.replace_open_draft(
             deal["id"],
             card["id"],
             body,
             reply_to=reply_to,
             references_header=references,
+            decision_id=decision_id,
+        )
+        store.append_chain(
+            deal["id"],
+            "draft_created",
+            {
+                "decision_id": decision_id,
+                "draft_id": draft_row["id"],
+                "body_sha256": draft_row.get("body_sha256"),
+            },
         )
 
     mc = None
@@ -662,6 +716,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         "deal": {
             "id": deal["id"],
             "product": deal["product"],
+            "currency": str(deal.get("currency") or DEAL_CURRENCY),
             "quantity": deal["quantity"],
             "target_price": deal["target_price"],
             "ceiling_price": deal["ceiling_price"],

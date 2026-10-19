@@ -10,6 +10,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from src.config.heuristics import DEAL_CURRENCY
+from src.desk import audit_chain
+
 
 class DeskRejected(ValueError):
     """The caller asked for a deal the desk will not store."""
@@ -138,6 +141,31 @@ class DeskStore:
             ("unit_sanity_multiple", "REAL"),
         ):
             self._ensure_column("deals", column, ddl)
+        self._ensure_column("deals", "currency", "TEXT")
+        self.conn.execute(
+            "UPDATE deals SET currency = ? WHERE currency IS NULL OR currency = ''",
+            (DEAL_CURRENCY,),
+        )
+        self._ensure_column("quote_events", "raw_sha256", "TEXT")
+        self._ensure_column("drafts", "decision_id", "TEXT")
+        self._ensure_column("snapshots", "decision_id", "TEXT")
+        self.conn.executescript(audit_chain.SCHEMA)
+        self.conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS decisions (
+                id TEXT PRIMARY KEY,
+                deal_id TEXT NOT NULL,
+                supplier_id TEXT NOT NULL,
+                record_json TEXT NOT NULL,
+                record_sha256 TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TRIGGER IF NOT EXISTS decisions_no_update BEFORE UPDATE ON decisions
+            BEGIN SELECT RAISE(ABORT, 'decisions is append-only'); END;
+            CREATE TRIGGER IF NOT EXISTS decisions_no_delete BEFORE DELETE ON decisions
+            BEGIN SELECT RAISE(ABORT, 'decisions is append-only'); END;
+            """
+        )
         self.conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS hazard_outcomes (
@@ -169,6 +197,7 @@ class DeskStore:
         risk_tolerance: float,
         seed: int,
         suppliers: list[dict[str, str]],
+        currency: str = DEAL_CURRENCY,
     ) -> dict[str, Any]:
         with self._lock:
             deal_id = uuid.uuid4().hex
@@ -177,8 +206,8 @@ class DeskStore:
                 """
                 INSERT INTO deals (
                     id, product, quantity, target_price, ceiling_price,
-                    risk_tolerance, seed, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    risk_tolerance, seed, created_at, updated_at, currency
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     deal_id,
@@ -190,6 +219,7 @@ class DeskStore:
                     int(seed),
                     now,
                     now,
+                    currency,
                 ),
             )
             rows = []
@@ -291,8 +321,9 @@ class DeskStore:
                     """
                     INSERT INTO quote_events (
                         id, deal_id, supplier_id, source, raw_text, parsed_json,
-                        confidence, status, provenance_json, external_id, received_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        confidence, status, provenance_json, external_id, received_at,
+                        raw_sha256
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         event_id,
@@ -306,6 +337,7 @@ class DeskStore:
                         json.dumps(provenance, ensure_ascii=False),
                         external_id,
                         _now(),
+                        hashlib.sha256((raw_text or "").encode("utf-8")).hexdigest(),
                     ),
                 )
                 self.conn.commit()
@@ -402,6 +434,7 @@ class DeskStore:
         *,
         reply_to: str | None = None,
         references_header: str | None = None,
+        decision_id: str | None = None,
     ) -> dict[str, Any]:
         """Freeze the previous draft when the text changes.
 
@@ -458,8 +491,8 @@ class DeskStore:
                 INSERT INTO drafts (
                     id, deal_id, supplier_id, body, status, human_approved,
                     transmitted, created_at, sent_at, gmail_draft_id, gmail_error,
-                    version, body_sha256, reply_to, references_header, seq
-                ) VALUES (?, ?, ?, ?, 'draft', 0, 0, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?)
+                    version, body_sha256, reply_to, references_header, seq, decision_id
+                ) VALUES (?, ?, ?, ?, 'draft', 0, 0, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     draft_id,
@@ -472,6 +505,7 @@ class DeskStore:
                     reply_to,
                     references_header,
                     seq,
+                    decision_id,
                 ),
             )
             self.conn.commit()
@@ -514,6 +548,48 @@ class DeskStore:
                 (gmail_id, error, draft_id),
             )
             self.conn.commit()
+
+    def append_chain(self, deal_id: str, type_: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            row = audit_chain.append(self.conn, deal_id, type_, _now(), payload)
+            self.conn.commit()
+            return row
+
+    def verify_chain(self, deal_id: str) -> dict[str, Any]:
+        with self._lock:
+            return audit_chain.verify(self.conn, deal_id)
+
+    def append_decision(self, record: dict[str, Any], record_sha256: str) -> str:
+        with self._lock:
+            decision_id = uuid.uuid4().hex
+            self.conn.execute(
+                """
+                INSERT INTO decisions (id, deal_id, supplier_id, record_json, record_sha256, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    decision_id,
+                    record["deal_id"],
+                    record["supplier_id"],
+                    json.dumps(record, sort_keys=True, ensure_ascii=False),
+                    record_sha256,
+                    _now(),
+                ),
+            )
+            self.conn.commit()
+            return decision_id
+
+    def get_decision(self, decision_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM decisions WHERE id = ?",
+                (decision_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            item = dict(row)
+            item["record"] = json.loads(item.pop("record_json"))
+            return item
 
     def drafts(self, deal_id: str) -> list[dict[str, Any]]:
         with self._lock:

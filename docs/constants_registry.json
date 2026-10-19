@@ -778,6 +778,31 @@
       "category": "d",
       "justification": "Quote-gap knot for the small-gap hinge in the eBay walk-away logit. Gaps below it get an extra term because a straight line understated seller-ended walk-away."
     },
+    "DEAL_CURRENCY": {
+      "value": "CNY",
+      "category": "d",
+      "justification": "ISO code for the yuan. A deal stores its own currency. This is the parser's yuan code and the labelled default when the caller omits one."
+    },
+    "DEAL_CURRENCIES": {
+      "value": ["CNY", "USD", "EUR"],
+      "category": "d",
+      "justification": "Currencies a deal may store. The decision reads the deal row and does not choose among these itself."
+    },
+    "MINOR_SCALE": {
+      "value": 100,
+      "category": "c",
+      "justification": "Minor units per major unit for the desk currencies. A decision record stores prices as integers of this scale."
+    },
+    "EXTRACTOR_MAX_BYTES": {
+      "value": 65536,
+      "category": "n",
+      "justification": "Largest extractor response, in bytes, that is parsed. A larger body is dropped and the quote stays in human review."
+    },
+    "FIELD_MAX_CHARS": {
+      "value": 500,
+      "category": "n",
+      "justification": "Maximum characters stored for one extractor evidence span or a caller note. Longer text is rejected by the schema."
+    },
     "ONE_HALF": {
       "value": 0.5,
       "category": "c",

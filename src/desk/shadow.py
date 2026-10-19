@@ -9,7 +9,13 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from src.config.heuristics import GATE_CERTIFY_ACCEPTS, NEIGHBORHOOD_CHARS, WILSON_QUARTIC, Z_95
+from src.config.heuristics import (
+    DEAL_CURRENCY,
+    GATE_CERTIFY_ACCEPTS,
+    NEIGHBORHOOD_CHARS,
+    WILSON_QUARTIC,
+    Z_95,
+)
 from src.desk.extract import extract_mentions
 from src.desk.span_read import cny_marked, per_piece_marked, read_one, span_in_message
 
@@ -47,7 +53,14 @@ def _rule_value(reading: dict[str, Any]) -> float | None:
     return float(price)
 
 
-def _mention_agrees(mention: dict[str, Any], message: str, rule_value: float, low: float, high: float) -> float | None:
+def _mention_agrees(
+    mention: dict[str, Any],
+    message: str,
+    rule_value: float,
+    low: float,
+    high: float,
+    currency: str,
+) -> float | None:
     if mention.get("class") != "own_unit_offer":
         return None
     if mention.get("class") == "instruction":
@@ -62,7 +75,11 @@ def _mention_agrees(mention: dict[str, Any], message: str, rule_value: float, lo
     if not span_in_message(span, message):
         return None
     nearby = _neighborhood(message, span)
-    if str(mention.get("currency") or "") != "CNY" or not (cny_marked(span) or cny_marked(nearby)):
+    if str(mention.get("currency") or "") != currency:
+        return None
+    if currency == DEAL_CURRENCY and not (cny_marked(span) or cny_marked(nearby)):
+        return None
+    if currency != DEAL_CURRENCY and currency not in span and currency not in nearby:
         return None
     if str(mention.get("unit") or "") != "per_piece" and not (per_piece_marked(span) or per_piece_marked(nearby)):
         return None
@@ -82,6 +99,7 @@ def evaluate_shadow(
     high: float,
     mentions: list[dict[str, Any]] | None = None,
     extractor_configured: bool = False,
+    currency: str = DEAL_CURRENCY,
 ) -> dict[str, Any]:
     """Would the gate have accepted? Phase 1 does not apply the answer."""
     rule_value = _rule_value(reading)
@@ -97,7 +115,7 @@ def evaluate_shadow(
             span = str(mention.get("evidence_span") or "")
             if mention.get("class") == "instruction" or span in instructed:
                 continue
-            agreed = _mention_agrees(mention, message, rule_value, low, high)
+            agreed = _mention_agrees(mention, message, rule_value, low, high, currency)
             if agreed is None:
                 continue
             span_value = agreed
@@ -113,7 +131,15 @@ def evaluate_shadow(
     }
 
 
-def shadow_from_message(message: str, reading: dict[str, Any], *, low: float, high: float, transport=None) -> dict[str, Any]:
+def shadow_from_message(
+    message: str,
+    reading: dict[str, Any],
+    *,
+    low: float,
+    high: float,
+    transport=None,
+    currency: str = DEAL_CURRENCY,
+) -> dict[str, Any]:
     extracted = extract_mentions(message, transport=transport)
     decision = evaluate_shadow(
         message,
@@ -122,9 +148,14 @@ def shadow_from_message(message: str, reading: dict[str, Any], *, low: float, hi
         high=high,
         mentions=extracted.get("mentions") or [],
         extractor_configured=bool(extracted.get("configured")),
+        currency=currency,
     )
     decision["numeric_field_discarded"] = bool(extracted.get("numeric_field_discarded"))
     decision["mentions"] = extracted.get("mentions") or []
+    decision["rejected_rows"] = int(extracted.get("rejected_rows") or 0)
+    decision["model"] = extracted.get("model") or ""
+    decision["prompt_sha256"] = extracted.get("prompt_sha256") or ""
+    decision["response_sha256"] = extracted.get("response_sha256") or ""
     return decision
 
 
