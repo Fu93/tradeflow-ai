@@ -7,6 +7,7 @@ Wilson interval. The certification count is 189 resolved accepts.
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 
 from src.config.heuristics import (
@@ -17,7 +18,14 @@ from src.config.heuristics import (
     Z_95,
 )
 from src.desk.extract import extract_mentions
-from src.desk.span_read import cny_marked, per_piece_marked, read_one, span_in_message
+from src.desk.span_read import currency_marked, per_piece_marked, read_one, span_in_message
+
+# A span that names a total, a duty, or a fee is not a goods unit price,
+# even when the model calls it an own offer.
+_NOT_UNIT_GOODS = re.compile(
+    r"(?i)(?:\btotal\b|\bduty\b|\bshipping\b|\bfreight\b|\bsample\s+fee\b|"
+    r"\bmould\b|\bmold\b|合计|合計|总额|總額|运费|運費|关税|關稅|样品费|樣品費|模具)"
+)
 
 
 def _neighborhood(message: str, span: str) -> str:
@@ -74,12 +82,12 @@ def _mention_agrees(
     span = str(mention.get("evidence_span") or "")
     if not span_in_message(span, message):
         return None
+    if _NOT_UNIT_GOODS.search(span):
+        return None
     nearby = _neighborhood(message, span)
     if str(mention.get("currency") or "") != currency:
         return None
-    if currency == DEAL_CURRENCY and not (cny_marked(span) or cny_marked(nearby)):
-        return None
-    if currency != DEAL_CURRENCY and currency not in span and currency not in nearby:
+    if not (currency_marked(span, currency) or currency_marked(nearby, currency)):
         return None
     if str(mention.get("unit") or "") != "per_piece" and not (per_piece_marked(span) or per_piece_marked(nearby)):
         return None
@@ -156,6 +164,8 @@ def shadow_from_message(
     decision["model"] = extracted.get("model") or ""
     decision["prompt_sha256"] = extracted.get("prompt_sha256") or ""
     decision["response_sha256"] = extracted.get("response_sha256") or ""
+    if extracted.get("error"):
+        decision["error"] = extracted["error"]
     return decision
 
 

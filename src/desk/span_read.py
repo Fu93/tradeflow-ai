@@ -8,8 +8,16 @@ from __future__ import annotations
 
 from src.config.heuristics import SPAN_GROUP
 
-_CNY = ("cny", "rmb", "yuan", "元", "块", "塊", "¥", "￥")
+_MARKS = {
+    "CNY": ("cny", "rmb", "yuan", "元", "块", "塊", "¥", "￥"),
+    "USD": ("usd", "$", "美元"),
+    "EUR": ("eur", "€", "欧元", "歐元"),
+}
 _PER_PIECE = ("per piece", "per pc", "/pc", "each", "元/件", "元/个", "元/只", "一件", "每件", "每个", "每只")
+
+
+def _ascii_letter(char: str) -> bool:
+    return len(char) == 1 and ("A" <= char <= "Z" or "a" <= char <= "z")
 
 
 def _is_digit(char: str) -> bool:
@@ -37,6 +45,7 @@ def read_amounts(text: str) -> list[float]:
         if not _is_digit(raw[index]):
             index += 1
             continue
+        start = index
         whole = []
         fraction = []
         saw_decimal = False
@@ -59,6 +68,11 @@ def read_amounts(text: str) -> list[float]:
             break
         if not whole and not fraction:
             continue
+        # '3X' and 'XT660' are not amounts. A currency ideograph such as 元 is not a letter.
+        before = raw[start - 1] if start else ""
+        after = raw[index] if index < size else ""
+        if _ascii_letter(before) or _ascii_letter(after):
+            continue
         body = "".join(whole) if whole else "0"
         if fraction:
             body = body + "." + "".join(fraction)
@@ -80,9 +94,15 @@ def span_in_message(span: str, message: str) -> bool:
     return text in str(message or "")
 
 
-def cny_marked(text: str) -> bool:
+def currency_marked(text: str, currency: str) -> bool:
+    """True when ``text`` carries a symbol or a name of ``currency``."""
     folded = str(text or "").lower()
-    return any(marker.lower() in folded for marker in _CNY)
+    marks = _MARKS.get(str(currency or "").upper(), ())
+    return any(str(marker).lower() in folded for marker in marks)
+
+
+def cny_marked(text: str) -> bool:
+    return currency_marked(text, "CNY")
 
 
 def per_piece_marked(text: str) -> bool:

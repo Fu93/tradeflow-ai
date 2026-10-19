@@ -326,6 +326,8 @@ def test_extract_schema_edges(monkeypatch):
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("TRADEFLOW_LLM_MODEL", raising=False)
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("TRADEFLOW_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     quiet = extract_mentions("hi")
     assert quiet["configured"] is False
 

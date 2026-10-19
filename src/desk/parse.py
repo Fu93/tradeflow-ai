@@ -37,6 +37,9 @@ _CLAUSE_MARKS = ("\n", "。", "，", ",", ";", "；", "、")
 _FOREIGN = re.compile(r"(?i)(?:usd|eur|gbp|hkd|jpy|aud|cad|美元|欧元|歐元|英镑|英鎊|港币|港幣|日元|\$|€|£)")
 _CNY = re.compile(r"(?i)(?:cny|rmb|yuan|元|块|塊|￥|¥)")
 _RANGE = re.compile(rf"(?i)({_NUM})\s*(?:-|–|~|到|至|\bto\b)\s*({_NUM})")
+_DURATION = re.compile(
+    r"(?i)\s*(?:[A-Za-z]+\s+){0,3}(?:days?|weeks?|months?)\b|\s*(?:个)?(?:天|日|周|週)"
+)
 _AMOUNT = re.compile(
     rf"(?i)(?P<pre>cny|rmb|usd|eur|gbp|hkd|jpy|￥|¥|\$|€|£)?\s*"
     rf"(?P<num>{_NUM})\s*"
@@ -70,8 +73,10 @@ _NEGATION = re.compile(
     r"无法接受|無法接受|已失效|below\s+our\s+cost|too\s+low|not\s+acceptable|"
     r"unable\s+to\s+accept|\breject(?:ed)?\b)"
 )
+# A question is a clause shape (can you, 吗, is ... ok). A '?' is not one:
+# forum text uses runs of '?' where a space was.
 _QUESTION = re.compile(
-    r"(?i)(?:\?|？|能否|吗|嗎|\b(?:can|could|would|will)\s+you\b|"
+    r"(?i)(?:能否|吗|嗎|\b(?:can|could|would|will)\s+you\b|"
     r"\b(?:can|could)\s+we\b|\bis\b.{0,48}\bok\b)"
 )
 _DELTA = re.compile(
@@ -110,9 +115,37 @@ _WAN = 10000
 _MIN_TIER_QTY = 10
 
 
+def _ascii_letter(char: str) -> bool:
+    return len(char) == 1 and ("A" <= char <= "Z" or "a" <= char <= "z")
+
+
+def _glued_amount(text: str, match: re.Match[str]) -> bool:
+    """Digits glued to a letter are a model code or a mask, not a price.
+
+    A currency word that this match already captured ('USD18.40', '18.40USD')
+    is the currency, so those letters do not glue the number.
+    """
+    start = match.start("num")
+    end = match.end("num")
+    before = text[start - 1] if start else ""
+    after = text[end] if end < len(text) else ""
+    pre = match.group("pre") or ""
+    post = match.group("post") or ""
+    if _ascii_letter(before) and not pre:
+        return True
+    if _ascii_letter(after) and not post:
+        return True
+    return False
+
+
 def numeric_tokens(text: str) -> list[tuple[str, float]]:
     found: list[tuple[str, float]] = []
-    for match in _TOKEN.finditer(text or ""):
+    raw = text or ""
+    for match in _TOKEN.finditer(raw):
+        before = raw[match.start() - 1] if match.start() else ""
+        after = raw[match.end()] if match.end() < len(raw) else ""
+        if _ascii_letter(before) or _ascii_letter(after):
+            continue
         token = match.group(0)
         value = _number(token)
         if value is None:
@@ -158,18 +191,69 @@ def _llm_price(fields: dict | None) -> Any:
     return None
 
 
+def _unwrap_quoted(line: str) -> str:
+    text = line.strip()
+    while text.startswith(">"):
+        text = text[1:].strip()
+    return text
+
+
+def _quoted_noise(line: str) -> bool:
+    return bool(_ECHO.search(line) or _OTHER.search(line) or _QUESTION.search(line) or _NEGATION.search(line))
+
+
+def _supplier_line(line: str) -> bool:
+    if _quoted_noise(line):
+        return False
+    return bool(
+        _UNIT_LABEL.search(line) or _QUOTE_LABEL.search(line) or _PER_PIECE.search(line) or _OFFER.search(line)
+    )
+
+
+def _has_currency_amount(text: str) -> bool:
+    for match in _AMOUNT.finditer(text):
+        if _currency_of(match.group("pre") or "", match.group("post") or ""):
+            return True
+    return False
+
+
+def _keep_quoted(lines: list[str]) -> list[str]:
+    """Supplier offer lines stay. An echo or a question is not the supplier's price."""
+    offers = [line for line in lines if _supplier_line(line)]
+    if offers:
+        return offers
+    quiet = [line for line in lines if line.strip() and not _quoted_noise(line)]
+    return quiet or [line for line in lines if line.strip()]
+
+
+def _soften_marks(text: str) -> str:
+    """Forum dumps replace spaces with '?'. The mark is not part of the price."""
+    return re.sub(r"[?？]+", " ", text)
+
+
 def _visible_text(raw_text: str) -> str:
-    """Drop quoted history and the signature. Instruction lines stay, so a human can confirm them."""
+    """Drop forwarded history and the signature.
+
+    A body that is entirely quoted is the message the supplier sent. A quoted
+    block is kept when the unquoted lines do not already name an amount, and
+    buyer echoes in that block are left out. Instruction lines stay.
+    """
     text = _QUOTE_SPLIT.split(raw_text or "", maxsplit=1)[0]
-    kept: list[str] = []
+    plain: list[str] = []
+    quoted: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
-        if stripped.startswith(">"):
-            continue
         if stripped in {"--", "-- "}:
             break
-        kept.append(line)
-    return "\n".join(kept)
+        if stripped.startswith(">"):
+            quoted.append(_unwrap_quoted(stripped))
+            continue
+        plain.append(line)
+    body = "\n".join(plain)
+    if quoted and not _has_currency_amount(body):
+        kept = "\n".join(_keep_quoted(quoted))
+        body = "\n".join(part for part in (body, kept) if part.strip())
+    return _soften_marks(body)
 
 
 def _break_positions(text: str) -> list[int]:
@@ -271,8 +355,13 @@ def _tier_breakpoint(clause: str, price: float) -> float | None:
     return max(found)
 
 
+_COMPLIMENTARY = re.compile(
+    r"(?i)free\s+samples?(?!\s+fee\b)|complimentary\s+samples?|免费样品|免費樣品|样品免费|樣品免費"
+)
+
+
 def _fee_before(clause: str, amount_at: int) -> bool:
-    head = clause[:amount_at]
+    head = _COMPLIMENTARY.sub(" ", clause[:amount_at])
     return bool(_FEE_HEAD.search(head))
 
 
@@ -328,8 +417,19 @@ def _slots_ok(clause: str, amount_at: int, price: float) -> tuple[bool, float | 
 
 
 def _not_a_price_range(text: str, match: re.Match[str]) -> bool:
+    """A lead time such as 20~30 days is not a price range.
+
+    Currency has to sit on the range itself. A currency that belongs to the
+    previous amount, with a digit between it and this range, does not.
+    """
     window = text[max(0, match.start() - 12):min(len(text), match.end() + 12)]
-    if not (_CNY.search(window) or _FOREIGN.search(window) or _UNIT_LABEL.search(window)):
+    tail = text[match.end():min(len(text), match.end() + len(window))]
+    if _DURATION.match(tail):
+        return True
+    head = text[max(0, match.start() - len(window)):match.start()]
+    pieces = re.split(r"\d", head)
+    attached = (pieces[-1] if pieces else head) + tail
+    if not (_CNY.search(attached) or _FOREIGN.search(attached) or _UNIT_LABEL.search(attached)):
         return True
     if _DATE.search(window):
         return True
@@ -385,13 +485,12 @@ def _collect(
     competing: list[dict[str, Any]] = []
     review_tokens: list[dict[str, Any]] = []
     ranges = _range_spans(text)
-    seen: set[float] = set()
     for match in _AMOUNT.finditer(text):
         token = match.group("num")
         pre = match.group("pre") or ""
         post = match.group("post") or ""
         value = _number(token)
-        if value is None or token not in text:
+        if value is None or token not in text or _glued_amount(text, match):
             continue
         span = (match.start(), match.end())
         if _inside(span, ranges):
@@ -402,12 +501,16 @@ def _collect(
         left, _right = _clause_span(text, match.start("num"))
         clause = text[left:_right]
         amount_at = match.start("num") - left
+        per_piece = bool(_PER_PIECE.search(clause) or _UNIT_LABEL.search(clause))
+        key = round(float(value), 4)
         item = {
             "token": token,
             "value": value,
             "span": span,
             "kind": kind,
             "breakpoint": None,
+            "unit": "per_piece" if per_piece else "unknown",
+            "identity": (key, str(kind or ""), "per_piece" if per_piece else "unknown"),
         }
         if kind == "foreign" or (kind is not None and kind != deal_currency):
             competing.append(item)
@@ -433,12 +536,31 @@ def _collect(
         if not ok:
             competing.append(item)
             continue
-        key = round(float(value), 4)
-        if key in seen:
-            continue
-        seen.add(key)
         units.append(item)
-    return units, competing, review_tokens, bool(ranges)
+    return (*_dedupe(units, competing), review_tokens, bool(ranges))
+
+
+def _dedupe(
+    units: list[dict[str, Any]], competing: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """One row per (amount, currency, unit). A repeat is not a second price."""
+    kept_units: list[dict[str, Any]] = []
+    unit_ids: set[tuple[Any, ...]] = set()
+    for item in units:
+        identity = item.get("identity")
+        if not isinstance(identity, tuple) or identity in unit_ids:
+            continue
+        unit_ids.add(identity)
+        kept_units.append(item)
+    kept_competing: list[dict[str, Any]] = []
+    rival_ids: set[tuple[Any, ...]] = set()
+    for item in competing:
+        identity = item.get("identity")
+        if not isinstance(identity, tuple) or identity in unit_ids or identity in rival_ids:
+            continue
+        rival_ids.add(identity)
+        kept_competing.append(item)
+    return kept_units, kept_competing
 
 
 def _pick_tier(units: list[dict[str, Any]], quantity: float | None) -> dict[str, Any] | None:
@@ -458,6 +580,73 @@ def _pick_tier(units: list[dict[str, Any]], quantity: float | None) -> dict[str,
     return chosen[0]
 
 
+_HEADER_CCY = re.compile(
+    r"(?i)(?:currency|币种|幣種)\s*[:：]?\s*(usd|eur|cny|rmb|美元|欧元|歐元|元|¥|￥|\$|€)"
+)
+
+
+def _named_currency(token: str) -> str | None:
+    usd = bool(_USD.search(token))
+    eur = bool(_EUR.search(token))
+    cny = bool(_CNY.search(token))
+    if usd and not (eur or cny):
+        return "USD"
+    if eur and not (usd or cny):
+        return "EUR"
+    if cny and not (usd or eur):
+        return "CNY"
+    return None
+
+
+def _cells(line: str) -> list[str]:
+    if "|" in line:
+        return [cell.strip() for cell in line.split("|") if cell.strip()]
+    return [cell.strip() for cell in re.split(r"\t+|\s{2,}", line) if cell.strip()]
+
+
+def _plain_amount(cell: str) -> bool:
+    text = cell.strip()
+    return _number(text) is not None and bool(re.fullmatch(r"[\d.,]+", text))
+
+
+def _invoice_annex(text: str) -> str:
+    """Rows whose currency is only in the header inherit that currency.
+
+    The header cell is a unit-price label with no amount of its own. A prose
+    line that already contains the price is not a column header.
+    """
+    lines = text.splitlines()
+    header_at = None
+    column = None
+    declared = None
+    for index, line in enumerate(lines):
+        found = _HEADER_CCY.search(line)
+        if found and declared is None:
+            declared = _named_currency(found.group(1))
+        cells = _cells(line)
+        for cell_index, cell in enumerate(cells):
+            if _UNIT_LABEL.search(cell) and not _TOKEN.search(cell):
+                header_at = index
+                column = cell_index
+                named = _named_currency(cell)
+                if named:
+                    declared = named
+                break
+        if header_at is not None:
+            break
+    if header_at is None or column is None or not declared:
+        return ""
+    rows: list[str] = []
+    for line in lines[header_at + 1:]:
+        if not line.strip():
+            break
+        cells = _cells(line)
+        if column >= len(cells) or not _plain_amount(cells[column]):
+            break
+        rows.append(f"unit price {cells[column]} {declared}")
+    return "\n".join(rows)
+
+
 def parse_quote(
     raw_text: str,
     llm_fields: dict | None = None,
@@ -471,6 +660,9 @@ def parse_quote(
     """
     text = raw_text or ""
     visible = _visible_text(text)
+    annex = _invoice_annex(visible)
+    if annex:
+        visible = visible + "\n" + annex
     ignored = _llm_price(llm_fields)
     quoted = InboundIntentClassifier.extract_quoted_price(visible)
     usable = price_the_solver_may_use(None, None, ignored)
@@ -576,33 +768,25 @@ def price_from_token(raw_text: str, token: str, deal_currency: str | None = None
     visible = _visible_text(raw_text)
     if token not in visible:
         return None
-    cny_value = None
+    matched = None
     bare_value = None
-    foreign = False
+    other = False
     for match in _AMOUNT.finditer(visible):
-        if match.group("num") != token:
+        if match.group("num") != token or _glued_amount(visible, match):
             continue
         kind = _currency_of(match.group("pre") or "", match.group("post") or "")
         value = _settled(token)
         if value is None:
             continue
-        if kind == "foreign":
-            foreign = True
-        elif kind == "CNY":
-            cny_value = value
+        if kind == currency:
+            matched = value
         elif kind is None:
             bare_value = value
-    if currency == DEAL_CURRENCY:
-        if cny_value is not None:
-            return cny_value
-        if foreign:
-            return None
+        else:
+            other = True
+    if matched is not None:
+        return matched
+    # An unmarked number is confirmable only for the yuan default.
+    if currency == DEAL_CURRENCY and bare_value is not None and not other:
         return bare_value
-    matched = None
-    for match in _AMOUNT.finditer(visible):
-        if match.group("num") != token:
-            continue
-        kind = _currency_of(match.group("pre") or "", match.group("post") or "")
-        if kind == currency:
-            matched = _settled(token)
-    return matched
+    return None

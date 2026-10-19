@@ -69,6 +69,7 @@ class DecisionRecord:
     constants: dict[str, str]
     unconfirmed: int
     checks: tuple[Check, ...]
+    extractor_response_sha256: str = ""
 
     def eligible(self) -> bool:
         return self.counter is not None and self.unconfirmed == 0 and all(item.passed for item in self.checks)
@@ -148,6 +149,11 @@ def build_record(
         for event in accepted
         if (event.get("parsed") or {}).get("unit_price") is not None
     )
+    digests: list[str] = []
+    for event in accepted:
+        digest = str((event.get("provenance") or {}).get("response_sha256") or "")
+        if digest and digest not in digests:
+            digests.append(digest)
     return DecisionRecord(
         deal_id=deal_id,
         supplier_id=supplier_id,
@@ -170,6 +176,7 @@ def build_record(
         constants=constants_snapshot(),
         unconfirmed=int(unconfirmed),
         checks=checks,
+        extractor_response_sha256=",".join(digests),
     )
 
 

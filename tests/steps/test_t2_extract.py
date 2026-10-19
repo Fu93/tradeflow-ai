@@ -86,6 +86,10 @@ def test_live_call_fails_closed_when_the_endpoint_errors(monkeypatch):
         raise urllib.error.URLError("down")
 
     monkeypatch.setattr(urllib.request, "urlopen", explode)
+    quiet = extract_mentions("单价 15.60 元")
+    assert quiet["configured"] is False
+    assert quiet["mentions"] == []
+    monkeypatch.setenv("TRADEFLOW_LLM_API_KEY", "test-key")
     result = extract_mentions("单价 15.60 元")
     assert result["mentions"] == []
     assert result["error"] == "extractor_unreachable"

@@ -15,7 +15,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from src.config.heuristics import EXTRACTOR_MAX_BYTES, FIELD_MAX_CHARS, LLM_TIMEOUT_SECONDS
+from src.config.heuristics import (
+    EXTRACTOR_BASE_URL,
+    EXTRACTOR_FALLBACK_MODEL,
+    EXTRACTOR_MAX_BYTES,
+    EXTRACTOR_MODEL,
+    FIELD_MAX_CHARS,
+    LLM_TIMEOUT_SECONDS,
+)
 
 CLASSES = (
     "own_unit_offer",
@@ -80,15 +87,24 @@ def _env(*names: str) -> str:
 
 
 def endpoint() -> str:
-    return _env("TRADEFLOW_LLM_BASE_URL", "OPENAI_BASE_URL")
+    return _env("TRADEFLOW_LLM_BASE_URL", "OPENAI_BASE_URL") or EXTRACTOR_BASE_URL
 
 
 def model_name() -> str:
-    return _env("TRADEFLOW_LLM_MODEL", "OPENAI_MODEL")
+    return _env("TRADEFLOW_LLM_MODEL", "OPENAI_MODEL") or EXTRACTOR_MODEL
 
 
 def configured() -> bool:
-    return bool(endpoint() and model_name())
+    """A key is required. The default host and model are not a call by themselves."""
+    return bool(_env("TRADEFLOW_LLM_API_KEY", "OPENAI_API_KEY"))
+
+
+def _models() -> list[str]:
+    primary = model_name()
+    fallback = EXTRACTOR_FALLBACK_MODEL
+    if fallback and fallback != primary:
+        return [primary, fallback]
+    return [primary]
 
 
 def _chat_url(base: str) -> str:
@@ -125,12 +141,27 @@ def prompt_sha256() -> str:
     return hashlib.sha256(_SYSTEM.encode("utf-8")).hexdigest()
 
 
+def _empty(error: str, *, rejected: int = 1) -> dict[str, Any]:
+    return {
+        "mentions": [],
+        "numeric_field_discarded": False,
+        "rejected_rows": rejected,
+        "configured": True,
+        "model": model_name(),
+        "prompt_sha256": prompt_sha256(),
+        "error": error,
+    }
+
+
 def mentions_from_payload(payload: Any) -> dict[str, Any]:
     """Validate a decoded extractor body. Amounts are not taken from it.
 
     A numeric price key is stripped and counted. Any row that still fails the
-    strict schema is dropped and counted. The quote stays with a person.
+    strict schema is dropped and counted. A bare list is not a mentions
+    object: the quote stays with a person and the reason is explicit.
     """
+    if isinstance(payload, list):
+        return _empty("extractor_not_object")
     cleaned, dropped_numeric = _strip_numeric_fields(payload)
     rejected = 0
     rows: list[dict[str, Any]] = []
@@ -164,12 +195,9 @@ def mentions_from_payload(payload: Any) -> dict[str, Any]:
     }
 
 
-def extract_mentions(message: str, *, transport=None) -> dict[str, Any]:
-    """Call the endpoint when it is configured. ``transport`` is for tests."""
-    if not configured() and transport is None:
-        return {"mentions": [], "numeric_field_discarded": False, "configured": False}
-    body = {
-        "model": model_name() or "unset",
+def _request_body(message: str, model: str) -> dict[str, Any]:
+    return {
+        "model": model,
         "temperature": 0,
         "messages": [
             {"role": "system", "content": _SYSTEM},
@@ -179,38 +207,68 @@ def extract_mentions(message: str, *, transport=None) -> dict[str, Any]:
             },
         ],
     }
-    if transport is not None:
-        try:
-            decoded = transport(body)
-        except Exception:
-            return {"mentions": [], "numeric_field_discarded": False, "configured": True, "error": "extractor_failed"}
-        if isinstance(decoded, dict) and "choices" in decoded:
-            return _from_chat(decoded)
+
+
+def _interpret(decoded: Any, model: str) -> dict[str, Any]:
+    if isinstance(decoded, dict) and "choices" in decoded:
+        result = _from_chat(decoded)
+    else:
         try:
             result = mentions_from_payload(decoded)
         except Exception:
-            return {
-                "mentions": [],
-                "numeric_field_discarded": False,
-                "configured": True,
-                "error": "extractor_malformed",
-            }
+            result = _empty("extractor_malformed")
         result["configured"] = True
-        return result
+    result["model"] = model
+    return result
+
+
+def _post(base: str, body: dict[str, Any]) -> Any:
     raw = json.dumps(body).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     key = _env("TRADEFLOW_LLM_API_KEY", "OPENAI_API_KEY")
     if key:
         headers["Authorization"] = "Bearer " + key
-    request = urllib.request.Request(_chat_url(endpoint()), data=raw, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=int(LLM_TIMEOUT_SECONDS)) as response:
-            decoded = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
-        return {"mentions": [], "numeric_field_discarded": False, "configured": True, "error": "extractor_unreachable"}
-    except Exception:
-        return {"mentions": [], "numeric_field_discarded": False, "configured": True, "error": "extractor_failed"}
-    return _from_chat(decoded)
+    request = urllib.request.Request(_chat_url(base), data=raw, headers=headers, method="POST")
+    with urllib.request.urlopen(request, timeout=int(LLM_TIMEOUT_SECONDS)) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def extract_mentions(message: str, *, transport=None) -> dict[str, Any]:
+    """Call the endpoint when a key is set. ``transport`` is for tests.
+
+    The primary model is tried first. A transport failure retries the fallback
+    model once. A body that is not a mentions object fails closed with a reason.
+    """
+    if not configured() and transport is None:
+        return {"mentions": [], "numeric_field_discarded": False, "configured": False}
+    last = _empty("extractor_failed")
+    for model in _models():
+        body = _request_body(message, model)
+        if transport is not None:
+            try:
+                decoded = transport(body)
+            except Exception:
+                last = _empty("extractor_failed")
+                last["model"] = model
+                continue
+            result = _interpret(decoded, model)
+        else:
+            try:
+                decoded = _post(endpoint(), body)
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+                last = _empty("extractor_unreachable")
+                last["model"] = model
+                continue
+            except Exception:
+                last = _empty("extractor_failed")
+                last["model"] = model
+                continue
+            result = _from_chat(decoded)
+            result["model"] = model
+        if "error" not in result or result.get("error") not in {"extractor_unreachable", "extractor_failed"}:
+            return result
+        last = result
+    return last
 
 
 def _from_chat(decoded: Any) -> dict[str, Any]:

@@ -756,7 +756,22 @@
     "LLM_TIMEOUT_SECONDS": {
       "value": 20,
       "category": "n",
-      "justification": "Timeout, in seconds, for one optional extractor call. A missing endpoint leaves the rule prefill only. No key is stored in code."
+      "justification": "Timeout, in seconds, for one optional extractor call. A missing key leaves the rule prefill only. No key is stored in code."
+    },
+    "EXTRACTOR_BASE_URL": {
+      "value": "https://api.tokenfactory.nebius.com/v1",
+      "category": "d",
+      "justification": "Default OpenAI-compatible base for the desk span extractor on Nebius Token Factory. An unset URL uses this. A key is still required before any call."
+    },
+    "EXTRACTOR_MODEL": {
+      "value": "nvidia/Nemotron-3-Ultra-550b-a55b",
+      "category": "d",
+      "justification": "Default chat model for the desk span extractor. It names evidence spans and does not set a price. Temperature stays zero."
+    },
+    "EXTRACTOR_FALLBACK_MODEL": {
+      "value": "nvidia/nemotron-3-super-120b-a12b",
+      "category": "d",
+      "justification": "Fallback chat model when the primary extractor call cannot be completed. One retry, then the quote stays in human review."
     },
     "NEWTON_STEP_BITS": {
       "value": 20,

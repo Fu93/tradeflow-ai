@@ -326,6 +326,8 @@ def _ingest_locked(
     provenance["rule_value"] = shadow.get("rule_value")
     provenance["auto_accept"] = False
     provenance["llm_price_ignored"] = True
+    if shadow.get("response_sha256"):
+        provenance["response_sha256"] = shadow["response_sha256"]
     if shadow.get("error"):
         provenance["extractor_error"] = shadow["error"]
     if freight is not None:

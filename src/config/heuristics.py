@@ -486,8 +486,20 @@ GATE_CERTIFY_ACCEPTS = 189
 SPAN_GROUP = 3
 
 # Rationale: timeout, in seconds, for one optional extractor call. A missing
-# endpoint leaves the rule prefill only.
+# key leaves the rule prefill only.
 LLM_TIMEOUT_SECONDS = 20
+
+# Rationale: default OpenAI-compatible base for the desk span extractor.
+# An unset URL uses this host. A call still requires an API key.
+EXTRACTOR_BASE_URL = "https://api.tokenfactory.nebius.com/v1"
+
+# Rationale: default chat model for the desk span extractor. It names evidence
+# spans and does not set a price. Temperature stays zero.
+EXTRACTOR_MODEL = "nvidia/Nemotron-3-Ultra-550b-a55b"
+
+# Rationale: fallback chat model when the primary extractor call cannot be
+# completed. One retry, then the quote stays in human review.
+EXTRACTOR_FALLBACK_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 
 # Rationale: Newton polish step is two to the minus this many bits, times the
 # offer scale. Wide enough that curvature is visible in float64, and short
