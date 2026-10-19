@@ -753,6 +753,29 @@ function renderEngineDecision(session) {
   } else {
     el("decisionCounter").textContent = shownOffer === null ? "—" : tfAmount(shownOffer, "CNY");
   }
+  let pushOffer = null;
+  let pushHalf = null;
+  let pushDouble = null;
+  let heuristic = null;
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const meta = turns[i].metadata || {};
+    if (pushOffer === null) pushOffer = tfNum(meta.push_offer_price, null);
+    if (pushHalf === null) pushHalf = tfNum(meta.push_half_price, null);
+    if (pushDouble === null) pushDouble = tfNum(meta.push_double_price, null);
+    if (!heuristic && meta.heuristic) heuristic = String(meta.heuristic);
+    if (pushOffer !== null && heuristic) break;
+  }
+  const pushLine = document.getElementById("decisionPush");
+  if (pushLine) {
+    const pushText = pushOffer === null ? "withheld" : tfAmount(pushOffer, "CNY");
+    const halfText = pushHalf === null ? "withheld" : tfAmount(pushHalf, "CNY");
+    const doubleText = pushDouble === null ? "withheld" : tfAmount(pushDouble, "CNY");
+    pushLine.textContent = "Push lower: " + pushText
+      + ". At half the prior strength: " + halfText
+      + ". At double the prior strength: " + doubleText + ".";
+  }
+  const heuristicLine = document.getElementById("decisionHeuristic");
+  if (heuristicLine) heuristicLine.textContent = heuristic || "";
   const unitNote = document.getElementById("decisionUnit");
   if (unitNote) {
     const quote = quoteOnSession(session);
@@ -1393,8 +1416,11 @@ async function runMultiAuction() {
         ? "—"
         : ((riskShown * 100).toFixed(1) + "%" + (capBlock ? " upper bound" : ""));
       const counterLabel = blocked
-        ? "not actionable"
+        ? "withheld"
         : (counterNum === null ? "no data" : tfAmount(counterNum, "CNY"));
+      const pushRaw = lastRound.push_offers_cny ? lastRound.push_offers_cny[i] : null;
+      const pushNum = tfNum(pushRaw, null);
+      const pushLabel = blocked || pushNum === null ? "withheld" : tfAmount(pushNum, "CNY");
       const halfRaw = lastRound.sensitivity_half ? lastRound.sensitivity_half[i] : null;
       const doubleRaw = lastRound.sensitivity_double ? lastRound.sensitivity_double[i] : null;
       const halfNum = tfNum(halfRaw, null);
@@ -1413,9 +1439,9 @@ async function runMultiAuction() {
           <div>Unit price: <span class="metric-val">${tfEsc(quoteLabel)}</span></div>
           <div>Landed cost: <span class="metric-val">${tfEsc(landedLabel)}</span></div>
           <div>Best alternative: <span class="metric-val">${tfEsc(tfAmount(ceilingNum, "CNY"))}</span></div>
-          <div>Counter: <span class="metric-val">${tfEsc(counterLabel)}</span></div>
-          <div>Reserve source: <span class="metric-val">${tfEsc(lastRound.reserve_source || "ask_only")}</span>. ${tfEsc(lastRound.reserve_note || "")}</div>
-          <div>Counter at half the prior: <span class="metric-val">${tfEsc(halfLabel)}</span>. At double: <span class="metric-val">${tfEsc(doubleLabel)}</span>.</div>
+          <div>Default counter: <span class="metric-val">${tfEsc(counterLabel)}</span></div>
+          <div>Push lower: <span class="metric-val">${tfEsc(pushLabel)}</span>. At half the prior strength: <span class="metric-val">${tfEsc(halfLabel)}</span>. At double the prior strength: <span class="metric-val">${tfEsc(doubleLabel)}</span>.</div>
+          <div>Reserve: <span class="metric-val">${tfEsc(lastRound.reserve_source || "labelled_policy")}</span>. ${tfEsc(lastRound.reserve_note || "")}</div>
           ${reasonLine}
           <div>Risk: <span class="metric-val">${tfEsc(riskText)}</span></div>
         </div>

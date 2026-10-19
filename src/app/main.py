@@ -417,50 +417,41 @@ def negotiate(spec: Spec):
         raise HTTPException(status_code=422, detail="A supplier quote is required.")
     if spec.ceiling_price < spec.target_price:
         raise HTTPException(status_code=422, detail="The ceiling must be at or above the target.")
-    markup = None if spec.expected_markup is None else float(spec.expected_markup)
     if spec.prior_reserve_mean is not None and spec.prior_reserve_std is None:
         raise HTTPException(
             status_code=422,
             detail="Set prior_reserve_std together with prior_reserve_mean.",
         )
-    if spec.prior_reserve_mean is None and markup is None:
+    currency_ask = float(spec.observed_offer) * float(spec.target_price)
+    if currency_ask > float(spec.ceiling_price):
         return {
             "opening_offer_price": None,
             "blocked": True,
             "counter_relation": "withheld",
-            "reserve_source": "ask_only",
+            "reserve_source": "ceiling",
+            "markup_applied": False,
             "markup_identified": False,
             "posterior_reserve_mean": None,
             "posterior_reserve_std": None,
-            "solver": "analytic expected surplus of the one-step accept-or-reject model",
-            "reason": (
-                "Insufficient data: one ask and no closed deals on this item. "
-                "No markup was assumed. A markup is an optional override."
-            ),
+            "solver": "one-dimensional expected landed saving minus incremental walk risk",
+            "reason": "The quote is above the ceiling, so no counter is issued.",
         }
+    from src.engine.hazard_fit import load_hazard_fit
+    from src.engine.reserve import ReserveState
+
+    fit = load_hazard_fit()
+    state = ReserveState.policy()
+    post_mean = float(spec.observed_offer) * float(state.mean())
+    post_std = float(spec.observed_offer) * float(state.std())
     belief = HazardBelief(
-        intercept=spec.hazard_intercept,
+        intercept=float(fit.intercept if spec.hazard_intercept is None else spec.hazard_intercept),
         tau=spec.hazard_tau,
-        quote_gap_coef=spec.hazard_quote_gap,
-        reserve_gap_coef=spec.hazard_reserve_gap,
+        quote_gap_coef=float(fit.gap_coef if spec.hazard_quote_gap is None else spec.hazard_quote_gap),
+        reserve_gap_coef=0.0,
     )
-    noise = None if spec.bayes_obs_noise is None else float(spec.bayes_obs_noise)
-    if spec.prior_reserve_mean is None:
-        post_mean, post_std = robust_location(
-            [float(spec.observed_offer) - float(markup)],
-            noise_floor=noise,
-        )
-    elif markup is None:
-        post_mean = float(spec.prior_reserve_mean)
-        post_std = float(spec.prior_reserve_std)
-    else:
-        width = float(spec.prior_reserve_std)
-        post_mean, post_std = bayes_update(
-            spec.prior_reserve_mean, width, spec.observed_offer, estimated_markup=float(markup),
-        )
     try:
         rec = one_step_counter(
-            quote=float(spec.observed_offer) * float(spec.target_price),
+            quote=currency_ask,
             target=float(spec.target_price),
             ceiling=float(spec.ceiling_price),
             mean=float(post_mean),
@@ -476,8 +467,9 @@ def negotiate(spec: Spec):
         raise HTTPException(status_code=500, detail="Engine failure while solving the negotiation.")
     rec["posterior_reserve_mean"] = float(post_mean)
     rec["posterior_reserve_std"] = float(post_std)
-    rec["markup_identified"] = markup is not None
-    rec["reserve_source"] = "user" if spec.prior_reserve_mean is not None else "markup"
+    rec["markup_identified"] = False
+    rec["markup_applied"] = False
+    rec["reserve_source"] = state.source
     return rec
 
 
@@ -1774,80 +1766,14 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                 prev_std = t.posterior_std or prev_std
                 break
 
-    markup = None if sess.spec.expected_markup is None else float(sess.spec.expected_markup)
+    from src.engine.reserve import ReserveState
+
+    state = ReserveState.policy()
     norm_offer = float(effective_opp_price) / float(target_price)
-    if (prev_mean is None or prev_std is None) and markup is None:
-        above_ceiling = opp_price is not None and float(opp_price) > float(ceiling_price)
-        if above_ceiling:
-            reason = (
-                f"Opponent offer ¥{float(opp_price):.2f} breaches ceiling ¥{float(ceiling_price):.2f}."
-            )
-            source = "ceiling"
-            next_state = AutopilotState.CIRCUIT_TRIPPED_ESCALATED
-        else:
-            reason = (
-                "Insufficient data: one ask and no closed deals on this item. "
-                "No markup was assumed. A markup is an optional override."
-            )
-            source = "ask_only"
-            next_state = AutopilotState.AWAITING_HUMAN_DECISION
-        turn_opp = NegotiationTurn(
-            round_index=current_round,
-            sender="opponent",
-            raw_text=action.get_effective_raw_text(),
-            parsed_price=opp_price,
-            metadata={
-                "reserve_note": reason,
-                "reserve_source": source,
-                "entities": {
-                    "mold_fee": getattr(inbound_classification, "demanded_mold_fee", None),
-                    "moq": offered_moq,
-                    "lead_days": action.offered_lead_days,
-                    "deposit_pct": action.deposit_pct,
-                    "currency": stage1.mentioned_currency,
-                    "quoted_amount": stage1.quoted_amount,
-                    "currency_note": stage1.price_currency_note,
-                },
-            },
-        )
-        try:
-            sess = session_mgr.append_turn(session_id, turn_opp, expected_version=action.expected_version)
-            sess = session_mgr.transition_state(session_id, next_state, reason=reason)
-        except OptimisticLockConflictError as exc:
-            raise HTTPException(status_code=409, detail=str(exc))
-        return {
-            "session_id": session_id,
-            "circuit_tripped": above_ceiling,
-            "pending_human_approval": True,
-            "trip_reason": reason,
-            "reply_text": None,
-            "recommendation": {
-                "opening_offer_price": None,
-                "blocked": True,
-                "counter_relation": "withheld",
-                "reserve_source": source,
-                "reserve_note": reason,
-            },
-            "effective_opp_price": effective_opp_price,
-            "tco_breakdown": tco_breakdown,
-        }
-    if prev_mean is None or prev_std is None:
-        post_mean, post_std = robust_location([norm_offer - float(markup)])
-        confidence_prior_std = post_std
-    elif markup is None:
-        post_mean, post_std = float(prev_mean), float(prev_std)
-        confidence_prior_std = float(prev_std)
-    else:
-        updated_belief = robust_bayes_update(
-            prior_mean=float(prev_mean),
-            prior_std=float(prev_std),
-            observed_offer=norm_offer,
-            estimated_markup=float(markup),
-            markup_identified=True,
-        )
-        post_mean = float(updated_belief.posterior_mean)
-        post_std = float(updated_belief.posterior_std)
-        confidence_prior_std = float(prev_std)
+    post_mean = norm_offer * float(state.mean())
+    post_std = norm_offer * float(state.std())
+    confidence_prior_std = post_std
+    del prev_mean, prev_std
 
     # One next offer. The legacy multi-round grid is not this decision.
     rec = one_step_counter(
@@ -1916,6 +1842,15 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             # 來源，故一律記 None（不把 target_price * 1.05 這種內部公式值
             # 冒充成「備選供應商真實報價」）。
             "competing_lead_price": None,
+            "recommended_offer_price": rec.get("opening_offer_price"),
+            "push_offer_price": rec.get("push_offer_price"),
+            "push_half_price": rec.get("push_half_price"),
+            "push_double_price": rec.get("push_double_price"),
+            "reserve_source": rec.get("reserve_source"),
+            "reserve_note": rec.get("prior_note"),
+            "heuristic": rec.get("heuristic"),
+            "markup_applied": False,
+            "audit": "unconfirmed numbers used in decisions: 0",
         },
     )
     try:

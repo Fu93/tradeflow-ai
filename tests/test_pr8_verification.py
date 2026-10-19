@@ -71,11 +71,14 @@ class TestWeitzmanRoot(unittest.TestCase):
             n_grid=4,
             rng=np.random.default_rng(3),
         )
-        # sigma is the absolute posterior scale, not std × mean.
-        absolute = weitzman_reservation(0.50 + 0.25, abs(0.10))
-        relative = weitzman_reservation(0.50 + 0.25, abs(0.10 * 0.50))
-        self.assertAlmostEqual(result["weitzman_index"][0], absolute, places=6)
-        self.assertGreater(abs(result["weitzman_index"][0] - relative), 1e-3)
+        # Ordering uses ask × D, not the Gaussian moments passed into the solver.
+        from src.engine.reserve import ReserveState
+
+        state = ReserveState.policy()
+        expected = weitzman_reservation(0.80 * state.mean() + 0.25, 0.80 * state.std())
+        passed = weitzman_reservation(0.50 + 0.25, abs(0.10))
+        self.assertAlmostEqual(result["weitzman_index"][0], expected, places=6)
+        self.assertGreater(abs(result["weitzman_index"][0] - passed), 1e-3)
 
 
 class TestLandedBasis(unittest.TestCase):
@@ -276,7 +279,7 @@ class TestAuctionValidation(unittest.TestCase):
         self.assertAlmostEqual(second["effective_ceilings_cny"][1], 15.0, places=6)
         self.assertAlmostEqual(second["effective_ceilings_cny"][2], 14.0, places=6)
 
-    def test_a_blocked_supplier_counter_is_not_actionable(self):
+    def test_a_tight_risk_cap_does_not_block_the_ask(self):
         session = MultiAuctionSession(
             suppliers=[{"name": "A"}, {"name": "B"}],
             target_price=12.0,
@@ -288,25 +291,15 @@ class TestAuctionValidation(unittest.TestCase):
             expected_markup=0.08,
         )
         info = session.step_round([15.0, 15.5])
-        self.assertTrue(any(info["blocked"]))
-        for flag, offer, reason, upper in zip(
-            info["blocked"], info["counter_offers_cny"], info["block_reasons"], info["hazard_upper"],
-        ):
-            if flag:
-                self.assertIsNone(offer)
-                self.assertIn("not actionable", reason)
-                self.assertIn("upper bound", reason)
-                self.assertIn("least aggressive", reason)
-                self.assertGreaterEqual(upper, 0.02)
-        self.assertTrue(all(figure == "upper" for figure, flag in zip(info["hazard_figure"], info["blocked"]) if flag))
+        self.assertFalse(any(info["blocked"]))
+        self.assertAlmostEqual(info["counter_offers_cny"][0], 15.0, places=6)
+        self.assertAlmostEqual(info["counter_offers_cny"][1], 15.0, places=6)
+        self.assertAlmostEqual(info["p_break_array"][0], 0.0, places=6)
+        for offer, push in zip(info["counter_offers_cny"], info["push_offers_cny"]):
+            self.assertLessEqual(push, offer + 1e-6)
 
-    def test_blocked_card_hazard_is_the_upper_bound_that_failed_the_cap(self):
-        """The cap is applied to the credible upper bound, not the mean.
-
-        At this tolerance the least-aggressive offer's mean sits under the
-        cap while its upper bound does not. The figure a card should show
-        is that upper bound.
-        """
+    def test_risk_cap_limits_the_push_and_not_the_ask(self):
+        """The cap applies to incremental hazard. An offer at the ask has increment 0."""
         cap = 0.08
         session = MultiAuctionSession(
             suppliers=[{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}],
@@ -319,30 +312,16 @@ class TestAuctionValidation(unittest.TestCase):
             expected_markup=0.08,
         )
         info = session.step_round([13.26, 15.60, 15.92, 16.80])
-        under_mean = []
-        for flag, mean, upper, reason, offer, figure in zip(
-            info["blocked"],
-            info["p_break_array"],
-            info["hazard_upper"],
-            info["block_reasons"],
-            info["counter_offers_cny"],
-            info["hazard_figure"],
+        self.assertFalse(info["all_quotes_above_ceiling"])
+        for offer, push, hazard in zip(
+            info["counter_offers_cny"], info["push_offers_cny"], info["p_break_array"],
         ):
-            self.assertTrue(flag)
-            self.assertIsNone(offer)
-            self.assertEqual(figure, "upper")
-            self.assertIn("upper bound", reason)
-            self.assertIn("least aggressive", reason)
-            self.assertGreaterEqual(upper, cap)
-            if mean < cap:
-                under_mean.append((mean, upper))
-        self.assertTrue(under_mean)
-        mean, upper = under_mean[0]
-        self.assertLess(mean, cap)
-        self.assertGreaterEqual(upper, cap)
-        self.assertGreater(upper, mean)
-        self.assertEqual(len(info["hazard_figure"]), 4)
-        self.assertTrue(all(figure == "upper" for figure in info["hazard_figure"]))
+            self.assertIsNotNone(offer)
+            self.assertLessEqual(offer, 16.2 + 1e-6)
+            self.assertLessEqual(push, offer + 1e-6)
+            self.assertLessEqual(hazard, cap + 1e-6)
+        # The cheapest ask is the default for that supplier.
+        self.assertAlmostEqual(info["counter_offers_cny"][0], 13.26, places=4)
 
     def test_the_desk_does_not_parse_the_block_reason_for_the_risk_figure(self):
         js = (ROOT / "src/web/static/js/app.js").read_text(encoding="utf-8")

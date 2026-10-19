@@ -6,68 +6,80 @@ The constant registry is [constants_registry.json](constants_registry.json). `sc
 
 ## What still cannot be derived from data
 
-These stay labelled assumptions until the user records the missing observations. They are not silent factory facts.
+These stay labelled until the user records the missing observations.
 
-- Walk-away intercept, quote-gap coefficient, reserve-gap coefficient, and supplier spread. Quote text is not an outcome. The posterior moves only after a person records continue, walk-away, or agreed.
-- The split between markup and reserve. With two or more quotes on the same item and no markup, the reserve location is the lowest ask and the scale is the robust scale of those asks, floored by the observation noise. That is an order statistic, not a fitted margin. Closed deals on the same product are blended with it by precision when both exist. One ask and no closed deals is not enough: the counter is withheld and the card says the data are insufficient. A markup is an optional override the user types. It is not filled in.
-- Opponent archetypes and concession schedules. They exist only on the legacy CLI grid (`src/engine/solver.py`). `/round` does not call that grid.
+- The level of `D` for a supplier with fewer than 30 of their own responses. The Beta mean and strength are policy. The eBay auto-decline ratio is not that prior.
+- The walk-away intercept and gap are a fit on eBay Best Offer 2012–13, Business & Industrial. Using them for a Chinese factory is a transfer, not a measurement on that factory. The supplier spread `τ` is still labelled. Recorded continue and walk-away outcomes update only that supplier's effect.
+- The correlation `ρ` of reserve shocks. It stays 0. It is not identified at five suppliers or fewer.
+- Risk tolerance, search cost, the ceiling, the credible level, and the plausibility multiple. Those are preferences.
 - Total-cost crisis and markdown ratios. They apply only when the caller supplies a lead-time or MOQ baseline. A missing baseline skips the term.
-- Risk tolerance, search cost, the ceiling, and the plausibility multiple. Those are preferences. The desk exposes them. `UNIT_SANITY_MULTIPLE` is 3: a unit price is auto-accepted only from target/3 up to max(target, ceiling)×3. A human can still accept a reviewed figure.
+- The one-dimensional offer is a per-round heuristic. Other suppliers' confirmed quotes are treated as fixed and recallable. The buyer is not committed to take-it-or-leave-it. It is not an exact multi-round equilibrium.
 
-## One-step counter
+## Reserve
 
-Code: `src/engine/one_step.py`, `src/engine/coupled.py`.
+Code: `src/engine/reserve.py`.
 
-The counter maximises expected surplus of the one-step accept-or-reject model. The chance the reserve sits at or under the offer is the Student-t cdf with `STUDENT_T_DF` degrees of freedom, the same distribution as the reported interval. On the accept region the reserve gap is zero, so the walk-away chance depends on the quote gap and the supplier effect. The search uses `SEARCH_STEP` (0.001 of the target) and keeps lattice points at or below the cap. `DESK_N_GRID` and the old half-target floor do not choose the offer. Monte Carlo samples are drawn once and only fill the reported tail. They do not pick the price.
+For supplier `i`, `reserve = ask × D` with `D` in `[0, 1]`. Each supplier has their own Beta prior. Another supplier's ask does not enter it. A typed markup is not applied. There is no lowest-ask rule.
 
-Surplus of an offer, in target units, is
+The labelled prior is `D ~ Beta(α, β)` with mean `D_PRIOR_MEAN` and strength `α + β = D_PRIOR_STRENGTH`, so `α = mean × strength` and `β = (1 − mean) × strength`.
 
-`outside + P(accept) × max(0, max(outside, ceiling − landed adder − offer) − outside)`.
+A later ask, an accepted offer, and a closed-deal price are upper bounds: `D ≤ price / first ask`. A ratio above 1 does not loosen a tighter bound. They are not draws from `D`, and they are not lower bounds, so a high closed price does not pull the mean up. The density on `[0, upper]` is the Beta density renormalised by the Beta CDF at `upper`.
 
-`P(accept) = student_t_cdf((offer − reserve mean) / reserve std) × (1 − walk-away probability)`.
+A rejection is a soft likelihood. At a fraction `x` of the first ask the weight is the logistic of `REJECT_SOFTNESS × (x − rejected ratio)`. Mass below the rejected offer stays.
 
-On the desk the outside option is 0. A tighter rival quote can only lower the highest offer the search may consider. It cannot raise another supplier's counter. The auction path keeps the rival's surplus as the outside option. If the best surplus does not beat that outside option, the counter is withheld.
+Until `HAZARD_MIN_EVENTS` responses are on file for that supplier, the card says the prior is labelled policy.
 
-When the caller omits a markup and a prior, two or more quotes on the item set the reserve to the lowest normalised ask. The card names that source and shows the counter again at half that prior and at double it. One quote and no closed-deal history stays `ask_only`, with the insufficient-data sentence, and no 0.08 is inserted. If the user types a markup, including zero, the reserve is the quote minus that markup, and the same card shows the counter at half and at double that markup. A counter that sits on the ask is labelled `at_ask`. A counter below the ask is labelled `concession`.
+## Offer
 
-The walk-away upper bound integrates the labelled logistic over the user's supplier spread. The effect grid covers at least eight spreads, so a spread of 0.5, 1.5, or 2.5 is inside the support. The coefficients stay the labelled policy. Recorded continue and walk-away events update the supplier effect only.
+Code: `src/engine/decision.py`, called from `src/engine/coupled.py` and `src/engine/one_step.py`.
 
-The score does not contain a CVaR term. CVaR is reported on the joint offer vector and labelled as a report. The old bluff term is gone: an accepted offer is already at or above the reserve, so a bluff gap on that region was zero.
+Let `q` be this supplier's ask and `W` the outside option: the best other confirmed landed quote, already capped by this ask and by the ceiling. When this supplier is the cheapest, `W = q`. The split `(q + target) / 2` is not used.
 
-Search cost enters the Weitzman index as the cost of one more sample. The index uses the absolute posterior scale, `σ = |std|`, not `std × mean`.
+The default counter is `W`. It is labelled `at_ask` when it sits on this ask, and `match_rival` when a cheaper confirmed quote caps it.
 
-## Reserve belief
+The push-lower counter maximises
 
-Code: `src/engine/bayesian_v2.py`.
+`Π(b) = A(b) × (W − b) − Δh(b) × W`
 
-The observation model is Student-t with `STUDENT_T_DF` degrees of freedom (a numerical robustness choice, ν = 4). A quote `y` with the user's markup `μ` has predictive centre `m + μ` and weight
+on `[hazard floor, W]`. `A(b)` is the Beta CDF of `b / q` (the censored, reweighted CDF when this supplier has rejections). It is not multiplied by one minus the hazard. `Δh(b) = h(b) − h(q)` is the incremental walk hazard. An offer at the ask has `Δh = 0`, so the user's risk cap does not block it. The cap is the lowest `b` with `Δh(b)` still inside the user's setting.
 
-```
-w = (ν + 1) / (ν + z²),   z = (y − m − μ) / s_pred
-```
+The maximiser is a bounded golden-section search. A mesh step is not an input. Changing a step does not change the offer. The push is shown beside the default and is at most the default. The same search at half the prior strength and at double the prior strength, mean fixed, is the sensitivity on the card. Halving strength is `× 1/2`. Doubling strength is `× 2`. The mean is not scaled.
 
-The Kalman step uses observation variance `σ_obs² / w`. A quote near 2.5 times a prior near 1.16 keeps a small positive weight, so the mean moves. The old uniform-clutter rule sent that weight to 0 and left the mean at the prior.
+Two uncensored cases have a closed form, checked against the scalar maximiser of `A(b) × (W − b)` with no hazard penalty.
 
-The reported interval is the central Student-t interval at `CREDIBLE_MASS` (95%). `P(deal)` is the Student-t CDF of `(offer − mean) / scale`. Both use the same belief. They are not a normal interval around a mixture.
+Uniform on `[d, 1]`. Acceptance of `b` is `(b/q − d) / (1 − d)` for `b` in `[d·q, q]`. The surplus derivative is zero at
 
-If the user sets a prior, that prior is the start. A markup, when they also set one, is the observation shift. If they set a markup and no prior, the reserve is the robust location of quote minus that markup, and the scale is floored by `bayes_obs_noise` when the caller sets it, otherwise by `BAYES_OBS_NOISE`. If they set neither, and at least two quotes are on the item, the reserve is the lowest ask and the scale is the robust scale of those asks (an order statistic, not a fitted margin). Closed-deal prices on the same product, `agreed / target`, are blended with that estimate by precision when both exist. One ask and no closed deals does not invent a markup. The location step is the median, then IRLS with the same Student-t weights, and the scale starts from `MAD × MAD_NORMAL_CONSISTENCY`.
+`b* = (W + d·q) / 2`,
+
+then clipped to `[d·q, min(q, W)]`.
+
+`Beta(α, 1)`, whose CDF is `x^α`. With outside option `W` and no tighter cap, the first-order condition `W = b + q · G / g` gives
+
+`b* = α W / (1 + α)`.
+
+The general Beta, the soft rejection, and the hazard penalty use the golden-section search. The prior strength used in production has `β < 1`, so the log-concave uniqueness that needs `α ≥ 1` and `β ≥ 1` does not apply. The search evaluates the ends.
+
+A tighter rival can only lower `W`. It cannot raise a counter.
+
+Student-t utilities remain in `src/engine/bayesian_v2.py` for intervals and for older callers. They do not set this offer. The Weitzman index orders suppliers with a normal approximation to `ask × D`. It does not set the offer. Monte Carlo fills the reported tail. It does not pick the price. CVaR is a report.
+
+`/round` and `/negotiate` delegate to this engine. A quote above the ceiling still circuit-trips and does not issue a counter. A missing target or ceiling is HTTP 422.
 
 ## Walk-away hazard
 
-Code: `src/engine/hazard.py`, replay in `src/desk/recompute.py`.
+Code: `src/engine/hazard_fit.py`, coefficients in `data/hazard_ebay_bi.json`, fit script `scripts/fit_ebay_hazard.py`. The script runs offline. It is not part of the Render service.
 
 ```
-η = β0 + βq · g_quote + βr · g_reserve + β_reciprocity · reciprocity + β_round · round + β_alt · n_alt + u
-P(walk away) = 1 / (1 + exp(−η))
+g = max(q − b, 0) / q
+h(b) = σ(β0 + βg · g + u)
+Δh(b) = h(b) − h(q)
 ```
 
-`u` is a supplier effect. Its prior is normal, mean 0, scale `τ`. Recorded outcomes multiply the grid likelihood. `prior_driven` stays true until `HAZARD_MIN_EVENTS` outcomes. Agreed counts as continue. The credible upper bound interpolates the grid CDF, and the predictive probability evaluates the logistic at that interpolated effect.
+`u` is this supplier's effect. Its prior is normal, mean 0, scale `τ`. A continue or a walk-away recorded for one supplier updates that supplier only. Quote text is not an outcome.
 
-The baseline rate the desk shows is `σ(β0)`, with a band `σ(β0 ± τ)`. Those three numbers are labelled assumptions until enough outcomes exist. The desk stores them on the deal when the user saves the assumption form, and replays `hazard_outcomes` before the next solve.
+The JSON stores two outcomes on the same Business & Industrial threads. Thread ended with no deal includes threads the buyer ended. Seller-ended is the seller declining, auto-declining, or letting the buyer's offer expire. The decision uses seller-ended. Both outcomes carry seller-clustered intervals and a seller-grouped hold-out and a by-time hold-out. A reserve-gap coefficient is not stored as a decision term. The sample keeps a first buyer offer at or below the Buy-It-Now price. Offers above that price are dropped: a few ratios reach the thousands, and a logit on the raw gap then has a slope near zero even though the seller-ended rate rises with the discount. The coefficients, the sample size, and the hold-out errors are the ones in the JSON from this offline fit. They are not copied from a prefix of the files.
 
-Why a labelled baseline blocks rows: `σ(−2.9)` is about 5%. An aggressive offer has a large quote gap, and `βq` is 3.4, so the credible upper bound (the `τ` quantile of the effect, not only the mean) crosses the default 0.15 cap. The row is then blocked and no counter is issued. Halving the intercept, doubling `τ`, or tightening the cap moves that bound. The desk shows the band so the sensitivity is visible before a solve.
-
-`HAZARD_CREDIBLE_ALPHA` is 0.05, a labelled 95% level. `/negotiate` and `/multi-auction/run` accept `hazard_intercept`, `hazard_tau`, `hazard_quote_gap`, `hazard_reserve_gap`, `bayes_obs_noise`, and `hazard_credible_alpha`. On the seed-19 bodies with markup 0.05, moving the level from 0.05 to 0.10 changed the block bit on 28 of 539 quotes (5.2%). `/negotiate` also reads `rounds` as the hazard round index and `lambda_break` as a multiplier on the walk-away probability. The round coefficient is 0 and `lambda_break` defaults to 1, so those defaults do not move an offer.
+The user's risk cap applies to `Δh`, not to the level of `h`. The cap can limit how far the push-lower counter goes. It does not withhold the default counter at the ask.
 
 ## Shared reserve factor
 

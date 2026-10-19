@@ -29,7 +29,7 @@ from src.engine.coupled import (
 )
 from src.engine.hazard import HazardBelief
 from src.engine.landed import landed_unit_cost
-from src.engine.bayesian_v2 import cross_supplier_reserve, robust_location
+from src.engine.bayesian_v2 import robust_location
 from src.engine.solver import bayes_update
 
 
@@ -131,6 +131,7 @@ class MultiSupplierSolver:
         beliefs: list[HazardBelief] | None = None,
         round_index: int = 1,
         credible_alpha: float | None = None,
+        reserves: list | None = None,
     ) -> Dict[str, Any]:
         """Coupled offer vector. ``total_rollouts`` is the number of scenario-offer cells scored."""
         offers = np.asarray(supplier_offers, dtype=np.float64)
@@ -147,6 +148,7 @@ class MultiSupplierSolver:
             rng=rng,
             round_index=round_index,
             credible_alpha=credible_alpha,
+            reserves=reserves,
         )
         k = int(offers.shape[0])
         flat = [0.0] * self.rounds
@@ -177,6 +179,10 @@ class MultiSupplierSolver:
             "prior_driven": result["prior_driven"],
             "p_accept": result["p_accept"],
             "counter_relation": result.get("counter_relation"),
+            "push_offers": result.get("push_offers"),
+            "push_half": result.get("push_half"),
+            "push_double": result.get("push_double"),
+            "heuristic": result.get("heuristic"),
         }
 
 
@@ -460,26 +466,23 @@ class MultiAuctionSession:
             and not self.user_prior
             and self.expected_markup is None
         ):
-            asks = [float(offers_norm[i]) for i in active]
-            found = cross_supplier_reserve(asks, noise_floor=self.obs_noise)
-            if found is None:
-                self.reserve_source = "ask_only"
-                self.reserve_note = (
-                    "Insufficient data: one ask and no closed deals on this item. "
-                    "No markup was assumed. A markup is an optional override."
-                )
-            else:
-                loc, scale = found
-                tiny = float(np.finfo(np.float64).tiny)
-                for i in active:
-                    self.prior_means[i] = float(loc)
-                    self.prior_stds[i] = max(float(scale), tiny)
-                self.reserve_source = "cross_supplier"
-                self.reserve_note = (
-                    "Reserve is the lowest ask among the quotes on this item. "
-                    "The spread is the cross-supplier scale, floored by the observation noise. "
-                    "This is an order-statistic estimator, not a fitted margin."
-                )
+            from src.engine.reserve import ReserveState
+
+            tiny = float(np.finfo(np.float64).tiny)
+            for i in active:
+                state = ReserveState.policy()
+                observed = self._observed[i]
+                if len(observed) >= 2 and float(observed[0]) > 0.0:
+                    for later in observed[1:]:
+                        state = state.tighten(float(later) / float(observed[0]))
+                self.prior_means[i] = float(offers_norm[i]) * float(state.mean())
+                self.prior_stds[i] = max(float(offers_norm[i]) * float(state.std()), tiny)
+            self.reserve_source = "labelled_policy"
+            self.reserve_note = (
+                "Each supplier's reserve is their own ask times D. "
+                "D is a labelled Beta prior until that supplier has responded. "
+                "Another supplier's ask is not used, and a markup is not applied."
+            )
         elif self.freeze_reserve:
             self.reserve_note = (
                 "Reserve is the scripted self-play reserve. "
@@ -487,11 +490,14 @@ class MultiAuctionSession:
             )
         elif self.expected_markup is not None:
             self.reserve_note = (
-                "Reserve is each quote minus the markup you entered. "
-                "That markup is your override, not a measured margin."
+                "A typed markup is not applied. The reserve is each supplier's "
+                "own ask times a labelled Beta prior."
             )
         elif self.user_prior:
-            self.reserve_note = "Reserve is the prior you entered."
+            self.reserve_note = (
+                "A typed prior is not the reserve. Each supplier's reserve is "
+                "their own ask times a labelled Beta prior."
+            )
         if not active:
             if self.inactive and len(self.inactive) >= self.k:
                 raise ValueError("Every supplier has walked away, so there is no rival left to compare.")
@@ -501,6 +507,16 @@ class MultiAuctionSession:
         # Using the unconverted number would invent a comparison.
         res_active = None
         if identified:
+            from src.engine.reserve import ReserveState
+
+            states = []
+            for supplier_index in identified:
+                state = ReserveState.policy()
+                observed = self._observed[supplier_index]
+                if len(observed) >= 2 and float(observed[0]) > 0.0:
+                    for later in observed[1:]:
+                        state = state.tighten(float(later) / float(observed[0]))
+                states.append(state)
             res_active = self.solver.solve_reverse_auction_tensor(
                 supplier_offers=offers_norm[identified],
                 prior_means=self.prior_means[identified],
@@ -510,6 +526,7 @@ class MultiAuctionSession:
                 beliefs=[self.beliefs[i] for i in identified],
                 round_index=self.current_round,
                 credible_alpha=self.hazard_credible_alpha,
+                reserves=states,
             )
 
         def _expand(values, fill=None):
@@ -612,9 +629,13 @@ class MultiAuctionSession:
             if relations[i] != "at_ask" and abs(counter - own_cap) <= self.target_price * float(SEARCH_STEP):
                 relations[i] = "at_ask"
             block_reasons.append(
-                "at the ask: expected surplus is highest at the supplier's quote"
+                "at the ask: this supplier is the cheapest confirmed quote, so the default is their ask"
                 if relations[i] == "at_ask"
-                else None
+                else (
+                    "matches the best other confirmed landed quote"
+                    if relations[i] == "match_rival"
+                    else None
+                )
             )
         actionable = [counter / self.target_price for counter in counters if counter is not None]
         self._last_offers_norm = actionable
@@ -654,9 +675,21 @@ class MultiAuctionSession:
             prior_driven = res_active["prior_driven"]
             hazard_provenance = res_active["hazard_provenance"]
             risk_value = res_active["risk_tolerance"]
-        sensitivity_half, sensitivity_double = self._sensitivity_counters(
-            offers_norm, kappas, identified, quotes
-        )
+        def _priced_push(key: str) -> list:
+            blank = [None] * self.k
+            if res_active is None or not res_active.get(key):
+                return blank
+            out = [None] * self.k
+            for local, supplier_index in enumerate(identified):
+                raw = float(res_active[key][local]) * self.target_price
+                own = unit_bases[supplier_index]
+                own_cap = float(own) if own is not None else float(quotes[supplier_index])
+                out[supplier_index] = min(raw, float(self.walk_away_ceiling), own_cap)
+            return out
+
+        sensitivity_half = _priced_push("push_half")
+        sensitivity_double = _priced_push("push_double")
+        push_offers_cny = _priced_push("push_offers")
         round_info = {
             "round": self.current_round,
             "quotes": [float(q) for q in quotes],
@@ -673,7 +706,8 @@ class MultiAuctionSession:
             "counter_relation": relations,
             "reserve_source": self.reserve_source,
             "reserve_note": getattr(self, "reserve_note", ""),
-            "markup_used": self.expected_markup,
+            "markup_used": None,
+            "push_offers_cny": push_offers_cny,
             "sensitivity_half": sensitivity_half,
             "sensitivity_double": sensitivity_double,
             "counter_offers_mean_norm": mean_norm,

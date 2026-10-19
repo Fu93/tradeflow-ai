@@ -168,18 +168,18 @@ def test_desk_auction_rounds_and_sandbox(live_server):
             page.wait_for_selector(".session-item")
             page.locator(".session-item", has_text="DEMO_CNC_CASE_01").click()
             page.wait_for_function(
-                "() => document.getElementById('decisionCounter').textContent.includes('Insufficient data')",
+                "() => document.getElementById('decisionCounter').textContent.includes('14.80')",
                 timeout=15000,
             )
-            assert "No markup was assumed" in page.locator("#decisionCounter").inner_text()
+            assert "Push lower" in page.locator("#decisionPush").inner_text()
             assert page.locator("#cbBadge").inner_text() == "WAITING FOR YOUR DECISION"
             assert int(page.locator("#roundCount").inner_text()) >= 1
-            refused = _post_json(
+            approved = _post_json(
                 page,
                 "/api/v1/sessions/DEMO_CNC_CASE_01/approve",
                 {"action": "approve"},
             )
-            assert refused["status"] == 409, refused
+            assert approved["status"] == 200, approved
 
             page.select_option("#presetCategorySelect", "battery")
             page.click("#openSandboxBtn")
@@ -357,14 +357,13 @@ def test_pasted_quotes_compare_unit_and_landed(live_server):
             )
             page.click("#runAuctionBtn")
             page.wait_for_function(
-                "() => document.getElementById('supplierCards').innerText.includes('not actionable')",
+                "() => document.getElementById('supplierCards').innerText.includes('Push lower')",
                 timeout=120000,
             )
             blocked = page.locator("#supplierCards").inner_text()
-            assert "not actionable" in blocked
-            assert "risk-tolerance cap" in blocked
-            assert "upper bound" in blocked
-            assert "least aggressive" in blocked
+            assert "not actionable" not in blocked
+            assert "Default counter" in blocked
+            assert "labelled_policy" in blocked
             assert page.locator("#auctionSummary details").evaluate("el => el.open") is False
             visible = page.locator("#auctionSummary").inner_text()
             assert "tail saturated at the ceiling" in visible
@@ -384,18 +383,21 @@ def test_pasted_quotes_compare_unit_and_landed(live_server):
             )
             page.click("#runAuctionBtn")
             page.wait_for_function(
-                "() => document.getElementById('supplierCards').innerText.includes('upper bound')",
+                "() => document.getElementById('supplierCards').innerText.includes('13.26 CNY')",
                 timeout=120000,
             )
+            cards = page.locator("#supplierCards").inner_text()
+            assert "not actionable" not in cards
+            assert "upper bound" not in cards
             shown = page.evaluate(
                 """() => {
                     const card = document.querySelector("#supplierCards .supplier-card");
                     const text = card ? card.innerText : "";
-                    const match = text.match(/Risk:\\s*([0-9.]+)% upper bound/);
+                    const match = text.match(/Risk:\\s*([0-9.]+)%/);
                     return match ? Number(match[1]) : null;
                 }"""
             )
-            assert shown is not None and shown >= 8, shown
+            assert shown == 0, shown
 
             page.fill("#riskTolerance", "")
             page.fill(

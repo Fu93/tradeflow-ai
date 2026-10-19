@@ -1,14 +1,9 @@
-"""Walk-away hazard: the probability a supplier ends the negotiation.
+"""Supplier effect for recorded continue and walk-away outcomes.
 
-This is not ``1 - p_deal``. ``p_deal`` is whether the remaining gap would
-still close. The hazard is the chance the supplier stops talking after the
-offer we are about to make.
-
-The logistic coefficients live in ``src.config.heuristics``. They are
-assumptions. Recorded continue / walk-away events update only the supplier
-random effect. They do not fit the intercept, the slopes, or the spread.
-The eBay Best Offer replication (doi:10.7910/DVN/ZOWWO7) was not downloaded
-and is not a source of these numbers.
+The decision hazard is the seller-ended eBay fit in
+``data/hazard_ebay_bi.json``, one quote gap, not a reserve gap. This module
+updates only the supplier effect from outcomes the user records. The
+transfer is not a measured Chinese-factory rate.
 """
 from __future__ import annotations
 
@@ -34,14 +29,13 @@ from src.config.heuristics import (
 )
 
 PROVENANCE = {
-    "status": "prior-driven",
-    "fitted_dataset": None,
-    "candidate_dataset_not_used": "doi:10.7910/DVN/ZOWWO7",
-    "source": "src/config/heuristics.py",
+    "status": "transferred",
+    "fitted_dataset": "data/hazard_ebay_bi.json",
+    "source": "eBay Best Offer 2012-13, Business & Industrial, seller-ended",
     "note": (
-        "Coefficients stay the labelled policy. Recorded outcomes update "
-        "only the supplier effect. Do not read the number as a calibrated "
-        "probability from factory negotiations."
+        "Decision coefficients are the checked-in seller-ended fit. "
+        "Recorded outcomes update only the supplier effect. The transfer "
+        "is not a measured Chinese-factory rate."
     ),
 }
 
@@ -170,6 +164,7 @@ class HazardBelief:
         quote_gap_coef: float | None = None,
         reserve_gap_coef: float | None = None,
     ) -> None:
+        self.use_coefficients = intercept is not None or quote_gap_coef is not None
         self.intercept = float(HAZARD_INTERCEPT if intercept is None else intercept)
         self.tau = float(HAZARD_SUPPLIER_TAU if tau is None else tau)
         self.quote_gap_coef = float(HAZARD_QUOTE_GAP if quote_gap_coef is None else quote_gap_coef)

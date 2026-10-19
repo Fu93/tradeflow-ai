@@ -218,16 +218,33 @@ def _ingest_locked(
         quantity=deal.get("quantity"),
         deal_currency="CNY",
     )
-    parsed = reading["parsed"]
-    if reading["status"] == "accepted":
-        if freight is not None:
-            parsed["freight"] = float(freight)
-        if duty_rate is not None:
-            parsed["duty_rate"] = float(duty_rate)
-        if fees is not None:
-            parsed["fees"] = float(fees)
+    parsed = dict(reading["parsed"])
+    # Phase 1: the agreement gate only logs. The user confirms every number.
+    parsed["unit_price"] = None
+    target = float(deal["target_price"])
+    ceiling = float(deal["ceiling_price"])
+    multiple = float(UNIT_SANITY_MULTIPLE if deal.get("unit_sanity_multiple") is None else deal["unit_sanity_multiple"])
+    high = max(target, ceiling) * multiple
+    low = target / multiple if multiple else target
+    from src.desk.shadow import shadow_from_message
+
+    shadow = shadow_from_message(raw_text, reading, low=low, high=high)
     provenance = dict(reading["provenance"])
     provenance["source"] = source
+    provenance["reader"] = "prefill"
+    provenance["rule_would_accept"] = reading["status"] == "accepted"
+    provenance["shadow_would_accept"] = bool(shadow["would_accept"])
+    provenance["shadow_applied"] = False
+    provenance["span_value"] = shadow.get("span_value")
+    provenance["rule_value"] = shadow.get("rule_value")
+    provenance["auto_accept"] = False
+    provenance["llm_price_ignored"] = True
+    if freight is not None:
+        parsed["freight"] = float(freight)
+    if duty_rate is not None:
+        parsed["duty_rate"] = float(duty_rate)
+    if fees is not None:
+        parsed["fees"] = float(fees)
     if sender:
         provenance["sender"] = sender
     provenance.update(classify_origin(raw_text, provenance_extra))
@@ -237,27 +254,15 @@ def _ingest_locked(
         matched = _match_supplier(store.suppliers(deal_id), sender, supplier_id)
     except DeskRejected:
         raise
-    status = reading["status"]
-    confidence = reading["confidence"]
+    status = "review"
+    confidence = "low"
     linked = matched["id"] if matched is not None else None
     if simulated or fixture:
-        status = "review"
-        confidence = "low"
-        parsed["unit_price"] = None
         provenance["review_reason"] = "fixture" if fixture else "simulated test fixture"
-    elif status == "accepted" and _outside_sanity(float(parsed.get("unit_price") or 0.0), deal):
-        status = "review"
-        confidence = "low"
-        parsed["unit_price"] = None
-        provenance["review_reason"] = "outside the plausibility band around the target and the ceiling"
-    elif status == "accepted" and linked is None:
-        status = "review"
-        confidence = "low"
-        parsed["unit_price"] = None
-        provenance["review_reason"] = provenance.get("review_reason") or "unknown sender"
-    elif status != "accepted":
-        parsed["unit_price"] = None
-        provenance["review_reason"] = provenance.get("review_reason") or "low confidence"
+    elif shadow["would_accept"]:
+        provenance["review_reason"] = "shadow gate would accept; confirm the prefilled amount"
+    else:
+        provenance["review_reason"] = provenance.get("review_reason") or "confirm the prefilled amount"
     event = store.insert_event(
         deal_id=deal_id,
         supplier_id=linked,
@@ -330,8 +335,16 @@ def accept_review(
         provenance = dict(event["provenance"])
         provenance["review_accepted_by"] = "human"
         provenance["review_reason"] = None
+        provenance["shadow_resolved"] = True
+        rule_shadow = provenance.get("span_value")
         if chosen_token:
             provenance["chosen_token"] = chosen_token
+        provenance["shadow_matched"] = bool(
+            provenance.get("shadow_would_accept")
+            and rule_shadow is not None
+            and price is not None
+            and float(rule_shadow) == float(price)
+        )
         store.set_event_status(
             event_id,
             status="accepted",

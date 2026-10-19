@@ -13,12 +13,12 @@
   }
 
   function hazardText(supplier) {
-    const figure = supplier.hazard_figure === "upper" ? supplier.hazard_upper : supplier.hazard;
-    if (figure == null || figure !== figure) return "no data";
-    const shown = Math.round(Number(figure) * 1000) / 10;
-    const label = supplier.hazard_figure === "upper" ? " upper bound" : "";
-    const prior = supplier.prior_driven ? " prior-driven" : "";
-    return shown.toFixed(1) + "%" + label + prior;
+    if (supplier.hazard == null || supplier.hazard !== supplier.hazard) return "no data";
+    const atDefault = (Math.round(Number(supplier.hazard) * 1000) / 10).toFixed(1);
+    const atPush = supplier.hazard_upper == null
+      ? "no data"
+      : (Math.round(Number(supplier.hazard_upper) * 1000) / 10).toFixed(1) + "%";
+    return "incremental " + atDefault + "% at the default, " + atPush + " at the push";
   }
 
   function money(value, currency) {
@@ -88,12 +88,13 @@
       const counter = supplier.counter == null ? "withheld" : money(supplier.counter, "CNY");
       const half = supplier.sensitivity_half == null ? "withheld" : money(supplier.sensitivity_half, "CNY");
       const doubled = supplier.sensitivity_double == null ? "withheld" : money(supplier.sensitivity_double, "CNY");
+      const push = supplier.push_counter == null ? "withheld" : money(supplier.push_counter, "CNY");
       row.textContent = supplier.name
-        + " counter " + counter
-        + ". Reserve source: " + (supplier.belief_label || "no data")
-        + ". " + (supplier.reserve_note || "")
-        + " Counter at half the prior: " + half
-        + ". At double: " + doubled
+        + " default counter " + counter
+        + ". Push lower: " + push
+        + ". Reserve: " + (supplier.reserve_note || supplier.belief_label || "no data")
+        + " At half the prior strength: " + half
+        + ". At double the prior strength: " + doubled
         + ". Hazard " + hazardText(supplier);
       counters.appendChild(row);
     });

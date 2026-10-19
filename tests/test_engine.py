@@ -46,7 +46,7 @@ def test_proposal():
         },
         observed_offer=1.25,
     )
-    assert "accept-or-reject" in p["solver"]
+    assert p["solver"] == "one-dimensional expected landed saving minus incremental walk risk"
     if p["opening_offer_price"] is None:
         assert p["round_by_round_prices"] == []
     else:

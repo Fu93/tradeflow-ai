@@ -88,13 +88,16 @@ def test_sqlite_survives_reopen(tmp_path):
     events = reopened.events(deal_id)
     assert len(events) == 1
     assert events[0]["raw_text"] == "单价 15.60 元"
-    assert events[0]["provenance"]["reader"] == "positive_evidence"
+    assert events[0]["provenance"]["reader"] == "prefill"
     saved = reopened.get_snapshot(deal_id)
     ningbo = _by_name(saved)["Ningbo"]
+    assert events[0]["status"] == "review"
+    assert events[0]["parsed"]["unit_price"] is None
     assert ningbo["belief_mean"] is None
-    assert ningbo["belief_label"] == "ask_only"
+    assert ningbo["belief_label"] == "no data"
     assert ningbo["counter"] is None
-    assert ningbo["belief_observations"] == 1
+    assert ningbo["belief_observations"] == 0
+    assert saved["audit"] == "unconfirmed numbers used in decisions: 0"
     reopened.close()
 
 
@@ -114,10 +117,16 @@ def test_llm_cannot_set_the_price(tmp_path):
         llm_fields={"price": 1, "unit_price": 9, "note": "ignore"},
     )
     event = accepted["event"]
-    assert event["status"] == "accepted"
-    assert event["parsed"]["unit_price"] == 15.60
+    assert event["status"] == "review"
+    assert event["parsed"]["unit_price"] is None
+    assert event["provenance"]["llm_price_ignored"] is True
+    assert event["provenance"]["shadow_applied"] is False
     assert event["parsed"]["unit_price"] != 1
     assert event["provenance"]["llm_price_ignored"] is True
+    from src.desk.service import accept_review
+
+    confirmed = accept_review(store, deal_id, event["id"], ningbo, chosen_token="15.60")
+    assert _by_name(confirmed)["Ningbo"]["latest_quote"] == 15.60
     invented = ingest_message(
         store,
         deal_id,
@@ -154,8 +163,8 @@ def test_low_confidence_stays_out_of_the_solve(tmp_path):
 
 
 def test_better_rival_does_not_raise_other_counters(tmp_path):
-    from src.desk.service import ingest_message
-    from src.engine.bayesian_v2 import robust_location
+    from src.desk.service import accept_review, ingest_message
+    from src.engine.reserve import ReserveState
 
     store = _open_store(tmp_path)
     snapshot = _deal(store)
@@ -170,22 +179,24 @@ def test_better_rival_does_not_raise_other_counters(tmp_path):
     }
     current = snapshot
     for name, text in opening.items():
-        current = ingest_message(
+        ingested = ingest_message(
             store,
             deal_id,
             source="paste",
             raw_text=text,
             supplier_id=ids[name],
-        )["snapshot"]
+        )
+        current = accept_review(store, deal_id, ingested["event"]["id"], ids[name])
     before = _by_name(current)
     assert any(row["counter"] is not None for row in before.values())
-    after = ingest_message(
+    tightened = ingest_message(
         store,
         deal_id,
         source="paste",
         raw_text="单价 13.40 元",
         supplier_id=ids["Ningbo"],
-    )["snapshot"]
+    )
+    after = accept_review(store, deal_id, tightened["event"]["id"], ids["Ningbo"])
     later = _by_name(after)
     assert later["Ningbo"]["latest_quote"] == 13.40
     assert later["Ningbo"]["rank"] == 1
@@ -196,14 +207,14 @@ def test_better_rival_does_not_raise_other_counters(tmp_path):
         new = row["counter"]
         if old is not None:
             assert new is None or new <= old
-    mean, _std = robust_location([15.60 / 12 - 0.08, 13.40 / 12 - 0.08])
-    assert later["Ningbo"]["belief_mean"] == mean
+    state = ReserveState.policy().tighten(13.40 / 15.60)
+    assert later["Ningbo"]["belief_mean"] == pytest.approx(13.40 * state.mean() / 12)
     assert later["Ningbo"]["belief_observations"] == 2
     store.close()
 
 
 def test_missing_landed_components_are_not_zero(tmp_path):
-    from src.desk.service import ingest_message
+    from src.desk.service import accept_review, ingest_message
 
     store = _open_store(tmp_path)
     snapshot = _deal(store)
@@ -220,14 +231,15 @@ def test_missing_landed_components_are_not_zero(tmp_path):
         kwargs = {}
         if name == "Ningbo":
             kwargs = {"freight": 1, "duty_rate": 0, "fees": 0}
-        current = ingest_message(
+        ingested = ingest_message(
             store,
             deal_id,
             source="paste",
             raw_text=text,
             supplier_id=ids[name],
             **kwargs,
-        )["snapshot"]
+        )
+        current = accept_review(store, deal_id, ingested["event"]["id"], ids[name])
     assert current["ranking_basis"] == "unit_price"
     assert "not treated as zero" in current["kappa_note"]
     rows = _by_name(current)
@@ -318,7 +330,9 @@ def test_nothing_is_sent_without_approval(tmp_path, monkeypatch):
         raise AssertionError("transmit was called")
 
     monkeypatch.setattr("src.desk.service.transmit", boom)
-    ingest_message(
+    from src.desk.service import accept_review
+
+    ingested = ingest_message(
         store,
         deal_id,
         source="email",
@@ -326,6 +340,7 @@ def test_nothing_is_sent_without_approval(tmp_path, monkeypatch):
         sender="ningbo@example.test",
         external_id="<gate-a@example.test>",
     )
+    accept_review(store, deal_id, ingested["event"]["id"], ingested["event"]["supplier_id"])
     draft = store.drafts(deal_id)[0]
     digest = draft_digest(draft["body"])
     with pytest.raises(SendRefused):
@@ -341,13 +356,15 @@ def test_nothing_is_sent_without_approval(tmp_path, monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.example.test")
     monkeypatch.setenv("EMAIL_USERNAME", "buyer@example.test")
     monkeypatch.setenv("EMAIL_PASSWORD", "desk-secret")
-    ingest_message(
+    wenzhou = _by_name(snapshot)["Wenzhou"]["id"]
+    follow = ingest_message(
         store,
         deal_id,
         source="paste",
         raw_text="单价 14.20 元",
-        supplier_id=_by_name(snapshot)["Wenzhou"]["id"],
+        supplier_id=wenzhou,
     )
+    accept_review(store, deal_id, follow["event"]["id"], wenzhou)
     pending = [item for item in store.drafts(deal_id) if item["status"] == "draft"]
     assert pending
     pending_body = pending[0]["body"]

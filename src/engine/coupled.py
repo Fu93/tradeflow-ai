@@ -1,14 +1,12 @@
-"""Analytic expected surplus of a one-step accept-or-reject model.
+"""One offer per supplier per round.
 
-The next offer is the mesh point that maximises expected surplus. Acceptance
-is the Student-t chance the reserve sits at or under the offer, times one
-minus the walk-away hazard on that region, where the reserve gap is zero.
-The same Student-t is the interval shown with the belief. The desk scores
-an outside option of zero, so a rival only lowers the cap and cannot raise
-another supplier's offer. The auction scores the rival surplus. The mesh
-keeps lattice points at or below the cap and does not snap the last point
-up to the cap. Monte Carlo evaluates the chosen vector for the report. It
-does not pick the price.
+The default counter matches the best other confirmed landed quote, and it
+never exceeds this supplier's ask or the user's ceiling. The push-lower
+counter maximises expected landed saving minus incremental walk risk on
+that interval. Acceptance is the Beta distribution of D. The hazard uses
+one gap and is not multiplied into acceptance. A mesh step is not an input.
+Monte Carlo evaluates the chosen vector for the report. It does not pick
+the price. This is a per-round heuristic, not a multi-round equilibrium.
 """
 from __future__ import annotations
 
@@ -39,6 +37,7 @@ from src.config.heuristics import (
     WEITZMAN_SEARCH_COST,
 )
 from src.engine.bayesian_v2 import student_t_cdf
+from src.engine.decision import HEURISTIC_NOTE, choose_offer
 from src.engine.hazard import (
     PROVENANCE,
     HazardBelief,
@@ -47,6 +46,9 @@ from src.engine.hazard import (
     reserve_gap,
     sigmoid,
 )
+from src.engine.hazard_fit import NOTE as HAZARD_TRANSFER_NOTE
+from src.engine.hazard_fit import incremental_hazard, load_hazard_fit
+from src.engine.reserve import ReserveState
 from src.engine.solver import EXPECTIMAX_SAMPLE_CHUNK
 
 
@@ -524,84 +526,59 @@ def _analytic_choice(
     round_index: float = 0.0,
     lambda_break: float = 1.0,
     credible_alpha: float | None = None,
+    state: ReserveState | None = None,
 ) -> dict[str, Any]:
-    """Expected surplus on a fine mesh. The coarse grid is not an input."""
-    lo = float(np.finfo(np.float64).tiny)
-    offers = _surplus_mesh(lo, float(hi), float(step))
-    scale = max(abs(float(std)), float(np.finfo(np.float64).tiny))
-    z = (offers - float(mean)) / scale
-    p_reserve = np.array(
-        [student_t_cdf(float(item), float(STUDENT_T_DF)) for item in z],
-        dtype=np.float64,
-    )
-    g_quote = quote_gap(float(quote), offers)
-    g_reserve = reserve_gap(float(mean), offers)
+    """One-dimensional offer. ``step`` is ignored: there is no mesh.
+
+    The default counter is ``hi``, the ask capped by the rival and the ceiling.
+    The push-lower counter maximises expected landed saving minus incremental
+    walk risk. Acceptance is the Beta CDF of D. The hazard uses one gap.
+    """
+    del mean, std, kappa, ceiling, step, round_index, credible_alpha
+    fit = load_hazard_fit()
+    belief_state = state if state is not None else ReserveState.policy()
     effect = float(belief.mean_effect())
-    common = {
-        "intercept": belief.intercept,
-        "quote_gap_coef": belief.quote_gap_coef,
-        "reserve_gap_coef": belief.reserve_gap_coef,
-        "round_index": float(round_index),
-    }
-    accept_logit = hazard_logit(np, g_reserve=0.0, g_quote=g_quote, effect=effect, **common)
-    accept_hazard = np.asarray(sigmoid(np, accept_logit), dtype=np.float64)
     if float(lambda_break) != 1.0:
-        scaled = float(lambda_break)
-        accept_hazard = np.clip(accept_hazard * scaled, 0.0, 1.0)
-    p_accept = p_reserve * (1.0 - accept_hazard)
-    deal = float(ceiling) - float(kappa) - offers
-    gain = np.maximum(0.0, np.maximum(float(batna_surplus), deal) - float(batna_surplus))
-    surplus = float(batna_surplus) + p_accept * gain
-    alpha = float(HAZARD_CREDIBLE_ALPHA if credible_alpha is None else credible_alpha)
-    tail = alpha / 2
-    u_hi = float(belief.quantile(1.0 - tail))
-    upper = np.asarray(
-        sigmoid(np, hazard_logit(np, g_reserve=g_reserve, g_quote=g_quote, effect=u_hi, **common)),
-        dtype=np.float64,
+        effect = effect + math.log(max(float(lambda_break), float(np.finfo(np.float64).tiny)))
+    override = bool(getattr(belief, "use_coefficients", False))
+    choice = choose_offer(
+        ask=float(quote),
+        outside=float(hi),
+        state=belief_state,
+        effect=effect,
+        risk_cap=float(cap),
+        fit=fit,
+        intercept=float(belief.intercept) if override else None,
+        gap_coef=float(belief.quote_gap_coef) if override else None,
     )
-    decision_hazard = np.asarray(
-        sigmoid(np, hazard_logit(np, g_reserve=g_reserve, g_quote=g_quote, effect=effect, **common)),
-        dtype=np.float64,
-    )
-    if float(lambda_break) != 1.0:
-        scaled = float(lambda_break)
-        upper = np.clip(upper * scaled, 0.0, 1.0)
-        decision_hazard = np.clip(decision_hazard * scaled, 0.0, 1.0)
-    score = surplus - offers * float(OFFER_TIE_BREAK)
-    eps = float(np.finfo(np.float64).eps)
-    under = upper <= float(cap) + eps
-    if np.any(under):
-        chosen = int(np.argmax(np.where(under, score, -np.inf)))
-        blocked = False
-    else:
-        chosen = int(np.argmin(upper))
-        blocked = True
-    offer = float(offers[chosen])
-    improvement = float(surplus[chosen] - float(batna_surplus))
-    if (not blocked) and improvement <= float(OFFER_TIE_BREAK):
-        blocked = True
-    if blocked:
-        relation = "withheld"
-    elif abs(offer - float(quote)) <= float(step):
-        relation = "at_ask"
-    else:
-        relation = "concession"
-    limit = decision_limit(
-        0.0,
-        float(decision_hazard[chosen]),
-        max(0.0, improvement),
-        float(cap),
-    )
+    # A reserve-gap coefficient on the belief is not added. ``batna_surplus``
+    # stays on the desk/auction split and does not raise this offer.
+    del batna_surplus
     return {
-        "offer": offer,
-        "hazard": float(decision_hazard[chosen]),
-        "hazard_upper": float(upper[chosen]),
-        "surplus": float(surplus[chosen]),
-        "p_accept": float(p_accept[chosen]),
-        "blocked": blocked,
-        "push_limit": float(limit),
-        "counter_relation": relation,
-        "mesh": int(offers.shape[0]),
+        "offer": float(choice.default_counter),
+        "push_offer": float(choice.push_counter),
+        "push_half": float(choice.push_half),
+        "push_double": float(choice.push_double),
+        "hazard": float(choice.incremental_hazard),
+        "hazard_upper": float(incremental_hazard(
+            float(quote),
+            float(choice.push_counter),
+            effect,
+            fit,
+            intercept=float(belief.intercept) if override else None,
+            gap_coef=float(belief.quote_gap_coef) if override else None,
+        )),
+        "surplus": float(choice.objective),
+        "p_accept": float(choice.acceptance),
+        "blocked": bool(choice.blocked),
+        "push_limit": float(cap),
+        "counter_relation": choice.counter_relation,
+        "mesh": 0,
+        "optimiser": choice.optimiser,
+        "prior_source": choice.prior_source,
+        "prior_note": choice.note,
+        "heuristic": HEURISTIC_NOTE,
+        "hazard_transfer": HAZARD_TRANSFER_NOTE,
     }
 
 
@@ -625,6 +602,7 @@ def solve_coupled(
     search_step: float = SEARCH_STEP,
     lambda_break: float = 1.0,
     credible_alpha: float | None = None,
+    reserves: list | None = None,
 ) -> dict[str, Any]:
     """Choose one offer per supplier. Prices are normalised to the target."""
     started = time.perf_counter()
@@ -642,7 +620,16 @@ def solve_coupled(
         rng = np.random.default_rng(int(DEFAULT_SOLVER_SEED))
     cap = risk_cap(risk_tolerance)
     landed = quotes + kappas
-    scenarios = sample_joint_scenarios(rng, means, stds, int(n_samples), rho=rho)
+    if reserves is None:
+        reserves = [ReserveState.policy() for _ in range(k)]
+    tiny = float(np.finfo(np.float64).tiny)
+    d_means = np.asarray([float(quotes[i]) * float(reserves[i].mean()) for i in range(k)], dtype=np.float64)
+    d_stds = np.asarray(
+        [max(abs(float(quotes[i]) * float(reserves[i].std())), tiny) for i in range(k)],
+        dtype=np.float64,
+    )
+    scenarios = sample_joint_scenarios(rng, d_means, d_stds, int(n_samples), rho=rho)
+    del means, stds
     # ``floor`` and ``n_grid`` remain on the signature for older callers.
     # The offer search does not read them.
     del floor
@@ -664,8 +651,8 @@ def solve_coupled(
         # with no outside option, so a tighter rival cannot re-rank it.
         choice = _analytic_choice(
             quote=float(quotes[i]),
-            mean=float(means[i]),
-            std=float(stds[i]),
+            mean=float(d_means[i]),
+            std=float(d_stds[i]),
             hi=hi,
             kappa=float(kappas[i]),
             ceiling=float(ceiling),
@@ -676,6 +663,7 @@ def solve_coupled(
             round_index=_round_for(round_index, i),
             lambda_break=float(lambda_break),
             credible_alpha=credible_alpha,
+            state=reserves[i],
         )
         mesh_cells += int(choice["mesh"])
         choice["batna_surplus"] = 0.0 if snap_to_grid else batna
@@ -690,17 +678,17 @@ def solve_coupled(
         float(ceiling),
         quotes=quotes,
         beliefs=beliefs,
-        reserve_means=means,
+        reserve_means=d_means,
         risk_tolerance=risk_tolerance,
         round_index=round_index,
     )
     reservations = []
     for i in range(k):
-        # Same absolute scale as the scenario draw: reserve = mean + std × shock.
-        sigma = max(abs(float(stds[i])), float(np.finfo(np.float64).tiny))
+        # Normal approximation to ask × D, used only to order suppliers.
+        sigma = max(abs(float(d_stds[i])), float(np.finfo(np.float64).tiny))
         cost = float(WEITZMAN_SEARCH_COST if search_cost is None else search_cost)
         reservations.append(
-            weitzman_reservation(float(means[i]) + float(kappas[i]), sigma, cost=cost)
+            weitzman_reservation(float(d_means[i]) + float(kappas[i]), sigma, cost=cost)
         )
     order = sorted(range(k), key=lambda i: (reservations[i], float(landed[i]), i))
     tactics = classify_tactics(quotes, ceiling)
@@ -722,6 +710,12 @@ def solve_coupled(
     elapsed = time.perf_counter() - started
     return {
         "offers": [float(x) for x in offers],
+        "push_offers": [float(item["push_offer"]) for item in choices],
+        "push_half": [float(item["push_half"]) for item in choices],
+        "push_double": [float(item["push_double"]) for item in choices],
+        "prior_source": [str(item["prior_source"]) for item in choices],
+        "prior_note": [str(item["prior_note"]) for item in choices],
+        "heuristic": HEURISTIC_NOTE,
         "hazards": [float(item["hazard"]) for item in choices],
         "hazard_upper": [float(item["hazard_upper"]) for item in choices],
         "blocked": [bool(item["blocked"]) for item in choices],

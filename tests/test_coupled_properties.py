@@ -334,14 +334,14 @@ class TestPriceIndependence(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 200, response.text)
         body = response.json()
-        self.assertTrue(body["circuit_tripped"])
+        # Incremental hazard at the ask is 0, so a cap of 0.01 does not trip.
+        self.assertFalse(body["circuit_tripped"])
         self.assertTrue(body["pending_human_approval"])
-        self.assertIsNone(body["reply_text"])
+        self.assertAlmostEqual(body["recommended_offer_price"], 14.5, places=2)
         action = body.get("action_object")
-        if action is None:
-            self.assertIsNone(body.get("recommended_offer_price"))
-        else:
-            self.assertLessEqual(action["authorized_price"], 16.2)
+        self.assertIsNotNone(action)
+        self.assertLessEqual(action["authorized_price"], 16.2)
+        self.assertAlmostEqual(action["breakdown_risk"], 0.0, places=6)
 
 
 class TestSimulationBenchmark(unittest.TestCase):

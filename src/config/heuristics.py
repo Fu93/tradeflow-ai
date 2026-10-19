@@ -439,6 +439,56 @@ SHARED_FACTOR_RHO = 0.0
 # search budget.
 COUPLED_SWEEPS = 1
 
+# Rationale: labelled Beta mean for D, the fraction of a supplier's own
+# first ask at which their reserve sits. 0.9 means the policy expects about
+# ten percent of room under that ask. It is not fitted. The eBay
+# auto-decline ratio is not this number.
+D_PRIOR_MEAN = 0.9
+
+# Rationale: pseudo-count strength, alpha plus beta, of that Beta prior.
+# Four is a weak prior, so a few responses from this supplier can move it.
+# The card shows the push-lower offer at half this strength and at double it.
+D_PRIOR_STRENGTH = 4.0
+
+# Rationale: slope of the soft likelihood used when a supplier rejects an
+# offer. The rejection raises weight on D above the rejected ratio and
+# leaves weight below it. It is not a hard truncation.
+REJECT_SOFTNESS = 8.0
+
+# Rationale: quadrature nodes for a censored or reweighted Beta distribution
+# function. This integrates the belief. It is not a price grid and it does
+# not choose the offer.
+QUAD_NODES = 64
+
+# Rationale: iteration budget for the golden-section maximiser of the
+# one-dimensional offer. The offer is that maximiser, not a mesh point.
+BRENT_ITERS = 80
+
+# Rationale: golden-section conjugate (sqrt(5) − 1) / 2. A mathematical
+# identity used by the bounded scalar maximiser.
+GOLDEN_CONJUGATE = 0.6180339887498949
+
+# Rationale: relative tolerance of the bounded scalar maximiser. A numerical
+# guard, not a price.
+OPT_TOL = 1e-12
+
+# Rationale: continued-fraction iterations for the regularized incomplete
+# beta function. A numerical guard.
+BETA_CF_ITERS = 200
+
+# Rationale: how many resolved shadow accepts, all confirmed unchanged, put
+# the two-sided Wilson 95 percent lower bound at 0.98. The desk shows
+# progress toward this count. Auto-accept stays off.
+GATE_CERTIFY_ACCEPTS = 189
+
+# Rationale: digit-group length the span reader treats as a thousands
+# separator. The rule reader does not call this tokenizer.
+SPAN_GROUP = 3
+
+# Rationale: timeout, in seconds, for one optional extractor call. A missing
+# endpoint leaves the rule prefill only.
+LLM_TIMEOUT_SECONDS = 20
+
 
 def _sigmoid(value: float) -> float:
     import math
@@ -452,6 +502,25 @@ def _sigmoid(value: float) -> float:
 
 def public_payload() -> dict:
     """Numbers the dashboard and the extension are allowed to display."""
+    intercept = float(HAZARD_INTERCEPT)
+    gap = float(HAZARD_QUOTE_GAP)
+    hazard_status = "fit-missing"
+    hazard_note = "The eBay hazard file is not available in this process."
+    try:
+        from src.engine.hazard_fit import load_hazard_fit
+
+        fit = load_hazard_fit()
+        intercept = float(fit.intercept)
+        gap = float(fit.gap_coef)
+        hazard_status = "ebay_seller_ended"
+        hazard_note = (
+            "Walk-away hazard is transferred from eBay Best Offer, 2012–13, "
+            "Business & Industrial, seller-ended. It is not a measured "
+            "Chinese-factory rate. A reserve-gap term is not in the decision. "
+            "The risk cap applies to the incremental hazard of our offer."
+        )
+    except Exception:
+        pass
     return {
         "documented": True,
         "source": "src/config/heuristics.py",
@@ -461,13 +530,13 @@ def public_payload() -> dict:
         "risk_tolerance_max": RISK_TOLERANCE_MAX,
         "cvar_tail_fraction": CVAR_TAIL_FRACTION,
         "caution_risk_threshold": CAUTION_RISK_THRESHOLD,
-        "hazard_status": "prior-driven",
-        "hazard_intercept": HAZARD_INTERCEPT,
+        "hazard_status": hazard_status,
+        "hazard_intercept": intercept,
         "hazard_tau": HAZARD_SUPPLIER_TAU,
-        "hazard_quote_gap": HAZARD_QUOTE_GAP,
-        "hazard_baseline_rate": _sigmoid(HAZARD_INTERCEPT),
-        "hazard_baseline_low": _sigmoid(HAZARD_INTERCEPT - HAZARD_SUPPLIER_TAU),
-        "hazard_baseline_high": _sigmoid(HAZARD_INTERCEPT + HAZARD_SUPPLIER_TAU),
+        "hazard_quote_gap": gap,
+        "hazard_baseline_rate": _sigmoid(intercept),
+        "hazard_baseline_low": _sigmoid(intercept - HAZARD_SUPPLIER_TAU),
+        "hazard_baseline_high": _sigmoid(intercept + HAZARD_SUPPLIER_TAU),
         "hazard_min_events": HAZARD_MIN_EVENTS,
         "prior_reserve_suggestion": PRIOR_RESERVE_MEAN,
         "prior_reserve_std_suggestion": PRIOR_RESERVE_STD,
@@ -476,12 +545,7 @@ def public_payload() -> dict:
         "unit_sanity_multiple": UNIT_SANITY_MULTIPLE,
         "hazard_credible_alpha": HAZARD_CREDIBLE_ALPHA,
         "weitzman_search_cost": WEITZMAN_SEARCH_COST,
-        "hazard_note": (
-            "Walk-away hazard uses assumed logistic coefficients in "
-            "src/config/heuristics.py. No public dataset was fitted. "
-            "The baseline rate and its spread are labelled assumptions. "
-            "The default cap is user policy, not an estimated rate."
-        ),
+        "hazard_note": hazard_note,
         "ladder_edge_lo": LADDER_EDGE_LO,
         "ladder_edge_hi": LADDER_EDGE_HI,
         "ladder_step_fine": LADDER_STEP_FINE,

@@ -41,6 +41,13 @@ DECISION = (
     "src/engine/quote_read.py",
     "src/engine/model.py",
     "src/desk/store.py",
+    "src/engine/reserve.py",
+    "src/engine/decision.py",
+    "src/engine/hazard_fit.py",
+    "src/desk/span_read.py",
+    "src/desk/extract.py",
+    "src/desk/shadow.py",
+    "src/desk/headline.py",
 )
 MIN_JUSTIFICATION = 25
 PRODUCTION = ("src/engine", "src/desk", "src/app")

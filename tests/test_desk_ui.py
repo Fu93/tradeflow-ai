@@ -113,9 +113,9 @@ def test_desk_page_updates_when_mail_arrives():
             assert "15.60 CNY" not in page.locator(".desk-card").first.inner_text()
             sensitivity = page.locator("#hazard-sensitivity").inner_text()
             assert "%" in sensitivity
-            assert "Labelled baseline" in sensitivity
-            assert "Coefficients stay labelled" in sensitivity
-            assert "supplier effect only" in sensitivity
+            assert "Transferred baseline" in sensitivity
+            assert "reserve-gap term is not added" in sensitivity
+            assert "this supplier's effect only" in sensitivity
             assert page.locator("#hazard-reserve-gap").count() == 1
             assert page.locator("#obs-noise").count() == 1
             assert page.locator("#sanity-multiple").count() == 1
@@ -123,12 +123,11 @@ def test_desk_page_updates_when_mail_arrives():
             page.locator("#paste-supplier").select_option(index=1)
             page.fill("#paste-text", "单价 14.80 元")
             page.locator("#paste-form button[type=submit]").click()
+            page.locator("#review").get_by_role("button", name="Accept").first.click()
             page.get_by_text("14.80 CNY").first.wait_for(timeout=15000)
-            page.get_by_text("Insufficient data").first.wait_for(timeout=10000)
-            page.fill("#expected-markup", "0.08")
-            page.locator("#assumptions button[type=submit]").click()
-            page.get_by_text("at the ask: expected surplus is highest").first.wait_for(timeout=15000)
-            page.get_by_text("Reserve belief (markup)").first.wait_for(timeout=10000)
+            page.get_by_text("cheapest confirmed quote").first.wait_for(timeout=10000)
+            page.get_by_text("labelled policy").first.wait_for(timeout=10000)
+            page.get_by_text("unconfirmed numbers used in decisions: 0").first.wait_for(timeout=10000)
             page.locator(".desk-card", has_text="14.80 CNY").get_by_role("button", name="Record continue").click()
             page.get_by_text("Recorded outcomes: 1").wait_for(timeout=10000)
             fixture.append((FIXTURES / "ningbo-followup.eml").read_bytes())

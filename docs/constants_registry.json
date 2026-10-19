@@ -703,6 +703,61 @@
       "category": "n",
       "justification": "passes of the coupled offer search. The outside option is the rival quote, which does not move inside the pass, so a second pass would repeat the same decision and inflate the cell count. One pass is the search budget."
     },
+    "D_PRIOR_MEAN": {
+      "value": 0.9,
+      "category": "d",
+      "justification": "Labelled Beta mean for D, the fraction of a supplier's own first ask at which their reserve sits. It is not fitted, and the eBay auto-decline ratio is not this number."
+    },
+    "D_PRIOR_STRENGTH": {
+      "value": 4.0,
+      "category": "d",
+      "justification": "Pseudo-count strength, alpha plus beta, of the labelled Beta prior on D. The card shows the push-lower offer at half this strength and at double it, with the mean held fixed."
+    },
+    "REJECT_SOFTNESS": {
+      "value": 8.0,
+      "category": "d",
+      "justification": "Slope of the soft likelihood when a supplier rejects an offer. Weight rises above the rejected ratio and probability remains below it. It is not a hard cut."
+    },
+    "QUAD_NODES": {
+      "value": 64,
+      "category": "n",
+      "justification": "Quadrature nodes for a censored or reweighted Beta distribution. This integrates the belief. It does not choose the offer."
+    },
+    "BRENT_ITERS": {
+      "value": 80,
+      "category": "n",
+      "justification": "Iteration budget for the golden-section maximiser of the one-dimensional offer. The offer is that maximiser, not a mesh point."
+    },
+    "GOLDEN_CONJUGATE": {
+      "value": 0.6180339887498949,
+      "category": "c",
+      "justification": "Golden-section conjugate, (sqrt(5) - 1) / 2. A mathematical identity used by the bounded scalar maximiser."
+    },
+    "OPT_TOL": {
+      "value": 1e-12,
+      "category": "n",
+      "justification": "Relative tolerance of the bounded scalar maximiser and the incomplete-beta continued fraction. A numerical guard, not a price."
+    },
+    "BETA_CF_ITERS": {
+      "value": 200,
+      "category": "n",
+      "justification": "Continued-fraction iterations for the regularized incomplete beta function. A numerical guard, not a price."
+    },
+    "GATE_CERTIFY_ACCEPTS": {
+      "value": 189,
+      "category": "c",
+      "justification": "Resolved shadow accepts, all confirmed unchanged, that put the two-sided Wilson 95 percent lower bound at 0.98. The desk shows progress toward this count. Auto-accept stays off."
+    },
+    "SPAN_GROUP": {
+      "value": 3,
+      "category": "n",
+      "justification": "Digit-group length the span reader treats as a thousands separator. The rule reader does not call this tokenizer."
+    },
+    "LLM_TIMEOUT_SECONDS": {
+      "value": 20,
+      "category": "n",
+      "justification": "Timeout, in seconds, for one optional extractor call. A missing endpoint leaves the rule prefill only. No key is stored in code."
+    },
     "ONE_HALF": {
       "value": 0.5,
       "category": "c",

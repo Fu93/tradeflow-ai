@@ -171,7 +171,7 @@ class TestMultiSolver(unittest.TestCase):
         self.assertGreater(s["savings_vs_ceiling_pct"], 0.0)
 
     def test_circuit_breaker_follows_the_risk_cap(self):
-        """A tight user cap blocks the supplier we would push. The default cap is looser."""
+        """A tight cap does not block an offer at the ask. Incremental hazard there is 0."""
         offers = np.array([1.34, 1.34], dtype=np.float32)
         means = np.array([1.25, 1.25], dtype=np.float32)
         stds = np.array([0.15, 0.15], dtype=np.float32)
@@ -186,8 +186,11 @@ class TestMultiSolver(unittest.TestCase):
             risk_tolerance=0.02,
         )
         blocked = tight.solve_reverse_auction_tensor(offers, means, stds)
-        self.assertTrue(blocked["circuit_tripped"])
-        self.assertLessEqual(int(loose["circuit_tripped"]), int(blocked["circuit_tripped"]))
+        self.assertFalse(blocked["circuit_tripped"])
+        self.assertFalse(any(blocked["blocked"]))
+        self.assertFalse(loose["circuit_tripped"])
+        for offer, push in zip(blocked["best_offers"], blocked["push_offers"]):
+            self.assertLessEqual(push, offer + 1e-9)
 
 
 if __name__ == "__main__":

@@ -211,9 +211,9 @@ def test_risk_and_chart_use_real_round_values(live_server):
 
     risk_point = out["series"][1][-1]
     assert risk_point is not None, "no breakdown risk plotted for a completed round"
-    assert 0.0 < risk_point < 100.0
-    assert out["risk"] != "0.0%", "risk percentage was not derived from the measured p_break"
-    assert out["risk"] is not None and out["risk"].endswith("%")
+    # Incremental hazard at the default counter (the ask) is 0.
+    assert risk_point == pytest.approx(0.0)
+    assert out["risk"] == "0.0%"
 
 
 def test_unknown_session_does_not_render_a_fake_measurement(live_server):

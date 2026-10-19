@@ -227,7 +227,7 @@ def test_plausibility_band_is_three_and_blocks_the_loose_cases(tmp_path, monkeyp
             suppliers=suppliers,
         )
 
-    def _status(deal, text):
+    def _event(deal, text):
         result = ingest_message(
             store,
             deal["deal"]["id"],
@@ -235,18 +235,33 @@ def test_plausibility_band_is_three_and_blocks_the_loose_cases(tmp_path, monkeyp
             raw_text=text,
             supplier_id=deal["suppliers"][0]["id"],
         )
-        return result["event"]["status"], result["event"]["parsed"]["unit_price"]
+        return result["event"]
 
     small = _deal(12, 16.2)
-    assert _status(small, "Unit price 1.60 RMB.")[0] == "review"
-    assert _status(small, "Unit price 3.6 RMB.")[0] == "review"
-    assert _status(small, "Unit price 33.10 RMB per piece.") == ("accepted", pytest.approx(33.10))
+    for text in (
+        "Unit price 1.60 RMB.",
+        "Unit price 3.6 RMB.",
+        "Unit price 33.10 RMB per piece.",
+    ):
+        event = _event(small, text)
+        assert event["status"] == "review"
+        assert event["parsed"]["unit_price"] is None
+        assert event["provenance"]["auto_accept"] is False
+        assert event["provenance"]["rule_would_accept"] is True
 
     wide = _deal(28, 36.5)
-    assert _status(wide, "Factory in Yiwu says 25 RMB for the same item.")[1] is None
-    assert _status(wide, "Our bank fee is 150 RMB per transfer.")[1] is None
-    assert _status(wide, "Unit price 260 RMB per piece.")[0] == "review"
-    assert _status(wide, "单价 32.00 元/件。") == ("accepted", pytest.approx(32.0))
+    for text in (
+        "Factory in Yiwu says 25 RMB for the same item.",
+        "Our bank fee is 150 RMB per transfer.",
+    ):
+        event = _event(wide, text)
+        assert event["parsed"]["unit_price"] is None
+        assert event["provenance"]["rule_would_accept"] is False
+    for text in ("Unit price 260 RMB per piece.", "单价 32.00 元/件。"):
+        event = _event(wide, text)
+        assert event["status"] == "review"
+        assert event["parsed"]["unit_price"] is None
+        assert event["provenance"]["rule_would_accept"] is True
     store.close()
     reset_stores()
 

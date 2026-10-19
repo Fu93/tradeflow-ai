@@ -131,7 +131,8 @@ class TestApproveUsesEngineRecommendation(_Isolated):
         before = self.c.get(f"/api/v1/sessions/{sid}", headers=self.headers).json()
         measured = before["history"][-1]["p_break"]
         self.assertIsNotNone(measured)
-        self.assertGreater(measured, 0.0)
+        # The default counter is the ask, so the incremental hazard is 0.
+        self.assertEqual(measured, 0.0)
 
         self.c.post(
             f"/api/v1/sessions/{sid}/approve", json={"action": "approve"}, headers=self.headers

@@ -89,10 +89,13 @@ class TestAPI(_IsolatedClientCase):
         })
         self.assertEqual(r.status_code, 200, r.text)
         body = r.json()
-        self.assertIsNone(body["opening_offer_price"])
-        self.assertEqual(body["counter_relation"], "withheld")
-        self.assertEqual(body["reserve_source"], "ask_only")
-        self.assertIsNone(body["posterior_reserve_mean"])
+        # observed_offer 1.25 times the target is a 15 CNY ask, under the ceiling.
+        self.assertAlmostEqual(body["opening_offer_price"], 15.0, places=6)
+        self.assertEqual(body["counter_relation"], "at_ask")
+        self.assertEqual(body["reserve_source"], "labelled_policy")
+        self.assertFalse(body["markup_applied"])
+        self.assertLessEqual(body["push_offer_price"], body["opening_offer_price"])
+        self.assertEqual(body["audit"], "unconfirmed numbers used in decisions: 0")
 
     def test_webhook_responds_with_draft(self):
         """Webhook 必須回傳草稿與建議，且**不得因外部服務狀態而失敗**。

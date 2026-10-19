@@ -98,8 +98,10 @@ def test_counter_is_a_concession_when_the_reserve_is_below_the_ask():
         rng=np.random.default_rng(3),
     )
     assert solved["blocked"][0] is False
-    assert solved["offers"][0] < 1.40 - float(SEARCH_STEP)
-    assert solved["counter_relation"][0] == "concession"
+    # The ceiling is below the ask, so the default counter matches that cap.
+    assert solved["offers"][0] == pytest.approx(1.35)
+    assert solved["push_offers"][0] <= solved["offers"][0] + 1e-9
+    assert solved["counter_relation"][0] == "match_rival"
 
 
 def test_explicit_zero_markup_may_sit_on_the_ask_and_is_labelled():
@@ -215,7 +217,8 @@ def test_plausibility_band_sends_a_wild_unit_price_to_review(tmp_path, monkeypat
     )
     assert result["event"]["status"] == "review"
     assert result["event"]["parsed"]["unit_price"] is None
-    assert "plausibility" in result["event"]["provenance"]["review_reason"]
+    assert result["event"]["provenance"]["auto_accept"] is False
+    assert "confirm the prefilled amount" in result["event"]["provenance"]["review_reason"]
     store.close()
     reset_stores()
 
@@ -350,8 +353,11 @@ def test_same_product_closed_deals_do_not_move_another_product(tmp_path, monkeyp
         supplier_id=second["suppliers"][0]["id"],
     )
     card = pasted["snapshot"]["suppliers"][0]
-    assert card["belief_label"] == "ask_only"
+    assert pasted["event"]["status"] == "review"
+    assert pasted["event"]["parsed"]["unit_price"] is None
+    assert card["belief_label"] == "no data"
     assert card["counter"] is None
+    assert pasted["snapshot"]["audit"] == "unconfirmed numbers used in decisions: 0"
     store.close()
     reset_stores()
 

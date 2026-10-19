@@ -143,12 +143,12 @@
   }
 
   function hazardText(supplier) {
-    const figure = supplier.hazard_figure === "upper" ? supplier.hazard_upper : supplier.hazard;
-    if (figure == null || figure !== figure) return "no data";
-    const shown = Math.round(Number(figure) * 1000) / 10;
-    const label = supplier.hazard_figure === "upper" ? " upper bound" : "";
-    const prior = supplier.prior_driven ? " prior-driven" : "";
-    return shown.toFixed(1) + "%" + label + prior;
+    if (supplier.hazard == null || supplier.hazard !== supplier.hazard) return "no data";
+    const atDefault = (Math.round(Number(supplier.hazard) * 1000) / 10).toFixed(1);
+    const atPush = supplier.hazard_upper == null
+      ? "no data"
+      : (Math.round(Number(supplier.hazard_upper) * 1000) / 10).toFixed(1) + "%";
+    return "incremental " + atDefault + "% at the default counter, " + atPush + " at the push-lower counter";
   }
 
   function show(snapshot) {
@@ -158,6 +158,24 @@
       (deal.product || "Deal") + " · " + (deal.id || "");
     document.getElementById("basis-line").textContent =
       "Ranking basis: " + (snapshot.ranking_basis || "unit_price") + ". " + (snapshot.kappa_note || "");
+    document.getElementById("audit-line").textContent = snapshot.audit || "";
+    const shadow = snapshot.shadow_gate || {};
+    document.getElementById("shadow-line").textContent =
+      "Shadow accepts later confirmed unchanged: "
+      + String(shadow.confirmed_unchanged || 0)
+      + " of " + String(shadow.resolved_shadow_accepts || 0)
+      + ", toward " + String(shadow.target || "")
+      + ". Auto-accept is off.";
+    const headline = snapshot.headline || {};
+    const headlineLine = document.getElementById("headline-line");
+    if (headline.simulated) {
+      headlineLine.textContent = "Headline: simulated. Not counted as a real closed deal.";
+    } else if (headline.counted && headline.saving != null) {
+      headlineLine.textContent = "Realised landed saving versus the best first confirmed quote: " + money(headline.saving, "CNY");
+    } else {
+      headlineLine.textContent = "Headline: no real closed deal yet.";
+    }
+    document.getElementById("heuristic-line").textContent = snapshot.heuristic || "";
     document.getElementById("hazard-line").textContent = snapshot.hazard_note || "";
     fillAssumptions(snapshot);
     const cvar = document.getElementById("cvar-line");
@@ -202,11 +220,11 @@
     fillOnce("search-cost", deal.search_cost);
     const note = document.getElementById("hazard-sensitivity");
     if (note) {
-      note.textContent = "Labelled baseline walk-away " + rateText(box.baseline_rate)
+      note.textContent = "Transferred baseline walk-away " + rateText(box.baseline_rate)
         + " (spread " + rateText(box.baseline_low) + " to " + rateText(box.baseline_high)
-        + "). Source: " + (box.source || "labelled policy")
-        + ". Coefficients stay labelled. Recorded outcomes: " + String(box.recorded_outcomes || 0)
-        + ". They update the supplier effect only.";
+        + "). Source: " + (box.source || "ebay_seller_ended")
+        + ". A reserve-gap term is not added. Recorded outcomes: " + String(box.recorded_outcomes || 0)
+        + ". They update this supplier's effect only.";
     }
   }
 
@@ -294,24 +312,18 @@
         ? money(supplier.landed_cost, "CNY")
         : "no data";
       line(card, "Landed cost: " + landed);
-      const source = supplier.belief_label || "no data";
-      line(card, "Reserve source: " + source + ". " + (supplier.reserve_note || ""));
-      if (supplier.belief_mean == null) {
-        line(card, "Insufficient data. No counter at half or double, because no reserve was identified.");
-      } else {
-        const belief = money(supplier.belief_mean) + " x target ± " + money(supplier.belief_std);
-        line(card, "Reserve belief (" + source + "): " + belief);
-        const half = supplier.sensitivity_half == null ? "withheld" : money(supplier.sensitivity_half, "CNY");
-        const doubled = supplier.sensitivity_double == null ? "withheld" : money(supplier.sensitivity_double, "CNY");
-        line(card, "Counter at half the prior: " + half + ". At double: " + doubled + ".");
-      }
+      line(card, "Reserve: " + (supplier.reserve_note || supplier.belief_label || "no data"));
+      const half = supplier.sensitivity_half == null ? "withheld" : money(supplier.sensitivity_half, "CNY");
+      const doubled = supplier.sensitivity_double == null ? "withheld" : money(supplier.sensitivity_double, "CNY");
       const counter = supplier.counter == null ? "withheld" : money(supplier.counter, "CNY");
+      const push = supplier.push_counter == null ? "withheld" : money(supplier.push_counter, "CNY");
       const relation = supplier.counter_relation === "at_ask"
-        ? " (at the ask: expected surplus is highest at this quote; desk outside option is zero)"
-        : supplier.counter_relation === "concession"
-          ? " (expected-surplus maximum below the quote; desk outside option is zero)"
+        ? " (this supplier is the cheapest confirmed quote, so the default is their ask)"
+        : supplier.counter_relation === "match_rival"
+          ? " (matches the best other confirmed landed quote)"
           : "";
-      line(card, "Counter: " + counter + relation);
+      line(card, "Default counter: " + counter + relation);
+      line(card, "Push lower: " + push + ". At half the prior strength: " + half + ". At double the prior strength: " + doubled + ".");
       line(card, "Walk-away hazard: " + hazardText(supplier));
       if (supplier.excluded_from_decision) {
         line(card, "Excluded from the decision until you include unverified quotes.");

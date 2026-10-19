@@ -211,7 +211,15 @@ def test_mail_is_not_consumed_before_it_can_be_routed(tmp_path, monkeypatch):
 
 def test_withheld_counter_and_sent_draft_are_not_sent_again(tmp_path, monkeypatch):
     from src.desk.recompute import recompute
-    from src.desk.service import DraftStale, create_deal, deal_lock, draft_digest, ingest_message, send_draft
+    from src.desk.service import (
+        DraftStale,
+        accept_review,
+        create_deal,
+        deal_lock,
+        draft_digest,
+        ingest_message,
+        send_draft,
+    )
     from src.desk.store import DeskStore
     from src.engine.coupled import solve_coupled
 
@@ -236,7 +244,7 @@ def test_withheld_counter_and_sent_draft_are_not_sent_again(tmp_path, monkeypatc
     deal_id = snapshot["deal"]["id"]
     store.set_policy(deal_id, {"expected_markup": 0.08})
     ningbo = snapshot["suppliers"][0]["id"]
-    ingest_message(
+    held_in = ingest_message(
         store,
         deal_id,
         source="paste",
@@ -245,6 +253,7 @@ def test_withheld_counter_and_sent_draft_are_not_sent_again(tmp_path, monkeypatc
         external_id="<hold@example.test>",
         provenance_extra={"message_id": "<a1@ningbo.test>", "references": "<rfq-1@example.test> <rfq-2@example.test>"},
     )
+    accept_review(store, deal_id, held_in["event"]["id"], ningbo)
     draft = next(item for item in store.drafts(deal_id) if item["status"] == "draft")
     header = draft["references_header"] or ""
     assert "<rfq-1@example.test>" in header
@@ -303,7 +312,7 @@ def test_withheld_counter_and_sent_draft_are_not_sent_again(tmp_path, monkeypatc
 
 
 def test_failed_send_can_be_retried(tmp_path, monkeypatch):
-    from src.desk.service import create_deal, draft_digest, ingest_message, send_draft
+    from src.desk.service import accept_review, create_deal, draft_digest, ingest_message, send_draft
     from src.desk.store import DeskStore
 
     monkeypatch.setenv("DESK_SMTP_SEND", "1")
@@ -330,7 +339,10 @@ def test_failed_send_can_be_retried(tmp_path, monkeypatch):
     )
     deal_id = snapshot["deal"]["id"]
     store.set_policy(deal_id, {"expected_markup": 0.08})
-    ingest_message(store, deal_id, source="paste", raw_text="单价 15.60 元", supplier_id=snapshot["suppliers"][0]["id"])
+    opened = ingest_message(
+        store, deal_id, source="paste", raw_text="单价 15.60 元", supplier_id=snapshot["suppliers"][0]["id"]
+    )
+    accept_review(store, deal_id, opened["event"]["id"], snapshot["suppliers"][0]["id"])
     draft = next(item for item in store.drafts(deal_id) if item["status"] == "draft")
     digest = draft_digest(draft["body"])
 
