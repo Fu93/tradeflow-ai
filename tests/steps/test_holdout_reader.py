@@ -324,7 +324,8 @@ def test_decision_record_stores_the_raw_response_hash(tmp_path, monkeypatch):
 
     digest = hashlib.sha256(b'{"mentions": []}').hexdigest()
 
-    def _fake(_message, *, transport=None):
+    def _fake(_message, *, transport=None, budget_seconds=None):
+        del budget_seconds
         return {
             "mentions": [],
             "numeric_field_discarded": False,

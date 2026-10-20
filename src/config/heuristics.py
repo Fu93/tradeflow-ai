@@ -552,6 +552,10 @@ EXTRACTOR_MAX_IN_FLIGHT = 4
 # anchor. It bounds that network call. It is not a price and not a quote.
 CHAIN_ANCHOR_TIMEOUT_SECONDS = 5
 
+# Rationale: HTTP status when the desk cannot open a deal because the chain
+# key is missing. The process stays up. The create route tells the caller.
+HTTP_UNAVAILABLE = 503
+
 # Rationale: HTTP status that means the extractor was rate limited. That
 # status retries the next hop. It is not a price and not a quote amount.
 EXTRACTOR_HTTP_TOO_MANY = 429

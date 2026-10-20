@@ -357,15 +357,28 @@ def _bare_blocked_by_other_currency(visible: str, start: int, token: str, deal_c
             break
     sentence = _sentence_of(visible or "", start)
     blocked = _mentions_other_currency(line, deal_currency) or _mentions_other_currency(sentence, deal_currency)
-    return blocked
+    elsewhere = _other_currency_on_another_line(visible, start, deal_currency)
+    return blocked or elsewhere
+
+
+def _other_currency_on_another_line(visible: str, start: int, deal_currency: str) -> bool:
+    """A currency named on a different line applies to every bare number in the message."""
+    offset = 0
+    for row in (visible or "").splitlines():
+        end = offset + len(row)
+        on_this_line = offset <= start <= end
+        if not on_this_line and _mentions_other_currency(row, deal_currency):
+            return True
+        offset = end + 1
+    return False
 
 
 def _for_rules(clause: str) -> str:
     return _EXCLUSION.sub(" ", clause)
 
 
-_USD = re.compile(r"(?i)(?:usd|美元|\$)")
-_EUR = re.compile(r"(?i)(?:eur|欧元|歐元|€)")
+_USD = re.compile(r"(?i)(?:usd|us\s+dollars?|u\.s\.\s+dollars?|美元|美金|\$)")
+_EUR = re.compile(r"(?i)(?:eur|euros?|欧元|歐元|€)")
 
 
 def _currency_of(pre: str, post: str) -> str | None:

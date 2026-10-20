@@ -426,13 +426,19 @@ def simulated_mandates():
 
 @app.get("/health")
 def health():
+    from src.desk.audit_chain import chain_key_configured
+
     language = llm_status()
+    desk_line = "desk sends enabled"
+    if not chain_key_configured():
+        desk_line = "desk sends disabled: chain key missing"
     return {
         "status": "ok",
         "version": "0.4.0",
         "solver": describe_solver_backend(),
         "llm": language,
         "offline_demo": language["offline_demo"],
+        "desk": desk_line,
     }
 
 

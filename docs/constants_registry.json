@@ -833,6 +833,11 @@
       "category": "n",
       "justification": "Seconds allowed for one read or write of the external chain anchor. It bounds that network call. It is not a price and not a quote."
     },
+    "HTTP_UNAVAILABLE": {
+      "value": 503,
+      "category": "n",
+      "justification": "HTTP status when a deal cannot be created because the chain key is missing. The process stays up and the route says why."
+    },
     "EXTRACTOR_HTTP_TOO_MANY": {
       "value": 429,
       "category": "n",
@@ -1530,6 +1535,12 @@
       "value": 200,
       "context": "product: str = Field(min_length=1, max_length=200)",
       "justification": "Use of 200 on this line of src/desk/routes.py: product: str = Field(min_length=1, max_length=200). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 200,
+      "context": "name: str | None = Field(default=None, max_length=200)",
+      "justification": "Use of 200 on this line of src/desk/routes.py: name: str | None = Field(default=None, max_length=200). A different line that repeats the digits is not covered."
     },
     {
       "file": "src/desk/routes.py",

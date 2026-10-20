@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import hashlib
 import json
 import logging
 import os
 import queue
 import threading
+import time
 from email.message import EmailMessage
 from typing import Any, Awaitable, Callable
 
@@ -15,6 +17,7 @@ from src.config.heuristics import (
     BREAKDOWN_TRIP_THRESHOLD,
     DEAL_CURRENCIES,
     DEAL_CURRENCY,
+    EXTRACTOR_MAX_IN_FLIGHT,
     RISK_TOLERANCE_FLOOR,
     RISK_TOLERANCE_MAX,
     OPT_TOL,
@@ -22,9 +25,16 @@ from src.config.heuristics import (
 )
 from src.desk import mailbox, recompute
 from src.desk.audit_chain import chain_key_configured
+from src.desk.extract import time_left
 from src.desk.names import supplier_name_key
 from src.desk.parse import _confirm_span, _visible_text, parse_quote, price_from_token
-from src.desk.store import DeskRejected, DeskStore, get_store
+from src.desk.store import DeskRejected, DeskStore, DeskUnavailable, get_store
+from src.desk.transmission import (
+    chained_supplier,
+    counter_subject,
+    reply_headers,
+    transmission_digest,
+)
 
 logger = logging.getLogger("tradeflow.desk")
 
@@ -74,8 +84,23 @@ class DraftStale(Exception):
 
 _DEAL_LOCKS: dict[str, threading.Lock] = {}
 _DEAL_LOCKS_GUARD = threading.Lock()
-_EXTRACTOR_THREADS: dict[str, threading.Thread] = {}
+class _ExtractorJob:
+    """One queued extraction. ``join`` waits for the pool worker to finish it."""
+
+    def __init__(self) -> None:
+        self._done = threading.Event()
+
+    def join(self, timeout: float | None = None) -> None:
+        self._done.wait(timeout)
+
+    def finish(self) -> None:
+        self._done.set()
+
+
+_EXTRACTOR_THREADS: dict[str, _ExtractorJob] = {}
 _EXTRACTOR_THREADS_GUARD = threading.Lock()
+_EXTRACTOR_POOL: concurrent.futures.ThreadPoolExecutor | None = None
+_EXTRACTOR_POOL_GUARD = threading.Lock()
 
 
 def deal_lock(deal_id: str) -> threading.Lock:
@@ -140,6 +165,28 @@ def create_deal(
     risk = float(BREAKDOWN_TRIP_THRESHOLD if risk_tolerance is None else risk_tolerance)
     if risk < float(RISK_TOLERANCE_FLOOR) or risk > float(RISK_TOLERANCE_MAX):
         raise DeskRejected("Risk tolerance is outside the configured range.")
+    if chain_key_configured() is False:
+        raise DeskUnavailable("desk sends disabled: chain key missing")
+    try:
+        deal = _create_deal_row(store, product, quantity, target_price, ceiling_price, risk, seed, code, suppliers)
+        store.commit()
+    except Exception:
+        store.rollback()
+        raise
+    return publish(store, deal["id"])
+
+
+def _create_deal_row(
+    store: DeskStore,
+    product: str,
+    quantity: int,
+    target_price: float,
+    ceiling_price: float,
+    risk: float,
+    seed: int,
+    code: str,
+    suppliers: list[dict[str, str]],
+) -> dict[str, Any]:
     deal = store.create_deal(
         product=product.strip(),
         quantity=int(quantity),
@@ -148,6 +195,7 @@ def create_deal(
         risk_tolerance=risk,
         seed=int(seed),
         currency=code,
+        commit=False,
         suppliers=[
             {
                 "name": item["name"].strip(),
@@ -157,6 +205,10 @@ def create_deal(
             for item in suppliers
         ],
     )
+    identities = [
+        {"id": row["id"], "name": row["name"], "address": row["address"]}
+        for row in store.suppliers(deal["id"])
+    ]
     store.append_chain(
         deal["id"],
         "deal_opened",
@@ -167,9 +219,22 @@ def create_deal(
             "quantity": int(quantity),
             "product": product.strip(),
             "risk_tolerance": risk,
+            "suppliers": identities,
         },
+        commit=False,
     )
-    return publish(store, deal["id"])
+    for row in identities:
+        store.append_chain(
+            deal["id"],
+            "supplier_added",
+            {
+                "supplier_id": row["id"],
+                "name": row["name"],
+                "address": row["address"],
+            },
+            commit=False,
+        )
+    return deal
 
 
 def ingest_message(
@@ -418,6 +483,9 @@ def _ingest_locked(
                 "event_id": event["id"],
                 "raw_sha256": event.get("raw_sha256"),
                 "source": source,
+                "supplier_id": event.get("supplier_id"),
+                "message_id": str(provenance.get("message_id") or ""),
+                "references": str(provenance.get("references") or ""),
             },
         )
         store.append_chain(
@@ -438,15 +506,29 @@ def _ingest_locked(
     return {"duplicate": False, "event": event, "snapshot": store.get_snapshot(deal_id)}
 
 
+def _extractor_pool() -> concurrent.futures.ThreadPoolExecutor:
+    global _EXTRACTOR_POOL
+    with _EXTRACTOR_POOL_GUARD:
+        if _EXTRACTOR_POOL is None:
+            _EXTRACTOR_POOL = concurrent.futures.ThreadPoolExecutor(
+                max_workers=int(EXTRACTOR_MAX_IN_FLIGHT),
+                thread_name_prefix="desk-extractor-pool",
+            )
+        return _EXTRACTOR_POOL
+
+
 def settle_extractor(event_id: str) -> None:
     """Wait for an in-flight extractor. Confirm does not call this."""
     from src.desk.extract import EXTRACTOR_TIMEOUT_BUDGET_SECONDS
 
     with _EXTRACTOR_THREADS_GUARD:
-        thread = _EXTRACTOR_THREADS.get(event_id)
-    if thread is None:
+        job = _EXTRACTOR_THREADS.get(event_id)
+    if job is None:
         return
-    thread.join(timeout=float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS))
+    job.join(timeout=float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS))
+    with _EXTRACTOR_THREADS_GUARD:
+        if _EXTRACTOR_THREADS.get(event_id) is job:
+            _EXTRACTOR_THREADS.pop(event_id, None)
 
 
 def _failed_shadow() -> dict[str, Any]:
@@ -567,18 +649,31 @@ def _schedule_extractor(
     reading = prepared.get("reading") or {}
     low = float(prepared.get("low") or 0.0)
     high = float(prepared.get("high") or 0.0)
+    from src.desk.extract import EXTRACTOR_TIMEOUT_BUDGET_SECONDS, _hop_timeout
+
+    queued = time.monotonic()
+    budget = _hop_timeout(
+        "TRADEFLOW_EXTRACTOR_TIMEOUT_BUDGET", float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS)
+    )
+    job = _ExtractorJob()
 
     def _run() -> None:
         try:
             from src.desk.shadow import shadow_from_message
 
-            finished = shadow_from_message(
-                raw_text,
-                reading,
-                low=low,
-                high=high,
-                currency=currency,
-            )
+            remaining = time_left(budget, queued)
+            if remaining <= 0:
+                finished = _failed_shadow()
+                finished["error"] = "extractor_unreachable"
+            else:
+                finished = shadow_from_message(
+                    raw_text,
+                    reading,
+                    low=low,
+                    high=high,
+                    currency=currency,
+                    budget_seconds=remaining,
+                )
         except Exception as exc:
             logger.warning("desk extractor failed: %s", type(exc).__name__)
             finished = _failed_shadow()
@@ -588,14 +683,14 @@ def _schedule_extractor(
         except Exception as exc:
             logger.warning("desk extractor result was not stored: %s", type(exc).__name__)
         finally:
+            job.finish()
             with _EXTRACTOR_THREADS_GUARD:
-                if _EXTRACTOR_THREADS.get(event_id) is threading.current_thread():
+                if _EXTRACTOR_THREADS.get(event_id) is job:
                     _EXTRACTOR_THREADS.pop(event_id, None)
 
-    thread = threading.Thread(target=_run, name="desk-extractor", daemon=True)
     with _EXTRACTOR_THREADS_GUARD:
-        _EXTRACTOR_THREADS[event_id] = thread
-    thread.start()
+        _EXTRACTOR_THREADS[event_id] = job
+    _extractor_pool().submit(_run)
 
 
 def accept_review(
@@ -772,6 +867,69 @@ def record_outcome(
         return publish(store, deal_id)
 
 
+def confirm_supplier_address(
+    store: DeskStore,
+    deal_id: str,
+    supplier_id: str,
+    *,
+    address: str,
+    name: str | None = None,
+    human_confirmed: bool,
+) -> dict[str, Any]:
+    """A new email is sent only after a person confirms it on the chain."""
+    if human_confirmed is not True:
+        raise DeskRejected("A person has to confirm this address.")
+    cleaned = address.strip()
+    if not cleaned:
+        raise DeskRejected("Each supplier needs an address.")
+    with deal_lock(deal_id):
+        supplier = store.supplier(deal_id, supplier_id)
+        if supplier is None:
+            raise KeyError(supplier_id)
+        new_name = (name or str(supplier["name"])).strip()
+        store.update_supplier(supplier_id, name=new_name, address=cleaned)
+        store.append_chain(
+            deal_id,
+            "supplier_address",
+            {
+                "supplier_id": supplier_id,
+                "name": new_name,
+                "address": cleaned,
+                "confirmed_by": "human",
+            },
+        )
+        return publish(store, deal_id)
+
+
+def reopen_supplier(
+    store: DeskStore,
+    deal_id: str,
+    supplier_id: str,
+    *,
+    human_confirmed: bool,
+) -> dict[str, Any]:
+    """A walked-away supplier quotes again only after this chained human action."""
+    if human_confirmed is not True:
+        raise DeskRejected("A person has to re-open this supplier.")
+    with deal_lock(deal_id):
+        if store.supplier(deal_id, supplier_id) is None:
+            raise KeyError(supplier_id)
+        store.insert_outcome(
+            deal_id=deal_id,
+            supplier_id=supplier_id,
+            outcome="reopen_supplier",
+            quote=None,
+            offer=None,
+            agreed_price=None,
+        )
+        store.append_chain(
+            deal_id,
+            "reopen_supplier",
+            {"supplier_id": supplier_id, "confirmed_by": "human"},
+        )
+        return publish(store, deal_id)
+
+
 def set_assumptions(store: DeskStore, deal_id: str, fields: dict[str, Any]) -> dict[str, Any]:
     with deal_lock(deal_id):
         if store.get_deal(deal_id) is None:
@@ -837,7 +995,7 @@ def _draft_rfc822(
     references: str | None = None,
 ) -> bytes:
     message = EmailMessage()
-    message["Subject"] = f"Counter for {product}"
+    message["Subject"] = counter_subject(product)
     if to:
         message["To"] = to
     if reply_to:
@@ -872,7 +1030,7 @@ async def transmit(
         await transport.send_message(
             recipient,
             body,
-            subject=f"Counter for {product}",
+            subject=counter_subject(product),
             metadata={
                 "human_approved": True,
                 "product": product,
@@ -1026,10 +1184,12 @@ def _latest_review(entries: list[dict[str, Any]], supplier_id: str) -> dict[str,
 def _outcomes_from_chain(entries: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for entry in entries:
-        if entry.get("type") != "outcome":
-            continue
         payload = dict(entry.get("payload") or {})
         supplier_id = str(payload.get("supplier_id") or "")
+        if entry.get("type") == "reopen_supplier" and payload.get("confirmed_by") == "human" and supplier_id:
+            payload = {"supplier_id": supplier_id, "outcome": "reopen_supplier"}
+        elif entry.get("type") != "outcome":
+            continue
         if not supplier_id:
             continue
         grouped.setdefault(supplier_id, []).append(payload)
@@ -1271,6 +1431,67 @@ def _fresh_counter(record: dict[str, Any]) -> float:
     return fresh
 
 
+def _transmission_differs(outgoing: dict[str, str], chained: dict[str, str]) -> bool:
+    left = transmission_digest(
+        recipient=outgoing["to"],
+        subject=outgoing["subject"],
+        in_reply_to=outgoing["in_reply_to"],
+        references=outgoing["references"],
+        body=outgoing["body"],
+    )
+    right = transmission_digest(
+        recipient=chained["to"],
+        subject=chained["subject"],
+        in_reply_to=chained["in_reply_to"],
+        references=chained["references"],
+        body=chained["body"],
+    )
+    return left != right
+
+
+def _envelope(
+    store: DeskStore,
+    entries: list[dict[str, Any]],
+    draft: dict[str, Any],
+    deal: dict[str, Any],
+    supplier: dict[str, Any],
+    counter: float,
+) -> dict[str, str]:
+    """The mail fields. They have to match the chain, then those chained fields are what is sent."""
+    identity = chained_supplier(entries, str(draft.get("supplier_id") or "")) or {}
+    opened = _deal_opened(entries)
+    product = str(opened.get("product") or "")
+    currency = str(opened.get("currency") or "")
+    rendered = _rendered_draft(store, draft, opened, float(counter), currency)
+    in_reply, references = reply_headers(entries, str(draft.get("supplier_id") or ""))
+    chained = {
+        "to": str(identity.get("address") or ""),
+        "subject": counter_subject(product),
+        "in_reply_to": in_reply,
+        "references": references,
+        "body": rendered,
+        "product": product,
+    }
+    outgoing = {
+        "to": str(supplier.get("address") or ""),
+        "subject": counter_subject(str(deal.get("product") or "")),
+        "in_reply_to": str(draft.get("reply_to") or ""),
+        "references": str(draft.get("references_header") or ""),
+        "body": str(draft.get("body") or ""),
+        "product": str(deal.get("product") or ""),
+    }
+    if _transmission_differs(outgoing, chained):
+        raise SendRefused("The recipient is not the chained supplier address.")
+    outgoing["digest"] = transmission_digest(
+        recipient=outgoing["to"],
+        subject=outgoing["subject"],
+        in_reply_to=outgoing["in_reply_to"],
+        references=outgoing["references"],
+        body=outgoing["body"],
+    )
+    return outgoing
+
+
 def _guard_send(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any]) -> dict[str, Any]:
     """Recompute the counter from the stored inputs. Refuse on any mismatch."""
     decision_id = draft.get("decision_id")
@@ -1395,18 +1616,31 @@ async def send_draft(
         supplier = store.supplier(draft["deal_id"], draft["supplier_id"])
         if deal is None or supplier is None:
             raise KeyError(draft_id)
-        _guard_send(store, draft, deal)
+        record = _guard_send(store, draft, deal)
+        envelope = _envelope(
+            store,
+            list(prior_chain.get("entries") or []),
+            draft,
+            deal,
+            supplier,
+            float(record["counter"]),
+        )
         store.append_chain(
             draft["deal_id"],
             "send_approved",
-            {"draft_id": draft_id, "decision_id": draft.get("decision_id"), "body_sha256": digest},
+            {
+                "draft_id": draft_id,
+                "decision_id": draft.get("decision_id"),
+                "body_sha256": digest,
+                "transmission_sha256": envelope["digest"],
+            },
         )
         message_id = f"<desk.{draft_id}.v{int(draft.get('version') or 1)}@tradeflow.local>"
-        recipient = supplier["address"]
-        body = draft["body"]
-        product = str(deal["product"])
-        reply_to = draft.get("reply_to")
-        references = draft.get("references_header")
+        recipient = envelope["to"]
+        body = envelope["body"]
+        product = envelope["product"]
+        reply_to = envelope["in_reply_to"] or None
+        references = envelope["references"] or None
         deal_id = draft["deal_id"]
         if not smtp_enabled():
             store.mark_draft(

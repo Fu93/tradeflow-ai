@@ -262,7 +262,15 @@ def _reserve_state(
 
 
 def _walked_away(outcomes: list[dict[str, Any]]) -> bool:
-    return any(item.get("outcome") == "walk_away" for item in outcomes)
+    """A walk-away drops the supplier until a later chained re-open."""
+    dropped = False
+    for item in outcomes:
+        kind = str(item.get("outcome") or "")
+        if kind == "walk_away":
+            dropped = True
+        elif kind == "reopen_supplier":
+            dropped = False
+    return dropped
 
 
 def quoting_supplier_ids(

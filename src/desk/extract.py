@@ -420,6 +420,11 @@ def _wait_for_slot(slot: threading.BoundedSemaphore, timeout: float) -> bool:
     return bool(slot.acquire(timeout=timeout))
 
 
+def time_left(allowance: float, started: float) -> float:
+    """Seconds still inside a deadline that started at ``started``."""
+    return allowance - (time.monotonic() - started)
+
+
 def _cancel_http(response: Any) -> None:
     if response is not None:
         response.close()
@@ -504,13 +509,19 @@ def _post(base: str, body: dict[str, Any], timeout: float, keys: tuple[str, ...]
     if timeout <= 0:
         raise TimeoutError("extractor deadline")
     slot = _http_semaphore()
-    if not _wait_for_slot(slot, timeout):
+    hop_timeout = timeout
+    started = time.monotonic()
+    if not _wait_for_slot(slot, hop_timeout):
+        raise TimeoutError("extractor deadline")
+    timeout = time_left(hop_timeout, started)
+    if timeout <= 0:
+        _release_http(slot, {})
         raise TimeoutError("extractor deadline")
     box: dict[str, Any] = {}
 
     def _run() -> None:
         try:
-            box["payload"] = _read_body(request, timeout, box)
+            box["payload"] = _read_body(request, hop_timeout, box)
         except BaseException as exc:
             box["error"] = exc
         finally:
@@ -566,7 +577,12 @@ def _stop_for_budget(hop: dict[str, Any], attempts: list[dict[str, Any]]) -> dic
     return result
 
 
-def extract_mentions(message: str, *, transport=None) -> dict[str, Any]:
+def extract_mentions(
+    message: str,
+    *,
+    transport=None,
+    budget_seconds: float | None = None,
+) -> dict[str, Any]:
     """Call the measured chain when a Nebius key is set. ``transport`` is for tests.
 
     Nebius Ultra, then Nebius Super. ``TRADEFLOW_LLM_MODEL`` overrides the Ultra
@@ -578,9 +594,12 @@ def extract_mentions(message: str, *, transport=None) -> dict[str, Any]:
     if not configured() and transport is None:
         return {"mentions": [], "numeric_field_discarded": False, "configured": False}
     attempts: list[dict[str, Any]] = []
-    deadline = time.perf_counter() + _hop_timeout(
-        "TRADEFLOW_EXTRACTOR_TIMEOUT_BUDGET", float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS)
+    allowance = (
+        float(budget_seconds)
+        if budget_seconds is not None
+        else _hop_timeout("TRADEFLOW_EXTRACTOR_TIMEOUT_BUDGET", float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS))
     )
+    deadline = time.perf_counter() + allowance
     last = _empty("extractor_failed")
     provider_failed = False
     stopped = False

@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from src.config.heuristics import DEAL_CURRENCY
 from src.desk.store import DeskStore
+from src.desk.transmission import join_references, reply_headers
 
 
 def _language(texts: list[str]) -> str:
@@ -23,13 +24,7 @@ def _language(texts: list[str]) -> str:
 
 
 def _references(prior: str | None, message_id: str) -> str:
-    parts: list[str] = []
-    for token in str(prior or "").split():
-        if token and token not in parts:
-            parts.append(token)
-    if message_id and message_id not in parts:
-        parts.append(message_id)
-    return " ".join(parts)
+    return join_references(prior, message_id)
 
 
 def draft_body(product: str, counter: float, quantity: int, language: str, currency: str) -> str:
@@ -46,7 +41,10 @@ def draft_body(product: str, counter: float, quantity: int, language: str, curre
 
 
 def _walked_away(outcomes: list[dict[str, Any]]) -> bool:
-    return any(item.get("outcome") == "walk_away" for item in outcomes)
+    """A walk-away drops the supplier until a later human re-open."""
+    from src.desk.recompute import _walked_away as ordered
+
+    return ordered(outcomes)
 
 
 def project_open_drafts(
@@ -147,23 +145,14 @@ def project_open_drafts(
             language,
             currency,
         )
-        reply_to = None
-        references = None
-        for event in reversed(history):
-            message_id = (event.get("provenance") or {}).get("message_id")
-            if message_id:
-                reply_to = str(message_id)
-                references = _references(
-                    (event.get("provenance") or {}).get("references"),
-                    str(message_id),
-                )
-                break
+        chain = store.verify_chain(deal["id"])
+        reply_to, references = reply_headers(list(chain.get("entries") or []), str(card["id"]))
         draft_row = store.replace_open_draft(
             deal["id"],
             card["id"],
             body,
-            reply_to=reply_to,
-            references_header=references,
+            reply_to=reply_to or None,
+            references_header=references or None,
             decision_id=decision_id,
         )
         store.append_chain(
@@ -173,5 +162,7 @@ def project_open_drafts(
                 "decision_id": decision_id,
                 "draft_id": draft_row["id"],
                 "body_sha256": draft_row.get("body_sha256"),
+                "reply_to": reply_to,
+                "references": references,
             },
         )

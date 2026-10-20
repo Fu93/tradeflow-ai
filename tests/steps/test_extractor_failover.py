@@ -471,7 +471,8 @@ def test_ingest_returns_before_the_extractor_finishes(tmp_path, monkeypatch):
     release = threading.Event()
     started = threading.Event()
 
-    def _fake(_message, *, transport=None):
+    def _fake(_message, *, transport=None, budget_seconds=None):
+        del budget_seconds
         started.set()
         assert release.wait(5)
         return {
@@ -609,7 +610,8 @@ def test_without_a_key_the_extractor_stays_inline(tmp_path, monkeypatch):
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
     called = {"n": 0}
 
-    def _fake(_message, *, transport=None):
+    def _fake(_message, *, transport=None, budget_seconds=None):
+        del budget_seconds
         called["n"] += 1
         return {"mentions": [], "configured": False, "numeric_field_discarded": False}
 
@@ -636,7 +638,8 @@ def test_accept_returns_while_the_extractor_is_still_running(tmp_path, monkeypat
     release = threading.Event()
     started = threading.Event()
 
-    def _fake(_message, *, transport=None):
+    def _fake(_message, *, transport=None, budget_seconds=None):
+        del budget_seconds
         started.set()
         release.wait(5)
         return {
@@ -806,3 +809,65 @@ def test_extractions_queue_and_release_a_slow_header(monkeypatch):
         assert second == {"ok": 1}
     finally:
         extract._http_slots = original
+
+
+def test_queue_wait_is_part_of_the_hop_deadline(monkeypatch):
+    import time
+
+    import urllib.request
+
+    import src.desk.extract as extract
+
+    class _Body:
+        def read(self, *_args, **_kwargs):
+            return b'{"ok": 1}'
+
+        def close(self):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def _urlopen(request, timeout=0):
+        del request, timeout
+        time.sleep(1.0)
+        return _Body()
+
+    monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
+    original = extract._http_slots
+    held = threading.BoundedSemaphore(1)
+    assert held.acquire(blocking=False)
+    extract._http_slots = held
+    started_wait = threading.Event()
+    real_wait = extract._wait_for_slot
+
+    def _wait(slot, timeout):
+        started_wait.set()
+        return real_wait(slot, timeout)
+
+    monkeypatch.setattr(extract, "_wait_for_slot", _wait)
+
+    def _release() -> None:
+        assert started_wait.wait(1)
+        time.sleep(0.35)
+        held.release()
+
+    threading.Thread(target=_release, daemon=True).start()
+    started = time.monotonic()
+    try:
+        with pytest.raises(TimeoutError):
+            extract._post("https://example.test", {"model": "x"}, 0.5, ("TRADEFLOW_LLM_API_KEY",))
+        assert time.monotonic() - started < 0.7
+    finally:
+        extract._http_slots = original
+
+
+def test_extractor_workers_stay_bounded():
+    from src.config.heuristics import EXTRACTOR_MAX_IN_FLIGHT
+    from src.desk.service import _extractor_pool
+
+    pool = _extractor_pool()
+    assert pool._max_workers == int(EXTRACTOR_MAX_IN_FLIGHT)

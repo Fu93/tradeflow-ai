@@ -206,6 +206,72 @@ MUTANTS = [
         "blocked = False",
         "tests/steps/test_reverify_blockers.py::test_another_currency_in_the_sentence_blocks_a_bare_number",
     ),
+    (
+        "src/desk/service.py",
+        "if _transmission_differs(outgoing, chained):",
+        "if False and _transmission_differs(outgoing, chained):",
+        "tests/steps/test_reverify_blockers.py::test_send_refuses_a_rewritten_address_subject_or_reply_header",
+    ),
+    (
+        "src/desk/store.py",
+        "if audit_chain.legacy_unkeyed(list(rows)):",
+        "if False and audit_chain.legacy_unkeyed(list(rows)):",
+        "tests/steps/test_reverify_blockers.py::test_pre_key_chain_is_archived_and_reconfirmed",
+    ),
+    (
+        "src/desk/audit_chain.py",
+        "if _anchor_is_required():",
+        "if False and _anchor_is_required():",
+        "tests/steps/test_reverify_blockers.py::test_missing_anchor_fails_closed_and_the_index_is_the_latest_head",
+    ),
+    (
+        "src/desk/audit_chain.py",
+        "handle.seek(int(slot[\"offset\"]))",
+        "handle.seek(0)",
+        "tests/steps/test_reverify_blockers.py::test_missing_anchor_fails_closed_and_the_index_is_the_latest_head",
+    ),
+    (
+        "src/desk/audit_chain.py",
+        "_remember_anchor_pending(conn, deal_id, seq, digest)",
+        "_clear_anchor_pending(conn, deal_id)",
+        "tests/steps/test_reverify_blockers.py::test_anchor_failure_stays_pending_even_if_a_later_head_matches",
+    ),
+    (
+        "src/desk/store.py",
+        "if commit:\n            self.conn.commit()  # create_deal",
+        "if True:\n            self.conn.commit()  # create_deal",
+        "tests/steps/test_reverify_blockers.py::test_create_rolls_back_when_the_chain_write_fails",
+    ),
+    (
+        "src/app/main.py",
+        "if not chain_key_configured():",
+        "if False:",
+        "tests/steps/test_reverify_blockers.py::test_health_and_create_report_a_missing_chain_key",
+    ),
+    (
+        "src/desk/extract.py",
+        "return allowance - (time.monotonic() - started)",
+        "return allowance",
+        "tests/steps/test_extractor_failover.py::test_queue_wait_is_part_of_the_hop_deadline",
+    ),
+    (
+        "src/desk/service.py",
+        "max_workers=int(EXTRACTOR_MAX_IN_FLIGHT)",
+        "max_workers=None",
+        "tests/steps/test_extractor_failover.py::test_extractor_workers_stay_bounded",
+    ),
+    (
+        "src/desk/parse.py",
+        "elsewhere = _other_currency_on_another_line(visible, start, deal_currency)",
+        "elsewhere = False",
+        "tests/steps/test_reverify_blockers.py::test_spelled_currency_on_another_line_blocks_a_bare_number",
+    ),
+    (
+        "src/desk/audit_chain.py",
+        "return key_id == current_key_id()",
+        "return True",
+        "tests/steps/test_reverify_blockers.py::test_a_retired_chain_key_still_verifies",
+    ),
 ]
 
 

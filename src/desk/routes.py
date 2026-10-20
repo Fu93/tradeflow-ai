@@ -18,9 +18,11 @@ from src.config.heuristics import (
     BREAKDOWN_TRIP_THRESHOLD,
     DEAL_CURRENCY,
     FIELD_MAX_CHARS,
+    HTTP_UNAVAILABLE,
     RISK_TOLERANCE_FLOOR,
     RISK_TOLERANCE_MAX,
 )
+from src.desk.audit_chain import ChainKeyMissing
 from src.desk.names import supplier_name_key
 from src.desk.service import (
     BUS,
@@ -28,15 +30,18 @@ from src.desk.service import (
     DraftStale,
     SendRefused,
     accept_review,
+    confirm_supplier_address,
     create_deal,
     ingest_message,
     record_outcome,
+    reopen_supplier,
     set_assumptions,
     poll_gmail_once,
     poll_imap_once,
     publish,
     send_draft,
 )
+from src.desk.store import DeskUnavailable
 from src.desk.store import get_store
 
 _ID = re.compile(r"^[a-f0-9]{32}$")
@@ -114,6 +119,18 @@ class SendIn(BaseModel):
     body_sha256: str = Field(min_length=64, max_length=64)
 
 
+class AddressIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    address: str = Field(min_length=1, max_length=320)
+    name: str | None = Field(default=None, max_length=200)
+    human_confirmed: StrictBool
+
+
+class ReopenIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    human_confirmed: StrictBool
+
+
 class OutcomeIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     outcome: str
@@ -168,6 +185,13 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 currency=body.currency,
                 suppliers=[item.model_dump() for item in body.suppliers],
             )
+        except DeskUnavailable as exc:
+            raise HTTPException(status_code=int(HTTP_UNAVAILABLE), detail=str(exc)) from exc
+        except ChainKeyMissing as exc:
+            raise HTTPException(
+                status_code=int(HTTP_UNAVAILABLE),
+                detail="desk sends disabled: chain key missing",
+            ) from exc
         except DeskRejected as exc:
             raise _rejected(exc) from exc
 
@@ -252,6 +276,50 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 quote=body.quote,
                 offer=body.offer,
                 agreed_price=body.agreed_price,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="No such deal") from exc
+        except DeskRejected as exc:
+            raise _rejected(exc) from exc
+
+    @api_v1.post("/desk/deals/{deal_id}/suppliers/{supplier_id}/address")
+    def post_address(
+        deal_id: str,
+        supplier_id: str,
+        body: AddressIn,
+        _: str = Depends(require_desk_mutation),
+    ):
+        _ident(deal_id)
+        _ident(supplier_id)
+        try:
+            return confirm_supplier_address(
+                get_store(),
+                deal_id,
+                supplier_id,
+                address=body.address,
+                name=body.name,
+                human_confirmed=body.human_confirmed,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="No such deal") from exc
+        except DeskRejected as exc:
+            raise _rejected(exc) from exc
+
+    @api_v1.post("/desk/deals/{deal_id}/suppliers/{supplier_id}/reopen")
+    def post_reopen(
+        deal_id: str,
+        supplier_id: str,
+        body: ReopenIn,
+        _: str = Depends(require_desk_mutation),
+    ):
+        _ident(deal_id)
+        _ident(supplier_id)
+        try:
+            return reopen_supplier(
+                get_store(),
+                deal_id,
+                supplier_id,
+                human_confirmed=body.human_confirmed,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="No such deal") from exc

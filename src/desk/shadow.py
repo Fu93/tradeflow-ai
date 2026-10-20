@@ -147,8 +147,9 @@ def shadow_from_message(
     high: float,
     transport=None,
     currency: str = DEAL_CURRENCY,
+    budget_seconds: float | None = None,
 ) -> dict[str, Any]:
-    extracted = extract_mentions(message, transport=transport)
+    extracted = extract_mentions(message, transport=transport, budget_seconds=budget_seconds)
     decision = evaluate_shadow(
         message,
         reading,

@@ -736,6 +736,9 @@ def _sha256_rewrite(store, deal_id: str, extra: dict | None = None) -> None:
     prev = GENESIS
     for row in rows:
         payload = json.loads(row["payload_json"])
+        key_id = "primary"
+        if "key_id" in row.keys():
+            key_id = str(row["key_id"] or "") or "primary"
         body = {
             "deal_id": row["deal_id"],
             "seq": int(row["seq"]),
@@ -743,6 +746,7 @@ def _sha256_rewrite(store, deal_id: str, extra: dict | None = None) -> None:
             "ts": row["ts"],
             "payload": payload,
             "prev_hash": prev,
+            "key_id": key_id,
         }
         digest = hashlib.sha256(canonical(body)).hexdigest()
         store.conn.execute(
@@ -760,12 +764,14 @@ def _sha256_rewrite(store, deal_id: str, extra: dict | None = None) -> None:
             "ts": "2026-01-01T00:00:00.000+00:00",
             "payload": payload,
             "prev_hash": prev,
+            "key_id": "primary",
         }
         digest = hashlib.sha256(canonical(body)).hexdigest()
         store.conn.execute(
             """
-            INSERT INTO desk_chain (deal_id, seq, type, ts, payload_json, prev_hash, entry_hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO desk_chain (
+                deal_id, seq, type, ts, payload_json, prev_hash, entry_hash, key_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 deal_id,
@@ -775,6 +781,7 @@ def _sha256_rewrite(store, deal_id: str, extra: dict | None = None) -> None:
                 json.dumps(payload, sort_keys=True),
                 prev,
                 digest,
+                "primary",
             ),
         )
     store.conn.commit()
@@ -896,7 +903,382 @@ def test_anchor_detects_a_truncated_tail(tmp_path, monkeypatch):
         assert truncated["ok"] is False
         monkeypatch.delenv("TRADEFLOW_CHAIN_ANCHOR", raising=False)
         assert store.verify_chain(deal_id)["ok"] is True
+        assert store.verify_chain(deal_id)["anchor"] == "anchor not configured"
         store.close()
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_missing_anchor_fails_closed_and_the_index_is_the_latest_head(tmp_path, monkeypatch):
+    from src.desk.service import create_deal
+    from src.desk.store import DeskStore, reset_stores
+
+    anchor = tmp_path / "chain-anchor.jsonl"
+    monkeypatch.setenv("TRADEFLOW_DESK_DB", str(tmp_path / "desk.db"))
+    monkeypatch.setenv("TRADEFLOW_ENV", "sandbox")
+    monkeypatch.setenv("TRADEFLOW_CHAIN_ANCHOR", str(anchor))
+    reset_stores()
+    store = DeskStore(tmp_path / "desk.db")
+    snapshot = create_deal(
+        store,
+        product="valve",
+        quantity=100,
+        target_price=4.0,
+        ceiling_price=20.0,
+        risk_tolerance=0.5,
+        seed=1,
+        currency="CNY",
+        suppliers=[
+            {"name": "North", "address": "north@example.test"},
+            {"name": "South", "address": "south@example.test"},
+            {"name": "East", "address": "east@example.test"},
+            {"name": "West", "address": "west@example.test"},
+        ],
+    )
+    deal_id = snapshot["deal"]["id"]
+    verified = store.verify_chain(deal_id)
+    assert verified["ok"] is True
+    assert verified["count"] > 1
+    anchor.unlink()
+    Path(str(anchor) + ".index").unlink()
+    assert store.verify_chain(deal_id)["ok"] is False
+    monkeypatch.delenv("TRADEFLOW_CHAIN_ANCHOR", raising=False)
+    bare = store.verify_chain(deal_id)
+    assert bare["ok"] is True
+    assert bare["anchor"] == "anchor not configured"
+    store.close()
+
+
+def test_anchor_failure_stays_pending_even_if_a_later_head_matches(tmp_path, monkeypatch):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from src.desk.audit_chain import _export_anchor
+    from src.desk.service import create_deal
+    from src.desk.store import DeskStore, reset_stores
+
+    class _Down(BaseHTTPRequestHandler):
+        def do_POST(self):
+            count = int(self.headers.get("Content-Length") or 0)
+            self.rfile.read(count)
+            self.send_response(500)
+            self.end_headers()
+
+        def log_message(self, *_args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Down)
+    port = server.server_address[1]
+    threading_started = __import__("threading").Thread(target=server.serve_forever, daemon=True)
+    threading_started.start()
+    monkeypatch.setenv("TRADEFLOW_DESK_DB", str(tmp_path / "desk.db"))
+    monkeypatch.setenv("TRADEFLOW_ENV", "sandbox")
+    monkeypatch.setenv("TRADEFLOW_CHAIN_ANCHOR", f"http://127.0.0.1:{port}/anchor")
+    reset_stores()
+    try:
+        store = DeskStore(tmp_path / "desk.db")
+        snapshot = create_deal(
+            store,
+            product="valve",
+            quantity=100,
+            target_price=4.0,
+            ceiling_price=20.0,
+            risk_tolerance=0.5,
+            seed=1,
+            currency="CNY",
+            suppliers=[
+                {"name": "North", "address": "north@example.test"},
+                {"name": "South", "address": "south@example.test"},
+                {"name": "East", "address": "east@example.test"},
+                {"name": "West", "address": "west@example.test"},
+            ],
+        )
+        deal_id = snapshot["deal"]["id"]
+        assert store.verify_chain(deal_id)["ok"] is False
+        row = store.conn.execute(
+            "SELECT seq, entry_hash FROM desk_chain WHERE deal_id = ? ORDER BY seq DESC LIMIT 1",
+            (deal_id,),
+        ).fetchone()
+        monkeypatch.setenv("TRADEFLOW_CHAIN_ANCHOR", str(tmp_path / "later.jsonl"))
+        _export_anchor(deal_id, int(row["seq"]), str(row["entry_hash"]))
+        assert store.verify_chain(deal_id)["ok"] is False
+        store.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_pre_key_chain_is_archived_and_reconfirmed(tmp_path, monkeypatch):
+    from src.desk.audit_chain import GENESIS, legacy_digest
+    from src.desk.service import SendRefused, accept_review, draft_digest, ingest_message, send_draft
+
+    store, snapshot = _deal(tmp_path, monkeypatch, ceiling=20.0)
+    deal_id = snapshot["deal"]["id"]
+    supplier = snapshot["suppliers"][0]["id"]
+    ingested = ingest_message(
+        store, deal_id, source="paste", supplier_id=supplier, raw_text="unit price 15.60 CNY per piece",
+    )
+    accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60")
+    store.conn.execute("DROP TRIGGER IF EXISTS desk_chain_no_update")
+    store.conn.execute("DROP TRIGGER IF EXISTS desk_chain_no_delete")
+    rows = store.conn.execute(
+        "SELECT * FROM desk_chain WHERE deal_id = ? ORDER BY seq ASC",
+        (deal_id,),
+    ).fetchall()
+    prev = GENESIS
+    old_rows = []
+    for row in rows:
+        payload = json.loads(row["payload_json"])
+        digest = legacy_digest(row["deal_id"], int(row["seq"]), row["type"], row["ts"], payload, prev)
+        old_rows.append((int(row["seq"]), digest))
+        store.conn.execute(
+            "UPDATE desk_chain SET prev_hash = ?, entry_hash = ?, key_id = NULL WHERE id = ?",
+            (prev, digest, row["id"]),
+        )
+        prev = digest
+    store.conn.commit()
+    old_head = old_rows[-1][1]
+    path = store.path
+    store.close()
+    from src.desk.store import DeskStore
+
+    reopened = DeskStore(path)
+    chain = reopened.verify_chain(deal_id)
+    assert chain["ok"] is True
+    opened = next(entry for entry in chain["entries"] if entry["type"] == "deal_opened")
+    assert opened["prev_hash"] == GENESIS
+    assert opened["payload"]["legacy_head"] == old_head
+    assert opened["payload"]["legacy"] == "legacy unverified"
+    assert opened["payload"]["note"] == "migrated, pre-chain inputs unverified"
+    archived = reopened.conn.execute(
+        "SELECT note, entry_hash FROM desk_chain_legacy WHERE deal_id = ? ORDER BY seq DESC LIMIT 1",
+        (deal_id,),
+    ).fetchone()
+    assert archived["note"] == "legacy unverified"
+    assert archived["entry_hash"] == old_head
+    assert reopened.event(deal_id, ingested["event"]["id"])["status"] == "review"
+    draft = next(item for item in reopened.drafts(deal_id) if item["status"] == "draft")
+    with pytest.raises(SendRefused, match="pre-chain inputs unverified"):
+        asyncio.run(
+            send_draft(reopened, draft["id"], human_approved=True, body_sha256=draft_digest(draft["body"]))
+        )
+    accept_review(reopened, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60")
+    draft = next(item for item in reopened.drafts(deal_id) if item["supplier_id"] == supplier and item["status"] == "draft")
+    sent = asyncio.run(
+        send_draft(reopened, draft["id"], human_approved=True, body_sha256=draft_digest(draft["body"]))
+    )
+    assert sent["status"] == "approved"
+    reopened.close()
+
+
+def test_send_refuses_a_rewritten_address_subject_or_reply_header(tmp_path, monkeypatch):
+    monkeypatch.setenv("DESK_SMTP_SEND", "1")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.test")
+    monkeypatch.setenv("EMAIL_USERNAME", "desk@example.test")
+    monkeypatch.setenv("EMAIL_PASSWORD", "secret")
+    from src.desk.service import SendRefused, accept_review, draft_digest, ingest_message, send_draft
+
+    store, snapshot = _deal(tmp_path, monkeypatch, ceiling=20.0)
+    deal_id = snapshot["deal"]["id"]
+    by_name = {row["name"]: row["id"] for row in snapshot["suppliers"]}
+    north, south = by_name["North"], by_name["South"]
+    first = ingest_message(
+        store, deal_id, source="paste", supplier_id=north, raw_text="unit price 15.60 CNY per piece",
+    )
+    second = ingest_message(
+        store, deal_id, source="paste", supplier_id=south, raw_text="unit price 14.00 CNY per piece",
+    )
+    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="15.60")
+    accept_review(store, deal_id, second["event"]["id"], south, chosen_token="14.00")
+    captured: list[dict] = []
+
+    async def _grab(recipient, body, product, **kwargs):
+        captured.append(
+            {
+                "to": recipient,
+                "product": product,
+                "reply": kwargs.get("reply_to"),
+                "references": kwargs.get("references"),
+                "body": body,
+            }
+        )
+        return True
+
+    north_draft = next(item for item in store.drafts(deal_id) if item["supplier_id"] == north and item["status"] == "draft")
+    sent = asyncio.run(
+        send_draft(store, north_draft["id"], human_approved=True, body_sha256=draft_digest(north_draft["body"]), sender=_grab)
+    )
+    assert sent["status"] == "sent"
+    assert captured[0]["to"] == "north@example.test"
+    assert captured[0]["product"] == "valve"
+    assert captured[0]["reply"] in {None, ""}
+    south_draft = next(item for item in store.drafts(deal_id) if item["supplier_id"] == south and item["status"] == "draft")
+    store.conn.execute(
+        "UPDATE suppliers SET address = ? WHERE id = ?",
+        ("attacker@evil.example", south),
+    )
+    store.conn.execute("UPDATE deals SET product = ? WHERE id = ?", ("Stolen valve", deal_id))
+    store.conn.execute(
+        "UPDATE drafts SET reply_to = ?, references_header = ? WHERE id = ?",
+        ("<attacker@evil.example>", "<attacker@evil.example>", south_draft["id"]),
+    )
+    store.conn.commit()
+    with pytest.raises(SendRefused, match="chained supplier"):
+        asyncio.run(
+            send_draft(
+                store,
+                south_draft["id"],
+                human_approved=True,
+                body_sha256=draft_digest(south_draft["body"]),
+                sender=_grab,
+            )
+        )
+    assert len(captured) == 1
+    store.close()
+
+
+def test_a_walked_supplier_returns_only_after_reopen(tmp_path, monkeypatch):
+    from src.desk.service import accept_review, ingest_message, record_outcome, reopen_supplier
+
+    store, snapshot = _deal(tmp_path, monkeypatch, ceiling=20.0)
+    deal_id = snapshot["deal"]["id"]
+    by_name = {row["name"]: row["id"] for row in snapshot["suppliers"]}
+    north, south = by_name["North"], by_name["South"]
+    first = ingest_message(
+        store, deal_id, source="paste", supplier_id=north, raw_text="unit price 15.60 CNY per piece",
+    )
+    second = ingest_message(
+        store, deal_id, source="paste", supplier_id=south, raw_text="unit price 14.00 CNY per piece",
+    )
+    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="15.60")
+    accept_review(store, deal_id, second["event"]["id"], south, chosen_token="14.00")
+    record_outcome(store, deal_id, south, outcome="walk_away", quote=14.0, offer=10.0)
+    again = ingest_message(
+        store, deal_id, source="paste", supplier_id=south, raw_text="unit price 13.00 CNY per piece",
+    )
+    fresh = accept_review(store, deal_id, again["event"]["id"], south, chosen_token="13.00")
+    south_card = next(row for row in fresh["suppliers"] if row["id"] == south)
+    assert "walked away" in str(south_card.get("reserve_note") or "")
+    north_card = next(row for row in fresh["suppliers"] if row["id"] == north)
+    rivals = [float(item) for item in ((north_card.get("decision_inputs") or {}).get("rival_asks") or [])]
+    assert all(abs(item - 13.0) > 0.01 for item in rivals)
+    opened = reopen_supplier(store, deal_id, south, human_confirmed=True)
+    south_card = next(row for row in opened["suppliers"] if row["id"] == south)
+    assert "walked away" not in str(south_card.get("reserve_note") or "")
+    assert south_card.get("counter") is not None
+    store.close()
+
+
+def test_spelled_currency_on_another_line_blocks_a_bare_number():
+    from src.desk.parse import parse_quote, price_from_token
+
+    samples = (
+        "All prices in USD\n31.00 per piece",
+        "All prices in US dollars\n31.00 per piece",
+        "价格以美元计价\n31.00 per piece",
+        "All prices in euros\n31.00 per piece",
+    )
+    for text in samples:
+        reading = parse_quote(text, deal_currency="CNY")
+        assert reading["provenance"].get("suggested_token") != "31.00"
+        assert price_from_token(text, "31.00", deal_currency="CNY") is None
+    assert price_from_token("All prices in CNY\n31.00 per piece", "31.00", deal_currency="CNY") == pytest.approx(31.0)
+    assert price_from_token("31.00 per piece, payment in US dollars", "31.00", deal_currency="CNY") is None
+
+
+def test_health_and_create_report_a_missing_chain_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRADEFLOW_DESK_DB", str(tmp_path / "desk.db"))
+    monkeypatch.setenv("TRADEFLOW_ENV", "sandbox")
+    monkeypatch.setenv("TRADEFLOW_API_KEY", "desk-key-for-health")
+    monkeypatch.delenv("TRADEFLOW_CHAIN_KEY", raising=False)
+    from fastapi.testclient import TestClient
+
+    from src.app.main import app
+    from src.desk.store import DeskStore, reset_stores
+
+    reset_stores()
+    client = TestClient(app)
+    health = client.get("/health")
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"
+    assert health.json()["desk"] == "desk sends disabled: chain key missing"
+    response = client.post(
+        "/api/v1/desk/deals",
+        headers={"X-API-Key": "desk-key-for-health"},
+        json={
+            "product": "valve",
+            "quantity": 100,
+            "target_price": 4,
+            "ceiling_price": 20,
+            "risk_tolerance": 0.5,
+            "seed": 1,
+            "currency": "CNY",
+            "suppliers": [
+                {"name": "North", "address": "north@example.test"},
+                {"name": "South", "address": "south@example.test"},
+                {"name": "East", "address": "east@example.test"},
+                {"name": "West", "address": "west@example.test"},
+            ],
+        },
+    )
+    assert response.status_code == 503
+    assert "chain key missing" in response.text
+    store = DeskStore(tmp_path / "desk.db")
+    assert store.list_deals() == []
+    store.close()
+
+
+def test_create_rolls_back_when_the_chain_write_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRADEFLOW_DESK_DB", str(tmp_path / "desk.db"))
+    monkeypatch.setenv("TRADEFLOW_ENV", "sandbox")
+    monkeypatch.setenv("TRADEFLOW_CHAIN_KEY", "rollback-key")
+    from src.desk.service import create_deal
+    from src.desk.store import DeskStore, reset_stores
+
+    reset_stores()
+
+    def _boom(self, *_args, **_kwargs):
+        raise RuntimeError("chain down")
+
+    monkeypatch.setattr(DeskStore, "append_chain", _boom)
+    store = DeskStore(tmp_path / "desk.db")
+    with pytest.raises(RuntimeError, match="chain down"):
+        create_deal(
+            store,
+            product="valve",
+            quantity=100,
+            target_price=4.0,
+            ceiling_price=20.0,
+            risk_tolerance=0.5,
+            seed=1,
+            currency="CNY",
+            suppliers=[
+                {"name": "North", "address": "north@example.test"},
+                {"name": "South", "address": "south@example.test"},
+                {"name": "East", "address": "east@example.test"},
+                {"name": "West", "address": "west@example.test"},
+            ],
+        )
+    import sqlite3
+
+    other = sqlite3.connect(tmp_path / "desk.db")
+    assert other.execute("SELECT COUNT(*) FROM deals").fetchone()[0] == 0
+    other.close()
+    store.close()
+
+
+def test_a_retired_chain_key_still_verifies(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRADEFLOW_CHAIN_KEY", "secret-a")
+    monkeypatch.setenv("TRADEFLOW_CHAIN_KEY_ID", "a")
+    store, snapshot = _deal(tmp_path, monkeypatch, ceiling=20.0)
+    deal_id = snapshot["deal"]["id"]
+    monkeypatch.setenv("TRADEFLOW_CHAIN_KEY", "secret-b")
+    monkeypatch.setenv("TRADEFLOW_CHAIN_KEY_ID", "b")
+    monkeypatch.setenv("TRADEFLOW_CHAIN_KEYS", "a:secret-a")
+    assert store.verify_chain(deal_id)["ok"] is True
+    store.append_chain(deal_id, "note", {"text": "after rotation"})
+    verified = store.verify_chain(deal_id)
+    assert verified["ok"] is True
+    assert verified["entries"][0]["key_id"] == "a"
+    assert verified["entries"][-1]["key_id"] == "b"
+    store.close()
