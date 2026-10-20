@@ -550,16 +550,16 @@ def main() -> int:
                 check("sandbox tab is labelled Simulator",
                       gate.get("badge") == "Simulator",
                       f"badge={gate.get('badge')!r} url={gate.get('url')!r}")
-                check("approval gate is Pending while the buyer has not decided",
-                      gate.get("state") == "Pending", f"state={gate.get('state')!r}")
-                check("approval action comes from the engine payload",
-                      bool(gate.get("action")) and gate.get("action") != "--",
+                check("approval gate stays empty until a desk counter exists",
+                      gate.get("state") in ("--", "", None), f"state={gate.get('state')!r}")
+                check("approval action is not invented from a scraped price",
+                      gate.get("action") in ("--", "", None),
                       f"action={gate.get('action')!r}")
-                check("approval price is an engine figure",
-                      "¥" in str(gate.get("price")) and gate.get("price") != "--",
+                check("approval price is not invented from a scraped price",
+                      gate.get("price") in ("--", "", None),
                       f"price={gate.get('price')!r}")
-                check("approval evidence is present",
-                      bool(gate.get("evidence")) and gate.get("evidence") != "--",
+                check("approval evidence is not invented from a scraped price",
+                      gate.get("evidence") in ("--", "", None),
                       f"evidence={str(gate.get('evidence'))[:80]!r}")
                 check("gate says the buyer pastes and sends",
                       "you paste and send; TradeFlow never sends" in str(gate.get("note")))
@@ -570,18 +570,29 @@ def main() -> int:
                 states = sp.evaluate(
                     """() => {
                         const live = lastRoundPayload;
-                        if (!live) return { error: 'no payload' };
-                        const saved = JSON.parse(JSON.stringify(live));
-                        const price = document.getElementById('approval-price').innerText.trim();
-                        const out = { price };
+                        const saved = live ? JSON.parse(JSON.stringify(live)) : null;
+                        const fixture = {
+                          pending_human_approval: true,
+                          awaiting_human_approval: true,
+                          autopilot_state: 'AWAITING_HUMAN_DECISION',
+                          recommended_offer_price: 12.4,
+                          session: { state: 'AWAITING_HUMAN_DECISION', history: [] },
+                          action_object: { authorized_price: 12.4, source_round_id: 'round-a' },
+                        };
+                        const out = {};
                         const paint = (extra) => {
-                          const copy = JSON.parse(JSON.stringify(saved));
+                          const copy = JSON.parse(JSON.stringify(fixture));
                           Object.assign(copy, extra);
                           if (!copy.session) copy.session = {};
                           if (extra.state) copy.session.state = extra.state;
+                          if (extra.source_round_id) {
+                            copy.action_object.source_round_id = extra.source_round_id;
+                          }
                           renderEngineData(copy);
                           return document.getElementById('approval-state').innerText.trim();
                         };
+                        paint({ source_round_id: 'round-a' });
+                        out.price = document.getElementById('approval-price').innerText.trim();
                         out.approved = paint({
                           pending_human_approval: false,
                           awaiting_human_approval: false,
@@ -595,18 +606,21 @@ def main() -> int:
                           autopilot_state: 'WALK_AWAY',
                           state: 'WALK_AWAY',
                         });
-                        renderEngineData(saved);
-                        const next = JSON.parse(JSON.stringify(saved));
-                        next.pending_human_approval = false;
-                        next.awaiting_human_approval = false;
-                        next.autopilot_state = 'COPILOT_MONITORING';
-                        if (!next.session) next.session = {};
-                        next.session.state = 'COPILOT_MONITORING';
-                        if (!next.action_object) next.action_object = {};
-                        next.action_object.source_round_id = String(next.action_object.source_round_id || 'round') + '-later';
-                        renderEngineData(next);
+                        paint({
+                          pending_human_approval: true,
+                          source_round_id: 'round-a',
+                          autopilot_state: 'AWAITING_HUMAN_DECISION',
+                          state: 'AWAITING_HUMAN_DECISION',
+                        });
+                        paint({
+                          pending_human_approval: false,
+                          awaiting_human_approval: false,
+                          source_round_id: 'round-b',
+                          autopilot_state: 'COPILOT_MONITORING',
+                          state: 'COPILOT_MONITORING',
+                        });
                         out.superseded = document.getElementById('approval-state').innerText.trim();
-                        renderEngineData(saved);
+                        if (saved) renderEngineData(saved);
                         out.restored = document.getElementById('approval-state').innerText.trim();
                         out.restoredPrice = document.getElementById('approval-price').innerText.trim();
                         return out;
@@ -623,8 +637,9 @@ def main() -> int:
                 check("approval card can show Superseded",
                       states.get("superseded") == "Superseded", f"got={states.get('superseded')!r}")
                 check("live gate is restored after the state check",
-                      states.get("restored") == "Pending" and states.get("restoredPrice") == states.get("price"),
-                      f"state={states.get('restored')!r}")
+                      states.get("restored") in ("--", "", None)
+                      and states.get("restoredPrice") in ("--", "", None),
+                      f"state={states.get('restored')!r} price={states.get('restoredPrice')!r}")
 
                 badges = sp.evaluate(
                     """() => {
@@ -760,14 +775,12 @@ def main() -> int:
                 sp.emulate_media(color_scheme="light")
 
                 # ------------------------------------------------ mobile command
-                print("\n[6] Tactical command path (2 = hold firm)")
-                sp.click("#btn-hold")
-                sp.wait_for_timeout(3000)
-                fb = sp.locator("body").inner_text()
-                print(f"    panel text after command: {fb[:120].replace(chr(10), ' ')}")
-                check("side panel reports a command outcome (no silent no-op)",
-                      ("Hold" in fb or "command" in fb.lower() or "dispatched" in fb.lower()
-                       or "not applied" in fb.lower() or "OK" in fb))
+                print("\n[6] Tactical command stays locked without a desk counter")
+                reason = sp.locator("#gate-reason").inner_text()
+                check("a scraped price does not enable hold",
+                      sp.locator("#btn-hold").is_disabled()
+                      and "not computed" in reason.lower(),
+                      f"reason={reason!r}")
 
                 # ------------------------------------------------- error + empty
                 print("\n[6b] Error banner, teaching empty, overflow")
@@ -792,15 +805,15 @@ def main() -> int:
                 check("failed load labels the source Unreachable",
                       badge_down == "Unreachable", f"badge={badge_down!r}")
                 sp.click("#btn-retry")
-                recovered_price = "--"
+                recovered_price = "pending"
                 for _ in range(40):
                     if not sp.locator("#error-banner").is_visible():
                         recovered_price = sp.locator("#approval-price").inner_text().strip()
-                        if recovered_price and recovered_price != "--":
-                            break
+                        break
                     time.sleep(0.25)
-                check("Retry clears the error and restores the engine price",
-                      not sp.locator("#error-banner").is_visible() and recovered_price not in ("", "--"),
+                check("Retry clears the error and does not invent a counter",
+                      not sp.locator("#error-banner").is_visible()
+                      and recovered_price in ("", "--"),
                       f"price={recovered_price!r}")
 
                 def overflow_at(width):
@@ -941,11 +954,14 @@ def main() -> int:
                         sp.locator("#desk-deal-id").fill(deal_id)
                         page.bring_to_front()
                         page.locator("#btn-sim-quote").click()
+                        sp.evaluate(
+                            "() => { document.getElementById('desk-import-status').textContent = ''; }"
+                        )
                         sp.evaluate("() => document.getElementById('btn-desk-import').click()")
                         status = ""
                         for _wait in range(40):
                             status = sp.locator("#desk-import-status").inner_text()
-                            if status:
+                            if "simulated" in status.lower() or "review" in status.lower():
                                 break
                             time.sleep(0.25)
                         check(

@@ -216,9 +216,10 @@
         }
         confirmPage = "";
         askedPage = "";
-        if (resp.simulated) setStatus("Imported a simulated test message. It stays in review until you accept a figure.");
-        else setStatus("Imported the visible message.");
-        refresh();
+        const imported = resp.simulated
+          ? "Imported a simulated test message. It stays in review until you accept a figure."
+          : "Imported the visible message.";
+        refresh().then(() => setStatus(imported));
       });
       };
       storageSet(remembered, send);

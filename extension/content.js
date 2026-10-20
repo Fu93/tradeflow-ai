@@ -585,10 +585,11 @@
       ];
 
       ISOLATED_EVENTS.forEach((eventType) => {
+        // Bubble, not capture. A capture listener here runs before the
+        // button and would swallow Confirm, Copy, and the mode toggle.
         root.addEventListener(eventType, (e) => {
           e.stopPropagation();
-          e.stopImmediatePropagation();
-        }, { capture: true });
+        });
       });
     }
 
