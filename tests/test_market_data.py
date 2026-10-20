@@ -236,9 +236,12 @@ def test_recommended_price_ignores_market_context():
     offer = {"supplier_offer": 14.5, "mode": "copilot"}
     left = client.post("/api/v1/sessions/mkt-plain/round", json=offer)
     right = client.post("/api/v1/sessions/mkt-wild/round", json=offer)
-    assert left.status_code == 200
-    assert right.status_code == 200
-    assert left.json()["recommended_offer_price"] == right.json()["recommended_offer_price"]
+    assert left.status_code == 422
+    assert right.status_code == 422
+    assert "unconfirmed numbers used in decisions: 1" in left.json()["detail"]
+    assert "unconfirmed numbers used in decisions: 1" in right.json()["detail"]
+    assert "recommended_offer_price" not in left.json()
+    assert "recommended_offer_price" not in right.json()
 
 
 def test_llm_cannot_set_the_price():

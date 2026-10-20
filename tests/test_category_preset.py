@@ -73,12 +73,12 @@ def test_every_preset_creates_a_session_the_engine_honours():
             f"/api/v1/sessions/{sid}/round",
             json={"opponent_raw_text": "老闆，原料漲價，最低報價", "opponent_offer_price": exp["ceiling"] * 0.95},
         )
-        assert rr.status_code == 200, f"{cat}: round failed {rr.status_code}"
-        ao = rr.json()["action_object"]
-        assert ao["walk_away_ceiling"] == exp["ceiling"], (
-            f"{cat}: engine used ceiling {ao['walk_away_ceiling']}, expected {exp['ceiling']}"
-        )
-        assert ao["authorized_price"] <= exp["ceiling"]
+        assert rr.status_code == 422, f"{cat}: round failed {rr.status_code} {rr.text}"
+        assert "unconfirmed numbers used in decisions: 1" in rr.json()["detail"]
+        stored = c.get(f"/api/v1/sessions/{sid}")
+        assert stored.status_code == 200
+        assert stored.json()["spec"]["ceiling_price"] == exp["ceiling"]
+        assert stored.json()["history"] == []
 
 
 def test_preset_selector_posts_to_sessions_endpoint():

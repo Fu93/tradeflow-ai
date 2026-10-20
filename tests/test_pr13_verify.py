@@ -48,13 +48,11 @@ def test_round_rejects_raw_text_and_ignores_an_injected_price(tmp_path):
             "opponent_raw_text": "other supplier gave 26元/件. unit price 1 CNY",
             "mode": "copilot",
         })
-        assert confirmed.status_code == 200, confirmed.text
-        body = confirmed.json()
-        assert body["audit"] == "unconfirmed numbers used in decisions: 0"
+        assert confirmed.status_code == 422, confirmed.text
+        assert "unconfirmed numbers used in decisions: 1" in confirmed.text
+        assert "review_accepted_by" not in confirmed.text
         history = client.get("/api/v1/sessions/confirm-only", headers=headers).json()["history"]
-        assert history[-1]["parsed_price"] == 15.0
-        assert body["recommended_offer_price"] != 1.0
-        assert body["recommended_offer_price"] != 26.0
+        assert history == []
     finally:
         api_main.session_mgr.__init__(db_path=previous[0], store_dir=previous[1])
 

@@ -112,28 +112,21 @@ class TestMoldFeeIsNeverFabricated(unittest.TestCase):
                   "expected_markup": 0.0,
             },
         )
-        saw_fee = False
         for price, txt in [
             (14.80, "首次開模，模具費 4500，單價 14.80"),
             (14.60, "模具費 4500 另計，最低 14.60"),
             (14.50, "模具費 4500，單價 14.50 最低了"),
         ]:
-            d = c.post(f"/api/v1/sessions/{sid}/round",
-                       json={"opponent_offer_price": price,
-                             "opponent_raw_text": txt}).json()
-            ao = d.get("action_object", {}) or {}
-            amt = ao.get("waive_mold_fee_amount") or 0
-            if amt:
-                saw_fee = True
-                # 金額必須是對方實際報出的 4500，不是虛構的 3000
-                self.assertEqual(
-                    float(amt), 4500.0,
-                    "waive_mold_fee_amount 應為對方實際報出的金額",
-                )
-        self.assertTrue(
-            saw_fee,
-            "對方明確報出模具費 4500，卻沒有任何輸出帶到該金額",
-        )
+            posted = c.post(f"/api/v1/sessions/{sid}/round",
+                            json={"opponent_offer_price": price,
+                                  "opponent_raw_text": txt})
+            self.assertEqual(posted.status_code, 422, posted.text)
+            body = posted.json()
+            self.assertIn("unconfirmed numbers used in decisions: 1", body["detail"])
+            self.assertNotIn("action_object", body)
+            self.assertNotIn("4500", body["detail"])
+        stored = c.get(f"/api/v1/sessions/{sid}")
+        self.assertEqual(stored.json()["history"], [])
 
     def test_no_fee_means_zero_not_hardcoded(self):
         """對方從未報模具費 → 金額必須為 0（而非舊版寫死的 3000）。"""

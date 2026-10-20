@@ -382,17 +382,12 @@ class TestRoundPathHonesty(unittest.TestCase):
                 "offered_lead_days": 10,
                 "deposit_pct": 0.2,
             })
-        self.assertEqual(response.status_code, 200, response.text)
-        body = response.json()
-        self.assertFalse(body["circuit_tripped"])
-        self.assertLessEqual(body["recommended_offer_price"], 16.2)
-        self.assertTrue(body["pending_human_approval"])
-        self.assertIsNone(body["turn"])
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", response.json()["detail"])
+        self.assertNotIn("recommended_offer_price", response.json())
         posted.assert_not_called()
         stored = self.c.get(f"/api/v1/sessions/{sid}")
-        entities = stored.json()["history"][-1]["metadata"]["entities"]
-        self.assertEqual(entities["lead_days"], 10)
-        self.assertAlmostEqual(entities["deposit_pct"], 0.2)
+        self.assertEqual(stored.json()["history"], [])
 
     def test_trip_card_labels_package_terms_as_our_proposal(self):
         sid = "logic_trip"
@@ -411,17 +406,14 @@ class TestRoundPathHonesty(unittest.TestCase):
             "opponent_offer_price": 18.0,
             "opponent_raw_text": "lowest 18.00",
         })
-        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.status_code, 422, response.text)
         body = response.json()
-        self.assertTrue(body["circuit_tripped"])
-        self.assertIsNone(body["reply_text"])
-        if body.get("action_object") is None:
-            self.assertIsNone(body.get("executive_card_en"))
-            return
-        card = body["executive_card_en"]
-        self.assertNotIn("Package Terms: Lead Time", card)
-        self.assertIn("OUR proposal", card)
-        self.assertIn("not counterpart-confirmed", card)
+        self.assertIn("unconfirmed numbers used in decisions: 1", body["detail"])
+        self.assertNotIn("reply_text", body)
+        self.assertNotIn("action_object", body)
+        stored = self.c.get(f"/api/v1/sessions/{sid}")
+        self.assertEqual(stored.json()["history"], [])
+        self.assertNotEqual(stored.json()["state"], "CIRCUIT_TRIPPED_ESCALATED")
 
     def test_autopilot_deal_candidate_does_not_call_evolus(self):
         sid = "logic_auto"
@@ -445,10 +437,12 @@ class TestRoundPathHonesty(unittest.TestCase):
                     "opponent_raw_text": "行吧服了你了，就按你說的 12.00，發合同過來吧。",
                     "mode": "autopilot",
                 })
-            self.assertEqual(response.status_code, 200, response.text)
-            body = response.json()
-            self.assertNotEqual(body["autopilot_state"], "DEAL_CLOSED")
+            self.assertEqual(response.status_code, 422, response.text)
+            self.assertIn("unconfirmed numbers used in decisions: 1", response.json()["detail"])
             posted.assert_not_called()
+            stored = self.c.get(f"/api/v1/sessions/{sid}")
+            self.assertNotEqual(stored.json()["state"], "DEAL_CLOSED")
+            self.assertEqual(stored.json()["history"], [])
         finally:
             os.environ.pop("EVOLUS_API_KEY", None)
             os.environ.pop("EVOLUS_APP_ID", None)

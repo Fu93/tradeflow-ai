@@ -101,26 +101,24 @@ class TestApproveUsesEngineRecommendation(_Isolated):
             },
             headers=self.headers,
         )
-        self.assertEqual(r.status_code, 200, r.text)
-        recommended = r.json()["recommended_offer_price"]
-        self.assertNotAlmostEqual(recommended, 12.0, places=2)
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", r.json()["detail"])
+        self.assertNotIn("recommended_offer_price", r.json())
 
         sess = self.c.get(f"/api/v1/sessions/{sid}", headers=self.headers).json()
-        persisted = sess["history"][-1]["metadata"].get("recommended_offer_price")
-        self.assertAlmostEqual(persisted, recommended, places=6)
+        self.assertEqual(sess["history"], [])
 
         app = self.c.post(
             f"/api/v1/sessions/{sid}/approve",
             json={"action": "approve"},
             headers=self.headers,
         )
-        self.assertEqual(app.status_code, 200, app.text)
-        self.assertAlmostEqual(app.json()["applied_price"], recommended, places=6)
-        self.assertNotAlmostEqual(app.json()["applied_price"], 12.0, places=2)
+        self.assertEqual(app.status_code, 409, app.text)
+        self.assertIn("not waiting for a decision", app.json()["detail"])
 
     def test_approval_carries_measured_risk_not_zero(self):
         sid = self._session()
-        self.c.post(
+        posted = self.c.post(
             f"/api/v1/sessions/{sid}/round",
             json={
                 "opponent_raw_text": "最低 14.80",
@@ -129,21 +127,18 @@ class TestApproveUsesEngineRecommendation(_Isolated):
             },
             headers=self.headers,
         )
+        self.assertEqual(posted.status_code, 422, posted.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", posted.json()["detail"])
         before = self.c.get(f"/api/v1/sessions/{sid}", headers=self.headers).json()
-        measured = before["history"][-1]["p_break"]
-        self.assertIsNotNone(measured)
-        # The default counter is the ask, so the incremental hazard is 0.
-        self.assertEqual(measured, 0.0)
+        self.assertEqual(before["history"], [])
 
-        self.c.post(
+        approved = self.c.post(
             f"/api/v1/sessions/{sid}/approve", json={"action": "approve"}, headers=self.headers
         )
+        self.assertEqual(approved.status_code, 409, approved.text)
         after = self.c.get(f"/api/v1/sessions/{sid}", headers=self.headers).json()
-        last = after["history"][-1]
-        self.assertEqual(last["sender"], "buyer_human_approved")
-        self.assertAlmostEqual(last["p_break"], measured, places=9)
-        self.assertIsNotNone(last["posterior_mean"], "approval must carry the posterior")
-        self.assertAlmostEqual(after["latest_our_offer"], last["parsed_price"], places=6)
+        self.assertEqual(after["history"], [])
+        self.assertIsNone(after.get("latest_our_offer"))
 
 
 class TestGeneratedReplyIsPersisted(_Isolated):
@@ -158,19 +153,11 @@ class TestGeneratedReplyIsPersisted(_Isolated):
             },
             headers=self.headers,
         )
-        self.assertEqual(r.status_code, 200, r.text)
-        reply = r.json()["reply_text"]
-        self.assertTrue(reply and reply.strip(), "engine must generate a reply")
-
-        # No buyer_agent turn exists in copilot mode, so the text has to be
-        # readable from the persisted session or the UI shows "—" after reload.
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", r.json()["detail"])
+        self.assertNotIn("reply_text", r.json())
         sess = self.c.get(f"/api/v1/sessions/{sid}", headers=self.headers).json()
-        self.assertFalse(
-            [t for t in sess["history"] if t["sender"] == "buyer_agent"],
-            "precondition: copilot does not append a buyer turn",
-        )
-        persisted = sess["history"][-1]["metadata"].get("generated_reply")
-        self.assertEqual(persisted, reply)
+        self.assertEqual(sess["history"], [])
 
 
 class TestAuctionSavingsBaseline(_Isolated):

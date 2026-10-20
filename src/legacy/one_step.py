@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 
 from src.config.heuristics import DEFAULT_SOLVER_SEED, DESK_N_GRID, ROUND_N_SAMPLES, WEITZMAN_SEARCH_COST
-from src.desk.headline import AUDIT_LINE
+from src.desk.headline import audit_line
 from src.engine.coupled import solve_coupled
 from src.engine.hazard import HazardBelief
 
@@ -31,6 +31,7 @@ def one_step_counter(
     lambda_break: float = 1.0,
     belief: HazardBelief | None = None,
     credible_alpha: float | None = None,
+    unconfirmed: int = 0,
 ) -> dict:
     if target <= 0 or ceiling <= 0 or quote <= 0:
         raise ValueError("quote, target, and ceiling must be positive")
@@ -59,12 +60,14 @@ def one_step_counter(
         return min(float(raw) * float(target), float(ceiling), float(quote))
 
     offer = priced(float(solved["offers"][0]))
+    if int(unconfirmed) > 0:
+        offer = None
     return {
         "opening_offer_price": offer,
         "opening_offer_norm": None if offer is None else offer / float(target),
-        "push_offer_price": priced(float(solved["push_offers"][0])),
-        "push_half_price": priced(float(solved["push_half"][0])),
-        "push_double_price": priced(float(solved["push_double"][0])),
+        "push_offer_price": None if offer is None else priced(float(solved["push_offers"][0])),
+        "push_half_price": None if offer is None else priced(float(solved["push_half"][0])),
+        "push_double_price": None if offer is None else priced(float(solved["push_double"][0])),
         "concession_curve": [],
         "concession_step": 0.0,
         "expected_margin_price": float(solved["expected_surplus_by_supplier"][0]) * float(target),
@@ -82,5 +85,5 @@ def one_step_counter(
         "prior_note": solved["prior_note"][0],
         "heuristic": solved["heuristic"],
         "markup_applied": False,
-        "audit": AUDIT_LINE,
+        "audit": audit_line(unconfirmed),
     }

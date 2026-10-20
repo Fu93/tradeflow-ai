@@ -5,6 +5,7 @@ restored even when a mutant survives.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -53,14 +54,43 @@ MUTANTS = [
     ("src/desk/shadow.py", "if bool(mention.get(\"is_question\")):", "if False:", SHADOW),
     ("src/desk/shadow.py", "if str(mention.get(\"unit\") or \"\") != \"per_piece\" and not (per_piece_marked(span) or per_piece_marked(nearby)):", "if False:", SHADOW),
     ("src/desk/shadow.py", "wins = min(max(int(successes), 0), count)", "wins = 0", WILSON),
+    (
+        "src/desk/record.py",
+        "bool(inputs_stored)",
+        "True",
+        "tests/steps/test_reverify_blockers.py::test_record_without_decision_inputs_withholds_the_counter",
+    ),
+    (
+        "src/desk/service.py",
+        "if chain_digest != loaded_digest:",
+        "if False and chain_digest != loaded_digest:",
+        "tests/steps/test_reverify_blockers.py::test_send_refuses_a_rewritten_counter_whose_row_hash_matches",
+    ),
+    (
+        "src/desk/headline.py",
+        "best = min(float(item) for item in first_landed)",
+        "best = max(float(item) for item in first_landed)",
+        "tests/steps/test_reverify_blockers.py::test_headline_saving_uses_the_lower_landed_price",
+    ),
 ]
 
 
+def _purge_pyc(path: Path) -> None:
+    cache = path.parent / "__pycache__"
+    if not cache.is_dir():
+        return
+    for child in cache.glob(path.stem + "*.pyc"):
+        child.unlink(missing_ok=True)
+
+
 def _run(node: str) -> int:
+    env = dict(os.environ)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     result = subprocess.run(
         [sys.executable, "-m", "pytest", node, "-q", "--tb=no", "-p", "no:cacheprovider"],
         cwd=ROOT,
         check=False,
+        env=env,
     )
     return result.returncode
 
@@ -74,10 +104,12 @@ def main() -> int:
             survived.append(f"{path}: pattern not unique ({source.count(original)}): {original}")
             continue
         file.write_text(source.replace(original, mutant, 1), encoding="utf-8")
+        _purge_pyc(file)
         try:
             code = _run(node)
         finally:
             file.write_text(source, encoding="utf-8")
+            _purge_pyc(file)
         if code == 0:
             survived.append(f"SURVIVED {path}: {original!r} -> {mutant!r} ({node})")
         else:

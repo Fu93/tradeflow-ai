@@ -372,7 +372,7 @@
       const tokens = provenance.candidates && provenance.candidates.length
         ? provenance.candidates
         : (provenance.tokens || []);
-      const suggested = provenance.suggested_token || (tokens.length === 1 ? tokens[0] : "");
+      const suggested = provenance.suggested_token || "";
       let chosen = saved.token || suggested || "";
       if (chosen && !saved.token) {
         reviewChoice.set(item.id, { supplierId: item.supplier_id || saved.supplierId || "", token: chosen });

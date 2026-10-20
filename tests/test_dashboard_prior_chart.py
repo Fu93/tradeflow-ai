@@ -198,22 +198,25 @@ def test_risk_and_chart_use_real_round_values(live_server):
             "expected_markup": 0.0,
         },
     )
-    _post(
-        port,
-        "/api/v1/sessions/DASH_PRIOR_125_ROUND/round",
-        {"opponent_raw_text": "our best is 14.80", "opponent_offer_price": 14.80, "mode": "copilot"},
-    )
+    refused = False
+    try:
+        _post(
+            port,
+            "/api/v1/sessions/DASH_PRIOR_125_ROUND/round",
+            {"opponent_raw_text": "our best is 14.80", "opponent_offer_price": 14.80, "mode": "copilot"},
+        )
+    except urllib.error.HTTPError as exc:
+        refused = True
+        detail = exc.read().decode("utf-8")
+        assert exc.code == 422
+        assert "unconfirmed numbers used in decisions: 1" in detail
+    assert refused
 
     out = _read_chart(port, "DASH_PRIOR_125_ROUND")
     assert not out["errors"], f"page errors: {out['errors']}"
-    assert len(out["labels"]) >= 2, f"round was not plotted: {out['labels']}"
     assert abs(out["series"][0][0] - prior * target) < 0.01
-
-    risk_point = out["series"][1][-1]
-    assert risk_point is not None, "no breakdown risk plotted for a completed round"
-    # Incremental hazard at the default counter (the ask) is 0.
-    assert risk_point == pytest.approx(0.0)
-    assert out["risk"] == "0.0%"
+    assert out["risk"] == "\u2014", f"a refused round plotted a risk: {out['risk']!r}"
+    assert out["empty_hidden"] is False
 
 
 def test_unknown_session_does_not_render_a_fake_measurement(live_server):

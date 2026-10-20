@@ -77,7 +77,11 @@ def project_open_drafts(
         currency = str(deal.get("currency") or DEAL_CURRENCY)
         slot = beliefs_state[card["id"]]
         state = slot.get("state")
+        inputs = dict(card.get("decision_inputs") or {})
         usable_events = decision_events(card["id"])
+        stored_inputs = (
+            inputs.get("risk_cap") is not None and inputs.get("reference_ask") is not None
+        )
         record = build_record(
             deal_id=deal["id"],
             supplier_id=card["id"],
@@ -90,12 +94,27 @@ def project_open_drafts(
             push_counter=card.get("push_counter"),
             half=card.get("sensitivity_half"),
             double=card.get("sensitivity_double"),
-            prior_alpha=None if state is None else float(state.alpha),
-            prior_beta=None if state is None else float(state.beta),
-            prior_n=0 if state is None else int(state.n_responses),
+            prior_alpha=float(inputs["prior_alpha"]) if stored_inputs else (
+                None if state is None else float(state.alpha)
+            ),
+            prior_beta=float(inputs["prior_beta"]) if stored_inputs else (
+                None if state is None else float(state.beta)
+            ),
+            prior_n=int(inputs.get("prior_n") or 0) if stored_inputs else (
+                0 if state is None else int(state.n_responses)
+            ),
             prior_source="" if state is None else state.source,
             unconfirmed=unconfirmed,
             hazard_within_cap=not bool(card.get("blocked")),
+            rival_asks=tuple(float(item) for item in (inputs.get("rival_asks") or ())),
+            risk_cap=None if inputs.get("risk_cap") is None else float(inputs["risk_cap"]),
+            reserve_upper=None if inputs.get("reserve_upper") is None else float(inputs["reserve_upper"]),
+            reject_ratios=tuple(float(item) for item in (inputs.get("reject_ratios") or ())),
+            reference_ask=None if inputs.get("reference_ask") is None else float(inputs["reference_ask"]),
+            hazard_intercept=inputs.get("hazard_intercept"),
+            hazard_gap=inputs.get("hazard_gap"),
+            held_previous_counter=float(card["counter"]) if card.get("counter_held") else None,
+            inputs_stored=stored_inputs,
         )
         if record.counter is None:
             card["counter"] = None

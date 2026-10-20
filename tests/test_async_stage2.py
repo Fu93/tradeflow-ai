@@ -58,7 +58,8 @@ def test_round_endpoint_default_does_not_invoke_stage2(client):
     )
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
-    assert r.status_code == 200
+    assert r.status_code == 422, r.text
+    assert "unconfirmed numbers used in decisions: 1" in r.json()["detail"]
     # 引擎本身約需 1–3 秒；Stage-2 會額外增加 2–13 秒。
     # 門檻設在 8 秒以容納慢速 CI，同時仍能抓到「Stage-2 被誤觸發」的情況。
     assert elapsed_ms < 8000, (

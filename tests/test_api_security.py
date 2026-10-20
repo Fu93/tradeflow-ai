@@ -438,11 +438,11 @@ class TestHumanInTheLoop(_IsolatedCase):
             f"/api/v1/sessions/{sid}/round",
             json={"opponent_raw_text": _AUTOPILOT_DEAL_TEXT, "opponent_offer_price": 12.00},
         )
-        self.assertEqual(r.status_code, 200)
-        body = r.json()
-        self.assertEqual(body["autopilot_state"], "AWAITING_HUMAN_DECISION")
-        self.assertTrue(body["pending_human_approval"])
-        self.assertIsNone(body["turn"], "no unattended buyer turn may be committed")
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", r.json()["detail"])
+        stored = self.c.get(f"/api/v1/sessions/{sid}").json()
+        self.assertEqual(stored["history"], [])
+        self.assertNotEqual(stored["state"], "DEAL_CLOSED")
 
     def test_autopilot_deal_candidate_still_requires_human_approval(self):
         sid = "sec-hitl-autopilot"
@@ -455,26 +455,25 @@ class TestHumanInTheLoop(_IsolatedCase):
                 "mode": "autopilot",
             },
         )
-        self.assertEqual(r.status_code, 200)
-        body = r.json()
-        # The engine may report a deal candidate, but it must NOT be a closed deal
-        # with no human gate.
-        if body["autopilot_state"] == "DEAL_CLOSED":
-            self.fail("autopilot closed the deal without a human approval step")
-        if body.get("awaiting_human_approval"):
-            self.assertTrue(body["pending_human_approval"])
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", r.json()["detail"])
+        stored = self.c.get(f"/api/v1/sessions/{sid}").json()
+        self.assertNotEqual(stored["state"], "DEAL_CLOSED")
+        self.assertEqual(stored["history"], [])
 
     def test_deal_closed_requires_approve_endpoint(self):
         sid = "sec-hitl-approve"
         self.c.post("/api/v1/sessions", json=_valid_spec(sid))
-        self.c.post(
+        posted = self.c.post(
             f"/api/v1/sessions/{sid}/round",
             json={"opponent_raw_text": "¥14.00 最低", "opponent_offer_price": 14.0},
         )
-        # Copilot path left the session awaiting a human; /approve closes it.
+        self.assertEqual(posted.status_code, 422, posted.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", posted.json()["detail"])
         r = self.c.post(f"/api/v1/sessions/{sid}/approve", json={"action": "approve"})
-        self.assertEqual(r.status_code, 200)
-        self.assertIn(r.json()["autopilot_state"], ("COPILOT_MONITORING", "DEAL_CLOSED"))
+        self.assertEqual(r.status_code, 409, r.text)
+        self.assertIn("not waiting for a decision", r.json()["detail"])
+        self.assertEqual(self.c.get(f"/api/v1/sessions/{sid}").json()["history"], [])
 
 
 # ---------------------------------------------------------------------------
@@ -748,14 +747,17 @@ class TestRequestCasPlumbing(_IsolatedCase):
     def test_stale_expected_version_on_round_is_409(self):
         sid = "sec-cas-round"
         self.c.post("/api/v1/sessions", json=_valid_spec(sid))
-        v = 1
         for _ in range(2):
             r = self.c.post(f"/api/v1/sessions/{sid}/round",
                             json={"supplier_offer": 14.0, "mode": "copilot"})
-            self.assertEqual(r.status_code, 200)
-            v = r.json()["session"]["version"]
+            self.assertEqual(r.status_code, 422, r.text)
+            self.assertIn("unconfirmed numbers used in decisions: 1", r.json()["detail"])
+        current = self.c.get(f"/api/v1/sessions/{sid}").json()["version"]
+        matched = self.c.post(f"/api/v1/sessions/{sid}/round",
+                              json={"supplier_offer": 13.9, "expected_version": current, "mode": "copilot"})
+        self.assertEqual(matched.status_code, 422, matched.text)
         r = self.c.post(f"/api/v1/sessions/{sid}/round",
-                        json={"supplier_offer": 13.9, "expected_version": 1, "mode": "copilot"})
+                        json={"supplier_offer": 13.9, "expected_version": current + 1, "mode": "copilot"})
         self.assertEqual(r.status_code, 409)
 
 

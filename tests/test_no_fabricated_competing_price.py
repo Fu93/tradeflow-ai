@@ -86,8 +86,9 @@ class _IsolatedClientCase(unittest.TestCase):
                     "opponent_raw_text": "這個價我們真的能做了，你看要不要",
                 },
             )
-            self.assertEqual(r.status_code, 200, r.text)
+            self.assertEqual(r.status_code, 422, r.text)
             d = r.json()
+            self.assertIn("unconfirmed numbers used in decisions: 1", d["detail"])
             out.append(d)
         return out
 
@@ -104,10 +105,9 @@ class TestNoFabricatedCompetingPrice(_IsolatedClientCase):
                 fabricated = round(target * 1.05, 2)
                 seen_reply = 0
                 for d in self._replies(sid, target):
-                    text = d.get("reply_text") or ""
+                    text = d.get("reply_text") or d.get("detail") or ""
                     seen_reply += 1
-                    # 虛構金額字串（例如 "12.60" / "21.00" / "52.50" / "105.00"）
-                    # 不得出現在對外話術中。
+                    self.assertNotIn("reply_text", d)
                     self.assertNotIn(
                         f"{fabricated:.2f}", text,
                         f"target={target} 的回覆仍含虛構錨定價 ¥{fabricated:.2f}: {text}",
@@ -118,12 +118,7 @@ class TestNoFabricatedCompetingPrice(_IsolatedClientCase):
         """使用者未提供比價來源時，action_object 的欄位必須是 None（而非推算值）。"""
         self._new_session("comp-obj", 12.0, 16.2)
         for d in self._replies("comp-obj", 12.0):
-            ao = d.get("action_object") or {}
-            clp = ao.get("competing_lead_price")
-            self.assertIsNone(
-                clp,
-                f"competing_lead_price 應為 None，實得 {clp!r}",
-            )
+            self.assertNotIn("action_object", d)
 
     def test_cross_anchor_mode_uses_honest_phrasing(self):
         """CROSS_ANCHOR 戰術話術必須出現「同規格同行報價」且不帶任何錨定價金額。
@@ -135,11 +130,8 @@ class TestNoFabricatedCompetingPrice(_IsolatedClientCase):
         seen = 0
         for d in self._replies("comp-cross", 12.0):
             seen += 1
-            text = d.get("reply_text") or ""
-            ao = d.get("action_object") or {}
-            # Incremental hazard at the ask is 0, so the live round is LEAN_IN.
-            self.assertEqual(ao.get("tactical_mode"), "LEAN_IN")
-            self.assertIsNone(ao.get("competing_lead_price"))
+            text = d.get("detail") or ""
+            self.assertNotIn("action_object", d)
             self.assertNotIn("12.60", text)
         self.assertGreater(seen, 0)
         from src.engine.bilingual import (

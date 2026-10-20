@@ -29,12 +29,14 @@ from src.engine.landed import landed_unit_cost, ranking_basis
 from src.engine.reserve import ReserveState
 
 HAZARD_NOTE = (
-    "Walk-away hazard is transferred from the eBay seller-ended fit, with a "
-    "small-gap hinge because a straight line understated walk-away on small gaps. "
-    "The fit is the first buyer offer of a thread and is applied per round to the "
-    "latest ask. A reserve-gap term is not added. Recorded continue and walk-away "
-    "outcomes update only this supplier's effect. Quote text is not an outcome. "
-    "This is not a measured Chinese-factory rate."
+    "Walk-away hazard is transferred from the eBay seller-ended fit. The fitted "
+    "curve has a small-gap hinge that peaks at a zero gap, so the risk cap uses "
+    "the gap slope with that hinge held at zero and a tighter cap can withhold "
+    "a push. The published coefficients are unchanged. The fit is the first buyer "
+    "offer of a thread and is applied per round to the latest ask. A reserve-gap "
+    "term is not added. Recorded continue and walk-away outcomes update only this "
+    "supplier's effect. Quote text is not an outcome. This is not a measured "
+    "Chinese-factory rate."
 )
 KAPPA_NOTE = (
     "Missing freight, duty, or fees are not treated as zero. "
@@ -78,14 +80,16 @@ def _std_or_tiny(value: float) -> float:
     return number
 
 
-def _components(parsed: dict[str, Any]) -> dict[str, Any]:
+def _components(parsed: dict[str, Any], deal: dict[str, Any]) -> dict[str, Any]:
+    """Landed cost in the deal currency. A USD deal does not drop USD freight."""
+    base = str(deal.get("currency") or DEAL_CURRENCY)
     return landed_unit_cost(
         unit_price=parsed.get("unit_price"),
         freight=parsed.get("freight"),
         duty_rate=parsed.get("duty_rate"),
         fees=parsed.get("fees"),
-        currency=parsed.get("currency") or DEAL_CURRENCY,
-        base_currency=DEAL_CURRENCY,
+        currency=parsed.get("currency") or base,
+        base_currency=base,
     )
 
 
@@ -151,7 +155,14 @@ def _hold_previous(row: dict[str, Any], previous: dict[str, Any] | None) -> dict
     return row
 
 
-def _headline(events: list[dict[str, Any]], outcomes: list[dict[str, Any]], *, unconfirmed: int) -> dict[str, Any]:
+def _headline(
+    events: list[dict[str, Any]],
+    outcomes: list[dict[str, Any]],
+    *,
+    unconfirmed: int,
+    deal: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    terms = deal or {}
     confirmed, _used = confirmed_prices(events)
     live = [event for event in confirmed if not _unverified(event)]
     first: dict[str, float] = {}
@@ -162,7 +173,7 @@ def _headline(events: list[dict[str, Any]], outcomes: list[dict[str, Any]], *, u
         if not supplier_id or str(supplier_id) in first:
             continue
         parsed = event.get("parsed") or {}
-        landed = _components(parsed)
+        landed = _components(parsed, terms)
         unit = parsed.get("unit_price")
         if landed.get("status") == "complete" and landed.get("landed_cost") is not None and unit is not None:
             first[str(supplier_id)] = float(landed["landed_cost"])
@@ -337,7 +348,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         for row in active:
             latest = decision_events(row["id"])[-1]
             asks[row["id"]] = float(latest["parsed"]["unit_price"])
-            landed_rows.append(_components(latest["parsed"]))
+            landed_rows.append(_components(latest["parsed"], deal))
             outcomes = store.outcomes(deal_id, row["id"])
             store.set_hazard_counts(
                 row["id"],
@@ -359,6 +370,18 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
                 intercept=decision_intercept,
                 gap_coef=decision_gap,
             )
+            beliefs_state[row["id"]]["decision_inputs"] = {
+                "rival_asks": [float(item) for item in rivals],
+                "risk_cap": float(deal["risk_tolerance"]),
+                "reserve_upper": float(state.upper),
+                "reject_ratios": [float(item) for item in state.reject_ratios],
+                "reference_ask": float(slot["reference_ask"]),
+                "hazard_intercept": decision_intercept,
+                "hazard_gap": decision_gap,
+                "prior_alpha": float(state.alpha),
+                "prior_beta": float(state.beta),
+                "prior_n": int(state.n_responses),
+            }
     else:
         basis = "unit_price"
 
@@ -416,7 +439,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             parsed = display["parsed"]
             card["latest_quote"] = parsed.get("unit_price")
             card["currency"] = str(deal.get("currency") or parsed.get("currency") or DEAL_CURRENCY)
-            landed = _components(parsed)
+            landed = _components(parsed, deal)
             card["landed_cost"] = landed.get("landed_cost")
             card["landed_status"] = landed.get("status") or "no data"
         if card["excluded_from_decision"]:
@@ -449,6 +472,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             card["hazard_upper"] = float(choice.incremental_hazard)
             card["hazard_figure"] = figure
             card["prior_driven"] = True
+            card["decision_inputs"] = beliefs_state[row["id"]].get("decision_inputs") or {}
             card = _hold_previous(card, previous_rows.get(row["id"]))
         cards.append(card)
 
@@ -492,6 +516,8 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         decision_events=decision_events,
         unconfirmed=unconfirmed,
     )
+    for card in cards:
+        card.pop("decision_inputs", None)
 
     mc = None
     stop = False
@@ -596,7 +622,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
                 for event in events
             ]
         ),
-        "headline": _headline(consumed, recorded, unconfirmed=unconfirmed),
+        "headline": _headline(consumed, recorded, unconfirmed=unconfirmed, deal=deal),
         "ranking_basis": basis,
         "kappa_note": LANDED_NOTE if basis == "landed_cost" else KAPPA_NOTE,
         "hazard_note": HAZARD_NOTE,

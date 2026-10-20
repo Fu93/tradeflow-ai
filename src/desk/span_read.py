@@ -14,10 +14,28 @@ _MARKS = {
     "EUR": ("eur", "€", "欧元", "歐元"),
 }
 _PER_PIECE = ("per piece", "per pc", "/pc", "each", "元/件", "元/个", "元/只", "一件", "每件", "每个", "每只")
+# A currency word glued to a number ('2.55usd', '30RMB', 'EUR4.20') is a mark.
+# Any other ASCII letter run is a model code ('3X', 'XT660') and is not an amount.
+_CURRENCY_WORDS = frozenset({"usd", "rmb", "cny", "eur", "yuan"})
 
 
 def _ascii_letter(char: str) -> bool:
     return len(char) == 1 and ("A" <= char <= "Z" or "a" <= char <= "z")
+
+
+def _letter_run_before(text: str, index: int) -> str:
+    start = index
+    while start > 0 and _ascii_letter(text[start - 1]):
+        start -= 1
+    return text[start:index]
+
+
+def _letter_run_after(text: str, index: int) -> tuple[str, int]:
+    end = index
+    size = len(text)
+    while end < size and _ascii_letter(text[end]):
+        end += 1
+    return text[index:end], end
 
 
 def _is_digit(char: str) -> bool:
@@ -68,11 +86,16 @@ def read_amounts(text: str) -> list[float]:
             break
         if not whole and not fraction:
             continue
-        # '3X' and 'XT660' are not amounts. A currency ideograph such as 元 is not a letter.
-        before = raw[start - 1] if start else ""
-        after = raw[index] if index < size else ""
-        if _ascii_letter(before) or _ascii_letter(after):
-            continue
+        # '3X' and 'XT660' are not amounts. A currency word glued on either
+        # side is a mark. A currency ideograph such as 元 is not a letter.
+        if start and _ascii_letter(raw[start - 1]):
+            if _letter_run_before(raw, start).lower() not in _CURRENCY_WORDS:
+                continue
+        if index < size and _ascii_letter(raw[index]):
+            word, end = _letter_run_after(raw, index)
+            if word.lower() not in _CURRENCY_WORDS:
+                continue
+            index = end
         body = "".join(whole) if whole else "0"
         if fraction:
             body = body + "." + "".join(fraction)

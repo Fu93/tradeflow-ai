@@ -21,11 +21,14 @@ _FIT_PATH = Path(__file__).resolve().parents[2] / "data" / "hazard_ebay_bi.json"
 NOTE = (
     "Walk-away hazard is transferred from eBay Best Offer, 2012–13, "
     "Business & Industrial. It is not a measured Chinese-factory rate. "
-    "The decision uses the seller-ended outcome and a small-gap hinge, "
-    "because a straight line understated walk-away on small gaps. The fit "
-    "is the first buyer offer of a thread and is applied per round to the "
-    "latest ask. The thread-level no-deal fit includes threads the buyer "
-    "ended and is shown beside it."
+    "The fitted curve uses the seller-ended outcome and a small-gap hinge, "
+    "because a straight line understated walk-away on small gaps. That hinge "
+    "peaks at a zero gap, so it is not a causal increment: the risk cap uses "
+    "the gap slope with the hinge held at zero, and a tighter cap can withhold "
+    "a push. The published coefficients are unchanged. The fit is the first "
+    "buyer offer of a thread and is applied per round to the latest ask. The "
+    "thread-level no-deal fit includes threads the buyer ended and is shown "
+    "beside it."
 )
 
 
@@ -130,9 +133,29 @@ def incremental_hazard(
     intercept: float | None = None,
     gap_coef: float | None = None,
 ) -> float:
-    """h(offer) − h(ask). An offer at the ask has incremental hazard 0."""
-    above = hazard_at_gap(quote_gap(ask, offer), effect, fit, intercept=intercept, gap_coef=gap_coef)
-    base = hazard_at_gap(0.0, effect, fit, intercept=intercept, gap_coef=gap_coef)
+    """Slope increment h(offer) − h(ask). An offer at the ask has increment 0.
+
+    ``hazard_at_gap`` still returns the fitted curve, hinge included. The
+    hinge is largest at a zero gap, so subtracting it makes a small discount
+    look safer than the ask and the risk cap never binds. The cap therefore
+    uses the gap slope with the hinge held at zero.
+    """
+    above = hazard_at_gap(
+        quote_gap(ask, offer),
+        effect,
+        fit,
+        intercept=intercept,
+        gap_coef=gap_coef,
+        small_gap_coef=0.0,
+    )
+    base = hazard_at_gap(
+        0.0,
+        effect,
+        fit,
+        intercept=intercept,
+        gap_coef=gap_coef,
+        small_gap_coef=0.0,
+    )
     return max(above - base, 0.0)
 
 

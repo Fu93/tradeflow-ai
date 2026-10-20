@@ -64,6 +64,9 @@ _OTHER = re.compile(
     r"\bcompetitor\b|another\s+factory|other\s+factory|\bvendor\b|"
     r"人家|隔壁|其他厂|其他廠|同行|别家|別家)"
 )
+_NAMED_RIVAL = re.compile(
+    r"(?i)\b(?:supplier|vendor|competitor|rival)\s+\S+\s+offers?\b"
+)
 _ECHO = re.compile(
     r"(?i)(?:your\s+target|your\s+offer|your\s+price|you\s+offered|we\s+offered|"
     r"您说的|您說的|您报|你报|你方|原价|原價|上次|旧价|舊價|previous\s+price)"
@@ -323,7 +326,7 @@ def _currency_of(pre: str, post: str) -> str | None:
 
 
 def _other_speaker(clause: str) -> bool:
-    if _OTHER.search(clause) or _ECHO.search(clause):
+    if _OTHER.search(clause) or _ECHO.search(clause) or _NAMED_RIVAL.search(clause):
         return True
     if re.search(r"(?i)\bsays\b", clause) and not re.search(
         r"(?i)\b(?:we|our|i)\b|我们|我們|我方|本厂|本廠", clause
@@ -700,11 +703,12 @@ def parse_quote(
         else:
             chosen = None
             reason = reason or "no usable amount in the deal currency"
+    goods = [item["token"] for item in units if item.get("token")]
     suggested = None
     if chosen is not None:
         suggested = chosen["token"]
-    elif review_tokens:
-        suggested = review_tokens[0]["token"]
+    elif goods:
+        suggested = goods[0]
     candidate_tokens: list[str] = []
     for item in units + review_tokens:
         if item["token"] not in candidate_tokens:

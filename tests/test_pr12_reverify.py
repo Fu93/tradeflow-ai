@@ -188,7 +188,7 @@ def test_tier_uses_the_deal_quantity_and_otherwise_reviews():
 def test_question_mark_stays_inside_the_clause():
     got = parse_quote("Is 29 RMB OK for you?")
     assert got["status"] == "review"
-    assert got["provenance"]["suggested_token"] == "29"
+    assert got["provenance"]["suggested_token"] is None
 
 
 def test_human_can_confirm_a_reviewed_cny_token():

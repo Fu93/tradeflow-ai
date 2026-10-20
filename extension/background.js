@@ -192,60 +192,175 @@ async function ensureSession(payload) {
   }
 }
 
-// Forward offer submission to FastAPI backend
-async function handleOfferSubmission(tabId, payload) {
-  const { sessionId, offer, context, mode } = payload;
+function storageLocal(keys) {
+  return new Promise((resolve) => {
+    if (!(chrome.storage && chrome.storage.local)) {
+      resolve({});
+      return;
+    }
+    chrome.storage.local.get(keys, (value) => resolve(value || {}));
+  });
+}
+
+function rememberTab(tabId, data) {
+  if (!tabSessions.has(tabId)) return;
+  const meta = tabSessions.get(tabId);
+  meta.latestData = data;
+  meta.lastActiveTimestamp = Date.now();
+  tabSessions.set(tabId, meta);
+  if (chrome.storage && chrome.storage.session) {
+    chrome.storage.session.set({ [`tab_${tabId}`]: meta }).catch(() => {});
+  }
+}
+
+function engineError(tabId, err) {
+  console.error("[TradeFlow SW] desk quote error:", err);
+  const contentPort = activePorts.contentTabs.get(tabId);
+  if (!contentPort) return;
   try {
-    await ensureSession(payload);
-    const res = await fetch(`${API_BASE_URL}/api/v1/sessions/${encodeURIComponent(sessionId)}/round`, {
+    contentPort.postMessage({ type: "ENGINE_ERROR", error: err.message });
+  } catch (e) {}
+}
+
+async function readDeskError(res) {
+  let detail = "";
+  try {
+    const errBody = await res.json();
+    detail = errBody && (errBody.detail || errBody.message) ? `: ${errBody.detail || errBody.message}` : "";
+  } catch (_) {
+    detail = "";
+  }
+  return `Engine HTTP ${res.status}${detail}`;
+}
+
+// Ingest the supplier's raw message on the desk. The scraped number is not the offer.
+async function handleOfferSubmission(tabId, payload) {
+  const context = payload && payload.context ? String(payload.context) : "";
+  try {
+    const stored = await storageLocal(["tfApiKey", "tfDeskDeal", "tfDeskSupplier"]);
+    const key = stored.tfApiKey || "";
+    const dealId = stored.tfDeskDeal || "";
+    if (!dealId) {
+      throw new Error("Open a desk deal and save its id before confirming a quote.");
+    }
+    if (!key) {
+      throw new Error("Desk API key is missing.");
+    }
+    if (!context.trim()) {
+      throw new Error("Confirm a price from the supplier message. A scraped number is not sent.");
+    }
+    const dealRes = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${encodeURIComponent(dealId)}`, {
+      headers: key ? { "X-API-Key": key } : {},
+    });
+    if (!dealRes.ok) throw new Error(await readDeskError(dealRes));
+    const snapshot = await dealRes.json();
+    let supplierId = stored.tfDeskSupplier || "";
+    if (!supplierId) {
+      const matches = matchSuppliers(snapshot.suppliers || [], {
+        text: context,
+        title: payload.supplierName || "",
+        url: payload.url || "",
+      });
+      if (matches.length === 1) supplierId = matches[0].id;
+    }
+    if (!supplierId) {
+      throw new Error("Choose the supplier on the desk before confirming a quote.");
+    }
+    const quoteRes = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${encodeURIComponent(dealId)}/quotes`, {
       method: "POST",
-      headers: jsonHeaders(),
+      headers: deskHeaders(key),
       body: JSON.stringify({
-        supplier_offer: offer,
-        supplier_text: context || `Inbound quote: ${offer}`,
-        // V1 (F6): pass the operator's selected mode through. Previously this was
-        // never sent, so RoundActionRequest.mode defaulted to "autopilot" and
-        // every quote skipped the copilot human-approval branch even while the
-        // HUD displayed Copilot Mode.
-        mode: mode === "copilot" ? "copilot" : "autopilot",
+        source: "chat-import",
+        raw_text: context,
+        supplier_id: supplierId,
+        page_url: payload.url || "",
+        page_title: payload.pageTitle || "",
       }),
     });
-
-    if (!res.ok) {
-      // Read the error body so the panel can show the real reason (401 for a
-      // missing key, 409 CAS conflict, 400 validation, ...) instead of a
-      // generic network error.
-      let detail = "";
-      try {
-        const errBody = await res.json();
-        detail = errBody && (errBody.detail || errBody.message) ? `: ${errBody.detail || errBody.message}` : "";
-      } catch (_) {
-        detail = "";
-      }
-      throw new Error(`Engine HTTP ${res.status}${detail}`);
-    }
-
-    const data = await res.json();
-    // Cache latest turn data into tabSession
-    if (tabSessions.has(tabId)) {
-      const meta = tabSessions.get(tabId);
-      meta.latestData = data;
-      meta.lastActiveTimestamp = Date.now();
-      tabSessions.set(tabId, meta);
-      if (chrome.storage && chrome.storage.session) {
-        chrome.storage.session.set({ [`tab_${tabId}`]: meta }).catch(() => {});
-      }
-    }
-
+    if (!quoteRes.ok) throw new Error(await readDeskError(quoteRes));
+    const ingested = await quoteRes.json();
+    const event = ingested.event || {};
+    const provenance = event.provenance || {};
+    const deal = snapshot.deal || {};
+    const data = {
+      desk: true,
+      awaiting_confirm: true,
+      deal_id: dealId,
+      event_id: event.id,
+      supplier_id: event.supplier_id || supplierId,
+      candidates: provenance.candidates || [],
+      suggested_token: provenance.suggested_token || null,
+      raw_text: context,
+      session: {
+        spec: {
+          target_price: deal.target_price,
+          ceiling_price: deal.ceiling_price,
+        },
+        history: [],
+      },
+    };
+    rememberTab(tabId, data);
     broadcastSessionUpdate(tabId, data);
   } catch (err) {
-    console.error("[TradeFlow SW] handleOfferSubmission error:", err);
-    const contentPort = activePorts.contentTabs.get(tabId);
-    if (contentPort) {
-      try {
-        contentPort.postMessage({ type: "ENGINE_ERROR", error: err.message });
-      } catch (e) {}
+    engineError(tabId, err);
+  }
+}
+
+// A person picked a token from the message. Only then does the desk counter.
+async function confirmDeskPrice(tabId, payload) {
+  try {
+    const stored = await storageLocal(["tfApiKey", "tfDeskDeal"]);
+    const key = stored.tfApiKey || "";
+    const dealId = (payload && payload.dealId) || stored.tfDeskDeal || "";
+    const eventId = payload && payload.eventId;
+    const supplierId = payload && payload.supplierId;
+    const token = payload && payload.token;
+    if (!dealId || !eventId || !supplierId || !token) {
+      throw new Error("Confirm a token from the supplier message before a counter.");
     }
+    const res = await fetch(
+      `${API_BASE_URL}/api/v1/desk/deals/${encodeURIComponent(dealId)}/review/${encodeURIComponent(eventId)}`,
+      {
+        method: "POST",
+        headers: deskHeaders(key),
+        body: JSON.stringify({
+          action: "accept",
+          supplier_id: supplierId,
+          chosen_token: token,
+        }),
+      }
+    );
+    if (!res.ok) throw new Error(await readDeskError(res));
+    const snapshot = await res.json();
+    const card = (snapshot.suppliers || []).find((row) => row.id === supplierId) || {};
+    const deal = snapshot.deal || {};
+    const data = {
+      desk: true,
+      awaiting_confirm: false,
+      deal_id: dealId,
+      supplier_id: supplierId,
+      desk_ask: card.latest_quote == null ? null : card.latest_quote,
+      desk_counter: card.counter == null ? null : card.counter,
+      desk_simulated: !!card.simulated,
+      session: {
+        spec: {
+          target_price: deal.target_price,
+          ceiling_price: deal.ceiling_price,
+        },
+        history: [],
+      },
+      action_object: {
+        breakdown_risk: card.hazard == null ? null : card.hazard,
+        authorized_price: card.counter == null ? null : card.counter,
+        counterpart_offered_price: card.latest_quote == null ? null : card.latest_quote,
+      },
+      recommended_offer_price: card.counter == null ? null : card.counter,
+      effective_opp_price: card.latest_quote == null ? null : card.latest_quote,
+    };
+    rememberTab(tabId, data);
+    broadcastSessionUpdate(tabId, data);
+  } catch (err) {
+    engineError(tabId, err);
   }
 }
 
@@ -407,6 +522,10 @@ chrome.runtime.onConnect.addListener((port) => {
 
       if (msg.type === "SUBMIT_OFFER") {
         await handleOfferSubmission(tabId, msg.payload);
+      }
+
+      if (msg.type === "CONFIRM_DESK_PRICE") {
+        await confirmDeskPrice(tabId, msg.payload);
       }
 
       if (msg.type === "TELEMETRY_ALERT") {

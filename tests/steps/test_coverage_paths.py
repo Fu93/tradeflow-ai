@@ -395,7 +395,10 @@ def test_send_guard_and_smtp_outcomes(tmp_path, monkeypatch):
     supplier = snapshot["suppliers"][0]["id"]
     opened = ingest_message(store, deal["id"], source="paste", raw_text="单价 15.60 元", supplier_id=supplier)
     accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60")
+    from src.engine.reserve import ReserveState
+
     draft = next(item for item in store.drafts(deal["id"]) if item["status"] == "draft")
+    belief = ReserveState.policy()
     record = build_record(
         deal_id=deal["id"],
         supplier_id=supplier,
@@ -413,15 +416,25 @@ def test_send_guard_and_smtp_outcomes(tmp_path, monkeypatch):
         push_counter=14.0,
         half=14.0,
         double=14.0,
-        prior_alpha=2.0,
-        prior_beta=2.0,
+        prior_alpha=belief.alpha,
+        prior_beta=belief.beta,
         prior_n=0,
         prior_source="labelled_policy",
         unconfirmed=0,
         hazard_within_cap=True,
+        rival_asks=(14.0,),
+        risk_cap=0.5,
+        reserve_upper=belief.upper,
+        reject_ratios=(),
+        reference_ask=15.60,
+        inputs_stored=True,
     )
     decision_id = store.append_decision(record.as_dict(), record.sha256())
-    store.append_chain(deal["id"], "decision", {"decision_id": decision_id})
+    store.append_chain(
+        deal["id"],
+        "decision",
+        {"decision_id": decision_id, "record_sha256": record.sha256(), "supplier_id": supplier},
+    )
     guarded = dict(draft, decision_id=decision_id, body="we can do 14.00")
     assert _guard_send(store, guarded, deal)["counter"] == 14.0
     with pytest.raises(SendRefused):

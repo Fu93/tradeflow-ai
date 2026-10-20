@@ -53,7 +53,8 @@ class TestDraftLanguage(unittest.TestCase):
             json={"opponent_raw_text": text, "opponent_offer_price": 14.80, "mode": "copilot"},
             headers=self.headers,
         )
-        self.assertEqual(opened.status_code, 200, opened.text[:400])
+        self.assertEqual(opened.status_code, 422, opened.text[:400])
+        self.assertIn("unconfirmed numbers used in decisions: 1", opened.json()["detail"])
         return opened.json()
 
     def _approve(self, session_id: str) -> dict:
@@ -75,55 +76,32 @@ class TestDraftLanguage(unittest.TestCase):
 
     def test_english_draft_survives_hold_approve_and_fetch(self):
         body = self._open("DRAFT_EN_01", ENGLISH)
-        price = body["recommended_offer_price"]
-        reply = body["reply_text"]
-        self.assertIn(f"CNY {price:.2f}", reply)
-        self.assertNotRegex(reply, r"[\u4e00-\u9fff]")
-        opponent = body["session"]["history"][-1]
-        self.assertEqual(opponent["metadata"]["draft_language"], "en")
-        self.assertEqual(opponent["metadata"]["generated_reply"], reply)
-
+        self.assertNotIn("reply_text", body)
+        self.assertNotIn("Our offer is CNY", body["detail"])
+        stored = self._stored("DRAFT_EN_01")
+        self.assertEqual(stored["history"], [])
         held = self.client.post(
             "/api/v1/sessions/DRAFT_EN_01/approve",
             json={"action": "hold"},
             headers=self.headers,
         )
-        self.assertEqual(held.status_code, 200, held.text[:400])
-        self.assertEqual(held.json()["autopilot_state"], "AWAITING_HUMAN_DECISION")
-        after_hold = self._stored("DRAFT_EN_01")
-        self.assertEqual(after_hold["history"][-1]["metadata"]["generated_reply"], reply)
-        self.assertEqual(after_hold["history"][-1]["metadata"]["draft_language"], "en")
-        self.assertNotIn("buyer_human_approved", [turn["sender"] for turn in after_hold["history"]])
-
-        approved = self._approve("DRAFT_EN_01")
-        self.assertEqual(approved["applied_price"], price)
-        self.assertEqual(approved["reply_text"], reply)
-        self.assertIn(f"CNY {price:.2f}", approved["reply_text"])
-        self.assertNotRegex(approved["reply_text"], r"[\u4e00-\u9fff]")
-
-        stored = self._stored("DRAFT_EN_01")
-        human = stored["history"][-1]
-        self.assertEqual(human["sender"], "buyer_human_approved")
-        self.assertEqual(human["raw_text"], reply)
-        self.assertEqual(human["metadata"]["draft_language"], "en")
-        self.assertEqual(human["parsed_price"], price)
+        self.assertEqual(held.status_code, 409, held.text[:400])
+        approved = self.client.post(
+            "/api/v1/sessions/DRAFT_EN_01/approve",
+            json={"action": "approve"},
+            headers=self.headers,
+        )
+        self.assertEqual(approved.status_code, 409, approved.text[:400])
+        self.assertEqual(self._stored("DRAFT_EN_01")["history"], [])
 
     def test_chinese_draft_stays_chinese(self):
         body = self._open("DRAFT_ZH_01", CHINESE)
-        price = body["recommended_offer_price"]
-        reply = body["reply_text"]
-        self.assertRegex(reply, r"[\u4e00-\u9fff]")
-        self.assertNotIn("Our offer is CNY", reply)
-        self.assertEqual(body["session"]["history"][-1]["metadata"]["draft_language"], "zh")
-
-        approved = self._approve("DRAFT_ZH_01")
-        self.assertEqual(approved["applied_price"], price)
-        self.assertEqual(approved["reply_text"], reply)
-        self.assertRegex(approved["reply_text"], r"[\u4e00-\u9fff]")
-        self.assertNotIn("Our offer is CNY", approved["reply_text"])
-
-        stored = self._stored("DRAFT_ZH_01")
-        human = stored["history"][-1]
-        self.assertEqual(human["raw_text"], reply)
-        self.assertEqual(human["metadata"]["draft_language"], "zh")
-        self.assertEqual(human["parsed_price"], price)
+        self.assertNotIn("reply_text", body)
+        self.assertNotIn("Our offer is CNY", body["detail"])
+        self.assertEqual(self._stored("DRAFT_ZH_01")["history"], [])
+        approved = self.client.post(
+            "/api/v1/sessions/DRAFT_ZH_01/approve",
+            json={"action": "approve"},
+            headers=self.headers,
+        )
+        self.assertEqual(approved.status_code, 409, approved.text[:400])

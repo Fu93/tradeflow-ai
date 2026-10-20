@@ -84,16 +84,16 @@ class TestPriceGuard(unittest.TestCase):
                     "amd_live": True,
                 },
             )
-        self.assertEqual(quiet.status_code, 200, quiet.text)
-        self.assertEqual(loud.status_code, 200, loud.text)
-        self.assertEqual(
-            quiet.json()["recommended_offer_price"],
-            loud.json()["recommended_offer_price"],
-        )
-        self.assertEqual(loud.json()["price_source"], "explicit_field")
-        self.assertFalse(loud.json()["amd_live"]["decides_price"])
-        self.assertTrue(loud.json()["llm_price_ignored"])
-        self.assertNotEqual(loud.json()["recommended_offer_price"], 1.0)
+        self.assertEqual(quiet.status_code, 422, quiet.text)
+        self.assertEqual(loud.status_code, 422, loud.text)
+        for response in (quiet, loud):
+            detail = response.json()["detail"]
+            self.assertIn("unconfirmed numbers used in decisions: 1", detail)
+            self.assertNotIn("recommended_offer_price", response.json())
+            self.assertNotIn("1.00", detail)
+        for sid in ("GUARD_QUIET", "GUARD_LOUD"):
+            stored = client.get(f"/api/v1/sessions/{sid}")
+            self.assertEqual(stored.json()["history"], [])
 
 
 class TestQuoteRead(unittest.TestCase):

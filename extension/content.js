@@ -671,6 +671,50 @@
       if (sub && subtext) sub.textContent = subtext;
     }
 
+    clearDeck() {
+      const deck = this.shadowRoot.getElementById("tf-deck");
+      if (!deck) return;
+      deck.style.display = "none";
+      deck.innerHTML = "";
+    }
+
+    renderConfirm(candidates, onPick) {
+      const deck = this.shadowRoot.getElementById("tf-deck");
+      if (!deck) return;
+      const doc = deck.ownerDocument;
+      const tokens = Array.isArray(candidates) ? candidates : [];
+      deck.replaceChildren();
+      deck.style.display = "block";
+
+      const head = doc.createElement("div");
+      head.className = "tf-deck-head";
+      const title = doc.createElement("span");
+      title.className = "tf-deck-title";
+      title.textContent = "Confirm a unit price";
+      head.appendChild(title);
+
+      const note = doc.createElement("div");
+      note.className = "tf-deck-note";
+      note.textContent = "Pick the supplier's goods unit price from the message. A scraped number is not the offer.";
+
+      const row = doc.createElement("div");
+      if (!tokens.length) {
+        row.textContent = "No confirmable amount was read. Nothing was countered.";
+      } else {
+        tokens.forEach((token) => {
+          const btn = doc.createElement("button");
+          btn.type = "button";
+          btn.className = "tf-btn tf-confirm-btn";
+          btn.textContent = String(token);
+          btn.addEventListener("click", () => {
+            if (token && onPick) onPick(String(token));
+          });
+          row.appendChild(btn);
+        });
+      }
+      deck.append(head, note, row);
+    }
+
     renderDecisionDeck(data, offer, counterOffer, onCopy) {
       const deck = this.shadowRoot.getElementById("tf-deck");
       if (!deck) return;
@@ -1096,7 +1140,6 @@
     // "autopilot" value.
     portClient.send("SUBMIT_OFFER", {
       sessionId: sessionContext.sessionId,
-      offer: offer,
       context: rawText,
       mode: overlayEl._state.mode === "copilot" ? "copilot" : "autopilot",
       targetPrice: mandate.targetPrice,
@@ -1105,6 +1148,9 @@
       productName: mandate.productName,
       mandateLabel: mandate.mandateLabel,
       supplierId: sessionContext.supplierId,
+      supplierName: sessionContext.supplierName,
+      url: sessionContext.url,
+      pageTitle: document.title || "",
     });
   }
 
@@ -1147,6 +1193,49 @@
     portClient.on("SESSION_UPDATED", (msg) => {
       const data = msg.data;
       if (!data) return;
+
+      if (data.awaiting_confirm) {
+        overlayEl.updateStatus(
+          "CONFIRM A PRICE",
+          "#f59e0b",
+          "Pick the supplier unit price from the message. Nothing is countered until you confirm."
+        );
+        overlayEl.renderConfirm(data.candidates || [], (token) => {
+          portClient.send("CONFIRM_DESK_PRICE", {
+            dealId: data.deal_id,
+            eventId: data.event_id,
+            supplierId: data.supplier_id,
+            token: token,
+          });
+        });
+        return;
+      }
+
+      if (data.desk) {
+        if (data.desk_counter == null) {
+          overlayEl.clearDeck();
+          overlayEl.updateStatus(
+            data.desk_simulated ? "CONFIRMED — SIMULATED" : "NO COUNTER",
+            "#94a3b8",
+            data.desk_simulated
+              ? "The price is confirmed. This page is simulated, so no live counter is issued."
+              : "The price is confirmed. No live counter was issued."
+          );
+          return;
+        }
+        overlayEl.updateStatus(
+          "COPILOT CARDS READY",
+          "#10b981",
+          `Desk counter ${tfNum(data.desk_counter, 0).toFixed(2)} after confirmation`
+        );
+        overlayEl.renderDecisionDeck(
+          data,
+          data.desk_ask,
+          data.desk_counter,
+          (text) => console.log("[TradeFlow Copilot] Copied:", text.slice(0, 30))
+        );
+        return;
+      }
 
       // [P0-2 修正] 改讀後端「真實」契約欄位（已核對 src/app/main.py 的 copilot
       // 分支 :1551-1563、autopilot 分支 :1646-1668、熔斷分支 :1320-1329，以及

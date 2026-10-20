@@ -475,16 +475,14 @@ class TestOrchestratorRobustnessAmplifier(unittest.TestCase):
         from src.app import orchestrator
 
         orchestrator._ROBUSTNESS_CACHE.clear()
-        out = orchestrator.on_webhook(
-            {"extracted": {"product": "auto umbrella", "target_price": 12.0,
-                           "ceiling_price": 16.2, "expected_markup": 0.0},
-             "offer": 1.25, "email_body": "We can do ¥15 per unit, MOQ 500."}
-        )
-        # 介面凍結：既有鍵必須保留
-        for key in ("recommendation", "posterior_reserve_mean",
-                    "posterior_reserve_std", "robustness", "proposal", "draft_email"):
-            self.assertIn(key, out)
-        self.assertIn("opening_offer_price", out["recommendation"])
+        with self.assertRaises(ValueError) as caught:
+            orchestrator.on_webhook(
+                {"extracted": {"product": "auto umbrella", "target_price": 1.0,
+                               "ceiling_price": 16.2, "expected_markup": 0.0},
+                 "offer": 1.0, "email_body": "We can do ¥15 per unit, MOQ 500."}
+            )
+        self.assertIn("unconfirmed numbers used in decisions: 3", str(caught.exception))
+        self.assertNotIn("opening_offer_price", str(caught.exception))
 
     def test_full_path_still_computes_the_report(self):
         from src.app import orchestrator

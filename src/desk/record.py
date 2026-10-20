@@ -71,6 +71,14 @@ class DecisionRecord:
     checks: tuple[Check, ...]
     extractor_response_sha256: str = ""
     extractor_attempts: tuple[dict[str, Any], ...] = ()
+    rival_asks: tuple[float, ...] = ()
+    risk_cap: float | None = None
+    reserve_upper: float | None = None
+    reject_ratios: tuple[float, ...] = ()
+    reference_ask: float | None = None
+    hazard_intercept: float | None = None
+    hazard_gap: float | None = None
+    held_previous_counter: float | None = None
 
     def eligible(self) -> bool:
         return self.counter is not None and self.unconfirmed == 0 and all(item.passed for item in self.checks)
@@ -81,6 +89,8 @@ class DecisionRecord:
         payload["prices_minor"] = list(self.prices_minor)
         payload["checks"] = [item.as_dict() for item in self.checks]
         payload["extractor_attempts"] = [dict(item) for item in self.extractor_attempts]
+        payload["rival_asks"] = [float(item) for item in self.rival_asks]
+        payload["reject_ratios"] = [float(item) for item in self.reject_ratios]
         payload["eligible"] = self.eligible()
         return payload
 
@@ -116,6 +126,15 @@ def build_record(
     hazard_within_cap: bool,
     fit_digest: str | None = None,
     optimiser: str = _OPTIMISER,
+    rival_asks: tuple[float, ...] = (),
+    risk_cap: float | None = None,
+    reserve_upper: float | None = None,
+    reject_ratios: tuple[float, ...] = (),
+    reference_ask: float | None = None,
+    hazard_intercept: float | None = None,
+    hazard_gap: float | None = None,
+    held_previous_counter: float | None = None,
+    inputs_stored: bool = False,
 ) -> DecisionRecord:
     """Pure. A failed check clears the counter."""
     fit = fit_digest if fit_digest is not None else hazard_fit_sha256()
@@ -141,6 +160,11 @@ def build_record(
             "unconfirmed_clear",
             int(unconfirmed) == 0,
             f"unconfirmed numbers used in decisions: {int(unconfirmed)}",
+        ),
+        _check(
+            "decision_inputs_stored",
+            bool(inputs_stored),
+            "ask, reserve, rivals, risk cap, and hazard terms are on the record",
         ),
     )
     issued = counter
@@ -194,6 +218,14 @@ def build_record(
         checks=checks,
         extractor_response_sha256=",".join(digests),
         extractor_attempts=tuple(attempts),
+        rival_asks=tuple(float(item) for item in rival_asks),
+        risk_cap=None if risk_cap is None else float(risk_cap),
+        reserve_upper=None if reserve_upper is None else float(reserve_upper),
+        reject_ratios=tuple(float(item) for item in reject_ratios),
+        reference_ask=None if reference_ask is None else float(reference_ask),
+        hazard_intercept=None if hazard_intercept is None else float(hazard_intercept),
+        hazard_gap=None if hazard_gap is None else float(hazard_gap),
+        held_previous_counter=None if held_previous_counter is None else float(held_previous_counter),
     )
 
 

@@ -1096,12 +1096,21 @@ class TestConfirmedVerificationItems(unittest.TestCase):
         )
 
     def test_v1_extension_sends_the_mode_field(self):
+        """The HUD still names its mode. A scraped quote is confirmed on the desk."""
         with open(CONTENT_JS, encoding="utf-8") as fh:
             content = fh.read()
         with open(BACKGROUND_JS, encoding="utf-8") as fh:
             background = fh.read()
         self.assertRegex(content, r"mode:\s*overlayEl\._state\.mode", "content.js must send mode (V1)")
-        self.assertRegex(background, r"mode:\s*mode\s*===\s*\"copilot\"", "background.js must forward mode (V1)")
+        self.assertRegex(
+            background,
+            r"mode:\s*payload\.mode\s*===\s*\"copilot\"",
+            "background.js keeps the HUD mode on the tab record",
+        )
+        self.assertIn("/quotes", background)
+        self.assertIn("/review/", background)
+        self.assertNotIn("supplier_offer", background)
+        self.assertNotIn("/round", background)
 
     def test_v5_cdn_script_has_integrity_and_csp(self):
         with open(INDEX_HTML, encoding="utf-8") as fh:

@@ -70,26 +70,16 @@ class TestCopilotHumanApproval(unittest.TestCase):
             json=payload,
             headers={"X-API-Key": SANDBOX_DEMO_TOKEN},
         )
-        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.status_code, 422, res.text)
         data = res.json()
+        self.assertIn("unconfirmed numbers used in decisions: 1", data["detail"])
+        self.assertNotIn("recommended_offer_price", data)
+        self.assertNotIn("reply_text", data)
 
-        # 狀態機必須暫停等待人類決策
-        self.assertEqual(data["autopilot_state"], "AWAITING_HUMAN_DECISION")
-        self.assertTrue(data["pending_human_approval"])
-        self.assertIsNone(data["turn"])  # 不得自動提交買方出價
-        self.assertIsNotNone(data["recommended_offer_price"])
-        self.assertIsNotNone(data["reply_text"])
-
-        # 驗證貝氏雷達與 TCO 全部出現在決策看板上
-        self.assertIsNotNone(data["bayesian_belief_state"])
-        self.assertIn("deal_probability", data["bayesian_belief_state"])
-        self.assertIsNotNone(data["tco_breakdown"])
-
-        # 驗證資料庫中僅有一輪對手發言，無買方發言
         stored_sess = session_mgr.get_session(sess_id)
-        self.assertEqual(len(stored_sess.history), 1)
-        self.assertEqual(stored_sess.history[0].sender, "opponent")
-        self.assertEqual(stored_sess.state, AutopilotState.AWAITING_HUMAN_DECISION)
+        self.assertEqual(len(stored_sess.history), 0)
+        self.assertNotEqual(stored_sess.state, AutopilotState.DEAL_CLOSED)
+        self.assertNotEqual(stored_sess.state, AutopilotState.AWAITING_HUMAN_DECISION)
 
     def test_human_approve_recommendation(self):
         """驗證人類在 AWAITING_HUMAN_DECISION 狀態下一鍵 approve，系統才正式記錄買方輪次。"""
@@ -102,30 +92,19 @@ class TestCopilotHumanApproval(unittest.TestCase):
             json={"opponent_offer_price": 14.20, "opponent_raw_text": "¥14.20最少500把", "mode": "copilot"},
             headers={"X-API-Key": SANDBOX_DEMO_TOKEN},
         )
-        self.assertEqual(r1.status_code, 200)
-        current_ver = r1.json()["session"]["version"]
+        self.assertEqual(r1.status_code, 422, r1.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", r1.json()["detail"])
+        current_ver = session_mgr.get_session(sess_id).version
 
-        # 人類採購員審核通過
         app_res = self.client.post(
             f"/api/v1/sessions/{sess_id}/approve",
             json={"action": "approve", "expected_version": current_ver},
             headers={"X-API-Key": SANDBOX_DEMO_TOKEN},
         )
-        self.assertEqual(app_res.status_code, 200)
-        app_data = app_res.json()
-
-        self.assertEqual(app_data["status"], "approved")
-        if app_data["applied_price"] + 1e-9 >= 14.20:
-            self.assertEqual(app_data["autopilot_state"], "DEAL_CLOSED")
-        else:
-            self.assertEqual(app_data["autopilot_state"], "COPILOT_MONITORING")
-        self.assertIsNotNone(app_data["applied_price"])
-        self.assertIn("¥", app_data["reply_text"])
-
-        # 資料庫現在應有 2 條記錄 (1 opponent, 1 buyer_human_approved)
+        self.assertEqual(app_res.status_code, 409, app_res.text)
+        self.assertIn("not waiting for a decision", app_res.json()["detail"])
         stored_sess = session_mgr.get_session(sess_id)
-        self.assertEqual(len(stored_sess.history), 2)
-        self.assertEqual(stored_sess.history[1].sender, "buyer_human_approved")
+        self.assertEqual(len(stored_sess.history), 0)
 
     def test_human_override_price_and_ceiling_guardrail(self):
         """驗證人類自訂覆寫報價：合法時接受，超過天花板 ceiling_price 時嚴格 422 拒絕。"""
@@ -137,7 +116,9 @@ class TestCopilotHumanApproval(unittest.TestCase):
             json={"opponent_offer_price": 15.0, "mode": "copilot"},
             headers={"X-API-Key": SANDBOX_DEMO_TOKEN},
         )
-        self.assertEqual(r1.status_code, 200)
+        self.assertEqual(r1.status_code, 422, r1.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", r1.json()["detail"])
+        session_mgr.transition_state(sess_id, AutopilotState.AWAITING_HUMAN_DECISION)
 
         # 1. 突破天花板價 (¥17.50 > ¥16.00) -> 必須阻斷
         breach_res = self.client.post(
@@ -192,21 +173,21 @@ class TestCopilotHumanApproval(unittest.TestCase):
             json={"opponent_offer_price": 14.0, "mode": "copilot"},
             headers={"X-API-Key": SANDBOX_DEMO_TOKEN},
         )
-        self.assertEqual(r1.status_code, 200)
+        self.assertEqual(r1.status_code, 422, r1.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", r1.json()["detail"])
+        current = session_mgr.get_session(sess_id).version
 
-        # 模擬競態：客戶端持舊版本 (version=1)，但資料庫已升版
         stale_res = self.client.post(
             f"/api/v1/sessions/{sess_id}/round",
-            json={"opponent_offer_price": 13.9, "expected_version": 1, "mode": "copilot"},
+            json={"opponent_offer_price": 13.9, "expected_version": current + 1, "mode": "copilot"},
             headers={"X-API-Key": SANDBOX_DEMO_TOKEN},
         )
         self.assertEqual(stale_res.status_code, 409)
         self.assertIn("CAS optimistic lock conflict", stale_res.json()["detail"])
 
-        # approve 端點的陳舊版本同樣被阻斷
         stale_app = self.client.post(
             f"/api/v1/sessions/{sess_id}/approve",
-            json={"action": "approve", "expected_version": 1},
+            json={"action": "approve", "expected_version": current + 1},
             headers={"X-API-Key": SANDBOX_DEMO_TOKEN},
         )
         self.assertEqual(stale_app.status_code, 409)

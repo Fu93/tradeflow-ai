@@ -143,8 +143,10 @@ def test_legacy_routes_stay_unmounted_without_the_flag():
         "client = TestClient(app)\n"
         "negotiate = client.post('/negotiate', json={'target_price': 12, 'ceiling_price': 20})\n"
         "sessions = client.post('/api/v1/sessions', json={})\n"
+        "webhook = client.post('/webhook/evolus', json={'extracted': {'target_price': 1}, 'offer': 1})\n"
         "assert negotiate.status_code == 404, negotiate.status_code\n"
         "assert sessions.status_code == 404, sessions.status_code\n"
+        "assert webhook.status_code == 404, webhook.status_code\n"
         "health = client.get('/health')\n"
         "assert health.status_code == 200, health.status_code\n"
     )

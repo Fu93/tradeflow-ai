@@ -332,16 +332,13 @@ class TestPriceIndependence(unittest.TestCase):
             "opponent_raw_text": "14.50",
             "risk_tolerance": 0.01,
         })
-        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.status_code, 422, response.text)
         body = response.json()
-        # Incremental hazard at the ask is 0, so a cap of 0.01 does not trip.
-        self.assertFalse(body["circuit_tripped"])
-        self.assertTrue(body["pending_human_approval"])
-        self.assertAlmostEqual(body["recommended_offer_price"], 14.5, places=2)
-        action = body.get("action_object")
-        self.assertIsNotNone(action)
-        self.assertLessEqual(action["authorized_price"], 16.2)
-        self.assertAlmostEqual(action["breakdown_risk"], 0.0, places=6)
+        self.assertIn("unconfirmed numbers used in decisions: 1", body["detail"])
+        self.assertNotIn("recommended_offer_price", body)
+        stored = client.get("/api/v1/sessions/risk-cap")
+        self.assertEqual(stored.json()["history"], [])
+        self.assertNotEqual(stored.json()["state"], "CIRCUIT_TRIPPED_ESCALATED")
 
 
 class TestSimulationBenchmark(unittest.TestCase):

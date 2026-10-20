@@ -158,11 +158,42 @@ def draft_email(notes: str, reply_to: str | None = None) -> str:
         return f"{prefix} {notes} (offline stub: {e})"
 
 
-def on_webhook(payload: dict) -> dict:
-    """Evolus workflow 回呼入口。
+def _extractor_decision_events(payload: dict) -> list[dict]:
+    """Extractor fields are not a human confirmation. The server does not stamp one."""
+    extracted = payload.get("extracted") or {}
+    events: list[dict] = []
+    for key in ("target_price", "ceiling_price", "walk_away_ceiling"):
+        value = extracted.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        events.append({
+            "status": "review",
+            "parsed": {"unit_price": float(value)},
+            "provenance": {"price_source": "extractor", "field": key, "unconfirmed": True},
+        })
+    offer = payload.get("offer")
+    if not isinstance(offer, bool) and isinstance(offer, (int, float)):
+        events.append({
+            "status": "review",
+            "parsed": {"unit_price": float(offer)},
+            "provenance": {"price_source": "extractor", "field": "offer", "unconfirmed": True},
+        })
+    return events
 
-    payload: {extracted: {product, target_price, qty, ...}, offer: 歸一化回價?}
+
+def on_webhook(payload: dict) -> dict:
+    """Evolus workflow callback.
+
+    Extractor numbers stay unconfirmed. This function does not invent
+    ``review_accepted_by`` and does not return a counter from them.
     """
+    from src.desk.headline import audit_line, confirmed_prices
+
+    events = _extractor_decision_events(payload)
+    kept, unconfirmed = confirmed_prices(events)
+    audit = audit_line(unconfirmed)
+    if unconfirmed or not kept:
+        raise ValueError(f"Confirm the supplier unit price before a counter. {audit}")
     extracted = payload.get("extracted") or {}
     spec = {
         "target_price": extracted.get("target_price"),

@@ -535,7 +535,7 @@ class EvolusWebhookPayload(BaseModel):
     demo: bool = False
 
 
-@app.post("/webhook/evolus", dependencies=[Depends(require_webhook_token)])
+@_legacy_route(app.post)("/webhook/evolus", dependencies=[Depends(require_webhook_token)])
 def webhook_evolus(payload: EvolusWebhookPayload):
     """Evolus workflow 回呼入口（email-in → extractor → 這裡）。"""
     try:
@@ -1754,18 +1754,23 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         )
     from src.desk.headline import audit_line, confirmed_prices
 
-    confirmed_quote = {
-        "status": "accepted",
+    # A caller-supplied price is not a person confirming a span. The desk
+    # review route is the confirm flow. This handler does not stamp
+    # review_accepted_by and does not turn the posted number into an offer.
+    posted_price = {
+        "status": "review",
         "parsed": {"unit_price": float(opp_price)},
-        "provenance": {"review_accepted_by": "human", "price_source": "explicit_field"},
+        "provenance": {"price_source": "explicit_field", "unconfirmed": True},
     }
-    _kept_prices, unconfirmed_prices = confirmed_prices([confirmed_quote])
-    if unconfirmed_prices:
-        raise HTTPException(
-            status_code=422,
-            detail="Confirm the supplier unit price. Raw text is not a decision input.",
-        )
+    _kept_prices, unconfirmed_prices = confirmed_prices([posted_price])
     round_audit = audit_line(unconfirmed_prices)
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "A posted price is not a confirmation. Confirm the supplier unit price "
+            "on the desk. " + round_audit
+        ),
+    )
 
     # 1.5 多目標非價格條款 TCO 影子成本折算 (Total Cost of Ownership Normalization)
     offered_moq = action.offered_moq or stage1.demanded_moq

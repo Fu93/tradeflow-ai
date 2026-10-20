@@ -283,10 +283,10 @@ def _prepare_reading(raw_text: str, deal: dict[str, Any], *, llm_fields: dict | 
         if not _quantity_token(raw_text, str(token))
     ]
     suggested = provenance.get("suggested_token")
-    if suggested and _quantity_token(raw_text, str(suggested)):
-        suggested = candidates[0] if candidates else None
-    elif suggested and str(suggested) not in candidates and candidates:
-        suggested = candidates[0]
+    if suggested and (
+        _quantity_token(raw_text, str(suggested)) or str(suggested) not in candidates
+    ):
+        suggested = None
     provenance["candidates"] = candidates
     provenance["suggested_token"] = suggested
     reading["provenance"] = provenance
@@ -705,6 +705,17 @@ def record_outcome(
             offer=float(offer),
             agreed_price=None if agreed_price is None else float(agreed_price),
         )
+        store.append_chain(
+            deal_id,
+            "outcome",
+            {
+                "supplier_id": supplier_id,
+                "outcome": outcome,
+                "quote": float(quote),
+                "offer": float(offer),
+                "agreed_price": None if agreed_price is None else float(agreed_price),
+            },
+        )
         store.touch(deal_id)
         return publish(store, deal_id)
 
@@ -714,6 +725,7 @@ def set_assumptions(store: DeskStore, deal_id: str, fields: dict[str, Any]) -> d
         if store.get_deal(deal_id) is None:
             raise KeyError(deal_id)
         store.set_policy(deal_id, fields)
+        store.append_chain(deal_id, "assumptions", {"fields": dict(fields)})
         store.touch(deal_id)
         return publish(store, deal_id)
 
@@ -824,10 +836,44 @@ def draft_digest(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
-def _guard_send(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any]) -> dict[str, Any]:
-    """Re-derive the counter from the stored decision. Refuse on any mismatch."""
-    from src.desk.record import clamp_counter
+def _fresh_counter(record: dict[str, Any]) -> float:
+    """The counter ``decide_supplier`` issues from the inputs stored on the record."""
+    from src.desk.decide import decide_supplier
+    from src.engine.reserve import ReserveState
 
+    needed = ("ask", "risk_cap", "prior_alpha", "prior_beta", "reserve_upper", "reference_ask", "ceiling")
+    if any(record.get(key) is None for key in needed):
+        raise SendRefused("The decision record does not store the inputs needed to recompute the counter.")
+    state = ReserveState(
+        alpha=float(record["prior_alpha"]),
+        beta=float(record["prior_beta"]),
+        upper=float(record["reserve_upper"]),
+        reject_ratios=tuple(float(item) for item in (record.get("reject_ratios") or ())),
+        n_responses=int(record.get("prior_n") or 0),
+        reference_ask=float(record["reference_ask"]),
+    )
+    intercept = record.get("hazard_intercept")
+    gap = record.get("hazard_gap")
+    choice = decide_supplier(
+        ask=float(record["ask"]),
+        rivals=[float(item) for item in (record.get("rival_asks") or ())],
+        ceiling=float(record["ceiling"]),
+        state=state,
+        risk_cap=float(record["risk_cap"]),
+        intercept=None if intercept is None else float(intercept),
+        gap_coef=None if gap is None else float(gap),
+    )
+    if choice.blocked or str(choice.counter_relation) == "withheld":
+        raise SendRefused("The recomputed decision withholds the counter.")
+    fresh = min(float(choice.default_counter), float(record["ceiling"]), float(record["ask"]))
+    previous = record.get("held_previous_counter")
+    if previous is not None and float(previous) < fresh:
+        return float(previous)
+    return fresh
+
+
+def _guard_send(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any]) -> dict[str, Any]:
+    """Recompute the counter from the stored inputs. Refuse on any mismatch."""
     decision_id = draft.get("decision_id")
     if not decision_id:
         raise SendRefused("This draft has no decision record.")
@@ -835,28 +881,37 @@ def _guard_send(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any]) -
     if stored is None:
         raise SendRefused("This draft has no decision record.")
     record = stored["record"]
-    again = hashlib.sha256(
+    loaded_digest = hashlib.sha256(
         json.dumps(record, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     ).hexdigest()
-    if again != stored["record_sha256"]:
+    if loaded_digest != stored["record_sha256"]:
         raise SendRefused("The decision record hash does not match.")
     chain = store.verify_chain(draft["deal_id"])
     if not chain["ok"]:
         raise SendRefused("The audit chain does not verify.")
+    linked = [
+        entry for entry in (chain.get("entries") or [])
+        if entry.get("type") == "decision"
+        and str((entry.get("payload") or {}).get("decision_id") or "") == str(decision_id)
+    ]
+    if not linked:
+        raise SendRefused("The audit chain has no decision entry for this draft.")
+    chain_digest = str((linked[0].get("payload") or {}).get("record_sha256") or "")
+    if chain_digest != loaded_digest:
+        raise SendRefused("The decision record does not match the audit chain.")
     if int(record.get("unconfirmed") or 0) > 0:
         raise SendRefused("Unconfirmed numbers were used. The counter is withheld.")
     if not all(bool(item.get("passed")) for item in record.get("checks") or []):
         raise SendRefused("A decision check failed. The counter is withheld.")
-    offer = record.get("offer")
     ask = record.get("ask")
     ceiling = deal.get("ceiling_price")
     counter = record.get("counter")
-    if offer is None or ask is None or counter is None or ceiling is None:
+    if ask is None or counter is None or ceiling is None:
         raise SendRefused("The stored decision has no counter to re-derive.")
-    recomputed = clamp_counter(float(offer), float(ceiling), float(ask))
+    recomputed = _fresh_counter(record)
     tolerance = float(OPT_TOL) * max(1.0, abs(float(counter)))
     if abs(float(counter) - recomputed) > tolerance:
-        raise SendRefused("The stored counter does not match the ceiling and the ask.")
+        raise SendRefused("The stored counter does not match a fresh decision.")
     rendered = f"{float(counter):.2f}"
     if rendered not in str(draft.get("body") or ""):
         raise SendRefused("The draft text does not contain the stored counter.")
