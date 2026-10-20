@@ -8,8 +8,12 @@ bind, and a one-click suggestion is a supplier goods unit price or blank.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import importlib.util
 import json
+import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -458,3 +462,171 @@ def test_extension_copilot_uses_the_desk_confirm_flow():
     assert "offer:" not in offer
     panel = Path("src/web/static/js/desk.js").read_text(encoding="utf-8")
     assert "tokens.length === 1" not in panel
+
+
+def _reissue(store, draft, **changes):
+    stored = store.get_decision(draft["decision_id"])
+    record = json.loads(json.dumps(stored["record"]))
+    record.update(changes)
+    digest = hashlib.sha256(
+        json.dumps(record, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+    decision_id = store.append_decision(record, digest)
+    store.append_chain(
+        draft["deal_id"],
+        "decision",
+        {
+            "decision_id": decision_id,
+            "record_sha256": digest,
+            "supplier_id": draft["supplier_id"],
+        },
+    )
+    return decision_id
+
+
+def _tree_text(relative: str) -> str:
+    """The copy on PYTHONPATH. The mutation runner stages that copy first."""
+    roots = [item for item in os.environ.get("PYTHONPATH", "").split(os.pathsep) if item]
+    roots.append(str(Path(__file__).resolve().parents[2]))
+    for root in roots:
+        candidate = Path(root) / relative
+        if candidate.is_file():
+            return candidate.read_text(encoding="utf-8")
+    raise AssertionError(relative)
+
+
+def test_send_refuses_a_decision_in_another_currency(tmp_path, monkeypatch):
+    from src.desk.service import SendRefused, _body_currency, _currencies_agree, _deal_opened, _guard_send
+    from src.desk.service import accept_review, ingest_message
+
+    assert _deal_opened([]) == {}
+    assert _body_currency("Hello, for valve we can proceed at 31.00 USD per unit for 100 units.") == "USD"
+    assert _body_currency("no amount here") == ""
+    assert _currencies_agree("CNY", "CNY", "CNY") is True
+    store, snapshot = _deal(tmp_path, monkeypatch, ceiling=40.0)
+    deal = snapshot["deal"]
+    supplier = snapshot["suppliers"][0]["id"]
+    opened = ingest_message(
+        store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 31.00 元",
+    )
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="31.00")
+    draft = next(item for item in store.drafts(deal["id"]) if item["status"] == "draft")
+    decision_id = _reissue(store, draft, currency="USD")
+    with pytest.raises(SendRefused, match="chained deal currency"):
+        _guard_send(store, dict(draft, decision_id=decision_id), deal)
+
+
+def test_send_refuses_an_edited_confirmed_price(tmp_path, monkeypatch):
+    from src.desk.project import draft_body
+    from src.desk.service import SendRefused, _guard_send, _price_in_message, accept_review, ingest_message
+
+    assert _price_in_message("单价 20.00 元", {"token": "31.00"}, "CNY") == pytest.approx(20.0)
+    assert _price_in_message("单价 31.00 元", {"token": "31.00"}, "CNY") == pytest.approx(31.0)
+    store, snapshot = _deal(tmp_path, monkeypatch, ceiling=40.0)
+    deal = snapshot["deal"]
+    supplier = snapshot["suppliers"][0]["id"]
+    opened = ingest_message(
+        store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 31.00 元",
+    )
+    event_id = opened["event"]["id"]
+    accept_review(store, deal["id"], event_id, supplier, chosen_token="31.00")
+    parsed = dict(store.event(deal["id"], event_id)["parsed"])
+    parsed["unit_price"] = 20.0
+    parsed["currency"] = "CNY"
+    store.conn.execute(
+        "UPDATE quote_events SET raw_text = ?, parsed_json = ? WHERE id = ?",
+        ("单价 20.00 元", json.dumps(parsed, sort_keys=True), event_id),
+    )
+    store.conn.commit()
+    draft = next(item for item in store.drafts(deal["id"]) if item["supplier_id"] == supplier)
+    decision_id = _reissue(
+        store, draft, ask=20.0, offer=20.0, counter=20.0, reference_ask=20.0,
+    )
+    body = draft_body("valve", 20.0, 100, "zh", "CNY")
+    with pytest.raises(SendRefused, match="chained review"):
+        _guard_send(store, dict(draft, decision_id=decision_id, body=body), deal)
+
+
+def test_send_refuses_a_decision_with_forged_rivals(tmp_path, monkeypatch):
+    from src.desk.project import draft_body
+    from src.desk.service import SendRefused, _guard_send, accept_review, ingest_message
+
+    store, snapshot = _deal(tmp_path, monkeypatch, ceiling=40.0)
+    deal = snapshot["deal"]
+    supplier = snapshot["suppliers"][0]["id"]
+    opened = ingest_message(
+        store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 31.00 元",
+    )
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="31.00")
+    draft = next(item for item in store.drafts(deal["id"]) if item["status"] == "draft")
+    decision_id = _reissue(
+        store, draft, rival_asks=[10.0], counter=10.0, offer=10.0,
+    )
+    body = draft_body("valve", 10.0, 100, "zh", "CNY")
+    with pytest.raises(SendRefused, match="chained confirmations"):
+        _guard_send(store, dict(draft, decision_id=decision_id, body=body), deal)
+
+
+def test_resetting_an_approved_draft_does_not_send_again(tmp_path, monkeypatch):
+    from src.desk.service import SendRefused, accept_review, draft_digest, ingest_message, send_draft
+
+    store, snapshot = _deal(tmp_path, monkeypatch, ceiling=40.0)
+    deal = snapshot["deal"]
+    supplier = snapshot["suppliers"][0]["id"]
+    opened = ingest_message(
+        store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 31.00 元",
+    )
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="31.00")
+    draft = next(item for item in store.drafts(deal["id"]) if item["status"] == "draft")
+    digest = draft_digest(draft["body"])
+    approved = asyncio.run(send_draft(store, draft["id"], human_approved=True, body_sha256=digest))
+    assert approved["status"] == "approved"
+    store.conn.execute(
+        "UPDATE drafts SET status = 'draft', human_approved = 0 WHERE id = ?",
+        (draft["id"],),
+    )
+    store.conn.commit()
+    with pytest.raises(SendRefused, match="already approved"):
+        asyncio.run(send_draft(store, draft["id"], human_approved=True, body_sha256=digest))
+
+
+def test_a_non_suggested_token_shows_its_line():
+    from src.desk.parse import parse_quote
+
+    parsed = parse_quote("We can do 14.80 CNY per piece.\nFinal offer 12.50 CNY per piece.")
+    spans = parsed["provenance"]["confirm_spans"]
+    assert parsed["provenance"]["suggested_token"] == "14.80"
+    assert "Final offer" in spans["12.50"]
+    assert spans["12.50"] != "12.50"
+    panel = _tree_text("src/web/static/js/desk.js")
+    assert "const span = mapped || lineContaining(item.raw_text, token);" in panel
+
+
+def test_mutation_runner_leaves_the_worktree_untouched(tmp_path):
+    roots = [item for item in os.environ.get("PYTHONPATH", "").split(os.pathsep) if item]
+    roots.append(str(Path(__file__).resolve().parents[2]))
+    script = None
+    for root in roots:
+        candidate = Path(root) / "scripts" / "mutation_sanity.py"
+        if candidate.is_file():
+            script = candidate
+            break
+    assert script is not None
+    spec = importlib.util.spec_from_file_location("mutation_sanity_under_test", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    live = Path(__file__).resolve().parents[2] / "src" / "desk" / "service.py"
+    original = live.read_bytes()
+    needle = "return draft_digest(body) == draft_digest(rendered)"
+    mutated = original.decode("utf-8").replace(needle, "return rendered in body", 1)
+    stage = module.stage_mutant(live, mutated)
+    try:
+        assert live.read_bytes() == original
+        staged = stage / "src" / "desk" / "service.py"
+        assert staged.is_file()
+        assert not staged.is_symlink()
+        assert "return rendered in body" in staged.read_text(encoding="utf-8")
+        assert live.read_bytes() == original
+    finally:
+        live.write_bytes(original)
+        shutil.rmtree(stage, ignore_errors=True)

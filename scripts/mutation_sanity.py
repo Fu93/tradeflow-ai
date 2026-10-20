@@ -1,13 +1,15 @@
 """Plant small bugs in the decision path and require the tests to kill each one.
 
-A mutant that still passes its test is a gap in the suite. The files are
-restored even when a mutant survives.
+A mutant is written to a temporary copy of the tree. The worktree files are
+not rewritten. A mutant that still passes its test is a gap in the suite.
 """
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -102,22 +104,123 @@ MUTANTS = [
         "return rendered in body",
         "tests/steps/test_reverify_blockers.py::test_send_refuses_a_draft_that_adds_a_second_price",
     ),
+    (
+        "src/desk/service.py",
+        "return decision_currency == chained_currency == body_currency",
+        "return True",
+        "tests/steps/test_reverify_blockers.py::test_send_refuses_a_decision_in_another_currency",
+    ),
+    (
+        "src/desk/service.py",
+        "return digest == ingested_hash and digest == chained_raw and price_ok and ask_ok and unit_ok and span_ok",
+        "return True",
+        "tests/steps/test_reverify_blockers.py::test_send_refuses_an_edited_confirmed_price",
+    ),
+    (
+        "src/desk/service.py",
+        "return same_counter and same_ceiling and same_unconfirmed and same_rivals and same_constants",
+        "return True",
+        "tests/steps/test_reverify_blockers.py::test_send_refuses_a_decision_with_forged_rivals",
+    ),
+    (
+        "src/desk/service.py",
+        "return not approved",
+        "return True",
+        "tests/steps/test_reverify_blockers.py::test_resetting_an_approved_draft_does_not_send_again",
+    ),
+    (
+        "src/desk/extract.py",
+        "if response is not None:\n        response.close()",
+        "if False:\n        response.close()",
+        "tests/steps/test_extractor_failover.py::test_abandoned_hop_stops_and_concurrency_is_bounded",
+    ),
+    (
+        "src/web/static/js/desk.js",
+        "const span = mapped || lineContaining(item.raw_text, token);",
+        "const span = token;",
+        "tests/steps/test_reverify_blockers.py::test_a_non_suggested_token_shows_its_line",
+    ),
+    (
+        "scripts/mutation_sanity.py",
+        "dest.write_text(mutated, encoding=\"utf-8\")",
+        "live.write_text(mutated, encoding=\"utf-8\")",
+        "tests/steps/test_reverify_blockers.py::test_mutation_runner_leaves_the_worktree_untouched",
+    ),
 ]
 
 
-def _purge_pyc(path: Path) -> None:
-    cache = path.parent / "__pycache__"
-    if not cache.is_dir():
-        return
-    for child in cache.glob(path.stem + "*.pyc"):
-        child.unlink(missing_ok=True)
+def _repo_of(path: Path) -> Path:
+    for parent in [path.resolve(), *path.resolve().parents]:
+        if (parent / "docs" / "constants_registry.json").is_file() and (parent / "src").is_dir():
+            return parent
+    raise RuntimeError(f"repo root not found from {path}")
 
 
-def _run(node: str) -> int:
+def _write_mutant(dest: Path, mutated: str, live: Path) -> None:
+    if dest == live:
+        raise RuntimeError("mutant copy must not be the worktree file")
+    dest.write_text(mutated, encoding="utf-8")
+
+
+def stage_mutant(path: Path, mutated: str) -> Path:
+    """A temp tree. The mutated file is a real copy. Package inits are copies too.
+
+    A symlinked ``__init__.py`` would retarget the package at the worktree, and
+    the mutant would never be imported.
+    """
+    stage = Path(tempfile.mkdtemp(prefix="tf-mutant-"))
+    live = path.resolve()
+    repo = _repo_of(live)
+    src_root = (repo / "src").resolve()
+    try:
+        live.relative_to(src_root)
+        under_src = True
+    except ValueError:
+        under_src = False
+    for dirpath, dirnames, filenames in os.walk(src_root):
+        dirnames[:] = [name for name in dirnames if name != "__pycache__"]
+        for name in filenames:
+            src_file = Path(dirpath) / name
+            dest = stage / src_file.relative_to(repo)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if src_file.resolve() == live:
+                _write_mutant(dest, mutated, live)
+            elif name == "__init__.py":
+                shutil.copyfile(src_file, dest)
+            else:
+                dest.symlink_to(src_file)
+    if not under_src:
+        dest = stage / live.relative_to(repo)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        _write_mutant(dest, mutated, live)
+    for name in ("models", "data", "docs"):
+        source = repo / name
+        if source.exists():
+            (stage / name).symlink_to(source, target_is_directory=True)
+    return stage
+
+
+def _run(node: str, stage: Path) -> int:
     env = dict(os.environ)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    parts = [str(stage), str(ROOT)]
+    prior = env.get("PYTHONPATH", "")
+    if prior:
+        parts.append(prior)
+    env["PYTHONPATH"] = os.pathsep.join(parts)
+    # conftest inserts the repo at sys.path[0] and then imports src. Preload the
+    # staged package so that import is the mutant, not the worktree.
+    runner = stage / "_mutant_pytest.py"
+    runner.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {str(stage)!r})\n"
+        "import src\n"
+        "import pytest\n"
+        "raise SystemExit(pytest.main(sys.argv[1:]))\n",
+        encoding="utf-8",
+    )
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", node, "-q", "--tb=no", "-p", "no:cacheprovider"],
+        [sys.executable, "-P", str(runner), node, "-q", "--tb=no", "--import-mode=importlib", "-p", "no:cacheprovider"],
         cwd=ROOT,
         check=False,
         env=env,
@@ -133,13 +236,11 @@ def main() -> int:
         if source.count(original) != 1:
             survived.append(f"{path}: pattern not unique ({source.count(original)}): {original}")
             continue
-        file.write_text(source.replace(original, mutant, 1), encoding="utf-8")
-        _purge_pyc(file)
+        stage = stage_mutant(file, source.replace(original, mutant, 1))
         try:
-            code = _run(node)
+            code = _run(node, stage)
         finally:
-            file.write_text(source, encoding="utf-8")
-            _purge_pyc(file)
+            shutil.rmtree(stage, ignore_errors=True)
         if code == 0:
             survived.append(f"SURVIVED {path}: {original!r} -> {mutant!r} ({node})")
         else:

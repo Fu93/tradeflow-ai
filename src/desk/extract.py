@@ -24,6 +24,7 @@ from src.config.heuristics import (
     EXTRACTOR_HTTP_TOO_MANY,
     EXTRACTOR_MAX_BYTES,
     EXTRACTOR_CHARS_PER_TOKEN,
+    EXTRACTOR_MAX_IN_FLIGHT,
     EXTRACTOR_MAX_OUTPUT_TOKENS,
     EXTRACTOR_MODEL,
     EXTRACTOR_NVIDIA_BASE_URL,
@@ -386,8 +387,38 @@ def _interpret(decoded: Any, model: str) -> dict[str, Any]:
     return result
 
 
+_http_lock = threading.Lock()
+_http_slots = threading.BoundedSemaphore(int(EXTRACTOR_MAX_IN_FLIGHT))
+
+
+def _http_semaphore() -> threading.BoundedSemaphore:
+    return _http_slots
+
+
+def _leave_http(slot: threading.BoundedSemaphore) -> None:
+    try:
+        slot.release()
+    except ValueError:
+        return
+
+
+def _cancel_http(response: Any) -> None:
+    if response is not None:
+        response.close()
+
+
+def _read_body(request: urllib.request.Request, timeout: float, box: dict[str, Any]) -> bytes:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        box["response"] = response
+        return response.read()
+
+
 def _post(base: str, body: dict[str, Any], timeout: float, keys: tuple[str, ...]) -> Any:
-    """One HTTP call. ``timeout`` is the total deadline, not a per-read socket timer."""
+    """One HTTP call. ``timeout`` is the total deadline, not a per-read socket timer.
+
+    The worker is closed when the deadline passes, and only
+    ``EXTRACTOR_MAX_IN_FLIGHT`` calls run at once.
+    """
     raw = json.dumps(body).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     key = _env(*keys)
@@ -396,19 +427,25 @@ def _post(base: str, body: dict[str, Any], timeout: float, keys: tuple[str, ...]
     request = urllib.request.Request(_chat_url(base), data=raw, headers=headers, method="POST")
     if timeout <= 0:
         raise TimeoutError("extractor deadline")
+    slot = _http_semaphore()
+    if not slot.acquire(blocking=False):
+        raise TimeoutError("extractor deadline")
     box: dict[str, Any] = {}
 
     def _run() -> None:
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                box["payload"] = response.read()
+            box["payload"] = _read_body(request, timeout, box)
         except BaseException as exc:
             box["error"] = exc
+        finally:
+            with _http_lock:
+                _leave_http(slot)
 
     worker = threading.Thread(target=_run, name="desk-extractor-http", daemon=True)
     worker.start()
     worker.join(timeout)
     if worker.is_alive():
+        _cancel_http(box.get("response"))
         raise TimeoutError("extractor deadline")
     if "error" in box:
         raise box["error"]

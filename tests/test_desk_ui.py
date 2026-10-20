@@ -155,6 +155,18 @@ def test_desk_page_updates_when_mail_arrives():
                 "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
             )
             assert overflow <= 1
+            page.fill(
+                "#paste-text",
+                "We can do 14.80 CNY per piece.\nFinal offer 12.50 CNY per piece.",
+            )
+            page.locator("#paste-form button[type=submit]").click()
+            other = page.locator("#review .desk-event").last.get_by_role("button", name="12.50", exact=True)
+            other.wait_for(timeout=10000)
+            other.click()
+            span = page.locator("#review .desk-event").last.locator("[data-confirm-span]").get_attribute(
+                "data-confirm-span"
+            )
+            assert span and "Final offer" in span and "12.50" in span
             page.fill("#paste-text", "Price around 33-35 CNY depending on finish.")
             page.locator("#paste-form button[type=submit]").click()
             review = page.locator("#review select").last

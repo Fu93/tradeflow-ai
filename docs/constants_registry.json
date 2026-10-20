@@ -823,6 +823,11 @@
       "category": "d",
       "justification": "Ceiling on extractor completion tokens. A long message may exceed the floor, and a truncated completion still fails closed."
     },
+    "EXTRACTOR_MAX_IN_FLIGHT": {
+      "value": 4,
+      "category": "n",
+      "justification": "How many extractor HTTP calls may run at once. A hop that misses its deadline is abandoned, and a further call waits for a free slot."
+    },
     "EXTRACTOR_HTTP_TOO_MANY": {
       "value": 429,
       "category": "n",

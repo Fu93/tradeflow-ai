@@ -381,6 +381,14 @@
         reviewChoice.set(item.id, { supplierId: item.supplier_id || saved.supplierId || "", token: chosen });
       }
       const note = document.createElement("p");
+      function lineContaining(raw, token) {
+        const lines = String(raw || "").split(/\r?\n/);
+        for (let i = 0; i < lines.length; i += 1) {
+          const line = lines[i];
+          if (token && line.indexOf(token) >= 0 && line.trim()) return line.trim();
+        }
+        return "";
+      }
       function showConfirm(token) {
         if (!token) {
           note.hidden = true;
@@ -389,9 +397,8 @@
           delete note.dataset.confirmSpan;
           return;
         }
-        const span = token === suggested && provenance.confirm_span
-          ? provenance.confirm_span
-          : token;
+        const mapped = provenance.confirm_spans && provenance.confirm_spans[token];
+        const span = mapped || lineContaining(item.raw_text, token);
         note.hidden = false;
         note.dataset.confirmValue = token;
         note.dataset.confirmSpan = span;

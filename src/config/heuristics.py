@@ -543,6 +543,11 @@ EXTRACTOR_CHARS_PER_TOKEN = 4
 # more than the floor, and a truncated completion still fails closed.
 EXTRACTOR_OUTPUT_TOKEN_CAP = 32768
 
+# Rationale: how many extractor HTTP calls may be in flight at once. A hop
+# that misses its deadline is abandoned, and further calls wait for a free
+# slot instead of starting another socket.
+EXTRACTOR_MAX_IN_FLIGHT = 4
+
 # Rationale: HTTP status that means the extractor was rate limited. That
 # status retries the next hop. It is not a price and not a quote amount.
 EXTRACTOR_HTTP_TOO_MANY = 429

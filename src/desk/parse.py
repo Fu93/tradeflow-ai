@@ -763,6 +763,9 @@ def parse_quote(
             else (chosen["value"] if chosen is not None and chosen.get("token") == suggested else _settled(suggested))
         ),
         "confirm_span": None if not suggested else _confirm_span(stage_text, suggested),
+        "confirm_spans": {
+            token: _confirm_span(stage_text, token) for token in candidate_tokens if token
+        },
         "review_reason": None if accepted else reason,
     }
     return {

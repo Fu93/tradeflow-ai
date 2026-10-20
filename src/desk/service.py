@@ -22,7 +22,7 @@ from src.config.heuristics import (
 )
 from src.desk import mailbox, recompute
 from src.desk.names import supplier_name_key
-from src.desk.parse import parse_quote, price_from_token
+from src.desk.parse import _confirm_span, _visible_text, parse_quote, price_from_token
 from src.desk.store import DeskRejected, DeskStore, get_store
 
 logger = logging.getLogger("tradeflow.desk")
@@ -155,6 +155,18 @@ def create_deal(
             }
             for item in suppliers
         ],
+    )
+    store.append_chain(
+        deal["id"],
+        "deal_opened",
+        {
+            "currency": code,
+            "ceiling": float(ceiling_price),
+            "target_price": float(target_price),
+            "quantity": int(quantity),
+            "product": product.strip(),
+            "risk_tolerance": risk,
+        },
     )
     return publish(store, deal["id"])
 
@@ -677,6 +689,7 @@ def accept_review(
             provenance=provenance,
         )
         store.touch(deal_id)
+        raw_text = str(event.get("raw_text") or "")
         store.append_chain(
             deal_id,
             "review",
@@ -685,7 +698,18 @@ def accept_review(
                 "from": event["status"],
                 "to": "accepted",
                 "event_id": event_id,
+                "supplier_id": supplier_id,
                 "token": chosen_token,
+                "value": float(price),
+                "currency": currency,
+                "unit": "per_piece",
+                "span": _confirm_span(_visible_text(raw_text), str(chosen_token)),
+                "raw_sha256": hashlib.sha256(raw_text.encode("utf-8")).hexdigest(),
+                "freight": parsed.get("freight"),
+                "duty_rate": parsed.get("duty_rate"),
+                "fees": parsed.get("fees"),
+                "origin": str(provenance.get("origin") or ""),
+                "simulated": bool(provenance.get("simulated")),
             },
         )
         publish(store, deal_id)
@@ -926,7 +950,13 @@ def _supplier_decisions(entries: list[dict[str, Any]], supplier_id: str) -> list
     return rows
 
 
-def _rendered_draft(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any], counter: float) -> str:
+def _rendered_draft(
+    store: DeskStore,
+    draft: dict[str, Any],
+    opened: dict[str, Any],
+    counter: float,
+    currency: str,
+) -> str:
     from src.desk.project import draft_body
     from src.desk.project import _language
 
@@ -936,12 +966,239 @@ def _rendered_draft(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any
         if str(event.get("supplier_id") or "") == str(draft.get("supplier_id") or "")
     ]
     return draft_body(
-        str(deal.get("product") or ""),
+        str(opened.get("product") or ""),
         float(counter),
-        int(deal.get("quantity") or 0),
+        int(opened.get("quantity") or 0),
         _language(texts),
-        str(deal.get("currency") or DEAL_CURRENCY),
+        currency,
     )
+
+
+def _deal_opened(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    for entry in entries:
+        if entry.get("type") == "deal_opened":
+            return dict(entry.get("payload") or {})
+    return {}
+
+
+def _body_currency(body: str) -> str:
+    if "元" in body:
+        return str(DEAL_CURRENCY)
+    padded = f" {body} "
+    for code in DEAL_CURRENCIES:
+        if f" {code} " in padded:
+            return str(code)
+    return ""
+
+
+def _currencies_agree(decision_currency: str, chained_currency: str, body_currency: str) -> bool:
+    return decision_currency == chained_currency == body_currency
+
+
+def _first_ingest_hash(entries: list[dict[str, Any]], event_id: str) -> str:
+    for entry in entries:
+        if entry.get("type") != "quote_ingested":
+            continue
+        payload = entry.get("payload") or {}
+        if str(payload.get("event_id") or "") == str(event_id):
+            return str(payload.get("raw_sha256") or "")
+    return ""
+
+
+def _latest_review(entries: list[dict[str, Any]], supplier_id: str) -> dict[str, Any] | None:
+    chosen: dict[str, Any] | None = None
+    for entry in entries:
+        if entry.get("type") != "review":
+            continue
+        payload = entry.get("payload") or {}
+        if payload.get("to") != "accepted":
+            continue
+        if str(payload.get("supplier_id") or "") != str(supplier_id):
+            continue
+        chosen = dict(payload)
+    return chosen
+
+
+def _review_binds_ok(raw_text: str, review: dict[str, Any], ask: float, ingested_hash: str) -> bool:
+    """The raw message, the re-derived price, and the chained review are one confirmation."""
+    digest = hashlib.sha256((raw_text or "").encode("utf-8")).hexdigest()
+    chained_raw = str(review.get("raw_sha256") or "")
+    token = str(review.get("token") or "")
+    currency = str(review.get("currency") or "")
+    derived = price_from_token(raw_text, token, deal_currency=currency or None)
+    span = _confirm_span(_visible_text(raw_text), token)
+    chained_value = review.get("value")
+    tolerance = float(OPT_TOL) * max(1.0, abs(float(chained_value or 0.0)), abs(float(ask)))
+    price_ok = (
+        derived is not None
+        and chained_value is not None
+        and abs(float(derived) - float(chained_value)) <= tolerance
+    )
+    ask_ok = chained_value is not None and abs(float(ask) - float(chained_value)) <= tolerance
+    unit_ok = str(review.get("unit") or "") == "per_piece"
+    span_ok = span == str(review.get("span") or "")
+    return digest == ingested_hash and digest == chained_raw and price_ok and ask_ok and unit_ok and span_ok
+
+
+def _close_amount(left: float, right: float) -> bool:
+    tolerance = float(OPT_TOL) * max(1.0, abs(float(left)), abs(float(right)))
+    return abs(float(left) - float(right)) <= tolerance
+
+
+def _lists_close(left: Any, right: Any) -> bool:
+    try:
+        first = sorted(float(item) for item in (left or ()))
+        second = sorted(float(item) for item in (right or ()))
+    except (TypeError, ValueError):
+        return False
+    if len(first) != len(second):
+        return False
+    return all(_close_amount(item, other) for item, other in zip(first, second, strict=True))
+
+
+def _chain_decision_equal(record: dict[str, Any], recomputed: dict[str, Any]) -> bool:
+    counter = record.get("counter")
+    fresh = recomputed.get("counter")
+    ceiling = record.get("ceiling")
+    chained_ceiling = recomputed.get("ceiling")
+    if counter is None or fresh is None or ceiling is None or chained_ceiling is None:
+        return False
+    same_counter = _close_amount(float(counter), float(fresh))
+    same_ceiling = _close_amount(float(ceiling), float(chained_ceiling))
+    same_unconfirmed = int(record.get("unconfirmed") or 0) == int(recomputed.get("unconfirmed") or 0)
+    same_rivals = _lists_close(record.get("rival_asks"), recomputed.get("rival_asks"))
+    same_constants = (record.get("constants") or {}) == (recomputed.get("constants") or {})
+    return same_counter and same_ceiling and same_unconfirmed and same_rivals and same_constants
+
+
+def _price_in_message(raw_text: str, review: dict[str, Any], currency: str) -> float | None:
+    """The amount the raw message states for this confirmation.
+
+    The chained token is read first. A rewritten message no longer contains
+    that token, so the amount now on the line is what a bypassed bind would
+    price. The bind itself is what requires the amount to equal the chain.
+    """
+    token = str(review.get("token") or "")
+    derived = price_from_token(raw_text, token, deal_currency=currency or None)
+    if derived is not None:
+        return float(derived)
+    reading = parse_quote(raw_text, deal_currency=currency or None)
+    suggested = str((reading.get("provenance") or {}).get("suggested_token") or "")
+    if not suggested:
+        return None
+    fallback = price_from_token(raw_text, suggested, deal_currency=currency or None)
+    if fallback is None:
+        return None
+    return float(fallback)
+
+
+def _ignored_quote(payload: dict[str, Any]) -> bool:
+    if payload.get("simulated"):
+        return True
+    return str(payload.get("origin") or "") in {"simulated", "fixture"}
+
+
+def _recompute_from_chain(
+    store: DeskStore,
+    draft: dict[str, Any],
+    entries: list[dict[str, Any]],
+    record: dict[str, Any],
+) -> dict[str, Any]:
+    """The counter the chained confirmations and the chained ceiling issue."""
+    from src.desk.decide import decide_supplier
+    from src.desk.record import constants_snapshot
+    from src.desk.recompute import _landed_consistent_rivals
+    from src.engine.landed import landed_unit_cost, ranking_basis
+    from src.engine.reserve import ReserveState
+
+    opened = _deal_opened(entries)
+    currency = str(opened.get("currency") or "")
+    ceiling = opened.get("ceiling")
+    events = {str(event["id"]): event for event in store.events(draft["deal_id"])}
+    asks: dict[str, float] = {}
+    landed_by_id: dict[str, dict[str, Any]] = {}
+    unconfirmed = 0
+    for entry in entries:
+        if entry.get("type") != "review":
+            continue
+        payload = entry.get("payload") or {}
+        if payload.get("to") != "accepted" or _ignored_quote(payload):
+            continue
+        event_id = str(payload.get("event_id") or "")
+        event = events.get(event_id)
+        raw_text = "" if event is None else str(event.get("raw_text") or "")
+        ingested = _first_ingest_hash(entries, event_id)
+        supplier_id = str(payload.get("supplier_id") or "")
+        raw_value = payload.get("value")
+        try:
+            ask_hint = 0.0 if raw_value is None else float(raw_value)
+        except (TypeError, ValueError):
+            ask_hint = 0.0
+        if not supplier_id or not _review_binds_ok(raw_text, payload, ask_hint, ingested):
+            if event is not None and (event.get("parsed") or {}).get("unit_price") is not None:
+                unconfirmed += 1
+            continue
+        derived = _price_in_message(raw_text, payload, currency)
+        if derived is None:
+            unconfirmed += 1
+            continue
+        asks[supplier_id] = float(derived)
+        landed_by_id[supplier_id] = landed_unit_cost(
+            unit_price=float(derived),
+            freight=payload.get("freight"),
+            duty_rate=payload.get("duty_rate"),
+            fees=payload.get("fees"),
+            currency=currency or None,
+            base_currency=currency or None,
+        )
+    supplier_id = str(record.get("supplier_id") or "")
+    basis = ranking_basis([landed_by_id[key] for key in asks if key in landed_by_id])
+    rivals = (
+        _landed_consistent_rivals(supplier_id, asks, landed_by_id, basis)
+        if supplier_id in asks
+        else []
+    )
+    snapshot = constants_snapshot()
+    if ceiling is None or supplier_id not in asks:
+        return {
+            "counter": None,
+            "ceiling": None if ceiling is None else float(ceiling),
+            "unconfirmed": unconfirmed,
+            "rival_asks": [float(item) for item in rivals],
+            "constants": snapshot,
+        }
+    choice = decide_supplier(
+        ask=float(asks[supplier_id]),
+        rivals=[float(item) for item in rivals],
+        ceiling=float(ceiling),
+        state=ReserveState.policy().with_reference(float(asks[supplier_id])),
+        risk_cap=float(opened.get("risk_tolerance") or 0.0),
+    )
+    fresh = min(float(choice.default_counter), float(ceiling), float(asks[supplier_id]))
+    held = record.get("held_previous_counter")
+    if held is not None and float(held) < fresh:
+        fresh = float(held)
+    return {
+        "counter": fresh,
+        "ceiling": float(ceiling),
+        "unconfirmed": unconfirmed,
+        "rival_asks": [float(item) for item in rivals],
+        "constants": snapshot,
+    }
+
+
+def _send_is_new(entries: list[dict[str, Any]], draft_id: str, digest: str) -> bool:
+    """One approval per draft body. A failed transmission may be tried again."""
+    approved = False
+    for entry in entries:
+        payload = entry.get("payload") or {}
+        if str(payload.get("draft_id") or "") != str(draft_id):
+            continue
+        if entry.get("type") == "send_approved" and str(payload.get("body_sha256") or "") == digest:
+            approved = True
+        if entry.get("type") == "send_result" and payload.get("status") == "failed":
+            approved = False
+    return not approved
 
 
 def _fresh_counter(record: dict[str, Any]) -> float:
@@ -1040,10 +1297,24 @@ def _guard_send(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any]) -
     tolerance = float(OPT_TOL) * max(1.0, abs(float(counter)))
     if abs(float(counter) - recomputed) > tolerance:
         raise SendRefused("The stored counter does not match a fresh decision.")
-    rendered = _rendered_draft(store, draft, deal, float(counter))
+    entries = list(chain.get("entries") or [])
+    opened = _deal_opened(entries)
+    chained_currency = str(opened.get("currency") or "")
+    rendered = _rendered_draft(store, draft, opened, float(counter), chained_currency)
+    if not _currencies_agree(str(record.get("currency") or ""), chained_currency, _body_currency(rendered)):
+        raise SendRefused("The decision currency is not the chained deal currency.")
+    review = _latest_review(entries, str(draft.get("supplier_id") or ""))
+    review_event = None if review is None else store.event(str(draft["deal_id"]), str(review.get("event_id") or ""))
+    raw_text = "" if review_event is None else str(review_event.get("raw_text") or "")
+    ingested_hash = "" if review is None else _first_ingest_hash(entries, str(review.get("event_id") or ""))
+    if review is None or not _review_binds_ok(raw_text, review, float(ask), ingested_hash):
+        raise SendRefused("The confirmed price is not the chained review.")
+    if not _chain_decision_equal(record, _recompute_from_chain(store, draft, entries, record)):
+        raise SendRefused("The stored counter is not the decision chained confirmations issue.")
     if not _body_is_rendered(str(draft.get("body") or ""), rendered):
         raise SendRefused("The draft text is not the rendered counter.")
-    if float(counter) - float(ceiling) > tolerance:
+    chained_ceiling = opened.get("ceiling")
+    if chained_ceiling is None or float(counter) - float(chained_ceiling) > tolerance:
         raise SendRefused("The counter is above the current ceiling.")
     return record
 
@@ -1074,6 +1345,9 @@ async def send_draft(
             raise DraftStale("This draft changed. Read the new text and approve it again.")
         if draft["status"] not in {"draft", "failed", "approved"}:
             raise DraftStale("This draft changed. Read the new text and approve it again.")
+        prior_chain = store.verify_chain(draft["deal_id"])
+        if not prior_chain["ok"] or not _send_is_new(list(prior_chain.get("entries") or []), draft_id, digest):
+            raise SendRefused("This draft was already approved.")
         deal = store.get_deal(draft["deal_id"])
         supplier = store.supplier(draft["deal_id"], draft["supplier_id"])
         if deal is None or supplier is None:

@@ -5,6 +5,8 @@ import hashlib
 import io
 import json
 import threading
+
+import pytest
 import urllib.error
 import urllib.request
 from email.message import Message
@@ -346,6 +348,73 @@ def test_timeout_env_overrides_the_registry(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
     extract_mentions("unit price 18.40 USD")
     assert seen == [3.0]
+
+
+def test_abandoned_hop_stops_and_concurrency_is_bounded(monkeypatch):
+    import time
+
+    import src.desk.extract as extract
+
+    class _Hung:
+        def __init__(self):
+            self.done = threading.Event()
+
+        def read(self, *_args, **_kwargs):
+            self.done.wait(30)
+            return b"{}"
+
+        def close(self):
+            self.done.set()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    hung = {}
+
+    def _urlopen(request, timeout=0):
+        del request, timeout
+        response = _Hung()
+        hung["response"] = response
+        return response
+
+    monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
+    before = {thread.ident for thread in threading.enumerate()}
+    started = time.monotonic()
+    try:
+        with pytest.raises(TimeoutError):
+            extract._post("https://example.test", {"model": "x"}, 0.2, ("TRADEFLOW_LLM_API_KEY",))
+        assert time.monotonic() - started < 2
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            alive = [
+                thread for thread in threading.enumerate()
+                if thread.name == "desk-extractor-http"
+                and thread.ident not in before
+                and thread.is_alive()
+            ]
+            if not alive:
+                break
+            time.sleep(0.02)
+        else:
+            raise AssertionError("extractor worker still running after the deadline")
+        original = extract._http_slots
+        blocked = threading.BoundedSemaphore(1)
+        assert blocked.acquire(blocking=False)
+        extract._http_slots = blocked
+        try:
+            began = time.monotonic()
+            with pytest.raises(TimeoutError):
+                extract._post("https://example.test", {"model": "x"}, 5, ("TRADEFLOW_LLM_API_KEY",))
+            assert time.monotonic() - began < 0.5
+        finally:
+            extract._http_slots = original
+    finally:
+        response = hung.get("response")
+        if response is not None:
+            response.close()
 
 
 def test_hop_timeout_is_a_total_deadline(monkeypatch):
