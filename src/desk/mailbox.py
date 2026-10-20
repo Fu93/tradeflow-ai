@@ -77,10 +77,12 @@ def _tls_context() -> ssl.SSLContext:
 
 
 def parse_rfc822(raw: bytes) -> dict[str, Any]:
+    from src.desk.input_checks import message_id_or_blank, references_or_blank
+
     message = email.message_from_bytes(raw)
     _name, address = email.utils.parseaddr(message.get("From") or "")
-    message_id = (message.get("Message-ID") or "").strip()
-    references = (message.get("References") or "").strip()
+    message_id = message_id_or_blank(message.get("Message-ID") or "")
+    references = references_or_blank(message.get("References") or "")
     return {
         "sender": address or "",
         "message_id": message_id,

@@ -10,7 +10,7 @@ from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 from src.app.security import require_desk_mutation
 from src.desk.mailbox import MailboxError
@@ -23,6 +23,7 @@ from src.config.heuristics import (
     RISK_TOLERANCE_MAX,
 )
 from src.desk.audit_chain import ChainKeyMissing
+from src.desk.input_checks import require_address, require_plain
 from src.desk.names import supplier_name_key
 from src.desk.service import (
     BUS,
@@ -30,10 +31,13 @@ from src.desk.service import (
     DraftStale,
     SendRefused,
     accept_review,
+    confirm_policy,
     confirm_supplier_address,
     create_deal,
     ingest_message,
+    migrate_deal,
     record_outcome,
+    reanchor_deal,
     reopen_supplier,
     set_assumptions,
     poll_gmail_once,
@@ -53,6 +57,11 @@ class SupplierIn(BaseModel):
     address: str = Field(min_length=1, max_length=320)
     channel: str = Field(default="email", max_length=40)
 
+    @field_validator("address")
+    @classmethod
+    def _address(cls, value: str) -> str:
+        return require_address(value)
+
 
 class DealIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -69,6 +78,11 @@ class DealIn(BaseModel):
     seed: int = Field(default=11, ge=0, le=2_000_000_000)
     currency: Literal["CNY", "USD", "EUR"] = cast(Literal["CNY", "USD", "EUR"], DEAL_CURRENCY)
     suppliers: list[SupplierIn] = Field(min_length=4, max_length=5)
+
+    @field_validator("product")
+    @classmethod
+    def _product(cls, value: str) -> str:
+        return require_plain(value, "Product")
 
     @model_validator(mode="after")
     def _bounds(self):
@@ -123,6 +137,37 @@ class AddressIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     address: str = Field(min_length=1, max_length=320)
     name: str | None = Field(default=None, max_length=200)
+    human_confirmed: StrictBool
+
+    @field_validator("address")
+    @classmethod
+    def _address(cls, value: str) -> str:
+        return require_address(value)
+
+
+class MigrateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    human_confirmed: StrictBool
+
+
+class PolicyIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    human_confirmed: StrictBool
+    product: str = Field(min_length=1, max_length=200)
+    quantity: int = Field(ge=1, le=10_000_000)
+    target_price: float = Field(gt=0, allow_inf_nan=False)
+    ceiling_price: float = Field(gt=0, allow_inf_nan=False)
+    risk_tolerance: float = Field(ge=RISK_TOLERANCE_FLOOR, le=RISK_TOLERANCE_MAX, allow_inf_nan=False)
+    currency: Literal["CNY", "USD", "EUR"] = cast(Literal["CNY", "USD", "EUR"], DEAL_CURRENCY)
+
+    @field_validator("product")
+    @classmethod
+    def _product(cls, value: str) -> str:
+        return require_plain(value, "Product")
+
+
+class ReanchorIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     human_confirmed: StrictBool
 
 
@@ -277,6 +322,46 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 offer=body.offer,
                 agreed_price=body.agreed_price,
             )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="No such deal") from exc
+        except DeskRejected as exc:
+            raise _rejected(exc) from exc
+
+    @api_v1.post("/desk/deals/{deal_id}/migrate")
+    def post_migrate(deal_id: str, body: MigrateIn, _: str = Depends(require_desk_mutation)):
+        _ident(deal_id)
+        try:
+            return migrate_deal(get_store(), deal_id, human_confirmed=body.human_confirmed)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="No such deal") from exc
+        except DeskRejected as exc:
+            raise _rejected(exc) from exc
+
+    @api_v1.post("/desk/deals/{deal_id}/policy")
+    def post_policy(deal_id: str, body: PolicyIn, _: str = Depends(require_desk_mutation)):
+        _ident(deal_id)
+        try:
+            return confirm_policy(
+                get_store(),
+                deal_id,
+                human_confirmed=body.human_confirmed,
+                product=body.product,
+                quantity=body.quantity,
+                target_price=body.target_price,
+                ceiling_price=body.ceiling_price,
+                risk_tolerance=body.risk_tolerance,
+                currency=body.currency,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="No such deal") from exc
+        except DeskRejected as exc:
+            raise _rejected(exc) from exc
+
+    @api_v1.post("/desk/deals/{deal_id}/reanchor")
+    def post_reanchor(deal_id: str, body: ReanchorIn, _: str = Depends(require_desk_mutation)):
+        _ident(deal_id)
+        try:
+            return reanchor_deal(get_store(), deal_id, human_confirmed=body.human_confirmed)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="No such deal") from exc
         except DeskRejected as exc:

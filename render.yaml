@@ -1,22 +1,25 @@
-# TradeFlow public demo. Offline until a real VLLM_API_KEY is set in the dashboard.
-# Apply from the Render Blueprint screen. This file does not assign a hostname.
+# Live service tradeflow-ai-demo (Frankfurt, Docker, 0.5 CPU / 512 MB).
+# https://tradeflow-ai-demo.onrender.com
+# Apply from the Render Blueprint screen. The service name matches the live service.
 # PORT is injected by Render; the process binds 0.0.0.0:$PORT. Do not set PORT here.
 # Do not set a dockerCommand. The image CMD is the only server process.
-# A second command, or WEB_CONCURRENCY above 1, binds the same port twice
-# and the restart loop prints "Port 10000 is already in use".
+# WEB_CONCURRENCY is 1. A second command, or a higher value, binds port 10000 twice.
 services:
   - type: web
-    name: tradeflow-ai
+    name: tradeflow-ai-demo
     runtime: docker
-    plan: free
+    plan: starter
+    region: frankfurt
+    branch: master
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health
     envVars:
-      # Sandbox is the auction demo. Desk reads still require TRADEFLOW_API_KEY.
-      # This file does not contain a token that can read supplier mail.
+      # Sandbox is the auction demo. Desk reads and sends need the secrets below.
       - key: TRADEFLOW_ENV
         value: sandbox
+      - key: WEB_CONCURRENCY
+        value: "1"
       - key: TRADEFLOW_SOLVER_BACKEND
         value: numpy
       - key: VLLM_BASE_URL
@@ -31,6 +34,12 @@ services:
         sync: false
       - key: TRADEFLOW_API_KEY
         sync: false
+      - key: TRADEFLOW_CHAIN_KEY
+        sync: false
+      - key: TRADEFLOW_CHAIN_KEY_ID
+        sync: false
+      - key: TRADEFLOW_WEBHOOK_TOKEN
+        sync: false
       - key: DESK_N_SAMPLES
         value: "5000"
       - key: DESK_N_GRID
@@ -39,5 +48,3 @@ services:
         value: "1"
       - key: IMAP_LOOKBACK_DAYS
         value: "14"
-      - key: TRADEFLOW_WEBHOOK_TOKEN
-        sync: false

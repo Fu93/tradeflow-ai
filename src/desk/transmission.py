@@ -10,6 +10,7 @@ import hashlib
 from typing import Any
 
 from src.desk.audit_chain import canonical
+from src.desk.input_checks import message_id_ok, references_or_blank
 
 
 def counter_subject(product: str) -> str:
@@ -17,11 +18,8 @@ def counter_subject(product: str) -> str:
 
 
 def join_references(prior: str | None, message_id: str) -> str:
-    parts: list[str] = []
-    for token in str(prior or "").split():
-        if token and token not in parts:
-            parts.append(token)
-    if message_id and message_id not in parts:
+    parts = references_or_blank(prior).split()
+    if message_id_ok(message_id) and message_id not in parts:
         parts.append(message_id)
     return " ".join(parts)
 
@@ -75,7 +73,7 @@ def reply_headers(entries: list[dict[str, Any]], supplier_id: str) -> tuple[str,
         if str(payload.get("supplier_id") or "") != str(supplier_id):
             continue
         message_id = str(payload.get("message_id") or "").strip()
-        if not message_id:
+        if not message_id_ok(message_id):
             continue
         reply_to = message_id
         references = join_references(str(payload.get("references") or ""), message_id)

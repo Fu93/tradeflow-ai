@@ -705,17 +705,50 @@ def test_legacy_deal_needs_a_fresh_confirmation(tmp_path, monkeypatch):
     accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60")
     store.close()
     reopened = DeskStore(path)
+    untouched = reopened.verify_chain(deal_id)
+    assert all(not (entry.get("payload") or {}).get("migrated") for entry in untouched["entries"])
+    reopened.conn.execute("DROP TRIGGER IF EXISTS desk_chain_no_update")
+    reopened.conn.execute("DROP TRIGGER IF EXISTS desk_chain_no_delete")
+    reopened.conn.execute("DELETE FROM desk_chain WHERE deal_id = ?", (deal_id,))
+    reopened.conn.commit()
+    reopened.migrate_deal(deal_id)
     chain = reopened.verify_chain(deal_id)
     opened = next(entry for entry in chain["entries"] if entry["type"] == "deal_opened")
     assert opened["payload"]["migrated"] is True
     assert opened["payload"]["note"] == "migrated, pre-chain inputs unverified"
     assert reopened.event(deal_id, ingested["event"]["id"])["status"] == "review"
+    from src.desk.service import confirm_policy, confirm_supplier_address
+
     draft = next(item for item in reopened.drafts(deal_id) if item["status"] == "draft")
     with pytest.raises(SendRefused, match="pre-chain inputs unverified"):
         asyncio.run(
             send_draft(reopened, draft["id"], human_approved=True, body_sha256=draft_digest(draft["body"]))
         )
-    accept_review(reopened, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60")
+    fresh = ingest_message(
+        reopened, deal_id, source="paste", supplier_id=supplier, raw_text="unit price 15.60 CNY per piece",
+    )
+    accept_review(reopened, deal_id, fresh["event"]["id"], supplier, chosen_token="15.60")
+    draft = next(item for item in reopened.drafts(deal_id) if item["supplier_id"] == supplier and item["status"] == "draft")
+    with pytest.raises(SendRefused, match="policy limits"):
+        asyncio.run(
+            send_draft(reopened, draft["id"], human_approved=True, body_sha256=draft_digest(draft["body"]))
+        )
+    limits = reopened.get_deal(deal_id)
+    confirm_policy(
+        reopened,
+        deal_id,
+        human_confirmed=True,
+        product=limits["product"],
+        quantity=limits["quantity"],
+        target_price=limits["target_price"],
+        ceiling_price=limits["ceiling_price"],
+        risk_tolerance=limits["risk_tolerance"],
+        currency=limits["currency"],
+    )
+    for row in reopened.suppliers(deal_id):
+        confirm_supplier_address(
+            reopened, deal_id, row["id"], address=row["address"], human_confirmed=True,
+        )
     draft = next(item for item in reopened.drafts(deal_id) if item["supplier_id"] == supplier and item["status"] == "draft")
     sent = asyncio.run(
         send_draft(reopened, draft["id"], human_approved=True, body_sha256=draft_digest(draft["body"]))
@@ -1043,6 +1076,8 @@ def test_pre_key_chain_is_archived_and_reconfirmed(tmp_path, monkeypatch):
     from src.desk.store import DeskStore
 
     reopened = DeskStore(path)
+    assert reopened.conn.execute("SELECT COUNT(*) FROM desk_chain_legacy").fetchone()[0] == 0
+    reopened.migrate_deal(deal_id)
     chain = reopened.verify_chain(deal_id)
     assert chain["ok"] is True
     opened = next(entry for entry in chain["entries"] if entry["type"] == "deal_opened")
@@ -1063,6 +1098,29 @@ def test_pre_key_chain_is_archived_and_reconfirmed(tmp_path, monkeypatch):
             send_draft(reopened, draft["id"], human_approved=True, body_sha256=draft_digest(draft["body"]))
         )
     accept_review(reopened, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60")
+    draft = next(item for item in reopened.drafts(deal_id) if item["supplier_id"] == supplier and item["status"] == "draft")
+    with pytest.raises(SendRefused, match="policy limits"):
+        asyncio.run(
+            send_draft(reopened, draft["id"], human_approved=True, body_sha256=draft_digest(draft["body"]))
+        )
+    from src.desk.service import confirm_policy, confirm_supplier_address
+
+    limits = reopened.get_deal(deal_id)
+    confirm_policy(
+        reopened,
+        deal_id,
+        human_confirmed=True,
+        product=limits["product"],
+        quantity=limits["quantity"],
+        target_price=limits["target_price"],
+        ceiling_price=limits["ceiling_price"],
+        risk_tolerance=limits["risk_tolerance"],
+        currency=limits["currency"],
+    )
+    for row in reopened.suppliers(deal_id):
+        confirm_supplier_address(
+            reopened, deal_id, row["id"], address=row["address"], human_confirmed=True,
+        )
     draft = next(item for item in reopened.drafts(deal_id) if item["supplier_id"] == supplier and item["status"] == "draft")
     sent = asyncio.run(
         send_draft(reopened, draft["id"], human_approved=True, body_sha256=draft_digest(draft["body"]))

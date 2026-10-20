@@ -250,7 +250,7 @@ class InboundIntentClassifier:
         r"USD|US\$|RMB|CNY|EUR|HKD|NTD|TWD|GBP|JPY|美元|美金|[¥￥$]"
     )
     _CURRENCY_SUFFIX = (
-        r"USD|US\$|RMB|CNY|EUR|HKD|NTD|TWD|GBP|JPY|美元|美金|元|块|塊"
+        r"USD|US\$|RMB|CNY|EUR|HKD|NTD|TWD|GBP|JPY|美元|美金|元|块|塊|dollars?"
     )
     # Thousands separators and a decimal comma. Alternation is left-first and
     # bounded, so "1,000" is not read as 1 and "3,20" is not read as 3.
@@ -392,7 +392,7 @@ class InboundIntentClassifier:
         compact = token.strip().upper()
         if compact in {"RMB", "CNY", "元", "块", "塊", "¥", "￥"}:
             return "CNY"
-        if compact in {"USD", "US$", "$", "美元", "美金"}:
+        if compact in {"USD", "US$", "$", "美元", "美金", "DOLLAR", "DOLLARS"}:
             return "USD"
         return compact
 

@@ -309,6 +309,9 @@
         : money(supplier.latest_quote, supplier.currency || "CNY");
       line(card, "Record: " + (supplier.origin || "live"));
       line(card, "Latest quote: " + quote);
+      if (supplier.quote_confirmed === false) {
+        line(card, "This quote is not confirmed.");
+      }
       const landed = supplier.landed_status === "complete" && supplier.landed_cost != null
         ? money(supplier.landed_cost, "CNY")
         : "no data";
@@ -494,7 +497,10 @@
       const block = document.createElement("div");
       block.className = "desk-event";
       const fixture = item.provenance && item.provenance.fixture ? " · " + item.provenance.fixture : "";
-      line(block, formatWhen(item.received_at) + " · " + (item.source || "") + " · " + (item.status || "") + fixture);
+      const shown = item.status === "accepted"
+        ? "accepted"
+        : (item.status === "rejected" ? "rejected" : "unconfirmed");
+      line(block, formatWhen(item.received_at) + " · " + (item.source || "") + " · " + shown + fixture);
       const pre = document.createElement("pre");
       pre.textContent = item.raw_text || "";
       block.appendChild(pre);

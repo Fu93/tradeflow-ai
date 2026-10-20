@@ -3,16 +3,26 @@
 entry_hash = HMAC-SHA256(key, canonical JSON of
 {deal_id, seq, type, ts, payload, prev_hash, key_id}).
 
+A row written before key ids were stored (the round-5 chain) has an empty
+key_id. Its MAC is HMAC-SHA256 of {deal_id, seq, type, ts, payload, prev_hash}
+with TRADEFLOW_CHAIN_KEY. Those rows stay in place and verify. They are not
+re-signed. An intact pre-key SHA-256 chain is a different object: only the
+explicit migration archives it.
+
 The key is read from the environment on each append and verify. It is never
 written to the database. TRADEFLOW_CHAIN_KEY is the key for TRADEFLOW_CHAIN_KEY_ID
 (default ``primary``). TRADEFLOW_CHAIN_KEYS holds retired ``id:secret`` pairs so
-an older row still verifies after a rotation.
+an older row still verifies after a rotation. A round-5 row has no key id, so
+it verifies only with the current key.
 
 TRADEFLOW_CHAIN_ANCHOR, when set to a file path or an http(s) URL, receives the
-chain head after the database row is written. A failed export marks the deal
-pending and verification fails closed. A missing anchor file or a missing deal
-line is also a failure when an anchor is configured. Without an anchor, verify
-reports ``anchor not configured`` and a truncated tail still verifies.
+chain head after the database row is written. The file index is replaced
+atomically. A corrupt index is rebuilt from the log for the deal that is being
+read; other deals keep verifying from their own lines. A failed export marks
+the deal pending and verification fails closed. A missing anchor file or a
+missing deal line is also a failure when an anchor is configured. Without an
+anchor, verify reports ``anchor not configured`` and a truncated tail still
+verifies.
 """
 from __future__ import annotations
 
@@ -21,6 +31,7 @@ import hmac
 import json
 import os
 import sqlite3
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -151,6 +162,20 @@ def entry_hash(deal_id: str, seq: int, type_: str, ts: str, payload: Any, prev_h
     return hmac.new(chain_key(), canonical(body), hashlib.sha256).hexdigest()
 
 
+def round5_digest(deal_id: str, seq: int, type_: str, ts: str, payload: Any, prev_hash: str) -> str:
+    """HMAC of a round-5 body. That body has no key id."""
+    body = {
+        "deal_id": deal_id,
+        "seq": seq,
+        "type": type_,
+        "ts": ts,
+        "payload": payload,
+        "prev_hash": prev_hash,
+    }
+    signed = hmac.new(chain_key(), canonical(body), hashlib.sha256)
+    return signed.hexdigest()
+
+
 def legacy_digest(deal_id: str, seq: int, type_: str, ts: str, payload: Any, prev_hash: str) -> str:
     """The pre-key SHA-256 link. It has no key id. New rows do not use it."""
     body = {
@@ -232,32 +257,115 @@ def _export_anchor(deal_id: str, seq: int, mac: str) -> None:
     with path.open("a", encoding="utf-8") as handle:
         offset = handle.tell()
         handle.write(line)
+        handle.flush()
+        os.fsync(handle.fileno())
     index_path = _index_path(path)
-    index: dict[str, Any] = {}
-    if index_path.is_file():
-        loaded = json.loads(index_path.read_text(encoding="utf-8"))
-        if isinstance(loaded, dict):
-            index = loaded
+    index = _load_index(index_path, path)
     index[deal_id] = {"offset": offset, "seq": seq, "entry_hash": mac}
-    index_path.write_text(json.dumps(index, sort_keys=True), encoding="utf-8")
+    _write_index(index_path, index)
+
+
+def _write_index(index_path: Path, index: dict[str, Any]) -> None:
+    """Replace the index via a temp file, fsync, and rename."""
+    directory = index_path.parent
+    directory.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix=".anchor-", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(index, sort_keys=True))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(name, index_path)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
+
+def _index_from_log(log_path: Path) -> dict[str, Any]:
+    """Last valid line of each deal. A broken line is skipped."""
+    found: dict[str, Any] = {}
+    if not log_path.is_file():
+        return found
+    offset = 0
+    with log_path.open("rb") as handle:
+        for raw in handle:
+            start = offset
+            offset += len(raw)
+            try:
+                item = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeError):
+                continue
+            if not isinstance(item, dict):
+                continue
+            deal_id = str(item.get("deal_id") or "")
+            if not deal_id or "seq" not in item or "entry_hash" not in item:
+                continue
+            found[deal_id] = {
+                "offset": start,
+                "seq": item.get("seq"),
+                "entry_hash": item.get("entry_hash"),
+            }
+    return found
+
+
+def _load_index(index_path: Path, log_path: Path) -> dict[str, Any]:
+    if index_path.is_file():
+        try:
+            loaded = json.loads(index_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeError):
+            loaded = None
+        if isinstance(loaded, dict):
+            return loaded
+    return _index_from_log(log_path)
+
+
+def _scan_anchor_log(path: Path, deal_id: str) -> dict[str, Any]:
+    """The last valid line for this deal. Other deals are not failed by a bad line."""
+    found: dict[str, Any] | None = None
+    try:
+        with path.open("rb") as handle:
+            for raw in handle:
+                if not raw.strip():
+                    continue
+                try:
+                    item = json.loads(raw.decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeError):
+                    continue
+                if isinstance(item, dict) and str(item.get("deal_id") or "") == deal_id:
+                    found = item
+    except OSError:
+        return _anchor_absent()
+    if found is None:
+        return _anchor_absent()
+    return found
 
 
 def _read_anchor_file(target: str, deal_id: str) -> dict[str, Any] | None:
-    """One indexed line for this deal. The whole log is not read."""
+    """One indexed line for this deal. A corrupt index falls back to that deal's log lines."""
     path = Path(target)
-    index_path = _index_path(path)
-    if not path.is_file() or not index_path.is_file():
+    if not path.is_file():
         return _anchor_absent()
-    index = json.loads(index_path.read_text(encoding="utf-8"))
-    slot = index.get(deal_id) if isinstance(index, dict) else None
+    index_path = _index_path(path)
+    if not index_path.is_file():
+        return _scan_anchor_log(path, deal_id)
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeError):
+        return _scan_anchor_log(path, deal_id)
+    if not isinstance(index, dict):
+        return _scan_anchor_log(path, deal_id)
+    slot = index.get(deal_id)
     if not isinstance(slot, dict) or "offset" not in slot:
         return _anchor_absent()
-    with path.open("rb") as handle:
-        handle.seek(int(slot["offset"]))
-        line = handle.readline()
-    item = json.loads(line.decode("utf-8"))
+    try:
+        with path.open("rb") as handle:
+            handle.seek(int(slot["offset"]))
+            line = handle.readline()
+        item = json.loads(line.decode("utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeError, ValueError):
+        return _scan_anchor_log(path, deal_id)
     if not isinstance(item, dict) or str(item.get("deal_id") or "") != deal_id:
-        return _anchor_absent()
+        return _scan_anchor_log(path, deal_id)
     return item
 
 
@@ -332,15 +440,23 @@ def _annotate(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _row_key_id(row: Any) -> str:
+def _blank_key_id(row: Any) -> bool:
     try:
         stored = row["key_id"]
     except (KeyError, IndexError):
-        stored = ""
-    return str(stored or "") or current_key_id()
+        return True
+    return stored is None or str(stored).strip() == ""
+
+
+def _row_key_id(row: Any) -> str:
+    if _blank_key_id(row):
+        return ""
+    return str(row["key_id"])
 
 
 def _expected_mac(row: Any, payload: Any) -> str:
+    if _blank_key_id(row):
+        return round5_digest(row["deal_id"], int(row["seq"]), row["type"], row["ts"], payload, row["prev_hash"])
     key_id = _row_key_id(row)
     if _uses_current_key(key_id):
         return entry_hash(row["deal_id"], int(row["seq"]), row["type"], row["ts"], payload, row["prev_hash"])
@@ -379,18 +495,53 @@ def append(conn: sqlite3.Connection, deal_id: str, type_: str, ts: str, payload:
         """,
         (deal_id, seq, type_, ts, json.dumps(stored, sort_keys=True, ensure_ascii=False), prev, digest, key_id),
     )
+    anchor_ok = True
     try:
         _export_anchor(deal_id, seq, digest)
         _clear_anchor_pending(conn, deal_id)
     except Exception:
         _remember_anchor_pending(conn, deal_id, seq, digest)
-    return {"deal_id": deal_id, "seq": seq, "type": type_, "entry_hash": digest, "prev_hash": prev, "key_id": key_id}
+        anchor_ok = False
+    return {
+        "deal_id": deal_id,
+        "seq": seq,
+        "type": type_,
+        "entry_hash": digest,
+        "prev_hash": prev,
+        "key_id": key_id,
+        "anchor_ok": anchor_ok,
+    }
 
 
-def verify(conn: sqlite3.Connection, deal_id: str) -> dict[str, Any]:
-    """Recompute every MAC. broken_seq is the first link that does not match."""
+def _real_anchor_head(item: dict[str, Any] | None) -> bool:
+    if not isinstance(item, dict):
+        return False
+    try:
+        seq = int(item.get("seq", -1))
+    except (TypeError, ValueError):
+        return False
+    return seq >= 0 and bool(str(item.get("entry_hash") or ""))
+
+
+def anchor_head_present(deal_id: str) -> bool:
+    """True when this deal already has an anchor head. An unreadable anchor counts as present."""
+    target = _anchor_target()
+    if not target:
+        return False
+    try:
+        if _is_url(target):
+            item = _read_anchor_url(target, deal_id)
+        else:
+            item = _read_anchor_file(target, deal_id)
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, TimeoutError, ValueError, UnicodeError):
+        return True
+    return _real_anchor_head(item)
+
+
+def verify_links(conn: sqlite3.Connection, deal_id: str) -> dict[str, Any]:
+    """Recompute every MAC. The anchor and the pending mark are not consulted."""
     if not chain_key_configured():
-        return _annotate(_broken(1, 0, []))
+        return _broken(1, 0, [])
     rows = conn.execute(
         "SELECT * FROM desk_chain WHERE deal_id = ? ORDER BY seq ASC",
         (deal_id,),
@@ -419,18 +570,26 @@ def verify(conn: sqlite3.Connection, deal_id: str) -> dict[str, Any]:
             return _annotate(_broken(int(row["seq"]), len(entries), entries))
         prev = row["entry_hash"]
     head = prev if entries else GENESIS
+    return {
+        "ok": True,
+        "broken_seq": None,
+        "head": head,
+        "count": len(entries),
+        "entries": entries,
+    }
+
+
+def verify(conn: sqlite3.Connection, deal_id: str) -> dict[str, Any]:
+    """Recompute every MAC, then require the anchor when one is configured."""
+    result = verify_links(conn, deal_id)
+    if not result["ok"]:
+        return _annotate(result)
+    entries = list(result.get("entries") or [])
+    head = str(result.get("head") or "")
     if _pending_anchor(conn, deal_id):
         return _annotate(_broken(len(entries) or 1, len(entries), entries))
     anchored = _read_anchor(deal_id)
     if _anchor_is_required():
         if anchored is None or not _anchor_matches(anchored, len(entries), head if entries else ""):
             return _annotate(_broken(len(entries) or 1, len(entries), entries))
-    return _annotate(
-        {
-            "ok": True,
-            "broken_seq": None,
-            "head": head,
-            "count": len(entries),
-            "entries": entries,
-        }
-    )
+    return _annotate(result)

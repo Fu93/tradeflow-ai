@@ -171,7 +171,6 @@ class DeskStore:
             BEGIN SELECT RAISE(ABORT, 'decisions is append-only'); END;
             """
         )
-        self._migrate_legacy_chains()
         self.conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS hazard_outcomes (
@@ -246,50 +245,99 @@ class DeskStore:
         self.conn.executescript(audit_chain.SCHEMA)
         return str(rows[-1]["entry_hash"])
 
-    def _migrate_legacy_chains(self) -> None:
-        """Pre-key chains are archived. Deals with no head get one migrated head.
+    def migrate_deal(self, deal_id: str) -> None:
+        """Operator action. Opening the database does not migrate.
 
-        Accepted quotes on that deal return to review. A send waits until a
-        person confirms them again. The note says the pre-chain inputs were
-        not verified. A pre-key chain is not extended: it is stored read-only
-        as legacy unverified, and a fresh keyed chain names its old head.
+        A keyed chain, including a round-5 HMAC chain, is left untouched.
+        An existing anchor head is left untouched. An intact pre-key SHA-256
+        chain is archived and a new keyed chain starts at genesis. A deal
+        with no chain rows gets one migrated head. Accepted quotes return
+        to review either way.
         """
-        if not audit_chain.chain_key_configured():
+        with self._lock:
+            if not audit_chain.chain_key_configured():
+                raise DeskRejected("Desk migration requires TRADEFLOW_CHAIN_KEY.")
+            deal = self._deal(deal_id)
+            if deal is None:
+                raise KeyError(deal_id)
+            if audit_chain.anchor_head_present(deal_id):
+                raise DeskRejected("This deal already has an anchor head. Migration will not overwrite it.")
+            self._migrate_legacy_chains(deal)
+
+    def _drop_snapshot(self, deal_id: str) -> None:
+        self.conn.execute("DELETE FROM snapshots WHERE deal_id = ?", (deal_id,))
+        self.conn.commit()
+
+    def _return_quotes_to_review(self, deal_id: str) -> None:
+        self.conn.execute(
+            "UPDATE quote_events SET status = 'review' WHERE deal_id = ? AND status = 'accepted'",
+            (deal_id,),
+        )
+
+    def _migrate_legacy_chains(self, deal: Any) -> None:
+        """Archive one intact pre-key chain, or open a head when the deal has none."""
+        rows = self.conn.execute(
+            "SELECT * FROM desk_chain WHERE deal_id = ? ORDER BY seq ASC",
+            (deal["id"],),
+        ).fetchall()
+        if audit_chain.legacy_unkeyed(list(rows)):
+            ingested = []
+            for row in rows:
+                if row["type"] != "quote_ingested":
+                    continue
+                ingested.append(json.loads(row["payload_json"]))
+            legacy_head = self._archive_unkeyed_chain(str(deal["id"]), list(rows))
+            self._return_quotes_to_review(str(deal["id"]))
+            self.conn.commit()
+            self.append_chain(deal["id"], "deal_opened", self._opened_payload(deal, legacy_head=legacy_head))
+            for payload in ingested:
+                self.append_chain(deal["id"], "quote_ingested", payload)
+            self._drop_snapshot(str(deal["id"]))
             return
-        deals = self.conn.execute("SELECT * FROM deals").fetchall()
-        for deal in deals:
-            rows = self.conn.execute(
-                "SELECT * FROM desk_chain WHERE deal_id = ? ORDER BY seq ASC",
-                (deal["id"],),
-            ).fetchall()
-            if audit_chain.legacy_unkeyed(list(rows)):
-                ingested = []
-                for row in rows:
-                    if row["type"] != "quote_ingested":
-                        continue
-                    ingested.append(json.loads(row["payload_json"]))
-                legacy_head = self._archive_unkeyed_chain(str(deal["id"]), list(rows))
-                self.conn.execute(
-                    "UPDATE quote_events SET status = 'review' WHERE deal_id = ? AND status = 'accepted'",
-                    (deal["id"],),
-                )
-                self.conn.commit()
-                self.append_chain(deal["id"], "deal_opened", self._opened_payload(deal, legacy_head=legacy_head))
-                for payload in ingested:
-                    self.append_chain(deal["id"], "quote_ingested", payload)
-                continue
-            opened = self.conn.execute(
-                "SELECT seq FROM desk_chain WHERE deal_id = ? AND type = 'deal_opened' ORDER BY seq ASC LIMIT 1",
-                (deal["id"],),
-            ).fetchone()
-            if opened is not None:
-                continue
+        if rows:
+            raise DeskRejected("This deal already has a keyed chain. Migration will not replace it.")
+        opened = self.conn.execute(
+            "SELECT seq FROM desk_chain WHERE deal_id = ? AND type = 'deal_opened' ORDER BY seq ASC LIMIT 1",
+            (deal["id"],),
+        ).fetchone()
+        if opened is not None:
+            raise DeskRejected("This deal already has a keyed chain. Migration will not replace it.")
+        self._return_quotes_to_review(str(deal["id"]))
+        self.conn.commit()
+        self.append_chain(deal["id"], "deal_opened", self._opened_payload(deal, legacy_head=None))
+        self._drop_snapshot(str(deal["id"]))
+
+    def update_limits(
+        self,
+        deal_id: str,
+        *,
+        product: str,
+        quantity: int,
+        target_price: float,
+        ceiling_price: float,
+        risk_tolerance: float,
+        currency: str,
+    ) -> None:
+        with self._lock:
             self.conn.execute(
-                "UPDATE quote_events SET status = 'review' WHERE deal_id = ? AND status = 'accepted'",
-                (deal["id"],),
+                """
+                UPDATE deals
+                SET product = ?, quantity = ?, target_price = ?, ceiling_price = ?,
+                    risk_tolerance = ?, currency = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    product,
+                    int(quantity),
+                    float(target_price),
+                    float(ceiling_price),
+                    float(risk_tolerance),
+                    currency,
+                    _now(),
+                    deal_id,
+                ),
             )
             self.conn.commit()
-            self.append_chain(deal["id"], "deal_opened", self._opened_payload(deal, legacy_head=None))
 
     def create_deal(
         self,
@@ -703,6 +751,10 @@ class DeskStore:
     def verify_chain(self, deal_id: str) -> dict[str, Any]:
         with self._lock:
             return audit_chain.verify(self.conn, deal_id)
+
+    def verify_links(self, deal_id: str) -> dict[str, Any]:
+        with self._lock:
+            return audit_chain.verify_links(self.conn, deal_id)
 
     def append_decision(self, record: dict[str, Any], record_sha256: str) -> str:
         with self._lock:

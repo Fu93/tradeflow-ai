@@ -43,7 +43,7 @@ _DURATION = re.compile(
 _AMOUNT = re.compile(
     rf"(?i)(?P<pre>cny|rmb|usd|eur|gbp|hkd|jpy|￥|¥|\$|€|£)?\s*"
     rf"(?P<num>{_NUM})\s*"
-    rf"(?P<post>cny|rmb|yuan|usd|eur|gbp|hkd|jpy|元|块|塊|美元|欧元|歐元|英镑|英鎊|\$|€|£)?"
+    rf"(?P<post>cny|rmb|yuan|usd|eur|gbp|hkd|jpy|元|块|塊|美元|美金|欧元|歐元|英镑|英鎊|dollars?|\$|€|£)?"
 )
 # Positive slots. These name what an offer looks like. They are not a list of
 # words that disqualify a sentence.
@@ -377,8 +377,25 @@ def _for_rules(clause: str) -> str:
     return _EXCLUSION.sub(" ", clause)
 
 
-_USD = re.compile(r"(?i)(?:usd|us\s+dollars?|u\.s\.\s+dollars?|美元|美金|\$)")
+_USD = re.compile(r"(?i)(?:usd|us\s+dollars?|u\.s\.\s+dollars?|美元|美金|\$|\bdollars?\b)")
 _EUR = re.compile(r"(?i)(?:eur|euros?|欧元|歐元|€)")
+
+
+def _kind_for(pre: str, post: str, clause: str) -> str | None:
+    """Currency of this amount. Two currency families on the clause stay unconfirmed."""
+    kind = _currency_of(pre, post)
+    families = 0
+    if _USD.search(clause):
+        families += 1
+    if _EUR.search(clause):
+        families += 1
+    if _CNY.search(clause):
+        families += 1
+    if families > 1:
+        return "foreign"
+    if kind is None and _USD.search(clause):
+        return "USD"
+    return kind
 
 
 def _currency_of(pre: str, post: str) -> str | None:
@@ -573,11 +590,11 @@ def _collect(
         span = (match.start(), match.end())
         if _inside(span, ranges):
             continue
-        kind = _currency_of(pre, post)
-        if _quantity_amount(text, match.start("num"), token):
-            continue
         left, _right = _clause_span(text, match.start("num"))
         clause = text[left:_right]
+        kind = _kind_for(pre, post, clause)
+        if _quantity_amount(text, match.start("num"), token):
+            continue
         amount_at = match.start("num") - left
         per_piece = bool(_PER_PIECE.search(clause) or _UNIT_LABEL.search(clause))
         key = round(float(value), 4)
@@ -863,7 +880,8 @@ def price_from_token(raw_text: str, token: str, deal_currency: str | None = None
     for match in _AMOUNT.finditer(visible):
         if match.group("num") != token or _glued_amount(visible, match):
             continue
-        kind = _currency_of(match.group("pre") or "", match.group("post") or "")
+        left, right = _clause_span(visible, match.start("num"))
+        kind = _kind_for(match.group("pre") or "", match.group("post") or "", visible[left:right])
         value = _settled(token)
         if value is None:
             continue

@@ -26,6 +26,7 @@ from src.config.heuristics import (
 from src.desk import mailbox, recompute
 from src.desk.audit_chain import chain_key_configured
 from src.desk.extract import time_left
+from src.desk.input_checks import message_id_or_blank, references_or_blank, require_address, require_plain
 from src.desk.names import supplier_name_key
 from src.desk.parse import _confirm_span, _visible_text, parse_quote, price_from_token
 from src.desk.store import DeskRejected, DeskStore, DeskUnavailable, get_store
@@ -143,8 +144,9 @@ def create_deal(
     suppliers: list[dict[str, str]],
     currency: str | None = None,
 ) -> dict[str, Any]:
+    product = require_plain(product, "Product")
     names = [item["name"].strip() for item in suppliers]
-    addresses = [item["address"].strip() for item in suppliers]
+    addresses = [require_address(item["address"]) for item in suppliers]
     if not 4 <= len(suppliers) <= 5:
         raise DeskRejected("A deal needs four or five suppliers.")
     if any(not name for name in names):
@@ -484,8 +486,8 @@ def _ingest_locked(
                 "raw_sha256": event.get("raw_sha256"),
                 "source": source,
                 "supplier_id": event.get("supplier_id"),
-                "message_id": str(provenance.get("message_id") or ""),
-                "references": str(provenance.get("references") or ""),
+                "message_id": message_id_or_blank(provenance.get("message_id")),
+                "references": references_or_blank(provenance.get("references")),
             },
         )
         store.append_chain(
@@ -867,6 +869,93 @@ def record_outcome(
         return publish(store, deal_id)
 
 
+def confirm_policy(
+    store: DeskStore,
+    deal_id: str,
+    *,
+    human_confirmed: bool,
+    product: str,
+    quantity: int,
+    target_price: float,
+    ceiling_price: float,
+    risk_tolerance: float,
+    currency: str,
+) -> dict[str, Any]:
+    """The limits a migrated deal may send against. The database row is not enough."""
+    if human_confirmed is not True:
+        raise DeskRejected("A person has to confirm these policy limits.")
+    product = require_plain(str(product or ""), "Product")
+    if not product.strip():
+        raise DeskRejected("Each deal needs a product.")
+    code = str(currency or "")
+    if code not in DEAL_CURRENCIES:
+        raise DeskRejected("Deal currency is not one of the registered currencies.")
+    if int(quantity) < 1:
+        raise DeskRejected("Quantity must be at least one.")
+    if float(target_price) > float(ceiling_price):
+        raise DeskRejected("The target must be at or below the ceiling.")
+    risk = float(risk_tolerance)
+    if risk < float(RISK_TOLERANCE_FLOOR) or risk > float(RISK_TOLERANCE_MAX):
+        raise DeskRejected("Risk tolerance is outside the configured range.")
+    with deal_lock(deal_id):
+        if store.get_deal(deal_id) is None:
+            raise KeyError(deal_id)
+        store.update_limits(
+            deal_id,
+            product=product.strip(),
+            quantity=int(quantity),
+            target_price=float(target_price),
+            ceiling_price=float(ceiling_price),
+            risk_tolerance=risk,
+            currency=code,
+        )
+        store.append_chain(
+            deal_id,
+            "policy_confirmed",
+            {
+                "confirmed_by": "human",
+                "product": product.strip(),
+                "quantity": int(quantity),
+                "target_price": float(target_price),
+                "ceiling": float(ceiling_price),
+                "risk_tolerance": risk,
+                "currency": code,
+            },
+        )
+        return publish(store, deal_id)
+
+
+def migrate_deal(store: DeskStore, deal_id: str, *, human_confirmed: bool) -> dict[str, Any]:
+    """Explicit migration. A process restart does not call this."""
+    if human_confirmed is not True:
+        raise DeskRejected("A person has to migrate this deal.")
+    with deal_lock(deal_id):
+        store.migrate_deal(deal_id)
+        return publish(store, deal_id)
+
+
+def reanchor_deal(store: DeskStore, deal_id: str, *, human_confirmed: bool) -> dict[str, Any]:
+    """Write the current chain head to the anchor after the links themselves verify."""
+    if human_confirmed is not True:
+        raise DeskRejected("A person has to re-anchor this deal.")
+    if chain_key_configured() is False:
+        raise DeskRejected("Re-anchor requires TRADEFLOW_CHAIN_KEY.")
+    with deal_lock(deal_id):
+        if store.get_deal(deal_id) is None:
+            raise KeyError(deal_id)
+        links = store.verify_links(deal_id)
+        if not links["ok"]:
+            raise DeskRejected("The audit chain does not verify. Re-anchor will not sign a broken chain.")
+        written = store.append_chain(
+            deal_id,
+            "reanchor",
+            {"confirmed_by": "human"},
+        )
+        if written.get("anchor_ok") is False:
+            raise DeskRejected("The anchor did not record this re-anchor.")
+        return publish(store, deal_id)
+
+
 def confirm_supplier_address(
     store: DeskStore,
     deal_id: str,
@@ -879,7 +968,7 @@ def confirm_supplier_address(
     """A new email is sent only after a person confirms it on the chain."""
     if human_confirmed is not True:
         raise DeskRejected("A person has to confirm this address.")
-    cleaned = address.strip()
+    cleaned = require_address(address)
     if not cleaned:
         raise DeskRejected("Each supplier needs an address.")
     with deal_lock(deal_id):
@@ -1134,12 +1223,43 @@ def _rendered_draft(
 
 
 def _deal_opened(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    opened: dict[str, Any] = {}
     for entry in entries:
-        if entry.get("type") == "deal_opened":
-            payload = dict(entry.get("payload") or {})
-            payload["seq"] = int(entry.get("seq") or 0)
-            return payload
-    return {}
+        if entry.get("type") == "deal_opened" and not opened:
+            opened = dict(entry.get("payload") or {})
+            opened["seq"] = int(entry.get("seq") or 0)
+        if not opened or entry.get("type") != "policy_confirmed":
+            continue
+        payload = entry.get("payload") or {}
+        if payload.get("confirmed_by") != "human":
+            continue
+        if int(entry.get("seq") or 0) <= int(opened.get("seq") or 0):
+            continue
+        for key in ("currency", "ceiling", "target_price", "quantity", "product", "risk_tolerance"):
+            if key in payload:
+                opened[key] = payload[key]
+    return opened
+
+
+def _migrated_limits_unconfirmed(entries: list[dict[str, Any]], opened: dict[str, Any]) -> bool:
+    """A migrated deal stays unsendable until address and policy events follow the migration."""
+    if not opened.get("migrated"):
+        return False
+    marker = int(opened.get("seq") or 0)
+    confirmed_policy = False
+    confirmed_addresses: set[str] = set()
+    for entry in entries:
+        if int(entry.get("seq") or 0) <= marker:
+            continue
+        payload = entry.get("payload") or {}
+        if payload.get("confirmed_by") != "human":
+            continue
+        if entry.get("type") == "policy_confirmed" and payload.get("ceiling") is not None:
+            confirmed_policy = True
+        elif entry.get("type") == "supplier_address":
+            confirmed_addresses.add(str(payload.get("supplier_id") or ""))
+    needed = {str(item.get("id") or "") for item in (opened.get("suppliers") or []) if item.get("id")}
+    return not confirmed_policy or not needed or not needed.issubset(confirmed_addresses)
 
 
 def _body_currency(body: str) -> str:
@@ -1292,17 +1412,16 @@ def _recompute_from_chain(
     record: dict[str, Any],
 ) -> dict[str, Any]:
     """The counter the chained confirmations and the chained ceiling issue."""
-    from src.desk.decide import decide_supplier
     from src.desk.record import constants_snapshot
-    from src.desk.recompute import _landed_consistent_rivals, quoting_supplier_ids
+    from src.desk.recompute import _landed_consistent_rivals, counter_of, decision_for_supplier, quoting_supplier_ids
     from src.engine.landed import landed_unit_cost, ranking_basis
-    from src.engine.reserve import ReserveState
 
     opened = _deal_opened(entries)
     currency = str(opened.get("currency") or "")
     ceiling = opened.get("ceiling")
     events = {str(event["id"]): event for event in store.events(draft["deal_id"])}
     asks: dict[str, float] = {}
+    histories: dict[str, list[float]] = {}
     landed_by_id: dict[str, dict[str, Any]] = {}
     unconfirmed = 0
     for entry in entries:
@@ -1330,6 +1449,7 @@ def _recompute_from_chain(
             unconfirmed += 1
             continue
         asks[supplier_id] = float(derived)
+        histories.setdefault(supplier_id, []).append(float(derived))
         landed_by_id[supplier_id] = landed_unit_cost(
             unit_price=float(derived),
             freight=payload.get("freight"),
@@ -1358,16 +1478,18 @@ def _recompute_from_chain(
             "rival_asks": [float(item) for item in rivals],
             "constants": snapshot,
         }
-    choice = decide_supplier(
+    built = decision_for_supplier(
+        prices=list(histories.get(supplier_id) or []),
+        outcomes=list(outcomes_for.get(supplier_id) or []),
         ask=float(asks[supplier_id]),
         rivals=[float(item) for item in rivals],
         ceiling=float(ceiling),
-        state=ReserveState.policy().with_reference(float(asks[supplier_id])),
         risk_cap=float(opened.get("risk_tolerance") or 0.0),
     )
-    fresh = min(float(choice.default_counter), float(ceiling), float(asks[supplier_id]))
+    choice = None if built is None else built[1]
+    fresh = counter_of(choice, float(ceiling), float(asks[supplier_id]))
     held = record.get("held_previous_counter")
-    if held is not None and float(held) < fresh:
+    if fresh is not None and held is not None and float(held) < fresh:
         fresh = float(held)
     return {
         "counter": fresh,
@@ -1516,6 +1638,8 @@ def _guard_send(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any]) -
     prior_seq = None if prior_review is None else int(prior_review.get("seq") or 0)
     if _migrated_unconfirmed(opened_for_migration, prior_seq):
         raise SendRefused("Re-confirm the quote. migrated, pre-chain inputs unverified.")
+    if _migrated_limits_unconfirmed(list(chain.get("entries") or []), opened_for_migration):
+        raise SendRefused("Confirm each supplier address and the policy limits on the chain before sending.")
     supplier_rows = _supplier_decisions(list(chain.get("entries") or []), str(record.get("supplier_id") or ""))
     if not supplier_rows:
         raise SendRefused("The audit chain has no decision entry for this draft.")
@@ -1625,7 +1749,7 @@ async def send_draft(
             supplier,
             float(record["counter"]),
         )
-        store.append_chain(
+        approved = store.append_chain(
             draft["deal_id"],
             "send_approved",
             {
@@ -1635,6 +1759,8 @@ async def send_draft(
                 "transmission_sha256": envelope["digest"],
             },
         )
+        if approved.get("anchor_ok") is False:
+            raise SendRefused("The anchor did not record this send.")
         message_id = f"<desk.{draft_id}.v{int(draft.get('version') or 1)}@tradeflow.local>"
         recipient = envelope["to"]
         body = envelope["body"]

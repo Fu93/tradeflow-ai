@@ -273,6 +273,45 @@ def _walked_away(outcomes: list[dict[str, Any]]) -> bool:
     return dropped
 
 
+def decision_for_supplier(
+    *,
+    prices: list[float],
+    outcomes: list[dict[str, Any]],
+    ask: float,
+    rivals: list[float],
+    ceiling: float,
+    risk_cap: float,
+    prior_mean: float | None = None,
+    prior_std: float | None = None,
+    fit: Any = None,
+    intercept: float | None = None,
+    gap_coef: float | None = None,
+) -> tuple[Any, Any] | None:
+    """The reserve-aware decision. The draft card and the send guard both call this."""
+    state = _reserve_state(prices, outcomes, prior_mean=prior_mean, prior_std=prior_std)
+    if state is None or not state.consistent() or not prices:
+        return None
+    state = state.with_reference(float(prices[0]))
+    choice = decide_supplier(
+        ask=float(ask),
+        rivals=[float(item) for item in rivals],
+        ceiling=float(ceiling),
+        state=state,
+        risk_cap=float(risk_cap),
+        fit=fit,
+        intercept=intercept,
+        gap_coef=gap_coef,
+    )
+    return state, choice
+
+
+def counter_of(choice: Any, ceiling: float, ask: float) -> float | None:
+    """The number the shared decision issues, before a held previous counter."""
+    if choice is None or choice.blocked or str(choice.counter_relation) == "withheld":
+        return None
+    return min(float(choice.default_counter), float(ceiling), float(ask))
+
+
 def quoting_supplier_ids(
     supplier_ids: list[str],
     outcomes_by_supplier: dict[str, list[dict[str, Any]]],
@@ -411,17 +450,28 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         for row in active:
             rivals = _landed_consistent_rivals(row["id"], asks, landed_by_id, basis)
             slot = beliefs_state[row["id"]]
-            state = slot["state"].with_reference(float(slot["reference_ask"]))
-            choices[row["id"]] = decide_supplier(
-                ask=asks[row["id"]],
+            prices = [
+                float(event["parsed"]["unit_price"])
+                for event in decision_events(row["id"])
+                if event.get("parsed", {}).get("unit_price") is not None
+            ]
+            built = decision_for_supplier(
+                prices=prices,
+                outcomes=list(outcomes_by.get(row["id"]) or []),
+                ask=float(asks[row["id"]]),
                 rivals=rivals,
                 ceiling=ceiling,
-                state=state,
                 risk_cap=float(deal["risk_tolerance"]),
+                prior_mean=user_prior,
+                prior_std=user_std,
                 fit=fit,
                 intercept=decision_intercept,
                 gap_coef=decision_gap,
             )
+            if built is None:
+                continue
+            state, choice = built
+            choices[row["id"]] = choice
             beliefs_state[row["id"]]["decision_inputs"] = {
                 "rival_asks": [float(item) for item in rivals],
                 "risk_cap": float(deal["risk_tolerance"]),
@@ -484,6 +534,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "accepted_event_ids": [
                 event["id"] for event in history if event.get("status") == "accepted"
             ],
+            "quote_confirmed": bool(usable),
             "counter_held": False,
         }
         display = usable[-1] if usable else latest_any
@@ -501,12 +552,11 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             blocked = bool(choice.blocked)
             own_quote = float(card["latest_quote"])
             relation = str(choice.counter_relation)
-            if blocked or relation == "withheld":
-                counter = None
+            counter = counter_of(choice, ceiling, own_quote)
+            if counter is None:
                 figure = "upper"
                 relation = "withheld"
             else:
-                counter = min(float(choice.default_counter), ceiling, own_quote)
                 figure = "mean"
                 if abs(float(counter) - own_quote) <= float(OPT_TOL) * max(1.0, own_quote):
                     relation = "at_ask"
