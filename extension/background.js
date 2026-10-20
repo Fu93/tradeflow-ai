@@ -4,16 +4,16 @@
  * and FastAPI backend proxy.
  */
 
+import { matchSuppliers } from "./desk_match.js";
+
 const API_BASE_URL = "http://localhost:8000";
 
 // ---------------------------------------------------------------------------
 // Security: outbound auth (H9)
 // ---------------------------------------------------------------------------
-// The backend gates /api/v1/* behind X-API-Key and the /webhook/* routes behind
-// X-Webhook-Token. Both checks are fail-open in sandbox when the server has no
-// secret configured, so leaving these empty keeps the demo working (no header is
-// sent at all when empty). An operator who configures TRADEFLOW_API_KEY /
-// TRADEFLOW_WEBHOOK_TOKEN must fill in the matching value here.
+// Copilot routes stay quiet until a key is configured in this file. The live
+// desk does not use that constant: its key is typed into the desk tab and
+// stored as tfApiKey.
 const TF_API_KEY = "";
 const TF_WEBHOOK_TOKEN = "";
 
@@ -131,59 +131,236 @@ function broadcastSessionUpdate(tabId, sessionData) {
   });
 }
 
-// Forward offer submission to FastAPI backend
-async function handleOfferSubmission(tabId, payload) {
-  const { sessionId, offer, context, mode } = payload;
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/sessions/${encodeURIComponent(sessionId)}/round`, {
+const sessionCreates = new Map();
+
+// Create the session from the page mandate. A missing target or ceiling
+// is an error: this worker does not fill in a demo umbrella.
+async function ensureSession(payload) {
+  const sessionId = payload.sessionId;
+  const target = Number(payload.targetPrice);
+  const ceiling = Number(payload.ceilingPrice);
+  if (!sessionId || !Number.isFinite(target) || target <= 0 || !Number.isFinite(ceiling) || ceiling <= 0) {
+    throw new Error("Set a target and a ceiling on this page before posting a round.");
+  }
+  const pending = sessionCreates.get(sessionId);
+  if (pending) {
+    await pending;
+    return;
+  }
+  const job = (async () => {
+    const lookup = await fetch(
+      `${API_BASE_URL}/api/v1/sessions/${encodeURIComponent(sessionId)}`,
+      { headers: jsonHeaders() }
+    );
+    if (lookup.ok) return;
+    if (lookup.status !== 404) {
+      throw new Error(`Engine HTTP ${lookup.status} while reading the session`);
+    }
+    const body = {
+      session_id: sessionId,
+      product_name: payload.productName || "page product",
+      target_price: target,
+      ceiling_price: ceiling,
+      supplier_id: String(payload.supplierId || "page").slice(0, 256),
+      supplier_channel: "web_chat",
+    };
+    const markup = Number(payload.expectedMarkup);
+    if (payload.expectedMarkup != null && Number.isFinite(markup) && markup >= 0) {
+      body.expected_markup = markup;
+    }
+    const created = await fetch(`${API_BASE_URL}/api/v1/sessions`, {
       method: "POST",
       headers: jsonHeaders(),
-      body: JSON.stringify({
-        supplier_offer: offer,
-        supplier_text: context || `Inbound quote: ${offer}`,
-        // V1 (F6): pass the operator's selected mode through. Previously this was
-        // never sent, so RoundActionRequest.mode defaulted to "autopilot" and
-        // every quote skipped the copilot human-approval branch even while the
-        // HUD displayed Copilot Mode.
-        mode: mode === "copilot" ? "copilot" : "autopilot",
-      }),
+      body: JSON.stringify(body),
     });
-
-    if (!res.ok) {
-      // Read the error body so the panel can show the real reason (401 for a
-      // missing key, 409 CAS conflict, 400 validation, ...) instead of a
-      // generic network error.
+    if (!created.ok) {
       let detail = "";
       try {
-        const errBody = await res.json();
-        detail = errBody && (errBody.detail || errBody.message) ? `: ${errBody.detail || errBody.message}` : "";
+        const errBody = await created.json();
+        detail = errBody && errBody.detail ? `: ${errBody.detail}` : "";
       } catch (_) {
         detail = "";
       }
-      throw new Error(`Engine HTTP ${res.status}${detail}`);
+      throw new Error(`Engine HTTP ${created.status}${detail}`);
     }
+  })();
+  sessionCreates.set(sessionId, job);
+  try {
+    await job;
+  } finally {
+    sessionCreates.delete(sessionId);
+  }
+}
 
-    const data = await res.json();
-    // Cache latest turn data into tabSession
-    if (tabSessions.has(tabId)) {
-      const meta = tabSessions.get(tabId);
-      meta.latestData = data;
-      meta.lastActiveTimestamp = Date.now();
-      tabSessions.set(tabId, meta);
-      if (chrome.storage && chrome.storage.session) {
-        chrome.storage.session.set({ [`tab_${tabId}`]: meta }).catch(() => {});
-      }
+function storageLocal(keys) {
+  return new Promise((resolve) => {
+    if (!(chrome.storage && chrome.storage.local)) {
+      resolve({});
+      return;
     }
+    chrome.storage.local.get(keys, (value) => resolve(value || {}));
+  });
+}
 
+function rememberTab(tabId, data) {
+  if (!tabSessions.has(tabId)) return;
+  const meta = tabSessions.get(tabId);
+  meta.latestData = data;
+  meta.lastActiveTimestamp = Date.now();
+  tabSessions.set(tabId, meta);
+  if (chrome.storage && chrome.storage.session) {
+    chrome.storage.session.set({ [`tab_${tabId}`]: meta }).catch(() => {});
+  }
+}
+
+function engineError(tabId, err) {
+  console.error("[TradeFlow SW] desk quote error:", err);
+  const contentPort = activePorts.contentTabs.get(tabId);
+  if (!contentPort) return;
+  try {
+    contentPort.postMessage({ type: "ENGINE_ERROR", error: err.message });
+  } catch (e) {}
+}
+
+async function readDeskError(res) {
+  let detail = "";
+  try {
+    const errBody = await res.json();
+    detail = errBody && (errBody.detail || errBody.message) ? `: ${errBody.detail || errBody.message}` : "";
+  } catch (_) {
+    detail = "";
+  }
+  return `Engine HTTP ${res.status}${detail}`;
+}
+
+// Ingest the supplier's raw message on the desk. The scraped number is not the offer.
+async function handleOfferSubmission(tabId, payload) {
+  const context = payload && payload.context ? String(payload.context) : "";
+  try {
+    const stored = await storageLocal(["tfApiKey", "tfDeskDeal", "tfDeskSupplier"]);
+    const key = stored.tfApiKey || "";
+    const dealId = stored.tfDeskDeal || "";
+    if (!dealId) {
+      throw new Error("Open a desk deal and save its id before confirming a quote.");
+    }
+    if (!key) {
+      throw new Error("Desk API key is missing.");
+    }
+    if (!context.trim()) {
+      throw new Error("Confirm a price from the supplier message. A scraped number is not sent.");
+    }
+    const dealRes = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${encodeURIComponent(dealId)}`, {
+      headers: key ? { "X-API-Key": key } : {},
+    });
+    if (!dealRes.ok) throw new Error(await readDeskError(dealRes));
+    const snapshot = await dealRes.json();
+    let supplierId = stored.tfDeskSupplier || "";
+    if (!supplierId) {
+      const matches = matchSuppliers(snapshot.suppliers || [], {
+        text: context,
+        title: payload.supplierName || "",
+        url: payload.url || "",
+      });
+      if (matches.length === 1) supplierId = matches[0].id;
+    }
+    if (!supplierId) {
+      throw new Error("Choose the supplier on the desk before confirming a quote.");
+    }
+    const quoteRes = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${encodeURIComponent(dealId)}/quotes`, {
+      method: "POST",
+      headers: deskHeaders(key),
+      body: JSON.stringify({
+        source: "chat-import",
+        raw_text: context,
+        supplier_id: supplierId,
+        page_url: payload.url || "",
+        page_title: payload.pageTitle || "",
+      }),
+    });
+    if (!quoteRes.ok) throw new Error(await readDeskError(quoteRes));
+    const ingested = await quoteRes.json();
+    const event = ingested.event || {};
+    const provenance = event.provenance || {};
+    const deal = snapshot.deal || {};
+    const data = {
+      desk: true,
+      awaiting_confirm: true,
+      deal_id: dealId,
+      event_id: event.id,
+      supplier_id: event.supplier_id || supplierId,
+      candidates: provenance.candidates || [],
+      suggested_token: provenance.suggested_token || null,
+      raw_text: context,
+      session: {
+        spec: {
+          target_price: deal.target_price,
+          ceiling_price: deal.ceiling_price,
+        },
+        history: [],
+      },
+    };
+    rememberTab(tabId, data);
     broadcastSessionUpdate(tabId, data);
   } catch (err) {
-    console.error("[TradeFlow SW] handleOfferSubmission error:", err);
-    const contentPort = activePorts.contentTabs.get(tabId);
-    if (contentPort) {
-      try {
-        contentPort.postMessage({ type: "ENGINE_ERROR", error: err.message });
-      } catch (e) {}
+    engineError(tabId, err);
+  }
+}
+
+// A person picked a token from the message. Only then does the desk counter.
+async function confirmDeskPrice(tabId, payload) {
+  try {
+    const stored = await storageLocal(["tfApiKey", "tfDeskDeal"]);
+    const key = stored.tfApiKey || "";
+    const dealId = (payload && payload.dealId) || stored.tfDeskDeal || "";
+    const eventId = payload && payload.eventId;
+    const supplierId = payload && payload.supplierId;
+    const token = payload && payload.token;
+    if (!dealId || !eventId || !supplierId || !token) {
+      throw new Error("Confirm a token from the supplier message before a counter.");
     }
+    const res = await fetch(
+      `${API_BASE_URL}/api/v1/desk/deals/${encodeURIComponent(dealId)}/review/${encodeURIComponent(eventId)}`,
+      {
+        method: "POST",
+        headers: deskHeaders(key),
+        body: JSON.stringify({
+          action: "accept",
+          supplier_id: supplierId,
+          chosen_token: token,
+        }),
+      }
+    );
+    if (!res.ok) throw new Error(await readDeskError(res));
+    const snapshot = await res.json();
+    const card = (snapshot.suppliers || []).find((row) => row.id === supplierId) || {};
+    const deal = snapshot.deal || {};
+    const data = {
+      desk: true,
+      awaiting_confirm: false,
+      deal_id: dealId,
+      supplier_id: supplierId,
+      desk_ask: card.latest_quote == null ? null : card.latest_quote,
+      desk_counter: card.counter == null ? null : card.counter,
+      desk_simulated: !!card.simulated,
+      session: {
+        spec: {
+          target_price: deal.target_price,
+          ceiling_price: deal.ceiling_price,
+        },
+        history: [],
+      },
+      action_object: {
+        breakdown_risk: card.hazard == null ? null : card.hazard,
+        authorized_price: card.counter == null ? null : card.counter,
+        counterpart_offered_price: card.latest_quote == null ? null : card.latest_quote,
+      },
+      recommended_offer_price: card.counter == null ? null : card.counter,
+      effective_opp_price: card.latest_quote == null ? null : card.latest_quote,
+    };
+    rememberTab(tabId, data);
+    broadcastSessionUpdate(tabId, data);
+  } catch (err) {
+    engineError(tabId, err);
   }
 }
 
@@ -347,6 +524,10 @@ chrome.runtime.onConnect.addListener((port) => {
         await handleOfferSubmission(tabId, msg.payload);
       }
 
+      if (msg.type === "CONFIRM_DESK_PRICE") {
+        await confirmDeskPrice(tabId, msg.payload);
+      }
+
       if (msg.type === "TELEMETRY_ALERT") {
         const { sessionId, message } = msg.payload;
         try {
@@ -386,4 +567,97 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true, sessions: Array.from(tabSessions.values()) });
     return true;
   }
+
+  if (type === "IMPORT_DESK_QUOTE") {
+    importLatestVisible(message).then(sendResponse);
+    return true;
+  }
 });
+
+function deskHeaders(key) {
+  const headers = { "Content-Type": "application/json" };
+  if (key) headers["X-API-Key"] = key;
+  return headers;
+}
+
+async function supplierTab() {
+  const active = await chrome.tabs.query({ active: true, currentWindow: true });
+  const current = active && active[0];
+  if (current && current.id && current.url && /^https?:/i.test(current.url)) return current;
+  const all = await chrome.tabs.query({ currentWindow: true });
+  const pages = (all || []).filter((tab) => tab.url && /^https?:/i.test(tab.url));
+  return pages.length ? pages[pages.length - 1] : current;
+}
+
+async function importLatestVisible(message) {
+  const stored = await new Promise((resolve) => {
+    chrome.storage.local.get(
+      ["tfDeskDeal", "tfDeskSupplier", "tfApiKey"],
+      (value) => resolve(value || {})
+    );
+  });
+  if (!stored.tfDeskDeal) return { ok: false, reason: "no-deal" };
+  const tab = await supplierTab();
+  if (!tab || !tab.id) return { ok: false, reason: "no-tab" };
+  const resp = await new Promise((resolve) => {
+    chrome.tabs.sendMessage(tab.id, { type: "IMPORT_VISIBLE_QUOTE" }, (reply) => {
+      if (chrome.runtime.lastError) {
+        resolve({ ok: false, reason: "no-page" });
+        return;
+      }
+      resolve(reply || { ok: false, reason: "empty" });
+    });
+  });
+  if (!resp || !resp.ok || !resp.text) return resp || { ok: false, reason: "empty" };
+  const key = stored.tfApiKey || "";
+  const dealRes = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${stored.tfDeskDeal}`, {
+    headers: key ? { "X-API-Key": key } : {},
+  });
+  if (dealRes.status === 401) return { ok: false, reason: "api-key", status: 401 };
+  if (!dealRes.ok) return { ok: false, reason: "no-deal", status: dealRes.status };
+  const snapshot = await dealRes.json();
+  const matches = matchSuppliers(snapshot.suppliers || [], resp);
+  const pageUrl = resp.url || "";
+  const confirmPage = message && message.confirmPage ? message.confirmPage : "";
+  const picked = stored.tfDeskSupplier || "";
+  const confirmedHere = !!(confirmPage && confirmPage === pageUrl && picked);
+  let supplierId = null;
+  if (matches.length === 1) supplierId = matches[0].id;
+  else if (matches.length > 1 && confirmedHere && matches.some((supplier) => supplier.id === picked)) {
+    supplierId = picked;
+  } else if (matches.length === 0 && confirmedHere) supplierId = picked;
+  else {
+    return {
+      ok: false,
+      reason: matches.length > 1 ? "ambiguous" : "unmapped",
+      page: pageUrl,
+      names: (matches.length ? matches : snapshot.suppliers || []).map((supplier) => supplier.name),
+    };
+  }
+  const quote = {
+    source: "chat-import",
+    raw_text: resp.text,
+    supplier_id: supplierId,
+    page_url: resp.url || "",
+    page_title: resp.title || "",
+    simulated: !!resp.simulated,
+  };
+  const res = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${stored.tfDeskDeal}/quotes`, {
+    method: "POST",
+    headers: deskHeaders(key),
+    body: JSON.stringify(quote),
+  });
+  if (res.status === 401) return { ok: false, reason: "api-key", status: 401 };
+  return {
+    ok: res.ok,
+    status: res.status,
+    simulated: !!resp.simulated,
+    supplierId,
+  };
+}
+
+if (chrome.commands && chrome.commands.onCommand) {
+  chrome.commands.onCommand.addListener((command) => {
+    if (command === "import-latest") importLatestVisible().catch(() => {});
+  });
+}

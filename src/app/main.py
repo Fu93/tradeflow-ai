@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import unicodedata
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from enum import Enum
@@ -39,38 +38,52 @@ except Exception as _dotenv_err:  # pragma: no cover - 缺套件時不應讓 API
 from src.config.heuristics import (
     API_EXTRACTED_PRICE_CAP,
     API_MARKUP_CAP,
+    BASELINE_DEPOSIT_PCT,
     API_NORM_CAP,
     API_PRICE_CAP,
-    BAYES_MARKUP,
     BUYER_CAPITAL_RATE,
     CAUTION_RISK_THRESHOLD,
     DEPOSIT_HARD_CAP,
+    MOQ_HEADROOM_MULTIPLE,
     NEAR_DEAL_RATIO,
     PRICE_MATCH_RATIO,
-    PRIOR_RESERVE_MEAN,
-    PRIOR_RESERVE_STD,
     RISK_TOLERANCE_FLOOR,
+    ROUND_N_SAMPLES,
     RISK_TOLERANCE_MAX,
     STAGNATION_PREMIUM,
     SUPERVISOR_MIN_PRICE_RATIO,
     public_payload as heuristics_payload,
 )
-from src.sim.scenarios import UMBRELLA, public_payload as simulation_payload
+from src.desk.names import supplier_name_key
 from ..engine.backend import describe_solver_backend, resolve_use_gpu
 from ..engine.llm_config import llm_status
-from ..engine import (
-    solve,
-    recommend,
-    bayes_update,
-    compute_belief_confidence,
-    robustness,
-    model,
-    proposal,
-    robust_bayes_update,
-    compute_calibrated_deal_prob,
-    BayesianBeliefState,
-    TCOEngine,
-)
+
+# V1 engines stay unloaded unless this process is asked to mount them.
+_LEGACY_ON = os.environ.get("TRADEFLOW_LEGACY", "0") == "1"
+if _LEGACY_ON:
+    from src.engine.one_step import one_step_counter
+    from src.engine.bayesian_v2 import robust_location
+    from src.engine.hazard import HazardBelief
+    from ..engine import (
+        compute_belief_confidence,
+        model,
+        proposal,
+        robust_bayes_update,
+        BayesianBeliefState,
+        TCOEngine,
+    )
+else:
+    import types
+
+    one_step_counter = None
+    robust_location = None
+    HazardBelief = None
+    compute_belief_confidence = None
+    proposal = None
+    robust_bayes_update = None
+    BayesianBeliefState = None
+    TCOEngine = None
+    model = types.SimpleNamespace(ROUNDS=int("5"))
 from ..session.schema import (
     SessionSpec,
     NegotiationSession,
@@ -136,11 +149,8 @@ def _solve_round_cached(n_opp_samples: int, use_gpu: bool | None, reserve_mean: 
     if cached is not None:
         _SOLVE_CACHE.move_to_end(key)
         return cached
-    result = solve(
-        n_opp_samples=n_opp_samples,
-        use_gpu=resolved,
-        reserve_mean=reserve_mean,
-        reserve_std=reserve_std,
+    raise RuntimeError(
+        "The legacy round cache is retired. /round maximises expected surplus of the one-step accept-or-reject model."
     )
     _SOLVE_CACHE[key] = result
     if len(_SOLVE_CACHE) > _SOLVE_CACHE_MAX:
@@ -156,8 +166,11 @@ def _warmup_stage1() -> None:
     """
     try:
         from ..engine.bilingual import InboundIntentClassifier
+        from src.desk.parse import parse_quote
 
-        InboundIntentClassifier.classify_stage1_only("warmup: tradeflow stage-1 preload")
+        InboundIntentClassifier.classify_stage1_only("warmup: unit price 1 CNY")
+        InboundIntentClassifier.extract_quoted_price("unit price 1 CNY")
+        parse_quote("unit price 1 CNY per piece")
     except Exception:  # pragma: no cover - 預熱失敗不應阻斷啟動
         logger.warning("Stage-1 warmup failed; first request will pay lazy-load cost.", exc_info=True)
 
@@ -167,7 +180,26 @@ async def _lifespan(app: FastAPI):
     logger.info("Warming up Stage-1 classifier (ONNX/vocab/regex)...")
     await asyncio.to_thread(_warmup_stage1)
     logger.info("Stage-1 warmup complete.")
-    yield
+    stop_desk = asyncio.Event()
+    desk_poll = None
+    try:
+        from src.desk.service import poll_forever, polling_enabled
+
+        if polling_enabled():
+            desk_poll = asyncio.create_task(poll_forever(stop_desk))
+            logger.info("Desk mailbox poller started.")
+    except Exception:
+        logger.warning("Desk mailbox poller was not started.", exc_info=True)
+    try:
+        yield
+    finally:
+        stop_desk.set()
+        if desk_poll is not None:
+            desk_poll.cancel()
+            try:
+                await desk_poll
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(
@@ -209,17 +241,6 @@ def _readable_validation_detail(detail):
         cleaned.append(item)
     return cleaned
 
-
-def supplier_name_key(name: str) -> str:
-    """Identity for a supplier name: NFKC, casefold, one space between words.
-
-    Full-width letters match ASCII. A repeated space does not make a second
-    supplier. Combining marks dropped after casefold so dotted capital I
-    matches i.
-    """
-    folded = unicodedata.normalize("NFKC", str(name)).casefold()
-    without_marks = "".join(ch for ch in folded if not unicodedata.combining(ch))
-    return " ".join(without_marks.split())
 
 # [REGRESSION] 原本 allow_origins=["*"] 搭配 allow_credentials=True —— 這是明確的
 # 反模式：任意網站都能帶著憑證呼叫本 API。改為顯式白名單：本機儀表板
@@ -273,6 +294,20 @@ def __getattr__(name: str):
 # 注意：所有 /api/v1 路由都必須定義在 api_v1 上並 include 進來 —— 任何在主 app
 # 上、且在 include 之後才定義的路由都不會繼承這個依賴（見檔尾的斷言）。
 api_v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_api_key)])
+
+
+def _legacy_route(register):
+    """Register a v1 route only when TRADEFLOW_LEGACY=1."""
+    if _LEGACY_ON:
+        return register
+
+    def _skip(*_args, **_kwargs):
+        def _keep(fn):
+            return fn
+
+        return _keep
+
+    return _skip
 
 
 def _validate_session_id_path(session_id: str) -> str:
@@ -348,20 +383,35 @@ def _latest_recommended_price(sess) -> Optional[float]:
     return None
 
 
+def _reserve_not_identified(sess) -> bool:
+    """True when the last round said one ask is not a reserve."""
+    for turn in reversed(getattr(sess, "history", []) or []):
+        meta = getattr(turn, "metadata", None) or {}
+        if isinstance(meta, dict) and meta.get("reserve_source") == "ask_only":
+            return True
+    return False
+
+
 # ---- 既有端點 (向後相容) ----
 
 class Spec(BaseModel):
-    product: str = Field(default="auto umbrella", max_length=512)
-    target_price: float = Field(default=UMBRELLA.target, gt=0.0, allow_inf_nan=False)
-    moq: int = Field(default=500, ge=1, le=10_000_000)
+    product: str = Field(default="", max_length=512)
+    target_price: float = Field(..., gt=0.0, allow_inf_nan=False)
+    ceiling_price: float = Field(..., gt=0.0, allow_inf_nan=False)
+    moq: int | None = Field(default=None, ge=1, le=10_000_000)
     rounds: int = Field(default=model.ROUNDS, ge=1, le=100)
-    # [REGRESSION] 未認證端點會直接把 n_samples 餵給 solve() 決定張量大小；
-    # 舊版毫無上界，單一請求即可配置任意大的工作集（DoS）。
-    n_samples: int = Field(default=20_000, ge=1, le=50_000)
+    n_samples: int = Field(default=2000, ge=1, le=50_000)
     lambda_break: float = Field(default=1.0, ge=0.0, le=API_NORM_CAP, allow_inf_nan=False)
-    prior_reserve_mean: float = Field(default=PRIOR_RESERVE_MEAN, gt=0.0, allow_inf_nan=False)
-    prior_reserve_std: float = Field(default=PRIOR_RESERVE_STD, gt=0.0, allow_inf_nan=False)
-    observed_offer: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)  # 供應商回價（歸一化，1.0=目標價）
+    prior_reserve_mean: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    prior_reserve_std: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    expected_markup: float | None = Field(default=None, ge=0.0, le=API_MARKUP_CAP, allow_inf_nan=False)
+    observed_offer: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    hazard_intercept: float | None = Field(default=None, allow_inf_nan=False)
+    hazard_tau: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    hazard_quote_gap: float | None = Field(default=None, allow_inf_nan=False)
+    hazard_reserve_gap: float | None = Field(default=None, allow_inf_nan=False)
+    bayes_obs_noise: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    hazard_credible_alpha: float | None = Field(default=None, gt=0.0, lt=1.0, allow_inf_nan=False)
 
 
 @api_v1.get("/heuristics")
@@ -373,41 +423,102 @@ def documented_heuristics():
 @api_v1.get("/simulation/mandates")
 def simulated_mandates():
     """Sandbox commodity mandates. Not factory quotes."""
+    from src.app.demo_data import simulation_payload
     return simulation_payload()
 
 
 @app.get("/health")
 def health():
+    from src.desk.audit_chain import chain_key_configured
+
     language = llm_status()
+    desk_line = "desk sends enabled"
+    if not chain_key_configured():
+        desk_line = "desk sends disabled: chain key missing"
     return {
         "status": "ok",
         "version": "0.4.0",
         "solver": describe_solver_backend(),
         "llm": language,
         "offline_demo": language["offline_demo"],
+        "desk": desk_line,
     }
 
 
-@app.post("/negotiate")
+@_legacy_route(app.post)("/negotiate")
 def negotiate(spec: Spec):
-    post_mean, post_std = spec.prior_reserve_mean, spec.prior_reserve_std
-    if spec.observed_offer is not None:
-        post_mean, post_std = bayes_update(post_mean, post_std, spec.observed_offer)
-    try:
-        res = solve(
-            n_opp_samples=spec.n_samples,
-            lambda_break=spec.lambda_break,
-            reserve_mean=post_mean,
-            reserve_std=post_std,
+    if spec.observed_offer is None:
+        raise HTTPException(status_code=422, detail="A supplier quote is required.")
+    if spec.ceiling_price < spec.target_price:
+        raise HTTPException(status_code=422, detail="The ceiling must be at or above the target.")
+    if spec.prior_reserve_mean is not None and spec.prior_reserve_std is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Set prior_reserve_std together with prior_reserve_mean.",
         )
-    except Exception as e:
-        # [REGRESSION] 舊版把 detail=str(e) 直接回傳，會洩漏內部絕對路徑與
-        # 憑證值。改為記錄於伺服器日誌，只回一般化訊息。
+    from src.desk.headline import audit_line, confirmed_prices
+
+    posted_price = {
+        "status": "review",
+        "parsed": {"unit_price": float(spec.observed_offer)},
+        "provenance": {"price_source": "explicit_field", "unconfirmed": True},
+    }
+    _kept_prices, unconfirmed_prices = confirmed_prices([posted_price])
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "A posted price is not a confirmation. Confirm the supplier unit price "
+            "on the desk. " + audit_line(unconfirmed_prices)
+        ),
+    )
+    currency_ask = float(spec.observed_offer) * float(spec.target_price)
+    if currency_ask > float(spec.ceiling_price):
+        return {
+            "opening_offer_price": None,
+            "blocked": True,
+            "counter_relation": "withheld",
+            "reserve_source": "ceiling",
+            "markup_applied": False,
+            "markup_identified": False,
+            "posterior_reserve_mean": None,
+            "posterior_reserve_std": None,
+            "solver": "one-dimensional expected landed saving minus incremental walk risk",
+            "reason": "The quote is above the ceiling, so no counter is issued.",
+        }
+    from src.engine.hazard_fit import load_hazard_fit
+    from src.engine.reserve import ReserveState
+
+    fit = load_hazard_fit()
+    state = ReserveState.policy()
+    post_mean = float(spec.observed_offer) * float(state.mean())
+    post_std = float(spec.observed_offer) * float(state.std())
+    belief = HazardBelief(
+        intercept=float(fit.intercept if spec.hazard_intercept is None else spec.hazard_intercept),
+        tau=spec.hazard_tau,
+        quote_gap_coef=float(fit.gap_coef if spec.hazard_quote_gap is None else spec.hazard_quote_gap),
+        reserve_gap_coef=0.0,
+    )
+    try:
+        rec = one_step_counter(
+            quote=currency_ask,
+            target=float(spec.target_price),
+            ceiling=float(spec.ceiling_price),
+            mean=float(post_mean),
+            std=float(post_std),
+            n_samples=spec.n_samples,
+            round_index=float(spec.rounds),
+            lambda_break=float(spec.lambda_break),
+            belief=belief,
+            credible_alpha=spec.hazard_credible_alpha,
+        )
+    except Exception:
         logger.exception("POST /negotiate failed")
         raise HTTPException(status_code=500, detail="Engine failure while solving the negotiation.")
-    rec = recommend(res, target_price=spec.target_price)
     rec["posterior_reserve_mean"] = float(post_mean)
     rec["posterior_reserve_std"] = float(post_std)
+    rec["markup_identified"] = False
+    rec["markup_applied"] = False
+    rec["reserve_source"] = state.source
     return rec
 
 
@@ -431,6 +542,8 @@ class EvolusExtractedFields(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     target_price: Optional[float] = Field(default=None, gt=0.0, le=API_EXTRACTED_PRICE_CAP, allow_inf_nan=False)
+    ceiling_price: Optional[float] = Field(default=None, gt=0.0, le=API_EXTRACTED_PRICE_CAP, allow_inf_nan=False)
+    walk_away_ceiling: Optional[float] = Field(default=None, gt=0.0, le=API_EXTRACTED_PRICE_CAP, allow_inf_nan=False)
     n_samples: Optional[int] = Field(default=None, ge=1, le=20_000)
     lambda_break: Optional[float] = Field(default=None, ge=0.0, le=API_NORM_CAP, allow_inf_nan=False)
     prior_reserve_mean: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
@@ -443,9 +556,10 @@ class EvolusWebhookPayload(BaseModel):
     extracted: Optional[EvolusExtractedFields] = None
     offer: Optional[float] = Field(default=None, gt=0.0, allow_inf_nan=False)
     email_body: Optional[str] = Field(default=None, max_length=20_000)
+    demo: bool = False
 
 
-@app.post("/webhook/evolus", dependencies=[Depends(require_webhook_token)])
+@_legacy_route(app.post)("/webhook/evolus", dependencies=[Depends(require_webhook_token)])
 def webhook_evolus(payload: EvolusWebhookPayload):
     """Evolus workflow 回呼入口（email-in → extractor → 這裡）。"""
     try:
@@ -461,6 +575,8 @@ def webhook_evolus(payload: EvolusWebhookPayload):
             result["draft_source"] = "external_llm_unverified"
             result["draft_guardrail_passed"] = False
         return result
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:
         logger.exception("POST /webhook/evolus failed")
         raise HTTPException(status_code=500, detail="Webhook processing failed.")
@@ -880,7 +996,7 @@ class SessionCommandBody(BaseModel):
     source: str = Field(default="mobile", max_length=64)
 
 
-@api_v1.post("/sessions/{session_id}/command")
+@_legacy_route(api_v1.post)("/sessions/{session_id}/command")
 def execute_session_command(session_id: str, body: SessionCommandBody):
     """執行特定會話的高管授權或決策指令。"""
     _validate_session_id_path(session_id)
@@ -1022,9 +1138,9 @@ class ApproveActionRequest(BaseModel):
 class TCOEvalRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     raw_price: float = Field(..., gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
-    baseline_lead_days: int = Field(default=15, ge=1, le=3650)
+    baseline_lead_days: Optional[int] = Field(default=None, ge=1, le=3650)
     offered_lead_days: Optional[int] = Field(default=None, ge=1, le=3650)
-    baseline_moq: int = Field(default=500, ge=1, le=10_000_000)
+    baseline_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)
     offered_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)
     wacc: float = Field(default=BUYER_CAPITAL_RATE, ge=0.0, le=1.0, allow_inf_nan=False)
 
@@ -1034,10 +1150,11 @@ class BayesianUpdateRequest(BaseModel):
     # [REGRESSION] prior_std 原無 gt=0；prior_std=0 會讓 bayesian_v2 出現
     # math domain error，並以裸 500 回應（FastAPI 的 ServerErrorMiddleware 會
     # 繞過 detail 包裝）。現在在邊界就回 422。
-    prior_mean: float = Field(default=PRIOR_RESERVE_MEAN, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
-    prior_std: float = Field(default=PRIOR_RESERVE_STD, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    # The mean and the width are the caller's. There is no silent 1.08 prior.
+    prior_mean: float = Field(..., gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    prior_std: float = Field(..., gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
     observed_offer: float = Field(..., gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
-    estimated_markup: float = Field(default=BAYES_MARKUP, ge=0.0, le=API_MARKUP_CAP, allow_inf_nan=False)
+    estimated_markup: float = Field(default=0.0, ge=0.0, le=API_MARKUP_CAP, allow_inf_nan=False)
     our_next_offer: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
 
 
@@ -1066,9 +1183,10 @@ class MultiAuctionRunRequest(BaseModel):
     # [REGRESSION] 舊版 n_samples / n_rounds / rounds_quotes 全無上界，且端點
     # 無認證：單一請求即可配置任意大的張量工作集（n_samples=1e6 約需 32GB），
     # 一個便宜請求就能打爆記憶體。現在全部給定硬上界。
-    target_price: float = Field(default=UMBRELLA.target, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
-    walk_away_ceiling: float = Field(default=UMBRELLA.ceiling, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
-    moq: int = Field(default=10000, ge=1, le=10_000_000)
+    target_price: Optional[float] = Field(default=None, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
+    walk_away_ceiling: Optional[float] = Field(default=None, gt=0.0, le=API_PRICE_CAP, allow_inf_nan=False)
+    moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)
+    demo: bool = False
     n_samples: int = Field(default=20000, ge=1, le=50_000)
     n_rounds: int = Field(default=3, ge=1, le=10)
     suppliers: Optional[List[MultiAuctionSupplierInput]] = Field(default=None, max_length=32)
@@ -1087,6 +1205,15 @@ class MultiAuctionRunRequest(BaseModel):
     # Fetched ECB and UK tariff figures enter the solve only when this is set.
     confirm_market_refs: bool = False
     round_outcomes: Optional[List[List[Optional[str]]]] = Field(default=None, max_length=10)
+    prior_mean: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    prior_std: Optional[float] = Field(default=None, gt=0.0, le=API_NORM_CAP, allow_inf_nan=False)
+    expected_markup: Optional[float] = Field(default=None, ge=0.0, le=API_MARKUP_CAP, allow_inf_nan=False)
+    hazard_intercept: Optional[float] = Field(default=None, allow_inf_nan=False)
+    hazard_tau: Optional[float] = Field(default=None, gt=0.0, allow_inf_nan=False)
+    hazard_quote_gap: Optional[float] = Field(default=None, allow_inf_nan=False)
+    hazard_reserve_gap: Optional[float] = Field(default=None, allow_inf_nan=False)
+    bayes_obs_noise: Optional[float] = Field(default=None, gt=0.0, allow_inf_nan=False)
+    hazard_credible_alpha: Optional[float] = Field(default=None, gt=0.0, lt=1.0, allow_inf_nan=False)
 
     @field_validator("rounds_quotes")
     @classmethod
@@ -1144,7 +1271,11 @@ class MultiAuctionRunRequest(BaseModel):
 
     @model_validator(mode="after")
     def _target_not_above_ceiling(self):
-        if float(self.target_price) > float(self.walk_away_ceiling):
+        if (
+            self.target_price is not None
+            and self.walk_away_ceiling is not None
+            and float(self.target_price) > float(self.walk_away_ceiling)
+        ):
             raise ValueError("target_price is above walk_away_ceiling.")
         if self.suppliers:
             seen: dict[str, str] = {}
@@ -1159,7 +1290,7 @@ class MultiAuctionRunRequest(BaseModel):
         return self
 
 
-@api_v1.post("/tco/evaluate")
+@_legacy_route(api_v1.post)("/tco/evaluate")
 def evaluate_nonlinear_tco(req: TCOEvalRequest):
     """計算非價格條款（交期延誤、超額起訂量）之非線性影子成本。"""
     res = TCOEngine.calculate_nonlinear_effective_tco(
@@ -1173,9 +1304,9 @@ def evaluate_nonlinear_tco(req: TCOEvalRequest):
     return {"status": "ok", "tco_analysis": res}
 
 
-@api_v1.post("/bayesian/update")
+@_legacy_route(api_v1.post)("/bayesian/update")
 def calculate_bayesian_update(req: BayesianUpdateRequest):
-    """執行高斯-均勻雙模態混合似然推斷與離群點拒絕。"""
+    """Student-t reserve update. The caller supplies the prior."""
     res = robust_bayes_update(
         prior_mean=req.prior_mean,
         prior_std=req.prior_std,
@@ -1186,7 +1317,7 @@ def calculate_bayesian_update(req: BayesianUpdateRequest):
     return {"status": "ok", "belief_state": res.model_dump()}
 
 
-@api_v1.post("/sessions", response_model=NegotiationSession)
+@_legacy_route(api_v1.post)("/sessions", response_model=NegotiationSession)
 def create_session(spec: SessionSpec):
     """建立新的談判會話。
 
@@ -1221,13 +1352,13 @@ def create_session(spec: SessionSpec):
         raise HTTPException(status_code=500, detail="Failed to create the negotiation session.")
 
 
-@api_v1.get("/sessions", response_model=List[NegotiationSession])
+@_legacy_route(api_v1.get)("/sessions", response_model=List[NegotiationSession])
 def list_sessions():
     """檢索所有現有談判會話。"""
     return session_mgr.list_sessions()
 
 
-@api_v1.get("/sessions/{session_id}", response_model=NegotiationSession)
+@_legacy_route(api_v1.get)("/sessions/{session_id}", response_model=NegotiationSession)
 def get_session(session_id: str):
     """以 ID 查詢特定會話。"""
     _validate_session_id_path(session_id)
@@ -1346,7 +1477,7 @@ def _stored_supplier_draft(sess) -> tuple:
     return reply, language, inbound, price
 
 
-@api_v1.post("/sessions/{session_id}/approve")
+@_legacy_route(api_v1.post)("/sessions/{session_id}/approve")
 def approve_session_decision(session_id: str, body: ApproveActionRequest):
     """採購決策副駕駛 (Copilot) 人工審核與定奪授權端點。
 
@@ -1440,6 +1571,14 @@ def approve_session_decision(session_id: str, body: ApproveActionRequest):
     final_price = body.custom_price
     if final_price is None:
         final_price = _latest_recommended_price(sess)
+        if final_price is None and _reserve_not_identified(sess):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "No counter was issued. One ask without a reserve prior or a markup "
+                    "is not enough to approve."
+                ),
+            )
         if final_price is None:
             final_price = sess.latest_our_offer or sess.spec.target_price
 
@@ -1550,7 +1689,7 @@ def approve_session_decision(session_id: str, body: ApproveActionRequest):
     }
 
 
-@api_v1.post("/sessions/{session_id}/round")
+@_legacy_route(api_v1.post)("/sessions/{session_id}/round")
 def process_negotiation_round(session_id: str, action: RoundActionRequest):
     """
     處理單輪網格回報：
@@ -1577,20 +1716,10 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         )
     sess = session_mgr.get_session(session_id)
     if not sess:
-        default_spec = SessionSpec(
-            session_id=session_id,
-            product_name="Custom Carbon Auto Umbrella",
-            target_price=UMBRELLA.target,
-            ceiling_price=UMBRELLA.ceiling,
-            moq=5000,
-            max_rounds=5,
-            supplier_id="Web_Inbound_Supplier",
-            supplier_channel="web_chat",
+        raise HTTPException(
+            status_code=404,
+            detail="No such session. Create one with a target and a ceiling before posting a round.",
         )
-        logger.info("Auto-provisioning session '%s' on first /round call.", session_id)
-        sess = session_mgr.create_session(default_spec)
-        initial_state = AutopilotState.COPILOT_MONITORING if not action.is_autopilot() else AutopilotState.AUTOPILOT_CRUISING
-        sess = session_mgr.transition_state(session_id, initial_state)
     elif action.expected_version is not None and sess.version != action.expected_version:
         raise HTTPException(
             status_code=409,
@@ -1635,39 +1764,63 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     #    效能說明：Stage-1（正則 + 端側 ONNX）實測 ~1ms。
     #    Stage-2（AMD tokenfactory LLM）實測 2–13 秒，故預設不啟用，避免阻塞同步 HTTP 請求。
     #    呼叫端若需要更深語意理解，可設 deep_semantic=true。
-    #    The price, MOQ, and lead time the solver sees come from the request or
-    #    from Stage-1. A model mentioned_price is ignored even when Stage-2 runs.
-    from ..engine.quote_fields import price_the_solver_may_use
-
+    #    MOQ and lead time may be read from the text for the cost breakdown.
+    #    The unit price is only the caller's confirmed opponent_offer_price.
     stage1 = InboundIntentClassifier.classify_stage1_only(raw_text)
     if action.deep_semantic:
         inbound_classification = InboundIntentClassifier.classify(raw_text)
     else:
         inbound_classification = stage1
-    explicit_price = opp_price
-    llm_mentioned = None
-    if action.deep_semantic:
-        llm_mentioned = inbound_classification.mentioned_price
-    opp_price = price_the_solver_may_use(explicit_price, stage1.mentioned_price, llm_mentioned)
+    if opp_price is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Confirm the supplier unit price. Raw text is not a decision input.",
+        )
+    from src.desk.headline import audit_line, confirmed_prices
+
+    # A caller-supplied price is not a person confirming a span. The desk
+    # review route is the confirm flow. This handler does not stamp
+    # review_accepted_by and does not turn the posted number into an offer.
+    posted_price = {
+        "status": "review",
+        "parsed": {"unit_price": float(opp_price)},
+        "provenance": {"price_source": "explicit_field", "unconfirmed": True},
+    }
+    _kept_prices, unconfirmed_prices = confirmed_prices([posted_price])
+    round_audit = audit_line(unconfirmed_prices)
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "A posted price is not a confirmation. Confirm the supplier unit price "
+            "on the desk. " + round_audit
+        ),
+    )
 
     # 1.5 多目標非價格條款 TCO 影子成本折算 (Total Cost of Ownership Normalization)
-    from ..engine.tco import TradeTermsSpec
-    terms_spec = TradeTermsSpec(baseline_moq=sess.spec.moq)
     offered_moq = action.offered_moq or stage1.demanded_moq
     tco_breakdown = None
     effective_opp_price = opp_price
+    mandate_lead = None
+    if isinstance(sess.spec.corporate_mandate, dict):
+        mandate_lead = sess.spec.corporate_mandate.get("baseline_lead_days")
 
     if opp_price is not None:
         tco_res = TCOEngine.calculate_nonlinear_effective_tco(
             raw_price=opp_price,
-            baseline_lead_days=terms_spec.baseline_lead_days,
+            baseline_lead_days=mandate_lead,
             offered_lead_days=action.offered_lead_days,
             baseline_moq=sess.spec.moq,
             offered_moq=offered_moq,
-            wacc=terms_spec.annual_cost_of_capital,
+            wacc=BUYER_CAPITAL_RATE,
         )
         effective_opp_price = tco_res["effective_unit_tco"]
         tco_breakdown = tco_res
+
+    if effective_opp_price is None:
+        raise HTTPException(
+            status_code=422,
+            detail="A counter needs a numeric supplier quote.",
+        )
 
     # 2. 計算歸一化報價與更新底價後驗 (以 TCO 等效總成本驅動博弈)
     prev_mean = sess.spec.prior_reserve_mean
@@ -1679,49 +1832,45 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                 prev_std = t.posterior_std or prev_std
                 break
 
-    post_mean, post_std = prev_mean, prev_std
-    if effective_opp_price is not None:
-        norm_offer = effective_opp_price / target_price
-        post_mean, post_std = bayes_update(prev_mean, prev_std, norm_offer)
+    from src.engine.reserve import ReserveState
 
-    # 3. 跑引擎重解（[PERF] 有界快取：同輸入直接命中，輪間不再重解 20K 樣本）
-    solve_res = _solve_round_cached(
-        sess.spec.max_rounds * 4000,
-        None,
-        post_mean,
-        post_std,
+    state = ReserveState.policy()
+    norm_offer = float(effective_opp_price) / float(target_price)
+    post_mean = norm_offer * float(state.mean())
+    post_std = norm_offer * float(state.std())
+    confidence_prior_std = post_std
+    del prev_mean, prev_std
+
+    # One next offer. The legacy multi-round grid is not this decision.
+    rec = one_step_counter(
+        quote=float(effective_opp_price),
+        target=float(target_price),
+        ceiling=float(ceiling_price),
+        mean=float(post_mean),
+        std=float(post_std),
+        n_samples=int(ROUND_N_SAMPLES),
+        risk_tolerance=action.risk_tolerance,
     )
-    rec = recommend(solve_res, target_price=target_price)
-    # [P0 REGRESSION — 引擎審計發現] 這裡原本把**已經更新過的後驗** (post_mean/post_std)
-    # 當成 `prior_reserve_mean/std` 傳進去，**同時又**傳 `observed_offer` ——
-    # proposal.build_proposal 內部 (proposal.py:17-18) 會再跑一次 bayes_update，
-    # 於是同一筆供應商報價被更新了兩次（history 一次、proposal 再一次），
-    # 而 bayesian_belief_state 又在下方更新第三次。
-    # 實測同一個 /round 回應裡出現三個不同的後驗均值：
-    #     history[-1].posterior_mean        = 1.0257  （正確：單次更新）
-    #     proposal.posterior_reserve_mean   = 1.016   （二次更新）
-    #     bayesian_belief_state.posterior_mean = 1.0157（三次更新）
-    # 且 breakdown_prob 同時是 0.0096 與 0.002（差 4.8 倍）、expected_margin 是
-    # 3.85 與 3.97 —— 同一題在同一個 JSON 裡給兩個答案，評審一比就穿幫。
-    # 現改為：把後驗當成先驗傳入，且**不再重複傳 observed_offer**。
-    # 另外補上 walk_away_ceiling，讓 proposal 的讓步上限與本會話的真實上限一致
-    # （proposal.py:27-31 缺此欄位時會退回 model.YOUR_CEILING=1.35 這個與
-    #  會話無關的常數倍率）。
     prop = proposal.build_proposal(
         {
             "target_price": target_price,
             "prior_reserve_mean": post_mean,
             "prior_reserve_std": post_std,
             "walk_away_ceiling": ceiling_price,
+            "quote_price": float(effective_opp_price),
+            "n_samples": int(ROUND_N_SAMPLES),
+            "risk_tolerance": action.risk_tolerance,
         },
         observed_offer=None,
     )
 
     p_break = rec["breakdown_prob"]
     raw_recommended_price = rec["opening_offer_price"]
-    recommended_offer_price = min(raw_recommended_price, ceiling_price)
+    recommended_offer_price = (
+        None if raw_recommended_price is None else min(raw_recommended_price, ceiling_price)
+    )
     floor_price_est = round(post_mean * target_price, 2)
-    bayesian_confidence = compute_belief_confidence(prev_std, post_std, post_mean)
+    bayesian_confidence = compute_belief_confidence(confidence_prior_std, post_std, post_mean)
 
     # 3. 記錄對手發言輪次
     # [假資料修正 §5.7] 把本輪**真實**算出的遙測值一併持久化進 turn.metadata，
@@ -1759,6 +1908,15 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             # 來源，故一律記 None（不把 target_price * 1.05 這種內部公式值
             # 冒充成「備選供應商真實報價」）。
             "competing_lead_price": None,
+            "recommended_offer_price": rec.get("opening_offer_price"),
+            "push_offer_price": rec.get("push_offer_price"),
+            "push_half_price": rec.get("push_half_price"),
+            "push_double_price": rec.get("push_double_price"),
+            "reserve_source": rec.get("reserve_source"),
+            "reserve_note": rec.get("prior_note"),
+            "heuristic": rec.get("heuristic"),
+            "markup_applied": False,
+            "audit": round_audit,
         },
     )
     try:
@@ -1768,7 +1926,9 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
 
     # 4. 安全熔斷矩陣評估
     trip_reason = None
-    if inbound_classification.requires_escalation:
+    if raw_recommended_price is None:
+        trip_reason = "No counter. Every feasible offer exceeds the walk-away hazard cap."
+    elif inbound_classification.requires_escalation:
         trip_reason = f"Security escalation: {inbound_classification.primary_intent.value} ({inbound_classification.tactical_rationale})"
     elif model.breakdown_circuit_tripped(p_break, action.risk_tolerance):
         cap = (
@@ -1785,9 +1945,48 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     elif raw_recommended_price > ceiling_price:
         trip_reason = f"Engine recommended price ¥{raw_recommended_price:.2f} breaches ceiling ¥{ceiling_price:.2f}."
 
+    if trip_reason and raw_recommended_price is None:
+        notifier.notify_circuit_breaker(
+            session_id=session_id,
+            product=sess.spec.product_name,
+            opponent_offer=opp_price or target_price,
+            p_break=p_break,
+            advice_text=prop["advice_text"],
+            proposed_price=None,
+        )
+        if sess.state != AutopilotState.CIRCUIT_TRIPPED_ESCALATED:
+            try:
+                sess = session_mgr.transition_state(
+                    session_id, AutopilotState.CIRCUIT_TRIPPED_ESCALATED, reason=trip_reason
+                )
+            except Exception as _trip_err:
+                logger.warning(
+                    "Circuit-breaker state transition failed for session %s: %s",
+                    session_id, _trip_err,
+                )
+        v2_belief = robust_bayes_update(
+            prior_mean=post_mean,
+            prior_std=post_std,
+            observed_offer=None,
+        )
+        return {
+            "session": sess,
+            "autopilot_state": sess.state.value,
+            "circuit_tripped": True,
+            "pending_human_approval": True,
+            "trip_reason": trip_reason,
+            "recommendation": rec,
+            "proposal": prop,
+            "action_object": None,
+            "reply_text": None,
+            "tco_breakdown": tco_breakdown,
+            "effective_opp_price": effective_opp_price,
+            "audit": round_audit,
+            "bayesian_belief_state": v2_belief.model_dump(),
+        }
+
     if trip_reason:
         # 觸發熔斷！構建結構化策略對象並派發高階英文決策卡
-        from ..engine.logrolling import CorporateMandate
         trip_action_obj = TacticalActionObject(
             schema_version=CURRENT_SCHEMA_VERSION,
             source_round_id=f"{session_id}_R{current_round}_{sess.spec.supplier_id}",
@@ -1806,19 +2005,11 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
                 else TacticalModeEnum.WALK_AWAY
             ),
             product_name=sess.spec.product_name,
-            # Buyer-side planning defaults from CorporateMandate. A missing
-            # observation stays missing in session metadata; these fields describe
-            # OUR proposal and the card labels them as such. `or 25` would also
-            # treat a numeric 0 as missing.
-            lead_days=(
-                action.offered_lead_days
-                if action.offered_lead_days is not None
-                else int(CorporateMandate.model_fields["baseline_lead_days"].default)
-            ),
+            lead_days=action.offered_lead_days,
             deposit_pct=(
                 action.deposit_pct
                 if action.deposit_pct is not None
-                else float(CorporateMandate.model_fields["baseline_deposit_pct"].default)
+                else float(BASELINE_DEPOSIT_PCT)
             ),
             moq=offered_moq or sess.spec.moq,
             counterpart_intent=inbound_classification.primary_intent,
@@ -1871,6 +2062,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             "reply_text": None,  # 阻斷回覆，等待主管手機授權
             "tco_breakdown": tco_breakdown,
             "effective_opp_price": effective_opp_price,
+            "audit": round_audit,
             "bayesian_belief_state": v2_belief.model_dump(),
         }
 
@@ -1887,35 +2079,34 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
     mandate_obj = None
     if sess.spec.corporate_mandate:
         try:
-            mandate_obj = CorporateMandate(**sess.spec.corporate_mandate)
+            mandate_fields = dict(sess.spec.corporate_mandate)
+            if "max_allowed_moq" not in mandate_fields and sess.spec.moq:
+                mandate_fields["max_allowed_moq"] = int(sess.spec.moq) * int(MOQ_HEADROOM_MULTIPLE)
+            mandate_obj = CorporateMandate(**mandate_fields)
         except Exception:
-            pass
-    if not mandate_obj:
-        b_moq = sess.spec.moq
-        # Buyer planning baseline. Do not copy the supplier's quoted lead into
-        # this field: a quoted lead of 10 fails CorporateMandate validation
-        # (min desired lead is 12) and used to 500 the round. The supplier's
-        # observed lead is applied later, only on SupplierCurrentOffer.
-        mandate_obj = CorporateMandate(
-            target_price=target_price,
-            walk_away_ceiling=ceiling_price,
-            baseline_moq=b_moq,
-            max_allowed_moq=max(1200, int(b_moq * 2)),
-        )
+            mandate_obj = None
 
     # [假資料修正 §5.5] 若對方**從未報出**任何模具費，就不該在 mandate 上主張
     # 「要求免除模具費」—— 否則下方的 BuyerScriptGenerator 會憑空向對方要求
     # 減免一筆對方從未開過的價（舊版即以寫死的 3000.0 運作）。
-    if (inbound_classification.demanded_mold_fee or 0.0) <= 0.0:
+    if mandate_obj is not None and (inbound_classification.demanded_mold_fee or 0.0) <= 0.0:
         mandate_obj = mandate_obj.model_copy(
             update={"mold_fee_exemption_demanded": False}
         )
 
     # 判定是否觸發多維條款置換 (當對手不降價或哭窮抬價時)
     should_logroll = (
-        opp_price is not None
+        mandate_obj is not None
+        and opp_price is not None
         and opp_price > target_price * STAGNATION_PREMIUM
         and current_round >= 2
+        and mandate_obj.baseline_lead_days is not None
+        and mandate_obj.max_acceptable_lead_days is not None
+        and mandate_obj.min_desired_lead_days is not None
+        and mandate_obj.baseline_moq is not None
+        and mandate_obj.max_allowed_moq is not None
+        and (action.offered_lead_days is not None or mandate_obj.baseline_lead_days is not None)
+        and (offered_moq or sess.spec.moq or mandate_obj.baseline_moq)
     )
 
     if should_logroll:
@@ -2028,19 +2219,25 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         # deposit_pct 是「本輪我方採用的交期/定金條件」，不得由 `or 25` /
         # `or 0.30` 補一個從未觀測的值冒充成對方開出的條件。對方報了就報了，
         # 沒報就沿用 mandate 的規劃基線（語意：我方規劃基準，非對手報價）。
-        lead_days_val = (
-            action.offered_lead_days
-            if action.offered_lead_days is not None
-            else mandate_obj.baseline_lead_days
-        )
+        lead_days_val = action.offered_lead_days
         deposit_pct_val = (
             action.deposit_pct
             if action.deposit_pct is not None
-            else mandate_obj.baseline_deposit_pct
+            else (mandate_obj.baseline_deposit_pct if mandate_obj is not None else None)
         )
         moq_val = offered_moq or sess.spec.moq
-        mold_exempt = False
-        waive_mold_amount = 0.0
+        if deposit_pct_val is None:
+            deposit_pct_val = float(BASELINE_DEPOSIT_PCT)
+        # A quoted mold fee is the supplier's number. Lead time and MOQ stay
+        # unset until the buyer provides them, and that absence does not drop
+        # the fee the supplier already wrote down.
+        quoted_mold_fee = float(inbound_classification.demanded_mold_fee or 0.0)
+        mold_exempt = bool(
+            mandate_obj is not None
+            and mandate_obj.mold_fee_exemption_demanded
+            and quoted_mold_fee > 0.0
+        )
+        waive_mold_amount = quoted_mold_fee if mold_exempt else 0.0
 
     action_obj = TacticalActionObject(
         schema_version=CURRENT_SCHEMA_VERSION,
@@ -2239,11 +2436,9 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
             "recommendation": rec,
             "proposal": prop,
             "recommended_offer_price": auth_price,
-            "price_source": (
-                "explicit_offer" if explicit_price is not None
-                else ("stage1_regex" if stage1.mentioned_price is not None else "none")
-            ),
-            "llm_price_ignored": llm_mentioned if action.deep_semantic else None,
+            "price_source": "explicit_field",
+            "llm_price_ignored": True,
+            "audit": round_audit,
             "amd_live": {
                 "requested": bool(action.amd_live),
                 "decides_price": False,
@@ -2334,11 +2529,9 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         "recommendation": rec,
         "proposal": prop,
         "recommended_offer_price": auth_price,
-        "price_source": (
-            "explicit_offer" if explicit_price is not None
-            else ("stage1_regex" if stage1.mentioned_price is not None else "none")
-        ),
-        "llm_price_ignored": llm_mentioned if action.deep_semantic else None,
+        "price_source": "explicit_field",
+        "llm_price_ignored": True,
+        "audit": round_audit,
         "amd_live": {
             "requested": bool(action.amd_live),
             "decides_price": False,
@@ -2353,7 +2546,10 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from ..web.routes_web import api_v1 as web_api_v1_router, router as web_open_router
-from ..engine.multi_solver import simulate_reverse_auction
+if _LEGACY_ON:
+    from ..engine.multi_solver import simulate_reverse_auction
+else:
+    simulate_reverse_auction = None
 
 static_path = Path(__file__).parent.parent / "web" / "static"
 if static_path.exists():
@@ -2362,6 +2558,9 @@ if static_path.exists():
 # 先把 /api/v1 認證 router 註冊進 app，再掛上 web 的 /api/v1 子路由。
 # [REGRESSION] 舊版逐條端點掛門禁，因此 routes_web.py 內的四條 /api/v1 路由
 # （stream / config / test-push）完全沒被 gate。現在全部由帶依賴的 router 承接。
+from src.desk.routes import register_desk_routes
+
+register_desk_routes(api_v1)
 app.include_router(api_v1)
 app.include_router(web_api_v1_router)
 # 開放路由：儀表板 HTML（GET /）與刻意豁免的 SSE 串流。
@@ -2422,7 +2621,7 @@ def _official_reference_bundle(suppliers: Optional[List[dict]], req: MultiAuctio
     return bundle
 
 
-@api_v1.post("/multi-auction/run")
+@_legacy_route(api_v1.post)("/multi-auction/run")
 def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
     """觸發多供應商逆向拍賣。
 
@@ -2431,13 +2630,37 @@ def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
     """
     try:
         req = body or MultiAuctionRunRequest()
-        if req.suppliers is not None and len(req.suppliers) == 0:
-            # [FIX] 空供應商名單原本靜默 fallback（下游可能 numpy 廣播 500），
-            # 改為明確 422。
+        has_quotes = bool(req.rounds_quotes) or bool(
+            req.suppliers and all(item.quote is not None for item in req.suppliers)
+        )
+        demo_bundle = None
+        if req.demo and not has_quotes:
+            from src.app.demo_data import self_play_bundle
+
+            demo_bundle = self_play_bundle()
+            fill = {}
+            if req.target_price is None:
+                fill["target_price"] = demo_bundle["target"]
+            if req.walk_away_ceiling is None:
+                fill["walk_away_ceiling"] = demo_bundle["ceiling"]
+            if req.moq is None:
+                fill["moq"] = demo_bundle["moq"]
+            if fill:
+                req = req.model_copy(update=fill)
+        if req.target_price is None or req.walk_away_ceiling is None:
             raise HTTPException(
                 status_code=422,
-                detail="suppliers must not be an empty list; omit the field to use "
-                "the default supplier pool.",
+                detail="target_price and walk_away_ceiling are required.",
+            )
+        if req.suppliers is not None and len(req.suppliers) == 0:
+            raise HTTPException(
+                status_code=422,
+                detail="suppliers must not be an empty list.",
+            )
+        if not has_quotes and not (req.demo and demo_bundle):
+            raise HTTPException(
+                status_code=422,
+                detail="Provide supplier quotes, or set demo=true for the labelled self-play path.",
             )
         if req.rounds_quotes and req.suppliers:
             bad_rows = [
@@ -2462,6 +2685,17 @@ def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
             risk_tolerance=req.risk_tolerance,
             base_currency=req.base_currency,
             round_outcomes=req.round_outcomes,
+            demo=bool(req.demo and demo_bundle and not has_quotes),
+            self_play=demo_bundle if req.demo and demo_bundle and not has_quotes else None,
+            prior_mean=req.prior_mean,
+            prior_std=req.prior_std,
+            expected_markup=req.expected_markup,
+            hazard_intercept=req.hazard_intercept,
+            hazard_tau=req.hazard_tau,
+            hazard_quote_gap=req.hazard_quote_gap,
+            hazard_reserve_gap=req.hazard_reserve_gap,
+            bayes_obs_noise=req.bayes_obs_noise,
+            hazard_credible_alpha=req.hazard_credible_alpha,
         )
         from ..market.trade_data import build_market_context
 

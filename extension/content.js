@@ -254,6 +254,31 @@
     );
   }
 
+  // A round is posted only when this page shows a target and a ceiling.
+  // The extension does not invent a mandate.
+  function readPageMandate() {
+    const root = document.getElementById("tf-mandate");
+    if (!root) return null;
+    const read = (field) => {
+      const el = root.querySelector(`[data-tf-field="${field}"]`);
+      return el ? String(el.value || "").trim() : "";
+    };
+    const target = Number(read("target"));
+    const ceiling = Number(read("ceiling"));
+    if (!Number.isFinite(target) || target <= 0 || !Number.isFinite(ceiling) || ceiling <= 0) {
+      return null;
+    }
+    const markupText = read("markup");
+    const markup = markupText === "" ? null : Number(markupText);
+    return {
+      targetPrice: target,
+      ceilingPrice: ceiling,
+      expectedMarkup: Number.isFinite(markup) && markup >= 0 ? markup : null,
+      productName: read("product") || "page product",
+      mandateLabel: root.getAttribute("data-tf-label") || "",
+    };
+  }
+
   function extractPriceFromText(text) {
     if (!text) return null;
     const patterns = [
@@ -560,10 +585,11 @@
       ];
 
       ISOLATED_EVENTS.forEach((eventType) => {
+        // Bubble, not capture. A capture listener here runs before the
+        // button and would swallow Confirm, Copy, and the mode toggle.
         root.addEventListener(eventType, (e) => {
           e.stopPropagation();
-          e.stopImmediatePropagation();
-        }, { capture: true });
+        });
       });
     }
 
@@ -644,6 +670,50 @@
       }
       if (dot) dot.style.setProperty("--tf-dot-color", color);
       if (sub && subtext) sub.textContent = subtext;
+    }
+
+    clearDeck() {
+      const deck = this.shadowRoot.getElementById("tf-deck");
+      if (!deck) return;
+      deck.style.display = "none";
+      deck.innerHTML = "";
+    }
+
+    renderConfirm(candidates, onPick) {
+      const deck = this.shadowRoot.getElementById("tf-deck");
+      if (!deck) return;
+      const doc = deck.ownerDocument;
+      const tokens = Array.isArray(candidates) ? candidates : [];
+      deck.replaceChildren();
+      deck.style.display = "block";
+
+      const head = doc.createElement("div");
+      head.className = "tf-deck-head";
+      const title = doc.createElement("span");
+      title.className = "tf-deck-title";
+      title.textContent = "Confirm a unit price";
+      head.appendChild(title);
+
+      const note = doc.createElement("div");
+      note.className = "tf-deck-note";
+      note.textContent = "Pick the supplier's goods unit price from the message. A scraped number is not the offer.";
+
+      const row = doc.createElement("div");
+      if (!tokens.length) {
+        row.textContent = "No confirmable amount was read. Nothing was countered.";
+      } else {
+        tokens.forEach((token) => {
+          const btn = doc.createElement("button");
+          btn.type = "button";
+          btn.className = "tf-btn tf-confirm-btn";
+          btn.textContent = String(token);
+          btn.addEventListener("click", () => {
+            if (token && onPick) onPick(String(token));
+          });
+          row.appendChild(btn);
+        });
+      }
+      deck.append(head, note, row);
     }
 
     renderDecisionDeck(data, offer, counterOffer, onCopy) {
@@ -1049,10 +1119,18 @@
     const offer = extractPriceFromText(rawText);
     if (!offer) return;
 
+    const mandate = readPageMandate();
+    if (!mandate) {
+      overlayEl.updateStatus(
+        "MANDATE REQUIRED",
+        "#f59e0b",
+        "Set a target and a ceiling on this page. No round is sent without them."
+      );
+      return;
+    }
+
     console.log(`[TradeFlow Copilot] Detected quote ¥${offer} in session ${sessionContext.sessionId}`);
-    // [誠實揭露] 決策核心是向量化 Expectimax（+ Bayesian v2 信念更新），
-    // 不是 MCTS。舊字串 "Bayesian MCTS" 是錯誤的演算法宣稱，demo 時會被看見。
-    overlayEl.updateStatus("ENGINE SOLVING...", "#38bdf8", `Processing quote ¥${offer} via Expectimax + Bayesian v2`);
+    overlayEl.updateStatus("ENGINE SOLVING...", "#38bdf8", `Processing quote ¥${offer} via expected surplus`);
 
     // 3. Dispatch to background via Port
     // V1 (F6) CONFIRMED: neither content.js nor background.js ever sent a `mode`
@@ -1063,9 +1141,17 @@
     // "autopilot" value.
     portClient.send("SUBMIT_OFFER", {
       sessionId: sessionContext.sessionId,
-      offer: offer,
       context: rawText,
       mode: overlayEl._state.mode === "copilot" ? "copilot" : "autopilot",
+      targetPrice: mandate.targetPrice,
+      ceilingPrice: mandate.ceilingPrice,
+      expectedMarkup: mandate.expectedMarkup,
+      productName: mandate.productName,
+      mandateLabel: mandate.mandateLabel,
+      supplierId: sessionContext.supplierId,
+      supplierName: sessionContext.supplierName,
+      url: sessionContext.url,
+      pageTitle: document.title || "",
     });
   }
 
@@ -1108,6 +1194,49 @@
     portClient.on("SESSION_UPDATED", (msg) => {
       const data = msg.data;
       if (!data) return;
+
+      if (data.awaiting_confirm) {
+        overlayEl.updateStatus(
+          "CONFIRM A PRICE",
+          "#f59e0b",
+          "Pick the supplier unit price from the message. Nothing is countered until you confirm."
+        );
+        overlayEl.renderConfirm(data.candidates || [], (token) => {
+          portClient.send("CONFIRM_DESK_PRICE", {
+            dealId: data.deal_id,
+            eventId: data.event_id,
+            supplierId: data.supplier_id,
+            token: token,
+          });
+        });
+        return;
+      }
+
+      if (data.desk) {
+        if (data.desk_counter == null) {
+          overlayEl.clearDeck();
+          overlayEl.updateStatus(
+            data.desk_simulated ? "CONFIRMED — SIMULATED" : "NO COUNTER",
+            "#94a3b8",
+            data.desk_simulated
+              ? "The price is confirmed. This page is simulated, so no live counter is issued."
+              : "The price is confirmed. No live counter was issued."
+          );
+          return;
+        }
+        overlayEl.updateStatus(
+          "COPILOT CARDS READY",
+          "#10b981",
+          `Desk counter ${tfNum(data.desk_counter, 0).toFixed(2)} after confirmation`
+        );
+        overlayEl.renderDecisionDeck(
+          data,
+          data.desk_ask,
+          data.desk_counter,
+          (text) => console.log("[TradeFlow Copilot] Copied:", text.slice(0, 30))
+        );
+        return;
+      }
 
       // [P0-2 修正] 改讀後端「真實」契約欄位（已核對 src/app/main.py 的 copilot
       // 分支 :1551-1563、autopilot 分支 :1646-1668、熔斷分支 :1320-1329，以及
@@ -1184,6 +1313,20 @@
     // Start Targeted Chat Observer
     observerManager = new DOMChatObserverManager((text) => handleInboundQuote(text));
     observerManager.start();
+  }
+
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (!message || message.type !== "IMPORT_VISIBLE_QUOTE") return;
+      const payload = typeof tradeflowImportPayload === "function"
+        ? tradeflowImportPayload(document)
+        : { ok: false, reason: "empty" };
+      if (!payload.ok && detectCaptchaChallenge()) {
+        sendResponse({ ok: false, reason: "captcha" });
+        return;
+      }
+      sendResponse(payload);
+    });
   }
 
   if (document.readyState === "loading") {

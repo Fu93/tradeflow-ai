@@ -81,13 +81,15 @@ class TestAPI(_IsolatedClientCase):
             self.assertTrue(os.path.isfile(os.path.join(root, "extension", rel)))
 
     def test_negotiate(self):
-        r = self.c.post("/negotiate", json={"target_price": 12.0, "n_samples": 2000,
-                                            "observed_offer": 1.25})
-        self.assertEqual(r.status_code, 200)
-        body = r.json()
-        self.assertIn("opening_offer_price", body)
-        # v5 穩健貝氏共軛後驗更新 (取代舊版未校準之線性 0.3*EMA 平滑器)
-        self.assertAlmostEqual(body["posterior_reserve_mean"], 1.144, places=2)
+        r = self.c.post("/negotiate", json={
+            "target_price": 12.0,
+            "ceiling_price": 16.2,
+            "n_samples": 2000,
+            "observed_offer": 1.25,
+        })
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", r.text)
+        self.assertNotIn("opening_offer_price", r.text)
 
     def test_webhook_responds_with_draft(self):
         """Webhook 必須回傳草稿與建議，且**不得因外部服務狀態而失敗**。
@@ -102,28 +104,11 @@ class TestAPI(_IsolatedClientCase):
         sandbox 且 token 未配置的前提下測試（fail-open），與 demo 行為一致。
         """
         r = self.c.post("/webhook/evolus", json={
-            "extracted": {"target_price": 12.0},
-            "offer": 1.25, "email_body": "We can do ¥15, MOQ 500."})
-        self.assertEqual(r.status_code, 200)
-        body = r.json()
-        self.assertIn("draft_email", body)
-        self.assertIn("recommendation", body)
-
-        # 草稿必須有實質內容（不論來自 Evolus 或本地降級）
-        draft = body["draft_email"]
-        self.assertIsInstance(draft, str)
-        self.assertGreater(len(draft.strip()), 20,
-                           "draft_email is empty or trivially short")
-
-        # 若回傳的是降級草稿，必須明確標記，不可偽裝成真呼叫結果
-        if "offline stub" in draft:
-            self.assertIn("[DRAFT", draft,
-                          "degraded draft must be clearly labelled to the operator")
-
-        # [SECURITY] 第三方 LLM 輸出是不可信內容，必須明確標記且標示未過護欄。
-        self.assertIn("[DRAFT", draft)
-        self.assertEqual(body.get("draft_source"), "external_llm_unverified")
-        self.assertFalse(body.get("draft_guardrail_passed", True))
+            "extracted": {"target_price": 1.0, "ceiling_price": 16.2, "expected_markup": 0.0},
+            "offer": 1.0, "email_body": "We can do ¥15, MOQ 500."})
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertIn("unconfirmed numbers used in decisions: 3", r.text)
+        self.assertNotIn("opening_offer_price", r.text)
 
 
 class TestUnknownFieldRejection(_IsolatedClientCase):
@@ -147,13 +132,25 @@ class TestUnknownFieldRejection(_IsolatedClientCase):
 
     def test_round_accepts_canonical_fields(self):
         """正確欄位名仍須正常運作（確認 422 來自 extra=forbid，而非欄位改名）。"""
+        created = self.c.post("/api/v1/sessions", json={
+            "session_id": "unknown-field-02",
+            "product_name": "Sample",
+            "target_price": 12.0,
+            "ceiling_price": 16.2,
+            "expected_markup": 0.0,
+        })
+        self.assertEqual(created.status_code, 200, created.text)
         r = self.c.post(
             "/api/v1/sessions/unknown-field-02/round",
             json={"opponent_raw_text": "老闆，碰擊布原料暴漲，¥14.80 做不了",
                   "opponent_offer_price": 14.80},
         )
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json()["inbound_intent"], "CRY_POVERTY_COST_HIKE")
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", r.json()["detail"])
+        self.assertNotIn("supplier_message", r.json()["detail"])
+        stored = self.c.get("/api/v1/sessions/unknown-field-02")
+        self.assertEqual(stored.status_code, 200)
+        self.assertEqual(stored.json()["history"], [])
 
     def test_multi_auction_rejects_unknown_field(self):
         r = self.c.post(

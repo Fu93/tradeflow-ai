@@ -38,7 +38,7 @@ class TestSolverBackendConfig(unittest.TestCase):
 
     def test_solve_still_returns_on_cpu(self):
         with patch.dict(os.environ, {"TRADEFLOW_SOLVER_BACKEND": "numpy"}):
-            res = solve(n_opp_samples=32)
+            res = solve(n_opp_samples=32, value_ceiling=1.35)
         self.assertEqual(res["n_samples"], 32)
         self.assertIn("best", res)
 

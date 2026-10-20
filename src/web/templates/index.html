@@ -37,6 +37,7 @@
       <details class="masthead-about">
         <summary>About</summary>
         <p class="feed-ver" id="feedVer">—</p>
+        <p class="feed-ver"><a href="/desk">Live supplier desk</a></p>
       </details>
       <button class="btn-quiet masthead-btn" type="button" id="langToggle">繁</button>
       <button class="btn-quiet masthead-btn" type="button" id="themeToggle">Dark</button>
@@ -88,6 +89,9 @@
           <p class="fineprint" id="quoteSampleNote">Samples are labeled simulations. Offline mode cannot read a picture, so use the transcript or paste the chat.</p>
           <p class="amd-callout" id="amdCallout" role="status" aria-live="polite" hidden></p>
           <p class="fineprint" id="quoteFields"></p>
+          <label class="fineprint" for="confirmedUnitPrice">Confirmed unit price. The solver uses only this number, after you click confirm.</label>
+          <input id="confirmedUnitPrice" class="input-plain" type="number" step="any" min="0" />
+          <button class="btn-primary" type="button" id="confirmQuoteBtn" onclick="confirmSupplierPrice()">Confirm this unit price</button>
           <details class="dev-details" id="quoteAbout" hidden>
             <summary>About this reading</summary>
             <p id="quoteCurrencyNote"></p>
@@ -111,6 +115,8 @@
       <input id="auctionCeiling" class="input-plain" type="text" inputmode="decimal" autocomplete="off" />
       <label class="fineprint" for="riskTolerance">Risk tolerance. Leave blank to use the server default.</label>
       <input id="riskTolerance" class="input-plain" type="text" inputmode="decimal" autocomplete="off" />
+      <label class="fineprint" for="expectedMarkup">Expected markup, a fraction of the target. A typed value is not applied. The reserve is each supplier's own ask times a labelled Beta prior. Nothing here is filled in for you.</label>
+      <input id="expectedMarkup" class="input-plain" type="text" inputmode="decimal" autocomplete="off" />
       <label class="fineprint" for="confirmRefs"><input id="confirmRefs" type="checkbox" /> Use a fetched ECB rate in the comparison when one is returned. A UK tariff figure stays reference only. Unchecked rates stay reference only.</label>
       <div id="auctionLoader" class="loader hidden" role="status">Comparing four simulated suppliers…</div>
       <div id="supplierCards" class="supplier-cards">
@@ -186,10 +192,12 @@
             <div class="field">
               <span class="field-label">Recommended counter</span>
               <span class="field-value field-money" id="decisionCounter">—</span>
+              <span class="fineprint" id="decisionPush">Push-lower counter appears beside the default.</span>
               <span class="fineprint" id="decisionUnit">Prices in this panel are CNY, the mandate currency.</span>
+              <span class="fineprint" id="decisionHeuristic"></span>
             </div>
             <div class="field">
-              <span class="field-label">Breakdown risk</span>
+              <span class="field-label">Incremental walk hazard</span>
               <span class="field-value" id="decisionRisk">—</span>
             </div>
           </div>

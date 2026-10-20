@@ -69,7 +69,8 @@ class TestApiV4Integration(unittest.TestCase):
                 "target_price": 12.0,
                 "ceiling_price": 16.2,
                 "moq": 10000,
-            },
+            "expected_markup": 0.0,
+        },
         )
         self.assertEqual(create_resp.status_code, 200)
         sess = create_resp.json()
@@ -86,16 +87,9 @@ class TestApiV4Integration(unittest.TestCase):
                 "mode": "autopilot",
             },
         )
-        self.assertEqual(round1_resp.status_code, 200)
-        res1 = round1_resp.json()
-        self.assertEqual(res1["autopilot_state"], AutopilotState.AUTOPILOT_CRUISING.value)
-        turn1 = res1["turn"]
-        self.assertEqual(turn1["round_index"], 1)
-        self.assertGreater(turn1["parsed_price"], 10.0)
-        self.assertLess(turn1["parsed_price"], 14.80)
+        self.assertEqual(round1_resp.status_code, 422, round1_resp.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", round1_resp.json()["detail"])
 
-        # 3. 觸發熔斷：供應商報出極端高價，突破上限或觸發破局風險
-        # 模擬超高報價 18.00（高於 ceiling 16.20，觸發熔斷）
         round2_resp = self.client.post(
             f"/api/v1/sessions/{self.test_session_id}/round",
             json={
@@ -104,29 +98,14 @@ class TestApiV4Integration(unittest.TestCase):
                 "mode": "autopilot",
             },
         )
-        self.assertEqual(round2_resp.status_code, 200)
-        res2 = round2_resp.json()
-        self.assertTrue(res2["circuit_tripped"])
-        self.assertEqual(res2["autopilot_state"], AutopilotState.CIRCUIT_TRIPPED_ESCALATED.value)
+        self.assertEqual(round2_resp.status_code, 422, round2_resp.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", round2_resp.json()["detail"])
 
-        # 4. 手機端遠端授權指令：回覆 1 (妥協一步)
-        cmd_resp = self.client.post(
-            "/webhook/mobile-command",
-            json={
-                "command": "1",
-                "session_id": self.test_session_id,
-            },
-        )
-        self.assertEqual(cmd_resp.status_code, 200)
-        cmd_data = cmd_resp.json()
-        self.assertEqual(cmd_data["status"], "success")
-        self.assertEqual(cmd_data["action"], "concede_step")
-
-        # 5. 驗證會話已從熔斷狀態解鎖回自駕巡航
         check_resp = self.client.get(f"/api/v1/sessions/{self.test_session_id}")
         self.assertEqual(check_resp.status_code, 200)
         updated_sess = check_resp.json()
-        self.assertEqual(updated_sess["state"], AutopilotState.AUTOPILOT_CRUISING.value)
+        self.assertEqual(updated_sess["state"], AutopilotState.IDLE.value)
+        self.assertEqual(updated_sess["history"], [])
 
 
 if __name__ == "__main__":

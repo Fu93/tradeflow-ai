@@ -36,7 +36,14 @@ from src.engine.roofline import (  # noqa: E402
     load as load_roofline,
     rounded_lower_bound_seconds,
 )
+from src.app.demo_data import self_play_bundle  # noqa: E402
+from src.engine.model import bind_archetypes  # noqa: E402
 from src.engine.solver import solve  # noqa: E402
+from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS  # noqa: E402
+
+bind_archetypes(OPPONENT_TYPE_ROWS, OPPONENT_TYPE_NAMES)
+_DEMO = self_play_bundle()
+_VALUE_CEILING = _DEMO["ceiling"] / _DEMO["target"]
 
 
 def _utc_now() -> str:
@@ -44,11 +51,17 @@ def _utc_now() -> str:
 
 
 def _measure(samples: int, use_gpu: bool) -> dict:
-    opens, scheds = model.strategy_grid()
+    opens, scheds = model.strategy_grid(ceiling=_VALUE_CEILING)
     tracemalloc.start()
     started = time.perf_counter()
     try:
-        solve(n_opp_samples=samples, opens=opens, scheds=scheds, use_gpu=use_gpu)
+        solve(
+            n_opp_samples=samples,
+            opens=opens,
+            scheds=scheds,
+            use_gpu=use_gpu,
+            value_ceiling=_VALUE_CEILING,
+        )
         elapsed = time.perf_counter() - started
         _, peak = tracemalloc.get_traced_memory()
     finally:

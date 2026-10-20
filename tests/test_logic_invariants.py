@@ -48,7 +48,6 @@ def _scalar_expectimax(reserve, urgency, bluff, conc, opens, scheds):
         CONCESSION_RATE_CAP,
         DEAL_DECAY_SCALE,
         DEAL_TOLERANCE,
-        HAZARD_BLUFF,
         HAZARD_INTERCEPT,
         HAZARD_LOGIT_CLIP,
         HAZARD_QUOTE_GAP,
@@ -83,10 +82,10 @@ def _scalar_expectimax(reserve, urgency, bluff, conc, opens, scheds):
                 p_deal = math.exp(-max(gap - DEAL_TOLERANCE, 0.0) / DEAL_DECAY_SCALE)
                 g_reserve = first_gap / max(float(reserve[s]), tiny)
                 logit = HAZARD_INTERCEPT + (HAZARD_RESERVE_GAP + HAZARD_QUOTE_GAP) * g_reserve
-                logit += HAZARD_BLUFF * float(bluff[s]) * g_reserve
                 logit = min(max(logit, -HAZARD_LOGIT_CLIP), HAZARD_LOGIT_CLIP)
                 p_break = float(sigmoid(None, logit))
-                payoff = p_deal * (model.YOUR_CEILING - paid) - p_break * BREAK_PENALTY
+                from src.config.heuristics import YOUR_CEILING
+                payoff = p_deal * (YOUR_CEILING - paid) - p_break * BREAK_PENALTY
                 margin[i, j] += payoff
                 brk[i, j] += p_break
     margin /= len(reserve)
@@ -113,6 +112,7 @@ class TestExpectimaxReference(unittest.TestCase):
             reserve_mean=1.08,
             reserve_std=0.05,
             lambda_break=1.0,
+            value_ceiling=1.35,
         )
         np.testing.assert_allclose(got["exp_margin"], ref_margin, rtol=1e-6, atol=1e-8)
         np.testing.assert_allclose(got["exp_break"], ref_break, rtol=1e-6, atol=1e-8)
@@ -130,6 +130,7 @@ class TestExpectimaxReference(unittest.TestCase):
             rng=np.random.default_rng(3),
             reserve_mean=1.05,
             reserve_std=0.04,
+            value_ceiling=1.35,
         )
         score = got["exp_margin"] - got["exp_break"]
         self.assertEqual(got["best"], tuple(int(x) for x in np.unravel_index(int(np.argmax(score)), score.shape)))
@@ -158,10 +159,8 @@ class TestBayesianInvariants(unittest.TestCase):
             self.assertGreater(state.posterior_std, 0.0)
             self.assertGreaterEqual(state.deal_probability, 0.0)
             self.assertLessEqual(state.deal_probability, 1.0)
-        self.assertLess(
-            abs(far.posterior_mean - 1.08),
-            abs(near.posterior_mean - 1.08),
-        )
+        self.assertGreater(near.clean_responsibility, far.clean_responsibility)
+        self.assertGreater(far.posterior_mean, 1.08)
 
     def test_default_opponent_prior_sums_to_one(self):
         mix = np.ones(4) / 4
@@ -173,6 +172,11 @@ class TestLogrollingBounds(unittest.TestCase):
         mandate = CorporateMandate(
             target_price=12.0,
             walk_away_ceiling=16.2,
+            baseline_lead_days=25,
+            max_acceptable_lead_days=35,
+            min_desired_lead_days=12,
+            baseline_moq=500,
+            max_allowed_moq=1200,
             mold_fee_exemption_demanded=True,
             estimated_mold_fee=2000.0,
         )
@@ -246,12 +250,14 @@ class TestCircuitBreakerAndGuardrail(unittest.TestCase):
 class TestAuctionOfferBound(unittest.TestCase):
     def test_counter_offers_do_not_exceed_a_tighter_ceiling(self):
         session = MultiAuctionSession(
+            suppliers=[{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}],
             target_price=12.0,
             walk_away_ceiling=13.0,
             n_samples=24,
             n_open=12,
             n_sched=4,
             use_gpu=False,
+            expected_markup=0.08,
         )
         info = session.step_round([12.4, 14.5, 16.0, 13.8])
         self.assertFalse(info["all_quotes_above_ceiling"])
@@ -269,12 +275,14 @@ class TestAuctionOfferBound(unittest.TestCase):
 
     def test_ceiling_below_every_grid_open_falls_back_to_the_ceiling(self):
         session = MultiAuctionSession(
+            suppliers=[{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}],
             target_price=12.0,
             walk_away_ceiling=11.0,
             n_samples=8,
             n_open=6,
             n_sched=2,
             use_gpu=False,
+            expected_markup=0.08,
         )
         info = session.step_round([14.0, 14.0, 14.0, 14.0])
         self.assertTrue(info["all_quotes_above_ceiling"])
@@ -294,10 +302,12 @@ class TestCupyParity(unittest.TestCase):
         cpu = solver.solve(
             n_opp_samples=6, opens=opens, scheds=scheds, use_gpu=False,
             rng=np.random.default_rng(11), reserve_mean=1.06, reserve_std=0.04,
+            value_ceiling=1.35,
         )
         gpu = solver.solve(
             n_opp_samples=6, opens=opens, scheds=scheds, use_gpu=True,
             rng=np.random.default_rng(11), reserve_mean=1.06, reserve_std=0.04,
+            value_ceiling=1.35,
         )
         np.testing.assert_allclose(cpu["exp_margin"], gpu["exp_margin"], rtol=1e-5, atol=1e-6)
         np.testing.assert_allclose(cpu["exp_break"], gpu["exp_break"], rtol=1e-5, atol=1e-6)
@@ -360,6 +370,7 @@ class TestRoundPathHonesty(unittest.TestCase):
             "max_rounds": 1,
             "supplier_id": "S",
             "supplier_channel": "web_chat",
+            "expected_markup": 0.0,
         })
         self.assertEqual(created.status_code, 200, created.text)
         with mock.patch("requests.post") as posted:
@@ -371,17 +382,12 @@ class TestRoundPathHonesty(unittest.TestCase):
                 "offered_lead_days": 10,
                 "deposit_pct": 0.2,
             })
-        self.assertEqual(response.status_code, 200, response.text)
-        body = response.json()
-        self.assertFalse(body["circuit_tripped"])
-        self.assertLessEqual(body["recommended_offer_price"], 16.2)
-        self.assertTrue(body["pending_human_approval"])
-        self.assertIsNone(body["turn"])
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", response.json()["detail"])
+        self.assertNotIn("recommended_offer_price", response.json())
         posted.assert_not_called()
         stored = self.c.get(f"/api/v1/sessions/{sid}")
-        entities = stored.json()["history"][-1]["metadata"]["entities"]
-        self.assertEqual(entities["lead_days"], 10)
-        self.assertAlmostEqual(entities["deposit_pct"], 0.2)
+        self.assertEqual(stored.json()["history"], [])
 
     def test_trip_card_labels_package_terms_as_our_proposal(self):
         sid = "logic_trip"
@@ -394,19 +400,20 @@ class TestRoundPathHonesty(unittest.TestCase):
             "max_rounds": 1,
             "supplier_id": "S",
             "supplier_channel": "web_chat",
+            "expected_markup": 0.0,
         })
         response = self.c.post(f"/api/v1/sessions/{sid}/round", json={
             "opponent_offer_price": 18.0,
             "opponent_raw_text": "lowest 18.00",
         })
-        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.status_code, 422, response.text)
         body = response.json()
-        self.assertTrue(body["circuit_tripped"])
-        self.assertIsNone(body["reply_text"])
-        card = body["executive_card_en"]
-        self.assertNotIn("Package Terms: Lead Time", card)
-        self.assertIn("OUR proposal", card)
-        self.assertIn("not counterpart-confirmed", card)
+        self.assertIn("unconfirmed numbers used in decisions: 1", body["detail"])
+        self.assertNotIn("reply_text", body)
+        self.assertNotIn("action_object", body)
+        stored = self.c.get(f"/api/v1/sessions/{sid}")
+        self.assertEqual(stored.json()["history"], [])
+        self.assertNotEqual(stored.json()["state"], "CIRCUIT_TRIPPED_ESCALATED")
 
     def test_autopilot_deal_candidate_does_not_call_evolus(self):
         sid = "logic_auto"
@@ -419,6 +426,7 @@ class TestRoundPathHonesty(unittest.TestCase):
             "max_rounds": 1,
             "supplier_id": "S",
             "supplier_channel": "web_chat",
+            "expected_markup": 0.0,
         })
         os.environ["EVOLUS_API_KEY"] = "k"
         os.environ["EVOLUS_APP_ID"] = "a"
@@ -429,10 +437,12 @@ class TestRoundPathHonesty(unittest.TestCase):
                     "opponent_raw_text": "行吧服了你了，就按你說的 12.00，發合同過來吧。",
                     "mode": "autopilot",
                 })
-            self.assertEqual(response.status_code, 200, response.text)
-            body = response.json()
-            self.assertNotEqual(body["autopilot_state"], "DEAL_CLOSED")
+            self.assertEqual(response.status_code, 422, response.text)
+            self.assertIn("unconfirmed numbers used in decisions: 1", response.json()["detail"])
             posted.assert_not_called()
+            stored = self.c.get(f"/api/v1/sessions/{sid}")
+            self.assertNotEqual(stored.json()["state"], "DEAL_CLOSED")
+            self.assertEqual(stored.json()["history"], [])
         finally:
             os.environ.pop("EVOLUS_API_KEY", None)
             os.environ.pop("EVOLUS_APP_ID", None)

@@ -31,8 +31,8 @@ from src.config.heuristics import (
 
 class TradeTermsSpec(BaseModel):
     """採購方基準合約標準條款。"""
-    baseline_lead_days: int = Field(default=20, description="基準標準交期 (天)")
-    baseline_moq: int = Field(default=1000, description="基準標準訂單量 (件)")
+    baseline_lead_days: Optional[int] = Field(default=None, description="基準標準交期 (天)。未設定則不計交期影子成本。")
+    baseline_moq: Optional[int] = Field(default=None, description="基準標準訂單量 (件)。未設定則不計起訂量影子成本。")
     baseline_payment_deposit_pct: float = Field(default=BASELINE_DEPOSIT_PCT, description="基準定金比例")
     baseline_payment_credit_days: int = Field(default=0, description="基準驗收後帳期天數 (0=見提單走帳)")
     annual_cost_of_capital: float = Field(default=BUYER_CAPITAL_RATE, description="買方年化資本佔用成本")
@@ -141,9 +141,9 @@ class TCOEngine:
     def calculate_nonlinear_effective_tco(
         cls,
         raw_price: float,
-        baseline_lead_days: int = 15,
+        baseline_lead_days: Optional[int] = None,
         offered_lead_days: Optional[int] = None,
-        baseline_moq: int = 500,
+        baseline_moq: Optional[int] = None,
         offered_moq: Optional[int] = None,
         wacc: float = BUYER_CAPITAL_RATE,
     ) -> Dict[str, Any]:
@@ -173,13 +173,17 @@ class TCOEngine:
         """
         lead_penalty = 0.0
         lead_breakdown = {"capital_cost": 0.0, "stockout_risk_cost": 0.0}
-        if offered_lead_days is not None and offered_lead_days > baseline_lead_days:
+        if (
+            offered_lead_days is not None
+            and baseline_lead_days is not None
+            and offered_lead_days > baseline_lead_days
+        ):
             delay = offered_lead_days - baseline_lead_days
             # 資金佔用折算
             cap_cost = raw_price * (wacc * (delay / 365))
             crisis_cost = 0.0
             # 5 天安全緩衝區之外，超線性懲罰 (階梯指數 1.75) — 常數見上方揭露
-            if delay > 5:
+            if delay > TCO_CRISIS_DELAY_START:
                 crisis_cost = raw_price * TCO_CRISIS_RATE * math.pow((delay - TCO_CRISIS_DELAY_START) / TCO_CRISIS_DELAY_SCALE, TCO_CRISIS_EXPONENT)
             lead_penalty = cap_cost + crisis_cost
             lead_breakdown = {
@@ -189,7 +193,7 @@ class TCOEngine:
 
         moq_penalty = 0.0
         moq_breakdown = {"holding_cost": 0.0, "markdown_risk_cost": 0.0}
-        if offered_moq is not None and offered_moq > baseline_moq:
+        if offered_moq is not None and baseline_moq is not None and offered_moq > baseline_moq:
             excess_ratio = (offered_moq - baseline_moq) / float(baseline_moq)
             # 庫存持有資金佔用 (以平均 90 天滯銷週轉計) — 天數常數與線性路徑共用
             holding_cost = raw_price * excess_ratio * (wacc * (INVENTORY_HOLDING_DAYS / 365))

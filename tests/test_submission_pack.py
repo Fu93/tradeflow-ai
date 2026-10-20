@@ -25,12 +25,12 @@ def _section(text: str, heading: str, stop: str) -> str:
 def test_lablab_form_copies_submission_text():
     submission = (ROOT / "SUBMISSION.md").read_text(encoding="utf-8")
     form = (ROOT / "docs" / "LABLAB_FORM.md").read_text(encoding="utf-8")
-    short = "One-person sourcing desk: a Bayesian Expectimax engine sets the price, an AMD-hosted model only phrases it, and a human sends the offer."
-    shorter = "Expectimax prices the offer. An AMD-hosted model only phrases it. A human sends it."
+    short = "One-person sourcing desk: a one-step offer model sets the price, an AMD-hosted model only phrases it, and a human sends the offer."
+    shorter = "A one-step model prices the offer. An AMD-hosted model only phrases it. A human sends it."
     assert short in submission and short in form
     assert shorter in submission and shorter in form
-    assert len(short) == 136
-    assert len(shorter) == 83
+    assert len(short) == 130
+    assert len(shorter) == 89
     long_sub = _section(submission, "## Long description", "## Demo video script")
     long_form = _fence(form)
     assert long_form == long_sub

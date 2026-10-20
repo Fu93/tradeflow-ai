@@ -47,16 +47,6 @@ DEAL_TOLERANCE = 0.02
 # multiplies acceptance by 1/e. Chosen, not fitted.
 DEAL_DECAY_SCALE = 0.05
 
-# Rationale: an opening gap above this is treated as an aggressive open
-# and adds break probability. Normalised to the target.
-OPENING_GAP_BREAK = 0.32
-
-# Rationale: extra break probability when the opening gap is large.
-OPENING_BREAK_BASE = 0.20
-
-# Rationale: bluff weight on that extra break probability.
-OPENING_BREAK_BLUFF = 0.30
-
 # Rationale: payoff penalty subtracted once per unit of break probability.
 BREAK_PENALTY = 0.10
 
@@ -67,11 +57,13 @@ OPPONENT_GAP_SHARE = 0.45
 # Rationale: cap on an effective per-round concession rate.
 CONCESSION_RATE_CAP = 0.95
 
-# Rationale: default belief that the supplier's reserve sits 8% above the
-# buyer's target, before any offer is observed. Not a market prior.
+# Rationale: labelled suggestion for a reserve prior, shown in the desk
+# before the user saves one. The desk, /round, and the auction do not apply
+# it unless the request includes it. It is not a market measurement.
 PRIOR_RESERVE_MEAN = 1.08
 
-# Rationale: default width of that belief. Not a measured standard deviation.
+# Rationale: labelled width that accompanies that suggestion. Applied only
+# when the user submits a prior and does not submit a width.
 PRIOR_RESERVE_STD = 0.10
 
 # Rationale: noise used when sampling a reserve around its type centre.
@@ -83,9 +75,6 @@ SAMPLE_AXIS_NOISE = 0.10
 # Rationale: lower clip for sampled urgency and concession.
 PARAM_FLOOR = 0.05
 
-# Rationale: upper clip for a sampled concession rate.
-CONC_CAP = 0.95
-
 # Rationale: belief-meter map. raw = BASE + VAR * variance_reduction - CV * cv,
 # then clipped. A display score, not a confidence interval.
 BELIEF_CONF_BASE = 0.75
@@ -94,16 +83,37 @@ BELIEF_CONF_CV = 0.80
 BELIEF_CONF_LO = 0.50
 BELIEF_CONF_HI = 0.98
 
-# Rationale: Bayesian observation noise, prior that a quote is genuine,
-# and the normalised domain of a plausible quote. Chosen, not fitted.
+# Rationale: scale of the Student-t observation in the reserve update.
+# A numerical robustness setting, not a measured quote error.
 BAYES_OBS_NOISE = 0.06
-BAYES_PRIOR_CLEAN = 0.85
-BAYES_DOMAIN_MIN = 0.80
-BAYES_DOMAIN_MAX = 2.50
 
-# Rationale: markup subtracted from an observed offer before the reserve
-# update. A modelling assumption, not a supplier's stated margin.
+# Rationale: degrees of freedom of that Student-t. A heavy-tailed
+# robustness setting so a far quote is down-weighted and still moves the
+# mean. Not an economic claim about suppliers.
+STUDENT_T_DF = 4.0
+
+# Rationale: normal consistency constant for the median absolute deviation,
+# 1 / Phi^{-1}(0.75). A published identity used when a scale is estimated
+# from the user's own quotes.
+MAD_NORMAL_CONSISTENCY = 1.4826
+
+# Rationale: optional markup a user may type, as a fraction of the target.
+# The dashboard does not fill it in and does not send it when the field is
+# blank. Blank derives the reserve from the other quotes and from closed
+# deals. Not a measured margin and not a silent default.
 BAYES_MARKUP = 0.08
+
+# Rationale: central credible mass reported with a Student-t reserve belief.
+# The conventional 95% reporting level. Not a fitted coverage rate.
+CREDIBLE_MASS = 0.95
+
+# Rationale: the one-half in the Student-t incomplete-beta shape and in the
+# Gaussian KL. An identity, not a fitted weight.
+ONE_HALF = 0.5
+
+# Rationale: bisection bracket for a standard Student-t quantile, in
+# standard deviations. A numerical guard, not a price.
+STUDENT_T_BRACKET = 1000.0
 
 # Rationale: standard-normal quantile for a two-sided 95% interval
 # (Phi^{-1}(0.975)). A published identity, not a fitted coefficient.
@@ -248,9 +258,9 @@ FIXED_BASELINE_CONCESSION = 0.05
 PLAUSIBLE_OFFER_MIN = 5.0
 PLAUSIBLE_OFFER_MAX = 30.0
 
-# Rationale: when the real-model buyer is within this normalised step of the
-# supplier, the benchmark records the supplier's price. A scoring rule, not
-# a quote.
+# Rationale: when the offline real-model benchmark is within this
+# normalised step of the supplier, it records the supplier's price.
+# A scoring rule for that script, not a live-desk quote.
 BENCHMARK_FINAL_STEP = 0.01
 
 # Rationale: normal quantile used by the Wilson interval in benchmark_stats,
@@ -289,18 +299,25 @@ HAZARD_ROUND = 0.0
 # not assumed.
 HAZARD_N_ALT = 0.0
 
-# Rationale: extra logit slope when a sampled bluff multiplies the reserve
-# gap. Assumption, not fitted.
-HAZARD_BLUFF = 0.6
-
 # Rationale: prior standard deviation of the per-supplier hazard random
 # effect. Hierarchical shrinkage before any walk-away is observed.
 # Assumption, not estimated.
 HAZARD_SUPPLIER_TAU = 0.35
 
-# Rationale: half-width of the random-effect grid. A support for the logit
-# shift, not a price.
+# Rationale: minimum half-width of the random-effect grid, in logit units.
+# The live grid is at least this wide and at least HAZARD_U_TAILS times the
+# user's spread, so a spread larger than 2 is still inside the support.
 HAZARD_U_HALF = 2.0
+
+# Rationale: how many prior standard deviations of the supplier effect the
+# hazard grid covers on each side. Eight standard deviations leave a
+# negligible normal tail outside the grid.
+HAZARD_U_TAILS = 8.0
+
+# Rationale: spacing of the hazard random-effect grid, in logit units.
+# Fine enough that the predictive 97.5% hazard matches the closed form
+# sigmoid(eta + Phi^{-1}(0.975) * tau) when no outcomes have been recorded.
+HAZARD_U_STEP = 0.05
 
 # Rationale: clip on the hazard logit so an extreme gap cannot overflow
 # the sigmoid. Not a price.
@@ -308,6 +325,10 @@ HAZARD_LOGIT_CLIP = 20.0
 
 # Rationale: tail mass outside the central credible interval. 0.05 leaves
 # a 95% interval. The upper end is the conservative prior-driven reading.
+# Moving this level from 0.05 to 0.10 changed the block bit on 28 of 539
+# quotes (5.2%) on the seed-19 bodies with markup 0.05. Callers
+# of /negotiate and /multi-auction/run can set another level. The desk
+# keeps this labelled default.
 HAZARD_CREDIBLE_ALPHA = 0.05
 
 # Rationale: below this many observed continue or walk-away events the
@@ -317,18 +338,54 @@ HAZARD_MIN_EVENTS = 30
 # Rationale: number of points on the random-effect grid.
 HAZARD_U_POINTS = 64
 
-# Rationale: lowest normalised offer on the coupled grid, where 1 is the
-# target. A supplier quote below this floor can still be accepted. Not a
-# market quote.
+# Rationale: lowest point of the legacy concession grid, where 1 is the
+# target. The live counter does not read this floor. It searches expected
+# surplus from a tiny positive offer up to the quote, the ceiling, and the
+# rival cap. Kept for the CLI grid only.
 OFFER_GRID_FLOOR = 0.50
 
-# Rationale: weight on CVaR of buyer loss in the coupled objective. It does
-# not scale with the hazard cap. Assumption, not fitted.
-CVAR_WEIGHT = 0.35
+# Rationale: step of the analytic surplus search, in the same units as the
+# normalised offer (1 is the target). The chosen counter is the mesh point
+# with the highest expected surplus. Halving the step must not move that
+# counter by more than one step.
+SEARCH_STEP = 0.001
 
-# Rationale: fraction of the cost sample in the upper CVaR tail. Separate
-# from the user's hazard cap, so one number does not drive both. A
-# conventional tail, not a fitted walk-away rate.
+# Rationale: largest mesh the analytic search will allocate. A wider domain
+# uses a coarser step. Live offers are normalised, so this cap is not the
+# decision. A numerical budget, not a price.
+SEARCH_MESH_CAP = 20001
+
+# Rationale: a parsed unit price is auto-accepted only from the target
+# divided by this multiple up to the larger of the target and the ceiling
+# times this multiple. Three still accepts a quote near twice the ceiling,
+# and sends a price near an eighth of the target to review. The user can
+# set another multiple on the deal. A labelled band, not a market range.
+UNIT_SANITY_MULTIPLE = 3.0
+
+# Rationale: how many times the user's MOQ a planning mandate may stretch
+# when the user did not set a separate maximum. A labelled volume policy,
+# not a factory limit.
+MOQ_HEADROOM_MULTIPLE = 2
+
+# Rationale: sample budget for one /round or /negotiate solve. A numerical
+# budget, not a price.
+ROUND_N_SAMPLES = 2000
+
+# Rationale: Monte Carlo budget for the report attached to a chosen offer.
+# The samples do not choose the offer. The offer is the analytic surplus
+# maximum. Not a market quote.
+DESK_N_SAMPLES = 5000
+
+# Rationale: legacy offer-grid length. The live counter does not read it.
+# Doubling it must not move a counter. Kept so an older caller can still
+# name a grid. Not a market quote.
+DESK_N_GRID = 20
+
+# Rationale: fraction of the cost sample in the upper CVaR tail. The tail
+# is reported. It is not a term in the offer score, because on this
+# one-step accept-or-reject objective the tail sat on the ceiling for
+# almost every candidate and could not change the offer.
+# A conventional reporting tail, not a fitted walk-away rate.
 CVAR_TAIL_FRACTION = 0.05
 
 # Rationale: smallest accepted user risk tolerance. Below this the hazard
@@ -382,9 +439,205 @@ SHARED_FACTOR_RHO = 0.0
 # search budget.
 COUPLED_SWEEPS = 1
 
+# Rationale: labelled Beta mean for D, the fraction of a supplier's own
+# first ask at which their reserve sits. 0.9 means the policy expects about
+# ten percent of room under that ask. It is not fitted. The eBay
+# auto-decline ratio is not this number.
+D_PRIOR_MEAN = 0.9
+
+# Rationale: pseudo-count strength, alpha plus beta, of that Beta prior.
+# Four is a weak prior, so a few responses from this supplier can move it.
+# The card shows the push-lower offer at half this strength and at double it.
+D_PRIOR_STRENGTH = 4.0
+
+# Rationale: slope of the soft likelihood used when a supplier rejects an
+# offer. The rejection raises weight on D above the rejected ratio and
+# leaves weight below it. It is not a hard truncation.
+REJECT_SOFTNESS = 8.0
+
+# Rationale: quadrature nodes for a censored or reweighted Beta distribution
+# function. This integrates the belief. It is not a price grid and it does
+# not choose the offer.
+QUAD_NODES = 64
+
+# Rationale: iteration budget for the golden-section maximiser of the
+# one-dimensional offer. The offer is that maximiser, not a mesh point.
+BRENT_ITERS = 80
+
+# Rationale: golden-section conjugate (sqrt(5) − 1) / 2. A mathematical
+# identity used by the bounded scalar maximiser.
+GOLDEN_CONJUGATE = 0.6180339887498949
+
+# Rationale: relative tolerance of the bounded scalar maximiser. A numerical
+# guard, not a price.
+OPT_TOL = 1e-12
+
+# Rationale: continued-fraction iterations for the regularized incomplete
+# beta function. A numerical guard.
+BETA_CF_ITERS = 200
+
+# Rationale: how many resolved shadow accepts, all confirmed unchanged, put
+# the two-sided Wilson 95 percent lower bound at 0.98. The desk shows
+# progress toward this count. Auto-accept stays off.
+GATE_CERTIFY_ACCEPTS = 189
+
+# Rationale: digit-group length the span reader treats as a thousands
+# separator. The rule reader does not call this tokenizer.
+SPAN_GROUP = 3
+
+# Rationale: timeout, in seconds, for one optional extractor call. A missing
+# key leaves the rule prefill only.
+LLM_TIMEOUT_SECONDS = 20
+
+# Rationale: default OpenAI-compatible base for the desk span extractor.
+# An unset URL uses this host. A call still requires an API key.
+EXTRACTOR_BASE_URL = "https://api.tokenfactory.nebius.com/v1"
+
+# Rationale: default chat model for the desk span extractor. It names evidence
+# spans and does not set a price. Temperature stays zero.
+EXTRACTOR_MODEL = "nvidia/Nemotron-3-Ultra-550b-a55b"
+
+# Rationale: second Nebius chat model. The desk calls it when the Ultra hop
+# times out, gets a server or rate-limit response, or returns a body that is
+# not a mentions object. It does not set a price.
+EXTRACTOR_FALLBACK_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+
+# Rationale: NVIDIA integrate base used only after Nebius itself fails.
+# The Ultra model on this host is not in the chain.
+EXTRACTOR_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+
+# Rationale: NVIDIA chat model for the third hop. It is the Super model.
+# The Ultra model on this host is not called.
+EXTRACTOR_NVIDIA_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+
+# Rationale: seconds allowed for the Nebius Ultra extractor hop. A longer
+# wait does not start; the desk moves to the next hop or to human review.
+EXTRACTOR_TIMEOUT_ULTRA_SECONDS = 12
+
+# Rationale: seconds allowed for the Nebius Super extractor hop. This is
+# the second hop, after Ultra, and it is a policy limit rather than a price.
+EXTRACTOR_TIMEOUT_SUPER_SECONDS = 15
+
+# Rationale: seconds allowed for the NVIDIA Super extractor hop. This hop
+# runs only after Nebius itself fails, and only inside the overall budget.
+EXTRACTOR_TIMEOUT_NVIDIA_SECONDS = 30
+
+# Rationale: overall seconds one quote may spend in the extractor chain.
+# It equals the Ultra, Super, and NVIDIA hop limits added together, so a
+# quote cannot wait longer than the whole chain.
+EXTRACTOR_TIMEOUT_BUDGET_SECONDS = 57
+
+# Rationale: maximum completion tokens sent on every extractor hop. A long
+# supplier message was truncated when the provider default was left in place.
+EXTRACTOR_MAX_OUTPUT_TOKENS = 4096
+
+# Rationale: maximum reasoning tokens sent on every extractor hop. The cap
+# leaves room for the JSON answer inside the output limit above.
+EXTRACTOR_REASONING_BUDGET = 2048
+
+# Rationale: characters of supplier text counted as one output token when the
+# completion cap grows for a long message. A short message stays at the floor.
+EXTRACTOR_CHARS_PER_TOKEN = 4
+
+# Rationale: ceiling on extractor completion tokens. A long message may use
+# more than the floor, and a truncated completion still fails closed.
+EXTRACTOR_OUTPUT_TOKEN_CAP = 32768
+
+# Rationale: how many extractor HTTP calls may be in flight at once. A hop
+# that misses its deadline is abandoned, and further calls wait for a free
+# slot instead of starting another socket.
+EXTRACTOR_MAX_IN_FLIGHT = 4
+
+# Rationale: seconds allowed for one read or write of the external chain
+# anchor. It bounds that network call. It is not a price and not a quote.
+CHAIN_ANCHOR_TIMEOUT_SECONDS = 5
+
+# Rationale: HTTP status when the desk cannot open a deal because the chain
+# key is missing. The process stays up. The create route tells the caller.
+HTTP_UNAVAILABLE = 503
+
+# Rationale: HTTP status that means the extractor was rate limited. That
+# status retries the next hop. It is not a price and not a quote amount.
+EXTRACTOR_HTTP_TOO_MANY = 429
+
+# Rationale: HTTP status at or above this value is a provider failure. The
+# desk retries the next hop. Client errors below it are recorded as well.
+EXTRACTOR_HTTP_SERVER = 500
+
+# Rationale: Newton polish step is two to the minus this many bits, times the
+# offer scale. Wide enough that curvature is visible in float64, and short
+# enough that the uniform and Beta(alpha, 1) closed forms land inside 1e-9.
+NEWTON_STEP_BITS = 20
+
+# Rationale: characters of the message kept on each side of an evidence span
+# when a currency or unit mark sits beside the number rather than inside it.
+NEIGHBORHOOD_CHARS = 24
+
+# Rationale: the 4 in the two-sided Wilson variance, z squared over 4n. An
+# identity of the interval, not a price and not a sample size.
+WILSON_QUARTIC = 4
+
+# Rationale: quote-gap knot for the small-gap hinge in the eBay walk-away
+# logit. Gaps below this knot get an extra term because a straight line
+# understated seller-ended walk-away there. It is part of the fitted model,
+# not a price.
+SMALL_GAP_KNOT = 0.10
+
+# Rationale: ISO code for the yuan. The deal row stores the currency a
+# decision uses. This constant is the code the parser recognises for 元,
+# and the labelled default when a caller omits the deal currency.
+DEAL_CURRENCY = "CNY"
+
+# Rationale: currencies a deal may store. The decision reads the deal row.
+# It does not pick one of these itself.
+DEAL_CURRENCIES = ["CNY", "USD", "EUR"]
+
+# Rationale: minor units per major unit for the currencies above. Prices in
+# a decision record are stored as integers of this scale. Two decimal places.
+MINOR_SCALE = 100
+
+# Rationale: largest extractor response, in bytes, that is parsed. A larger
+# body is dropped and the quote stays in human review.
+EXTRACTOR_MAX_BYTES = 65536
+
+# Rationale: maximum characters stored for one extractor evidence span or a
+# caller note. Longer text is rejected by the schema. It is not a price.
+FIELD_MAX_CHARS = 500
+
+
+def _sigmoid(value: float) -> float:
+    import math
+
+    if value >= 0:
+        z = math.exp(-value)
+        return 1.0 / (1.0 + z)
+    z = math.exp(value)
+    return z / (1.0 + z)
+
 
 def public_payload() -> dict:
     """Numbers the dashboard and the extension are allowed to display."""
+    intercept = float(HAZARD_INTERCEPT)
+    gap = float(HAZARD_QUOTE_GAP)
+    hazard_status = "fit-missing"
+    hazard_note = "The eBay hazard file is not available in this process."
+    try:
+        from src.engine.hazard_fit import load_hazard_fit
+
+        fit = load_hazard_fit()
+        intercept = float(fit.intercept)
+        gap = float(fit.gap_coef)
+        hazard_status = "ebay_seller_ended"
+        caveat = str((fit.provenance or {}).get("transfer_caveat") or "")
+        hazard_note = (
+            "Walk-away hazard is transferred from eBay Best Offer, 2012–13, "
+            "Business & Industrial, seller-ended, with a small-gap hinge. "
+            "It is not a measured Chinese-factory rate. A reserve-gap term is "
+            "not in the decision. The risk cap applies to the incremental hazard "
+            "of our offer. " + caveat
+        ).strip()
+    except Exception:
+        pass
     return {
         "documented": True,
         "source": "src/config/heuristics.py",
@@ -394,12 +647,22 @@ def public_payload() -> dict:
         "risk_tolerance_max": RISK_TOLERANCE_MAX,
         "cvar_tail_fraction": CVAR_TAIL_FRACTION,
         "caution_risk_threshold": CAUTION_RISK_THRESHOLD,
-        "hazard_status": "prior-driven",
-        "hazard_note": (
-            "Walk-away hazard uses assumed logistic coefficients in "
-            "src/config/heuristics.py. No public dataset was fitted. "
-            "The default cap is user policy, not an estimated rate."
-        ),
+        "hazard_status": hazard_status,
+        "hazard_intercept": intercept,
+        "hazard_tau": HAZARD_SUPPLIER_TAU,
+        "hazard_quote_gap": gap,
+        "hazard_baseline_rate": _sigmoid(intercept),
+        "hazard_baseline_low": _sigmoid(intercept - HAZARD_SUPPLIER_TAU),
+        "hazard_baseline_high": _sigmoid(intercept + HAZARD_SUPPLIER_TAU),
+        "hazard_min_events": HAZARD_MIN_EVENTS,
+        "prior_reserve_suggestion": PRIOR_RESERVE_MEAN,
+        "prior_reserve_std_suggestion": PRIOR_RESERVE_STD,
+        "student_t_df": STUDENT_T_DF,
+        "dashboard_expected_markup": None,
+        "unit_sanity_multiple": UNIT_SANITY_MULTIPLE,
+        "hazard_credible_alpha": HAZARD_CREDIBLE_ALPHA,
+        "weitzman_search_cost": WEITZMAN_SEARCH_COST,
+        "hazard_note": hazard_note,
         "ladder_edge_lo": LADDER_EDGE_LO,
         "ladder_edge_hi": LADDER_EDGE_HI,
         "ladder_step_fine": LADDER_STEP_FINE,

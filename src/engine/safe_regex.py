@@ -127,6 +127,7 @@ class SafeLinearPattern:
                     regex_flags |= regex.IGNORECASE
                 self._compiled = regex.compile(pattern, regex_flags)
                 self.backend = "regex"
+                self._prime()
                 return
             except Exception as exc:
                 logger.warning(
@@ -187,6 +188,20 @@ class SafeLinearPattern:
                 MAX_INPUT_LEN,
             )
         return self.backend_is_guarded
+
+    def _prime(self) -> None:
+        """Build the matcher once. That cost is not part of the match deadline.
+
+        A later search still uses the deadline and still fails closed on timeout.
+        """
+        if self.backend != "regex" or self._compiled is None:
+            return
+        try:
+            self._compiled.search("0")
+            self._compiled.findall("0")
+            list(self._compiled.finditer("0"))
+        except Exception:
+            logger.warning("[safe_regex] parser warmup failed", exc_info=True)
 
     def search(self, text: str) -> Optional[SafeMatch]:
         if not text:

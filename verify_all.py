@@ -111,9 +111,14 @@ def audit_system():
     # "14,400,000 rollouts in 0.000s" 然後 PASS）。現改為斷言真正的行為性質：
     # 輸出必須隨輸入改變，且必須真的回報它自己算出的 rollout 數。
     try:
+        from src.app.demo_data import self_play_bundle
         from src.engine.multi_solver import simulate_reverse_auction
+        bundle = self_play_bundle()
         t0 = time.perf_counter()
-        res = simulate_reverse_auction(target_price=AUCTION_TARGET, walk_away_ceiling=AUCTION_CEILING, n_samples=10000, use_gpu=False)
+        res = simulate_reverse_auction(
+            target_price=AUCTION_TARGET, walk_away_ceiling=AUCTION_CEILING,
+            n_samples=10000, use_gpu=False, demo=True, self_play=bundle,
+        )
         dt = time.perf_counter() - t0
         assert res["total_rollouts"] > 0
         assert res["backend"].startswith("CPU"), f"unexpected backend: {res['backend']}"
@@ -122,6 +127,7 @@ def audit_system():
         # 或至少不同的戰術分流。常數假物件會在此失敗。
         res_alt = simulate_reverse_auction(
             target_price=AUCTION_TARGET, walk_away_ceiling=AUCTION_CEILING, n_samples=10000, use_gpu=False,
+            demo=True, self_play=bundle,
             suppliers=[
                 {"name": "A", "profile": "Agile Conceder"},
                 {"name": "B", "profile": "Rational Tit-for-Tat"},
@@ -140,8 +146,18 @@ def audit_system():
     # Pillar 3: Corporate Mandate & Logrolling Pareto Frontier
     try:
         from src.engine.logrolling import CorporateMandate, SupplierCurrentOffer, LogrollingEngine
-        mandate = CorporateMandate(target_price=LOGROLL_TARGET, walk_away_ceiling=LOGROLL_CEILING)
-        offer = SupplierCurrentOffer(price=LOGROLL_OFFER, lead_days=25, is_price_stagnant=True)
+        mandate = CorporateMandate(
+            target_price=LOGROLL_TARGET,
+            walk_away_ceiling=LOGROLL_CEILING,
+            baseline_lead_days=25,
+            max_acceptable_lead_days=35,
+            min_desired_lead_days=12,
+            baseline_moq=500,
+            max_allowed_moq=1200,
+        )
+        offer = SupplierCurrentOffer(
+            price=LOGROLL_OFFER, lead_days=25, moq=500, is_price_stagnant=True,
+        )
         lr_res = LogrollingEngine.evaluate(mandate, offer)
         assert lr_res.ast_guardrail_passed is True
         assert len(lr_res.all_pareto_proposals) > 0

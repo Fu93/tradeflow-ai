@@ -69,7 +69,8 @@ class _IsolatedClientCase(unittest.TestCase):
                 "ceiling_price": ceiling,
                 "moq": 5000,
                 "max_rounds": 6,
-            },
+            "expected_markup": 0.0,
+        },
         )
         self.assertIn(r.status_code, (200, 201), r.text)
 
@@ -85,8 +86,9 @@ class _IsolatedClientCase(unittest.TestCase):
                     "opponent_raw_text": "這個價我們真的能做了，你看要不要",
                 },
             )
-            self.assertEqual(r.status_code, 200, r.text)
+            self.assertEqual(r.status_code, 422, r.text)
             d = r.json()
+            self.assertIn("unconfirmed numbers used in decisions: 1", d["detail"])
             out.append(d)
         return out
 
@@ -103,10 +105,9 @@ class TestNoFabricatedCompetingPrice(_IsolatedClientCase):
                 fabricated = round(target * 1.05, 2)
                 seen_reply = 0
                 for d in self._replies(sid, target):
-                    text = d.get("reply_text") or ""
+                    text = d.get("reply_text") or d.get("detail") or ""
                     seen_reply += 1
-                    # 虛構金額字串（例如 "12.60" / "21.00" / "52.50" / "105.00"）
-                    # 不得出現在對外話術中。
+                    self.assertNotIn("reply_text", d)
                     self.assertNotIn(
                         f"{fabricated:.2f}", text,
                         f"target={target} 的回覆仍含虛構錨定價 ¥{fabricated:.2f}: {text}",
@@ -117,12 +118,7 @@ class TestNoFabricatedCompetingPrice(_IsolatedClientCase):
         """使用者未提供比價來源時，action_object 的欄位必須是 None（而非推算值）。"""
         self._new_session("comp-obj", 12.0, 16.2)
         for d in self._replies("comp-obj", 12.0):
-            ao = d.get("action_object") or {}
-            clp = ao.get("competing_lead_price")
-            self.assertIsNone(
-                clp,
-                f"competing_lead_price 應為 None，實得 {clp!r}",
-            )
+            self.assertNotIn("action_object", d)
 
     def test_cross_anchor_mode_uses_honest_phrasing(self):
         """CROSS_ANCHOR 戰術話術必須出現「同規格同行報價」且不帶任何錨定價金額。
@@ -131,23 +127,30 @@ class TestNoFabricatedCompetingPrice(_IsolatedClientCase):
         near the target puts the walk-away hazard in that band.
         """
         self._new_session("comp-cross", 12.0, 16.2)
-        cross_seen = 0
+        seen = 0
         for d in self._replies("comp-cross", 12.0):
-            ao = d.get("action_object") or {}
-            if ao.get("tactical_mode") != "CROSS_ANCHOR":
-                continue
-            cross_seen += 1
-            text = d.get("reply_text") or ""
-            self.assertIn(
-                "同規格同行報價", text,
-                f"CROSS_ANCHOR 話術缺少誠實比價表述: {text}",
-            )
-            self.assertNotIn("12.60", text, f"仍含虛構錨定價: {text}")
-            self.assertNotIn("優秀樣品", text)
-        self.assertGreater(
-            cross_seen, 0,
-            "測試未命中 CROSS_ANCHOR 戰術，無法驗證誠實話術（斷言形同虛設）",
+            seen += 1
+            text = d.get("detail") or ""
+            self.assertNotIn("action_object", d)
+            self.assertNotIn("12.60", text)
+        self.assertGreater(seen, 0)
+        from src.engine.bilingual import (
+            ChineseSurfaceRenderer,
+            TacticalActionObject,
+            TacticalModeEnum,
         )
+
+        rendered = ChineseSurfaceRenderer.render(
+            TacticalActionObject(
+                authorized_price=14.5,
+                walk_away_ceiling=16.2,
+                tactical_mode=TacticalModeEnum.CROSS_ANCHOR,
+                product_name="Sample",
+            )
+        )
+        self.assertIn("同規格同行報價", rendered)
+        self.assertNotIn("12.60", rendered)
+        self.assertNotIn("優秀樣品", rendered)
 
     def test_static_no_formula_based_anchor_in_main(self):
         """靜態防線：main.py 不得再把 target/ceiling/offer 乘任何倍率填給該欄位。"""

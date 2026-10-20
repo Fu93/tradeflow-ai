@@ -27,10 +27,18 @@ import pytest
 # Session create must not call Comtrade during the suite. A test that needs
 # the live client deletes this variable and passes a fake transport.
 os.environ.setdefault("TRADEFLOW_MARKET_OFFLINE", "1")
+# The suite still exercises v1. A production process leaves this unset.
+os.environ.setdefault("TRADEFLOW_LEGACY", "1")
+# The desk chain is HMAC-SHA256. Tests use a fixed key; production reads TRADEFLOW_CHAIN_KEY.
+os.environ.setdefault("TRADEFLOW_CHAIN_KEY", "test-chain-key")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.app import main as api_main  # noqa: E402
+from src.engine.model import bind_archetypes  # noqa: E402
+from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS  # noqa: E402
+
+bind_archetypes(OPPONENT_TYPE_ROWS, OPPONENT_TYPE_NAMES)
 
 
 @pytest.fixture(scope="module", autouse=True)

@@ -69,7 +69,7 @@ A public take uses the Render Blueprint in `render.yaml` (free Docker web servic
 
 **1:20 — How the price is computed.** Stay on the decision card.
 
-> A belief about the supplier reserve, then Expectimax. The model can word the reply. It does not choose the number.
+> The next offer matches the best other confirmed quote, or a push-lower counter from a one-step heuristic. The model can word the reply. It does not choose the number.
 
 **1:50 — Auction.** Click **Run auction**. Wait until the summary appears.
 

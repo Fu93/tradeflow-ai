@@ -743,7 +743,39 @@ function renderEngineDecision(session) {
     if (v !== null) { recommended = v; break; }
   }
   const shownOffer = recommended !== null ? recommended : tfNum(session.latest_our_offer, null);
-  el("decisionCounter").textContent = shownOffer === null ? "—" : tfAmount(shownOffer, "CNY");
+  let reserveNote = null;
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const meta = turns[i].metadata || {};
+    if (meta.reserve_note) { reserveNote = String(meta.reserve_note); break; }
+  }
+  if (shownOffer === null && reserveNote) {
+    el("decisionCounter").textContent = reserveNote;
+  } else {
+    el("decisionCounter").textContent = shownOffer === null ? "—" : tfAmount(shownOffer, "CNY");
+  }
+  let pushOffer = null;
+  let pushHalf = null;
+  let pushDouble = null;
+  let heuristic = null;
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const meta = turns[i].metadata || {};
+    if (pushOffer === null) pushOffer = tfNum(meta.push_offer_price, null);
+    if (pushHalf === null) pushHalf = tfNum(meta.push_half_price, null);
+    if (pushDouble === null) pushDouble = tfNum(meta.push_double_price, null);
+    if (!heuristic && meta.heuristic) heuristic = String(meta.heuristic);
+    if (pushOffer !== null && heuristic) break;
+  }
+  const pushLine = document.getElementById("decisionPush");
+  if (pushLine) {
+    const pushText = pushOffer === null ? "withheld" : tfAmount(pushOffer, "CNY");
+    const halfText = pushHalf === null ? "withheld" : tfAmount(pushHalf, "CNY");
+    const doubleText = pushDouble === null ? "withheld" : tfAmount(pushDouble, "CNY");
+    pushLine.textContent = "Push lower: " + pushText
+      + ". At half the prior strength: " + halfText
+      + ". At double the prior strength: " + doubleText + ".";
+  }
+  const heuristicLine = document.getElementById("decisionHeuristic");
+  if (heuristicLine) heuristicLine.textContent = heuristic || "";
   const unitNote = document.getElementById("decisionUnit");
   if (unitNote) {
     const quote = quoteOnSession(session);
@@ -931,6 +963,24 @@ function paintRiskBands() {
   }
 }
 
+function paintMarkupDefault() {
+  const field = document.getElementById("expectedMarkup");
+  if (!field) return;
+  if (field.dataset.bound !== "1") {
+    field.dataset.bound = "1";
+    field.addEventListener("input", function () { field.dataset.userEdited = "1"; });
+  }
+  if (field.dataset.userEdited === "1") return;
+}
+
+function readExpectedMarkup() {
+  const field = document.getElementById("expectedMarkup");
+  if (!field || String(field.value || "").trim() === "") return null;
+  const markup = Number(field.value);
+  if (!Number.isFinite(markup) || markup < 0) return null;
+  return markup;
+}
+
 function paintMandate(p) {
   document.getElementById("mandatePrice").textContent = `${tfMoney(p.target)} / ${tfMoney(p.ceiling)}`;
   document.getElementById("mandateLead").textContent = p.lead;
@@ -968,6 +1018,7 @@ async function loadDeskConfig() {
     console.warn("[TradeFlow] desk config failed:", err);
   }
   paintRiskBands();
+  paintMarkupDefault();
   const select = document.getElementById("presetCategorySelect");
   const statusEl = document.getElementById("presetStatus");
   if (select && categoryPresets && categoryPresets[select.value]) {
@@ -1024,6 +1075,8 @@ async function applyCategoryPreset(cat) {
     moq: p.moq,
     max_rounds: 5
   };
+  const markup = readExpectedMarkup();
+  if (markup !== null) body.expected_markup = markup;
 
   try {
     const res = await fetch("/api/v1/sessions", {
@@ -1235,6 +1288,8 @@ async function runMultiAuction() {
       auctionBody.suppliers = live.suppliers;
       auctionBody.rounds_quotes = [live.quotes];
       auctionBody.n_rounds = 1;
+    } else {
+      auctionBody.demo = true;
     }
     let target = readAuctionMoney("auctionTarget");
     let ceiling = readAuctionMoney("auctionCeiling");
@@ -1287,6 +1342,12 @@ async function runMultiAuction() {
     }
     const confirmRefs = document.getElementById("confirmRefs");
     if (confirmRefs && confirmRefs.checked) auctionBody.confirm_market_refs = true;
+    // Live quotes use the visible markup. The labelled self-play bundle
+    // carries its own reserves, so a pure demo run does not send this field.
+    if (liveRun) {
+      const markup = readExpectedMarkup();
+      if (markup !== null) auctionBody.expected_markup = markup;
+    }
     const res = await fetch("/api/v1/multi-auction/run", {
       method: "POST",
       headers: tfJsonHeaders(),
@@ -1355,8 +1416,17 @@ async function runMultiAuction() {
         ? "—"
         : ((riskShown * 100).toFixed(1) + "%" + (capBlock ? " upper bound" : ""));
       const counterLabel = blocked
-        ? "not actionable"
+        ? "withheld"
         : (counterNum === null ? "no data" : tfAmount(counterNum, "CNY"));
+      const pushRaw = lastRound.push_offers_cny ? lastRound.push_offers_cny[i] : null;
+      const pushNum = tfNum(pushRaw, null);
+      const pushLabel = blocked || pushNum === null ? "withheld" : tfAmount(pushNum, "CNY");
+      const halfRaw = lastRound.sensitivity_half ? lastRound.sensitivity_half[i] : null;
+      const doubleRaw = lastRound.sensitivity_double ? lastRound.sensitivity_double[i] : null;
+      const halfNum = tfNum(halfRaw, null);
+      const doubleNum = tfNum(doubleRaw, null);
+      const halfLabel = halfNum === null ? "withheld" : tfAmount(halfNum, "CNY");
+      const doubleLabel = doubleNum === null ? "withheld" : tfAmount(doubleNum, "CNY");
       const reasonLine = blockReason
         ? `<div>Block reason: <span class="metric-val">${tfEsc(blockReason)}</span></div>`
         : "";
@@ -1369,7 +1439,9 @@ async function runMultiAuction() {
           <div>Unit price: <span class="metric-val">${tfEsc(quoteLabel)}</span></div>
           <div>Landed cost: <span class="metric-val">${tfEsc(landedLabel)}</span></div>
           <div>Best alternative: <span class="metric-val">${tfEsc(tfAmount(ceilingNum, "CNY"))}</span></div>
-          <div>Counter: <span class="metric-val">${tfEsc(counterLabel)}</span></div>
+          <div>Default counter: <span class="metric-val">${tfEsc(counterLabel)}</span></div>
+          <div>Push lower: <span class="metric-val">${tfEsc(pushLabel)}</span>. At half the prior strength: <span class="metric-val">${tfEsc(halfLabel)}</span>. At double the prior strength: <span class="metric-val">${tfEsc(doubleLabel)}</span>.</div>
+          <div>Reserve: <span class="metric-val">${tfEsc(lastRound.reserve_source || "labelled_policy")}</span>. ${tfEsc(lastRound.reserve_note || "")}</div>
           ${reasonLine}
           <div>Risk: <span class="metric-val">${tfEsc(riskText)}</span></div>
         </div>
@@ -1408,6 +1480,7 @@ async function runMultiAuction() {
       ${data.all_quotes_above_ceiling ? `<p class="is-negative">Every quote is above the walk-away ceiling.</p>` : ""}
       ${data.winner_above_ceiling ? `<p class="is-negative">The winner is above the walk-away ceiling.</p>` : ""}
       ${data.kappa_note ? `<p class="summary-secondary">${tfEsc(data.kappa_note)}</p>` : ""}
+      <p class="summary-secondary">Reserve source: ${tfEsc((data.trace && data.trace.length ? data.trace[data.trace.length - 1].reserve_source : data.reserve_source) || "ask_only")}. ${tfEsc((data.trace && data.trace.length ? data.trace[data.trace.length - 1].reserve_note : data.reserve_note) || "")} Each card shows the counter at half that prior and at double.</p>
       <p class="summary-headline"><strong>Savings versus the first-round best quote</strong> (${tfEsc(tfAmount(data.first_round_best_quote, "CNY"))}): ${tfEsc(tfAmount(data.total_savings_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.total_savings_pct))})</p>
       <p class="${versusTarget !== null && versusTarget < 0 ? "is-negative" : ""}"><strong>Versus your target</strong> (${tfEsc(tfAmount(data.product_target, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_target_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_target_pct))})</p>
       <p class="summary-secondary"><strong>Versus the walk-away ceiling</strong> (${tfEsc(tfAmount(data.walk_away_ceiling, "CNY"))}): ${tfEsc(tfAmount(data.savings_vs_ceiling_cny, "CNY"))}${tfEsc(pieceBasis)} (${tfEsc(tfPct(data.savings_vs_ceiling_pct))})</p>
@@ -1652,27 +1725,7 @@ async function readSupplierQuote() {
     headers: tfJsonHeaders(),
     body: JSON.stringify(readBody),
   });
-  let roundOk = false;
-  if (sid && text.trim()) {
-    try {
-      const roundRes = await fetch(`/api/v1/sessions/${encodeURIComponent(sid)}/round`, {
-        method: "POST",
-        headers: tfJsonHeaders(),
-        body: JSON.stringify({
-          opponent_raw_text: text,
-          mode: "copilot",
-          amd_live: live,
-        }),
-      });
-      roundOk = roundRes.ok;
-      if (roundOk) await fetchSessionDetails(sid);
-      else if (callout) {
-        callout.textContent = `The solver round was rejected (HTTP ${roundRes.status}). The AMD reading is separate and still cannot set the price.`;
-      }
-    } catch (err) {
-      if (callout) callout.textContent = `Solver round failed: ${err.message || "request failed"}`;
-    }
-  }
+  const roundOk = false;
   try {
     const res = await readPromise;
     let payload = null;
@@ -1689,6 +1742,39 @@ async function readSupplierQuote() {
   } catch (err) {
     if (callout) callout.textContent = `AMD reading failed: ${err.message || "request failed"}`;
   }
+}
+
+async function confirmSupplierPrice() {
+  const sid = currentSessionId || (document.getElementById("cmdSessionId") || {}).value || "";
+  const field = document.getElementById("confirmedUnitPrice");
+  const callout = document.getElementById("amdCallout");
+  const paste = document.getElementById("quotePaste");
+  const price = field ? Number(field.value) : NaN;
+  if (!sid) {
+    if (callout) callout.textContent = "Open a session before confirming a unit price.";
+    return;
+  }
+  if (!Number.isFinite(price) || price <= 0) {
+    if (callout) callout.textContent = "Type the confirmed unit price. The raw chat is not a decision input.";
+    return;
+  }
+  const live = !!(document.getElementById("amdLiveToggle") && document.getElementById("amdLiveToggle").checked);
+  const response = await fetch(`/api/v1/sessions/${encodeURIComponent(sid)}/round`, {
+    method: "POST",
+    headers: tfJsonHeaders(),
+    body: JSON.stringify({
+      opponent_offer_price: price,
+      opponent_raw_text: paste ? paste.value : "",
+      mode: "copilot",
+      amd_live: live,
+    }),
+  });
+  if (!response.ok) {
+    if (callout) callout.textContent = `The confirmed price was rejected (HTTP ${response.status}).`;
+    return;
+  }
+  if (callout) callout.textContent = "Confirmed unit price sent to the solver. The raw chat did not set the price.";
+  await fetchSessionDetails(sid);
 }
 
 async function testPush(ch) {

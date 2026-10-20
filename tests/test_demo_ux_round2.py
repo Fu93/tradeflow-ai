@@ -104,34 +104,18 @@ class TestDeskRoundAndCommand(unittest.TestCase):
                 "target_price": 12.0,
                 "ceiling_price": 16.2,
                 "moq": 5000,
-            },
+            "expected_markup": 0.0,
+        },
         )
         self.assertEqual(created.status_code, 200)
         response = client.post(
             "/api/v1/sessions/UX_USD_01/round",
             json={"opponent_raw_text": WALKTHROUGH, "mode": "copilot"},
         )
-        self.assertEqual(response.status_code, 200, response.text[:400])
-        body = response.json()
-        reply = body["reply_text"]
-        authorized = body["action_object"]["authorized_price"]
-        self.assertTrue(reply.startswith("Thank you. Our offer is CNY "))
-        self.assertIn(f"{authorized:.2f}", reply)
-        self.assertNotIn("3.20", reply)
-        turn = body["session"]["history"][-1]
-        self.assertIsNone(turn["parsed_price"])
-        entities = turn["metadata"]["entities"]
-        self.assertEqual(entities["currency"], "USD")
-        self.assertEqual(entities["moq"], 500)
-        self.assertAlmostEqual(entities["quoted_amount"], 3.2)
-        command = client.post(
-            "/api/v1/sessions/UX_USD_01/command",
-            json={"command": "1"},
-        )
-        self.assertEqual(command.status_code, 200)
-        detail = command.json()["detail"]
-        self.assertIn("waiting for a person", detail)
-        self.assertNotIn("AWAITING_HUMAN_DECISION", detail)
+        self.assertEqual(response.status_code, 422, response.text[:400])
+        self.assertIn("Confirm the supplier unit price", response.json()["detail"])
+        stored = client.get("/api/v1/sessions/UX_USD_01").json()
+        self.assertEqual(stored["history"], [])
 
 
 class TestDeskCopy(unittest.TestCase):
@@ -209,15 +193,22 @@ class TestHumanDecisionApi(unittest.TestCase):
             ceiling_price=16.2,
             moq=1000,
             max_rounds=5,
+            expected_markup=0.0,
         )
         api_main.session_mgr.create_session(spec)
         opened = self.client.post(
             f"/api/v1/sessions/{session_id}/round",
-            json={"opponent_raw_text": "最低 14.80 元，500個起訂", "mode": "copilot"},
+            json={
+                "opponent_raw_text": "最低 14.80 元，500個起訂",
+                "opponent_offer_price": 14.80,
+                "mode": "copilot",
+            },
             headers=self.headers,
         )
-        self.assertEqual(opened.status_code, 200, opened.text[:400])
-        self.assertEqual(opened.json()["autopilot_state"], "AWAITING_HUMAN_DECISION")
+        self.assertEqual(opened.status_code, 422, opened.text[:400])
+        self.assertIn("unconfirmed numbers used in decisions: 1", opened.json()["detail"])
+        stored = api_main.session_mgr.get_session(session_id)
+        self.assertEqual(list(stored.history), [])
 
     def test_approve_then_second_approve_is_conflict(self):
         self._awaiting("UX_APPROVE_01")
@@ -226,9 +217,8 @@ class TestHumanDecisionApi(unittest.TestCase):
             json={"action": "approve"},
             headers=self.headers,
         )
-        self.assertEqual(first.status_code, 200, first.text[:400])
-        self.assertEqual(first.json()["autopilot_state"], "COPILOT_MONITORING")
-        self.assertIsNotNone(first.json()["applied_price"])
+        self.assertEqual(first.status_code, 409, first.text[:400])
+        self.assertIn("not waiting for a decision", first.json()["detail"])
         second = self.client.post(
             "/api/v1/sessions/UX_APPROVE_01/approve",
             json={"action": "approve"},
@@ -236,9 +226,9 @@ class TestHumanDecisionApi(unittest.TestCase):
         )
         self.assertEqual(second.status_code, 409, second.text[:400])
         self.assertNotEqual(second.status_code, 500)
-        self.assertIn("not waiting for a decision", second.json()["detail"])
         stored = api_main.session_mgr.get_session("UX_APPROVE_01")
-        self.assertEqual(stored.state, AutopilotState.COPILOT_MONITORING)
+        self.assertEqual(list(stored.history), [])
+        self.assertNotIn(stored.state, (AutopilotState.COPILOT_MONITORING, AutopilotState.DEAL_CLOSED))
 
     def test_hold_keeps_the_deal_waiting(self):
         self._awaiting("UX_HOLD_01")
@@ -247,24 +237,19 @@ class TestHumanDecisionApi(unittest.TestCase):
             json={"action": "hold"},
             headers=self.headers,
         )
-        self.assertEqual(held.status_code, 200, held.text[:400])
-        body = held.json()
-        self.assertEqual(body["status"], "held")
-        self.assertIsNone(body["applied_price"])
-        self.assertEqual(body["autopilot_state"], "AWAITING_HUMAN_DECISION")
-        self.assertIn("still waiting", body["message"])
+        self.assertEqual(held.status_code, 409, held.text[:400])
+        self.assertIn("not waiting for a decision", held.json()["detail"])
         stored = api_main.session_mgr.get_session("UX_HOLD_01")
-        self.assertEqual(stored.state, AutopilotState.AWAITING_HUMAN_DECISION)
+        self.assertEqual(list(stored.history), [])
         senders = [turn.sender for turn in stored.history]
         self.assertNotIn("buyer_human_approved", senders)
-        self.assertEqual(stored.history[-1].metadata.get("human_decision"), "hold")
         approved = self.client.post(
             "/api/v1/sessions/UX_HOLD_01/approve",
             json={"action": "approve"},
             headers=self.headers,
         )
-        self.assertEqual(approved.status_code, 200, approved.text[:400])
-        self.assertEqual(approved.json()["autopilot_state"], "COPILOT_MONITORING")
+        self.assertEqual(approved.status_code, 409, approved.text[:400])
+        self.assertNotIn("applied_price", approved.json())
 
     def test_reject_then_another_reject_is_conflict(self):
         self._awaiting("UX_REJECT_01")

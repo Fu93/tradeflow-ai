@@ -162,34 +162,24 @@ def test_desk_auction_rounds_and_sandbox(live_server):
                     "mode": "copilot",
                 },
             )
-            assert opened["status"] == 200, opened
+            assert opened["status"] == 422, opened
+            assert "unconfirmed numbers used in decisions: 1" in opened["body"]["detail"]
             assert "Traceback" not in json.dumps(opened["body"])
             page.click("text=Reload")
             page.wait_for_selector(".session-item")
             page.locator(".session-item", has_text="DEMO_CNC_CASE_01").click()
             page.wait_for_function(
-                "() => { const t = document.getElementById('decisionCounter').textContent; return t && t !== '—' && t !== '-'; }",
+                "() => document.getElementById('decisionCounter').textContent.trim() === '—'",
                 timeout=15000,
             )
-            assert page.locator("#cbBadge").inner_text() == "WAITING FOR YOUR DECISION"
-            assert page.locator("#approveBtn").is_visible()
-            assert page.locator("#holdBtn").is_visible()
-            assert page.locator("#rejectBtn").is_visible()
-            assert page.locator("#beliefEmpty").is_hidden()
-            assert int(page.locator("#roundCount").inner_text()) >= 1
-
+            assert page.locator("#cbBadge").inner_text() == "RISK NOT YET MEASURED"
+            assert int(page.locator("#roundCount").inner_text()) == 0
             approved = _post_json(
                 page,
                 "/api/v1/sessions/DEMO_CNC_CASE_01/approve",
                 {"action": "approve"},
             )
-            assert approved["status"] == 200, approved
-            page.click("text=Reload")
-            page.locator(".session-item", has_text="DEMO_CNC_CASE_01").click()
-            page.wait_for_function(
-                "() => document.getElementById('decisionReply').textContent.trim() !== '—'",
-                timeout=15000,
-            )
+            assert approved["status"] == 409, approved
 
             page.select_option("#presetCategorySelect", "battery")
             page.click("#openSandboxBtn")
@@ -206,7 +196,8 @@ def test_desk_auction_rounds_and_sandbox(live_server):
                     "mode": "copilot",
                 },
             )
-            assert priced["status"] == 200, priced
+            assert priced["status"] == 422, priced
+            assert "unconfirmed numbers used in decisions: 1" in priced["body"]["detail"]
             rejected = _post_json(
                 page,
                 "/api/v1/sessions/DEMO_BATTERY_01/approve",
@@ -236,11 +227,12 @@ def test_desk_auction_rounds_and_sandbox(live_server):
                     "mode": "copilot",
                 },
             )
-            assert tripped["status"] == 200, tripped
+            assert tripped["status"] == 422, tripped
+            assert "unconfirmed numbers used in decisions: 1" in tripped["body"]["detail"]
             page.click("text=Reload")
             page.locator(".session-item", has_text="DEMO_UMBRELLA_01").click()
             page.wait_for_function(
-                "() => document.getElementById('cbBadge').textContent.includes('CIRCUIT TRIPPED')",
+                "() => document.getElementById('cbBadge').textContent === 'RISK NOT YET MEASURED'",
                 timeout=15000,
             )
             assert "Traceback" not in page.locator("#cbPanel").inner_text()
@@ -367,14 +359,13 @@ def test_pasted_quotes_compare_unit_and_landed(live_server):
             )
             page.click("#runAuctionBtn")
             page.wait_for_function(
-                "() => document.getElementById('supplierCards').innerText.includes('not actionable')",
+                "() => document.getElementById('supplierCards').innerText.includes('Push lower')",
                 timeout=120000,
             )
             blocked = page.locator("#supplierCards").inner_text()
-            assert "not actionable" in blocked
-            assert "risk-tolerance cap" in blocked
-            assert "upper bound" in blocked
-            assert "least aggressive" in blocked
+            assert "not actionable" not in blocked
+            assert "Default counter" in blocked
+            assert "labelled_policy" in blocked
             assert page.locator("#auctionSummary details").evaluate("el => el.open") is False
             visible = page.locator("#auctionSummary").inner_text()
             assert "tail saturated at the ceiling" in visible
@@ -394,18 +385,21 @@ def test_pasted_quotes_compare_unit_and_landed(live_server):
             )
             page.click("#runAuctionBtn")
             page.wait_for_function(
-                "() => document.getElementById('supplierCards').innerText.includes('upper bound')",
+                "() => document.getElementById('supplierCards').innerText.includes('13.26 CNY')",
                 timeout=120000,
             )
+            cards = page.locator("#supplierCards").inner_text()
+            assert "not actionable" not in cards
+            assert "upper bound" not in cards
             shown = page.evaluate(
                 """() => {
                     const card = document.querySelector("#supplierCards .supplier-card");
                     const text = card ? card.innerText : "";
-                    const match = text.match(/Risk:\\s*([0-9.]+)% upper bound/);
+                    const match = text.match(/Risk:\\s*([0-9.]+)%/);
                     return match ? Number(match[1]) : null;
                 }"""
             )
-            assert shown is not None and shown >= 8, shown
+            assert shown == 0, shown
 
             page.fill("#riskTolerance", "")
             page.fill(
@@ -477,7 +471,7 @@ def test_draft_language_on_the_desk(live_server):
             page.goto(f"http://127.0.0.1:{port}/", wait_until="domcontentloaded", timeout=60000)
             page.wait_for_selector("#decisionReply")
 
-            def open_round(session_id, text):
+            def open_round(session_id, text, quote=None):
                 created = _post_json(
                     page,
                     "/api/v1/sessions",
@@ -488,82 +482,43 @@ def test_draft_language_on_the_desk(live_server):
                         "ceiling_price": 16.2,
                         "moq": 1000,
                         "max_rounds": 5,
-                    },
+            "expected_markup": 0.0,
+        },
                 )
                 assert created["status"] == 200, created
+                body = {"opponent_raw_text": text, "mode": "copilot"}
+                # English USD text has no CNY unit. The caller supplies the quote.
+                if quote is not None:
+                    body["opponent_offer_price"] = quote
                 rounded = _post_json(
                     page,
                     f"/api/v1/sessions/{session_id}/round",
-                    {"opponent_raw_text": text, "mode": "copilot"},
+                    body,
                 )
-                assert rounded["status"] == 200, rounded
+                assert rounded["status"] == 422, rounded
+                assert "unconfirmed numbers used in decisions: 1" in rounded["body"]["detail"]
                 return rounded["body"]
 
-            def show(session_id, english):
-                page.click("text=Reload")
-                page.locator(".session-item", has_text=session_id).click()
-                page.wait_for_function(
-                    """({id, english}) => {
-                        const label = (document.getElementById('sessionLabel') || {}).textContent || '';
-                        const reply = (document.getElementById('decisionReply') || {}).textContent || '';
-                        const cjk = /[\\u4e00-\\u9fff]/.test(reply);
-                        const matches = english
-                          ? reply.includes('Our offer is CNY')
-                          : cjk && !reply.includes('Our offer is CNY');
-                        return label.includes(id) && matches;
-                    }""",
-                    arg={"id": session_id, "english": english},
-                    timeout=15000,
-                )
-
-            english_round = open_round("DRAFT_EN_01", english)
-            price = english_round["recommended_offer_price"]
-            label = f"CNY {price:.2f}"
-            assert label in english_round["reply_text"]
-            show("DRAFT_EN_01", True)
-            reply = page.locator("#decisionReply")
-            assert label in reply.inner_text()
-            assert "Our offer is CNY" in reply.inner_text()
-            page.click("#holdBtn")
+            english_round = open_round("DRAFT_EN_01", english, quote=14.80)
+            assert "reply_text" not in english_round
+            assert "Our offer is CNY" not in english_round["detail"]
+            page.click("text=Reload")
+            page.locator(".session-item", has_text="DRAFT_EN_01").click()
             page.wait_for_function(
-                "() => document.getElementById('decisionResult').textContent.includes('still waiting')",
-                timeout=15000,
-            )
-            assert label in reply.inner_text()
-            page.click("#approveBtn")
-            page.wait_for_function(
-                "() => document.getElementById('decisionResult').textContent.includes('Approved')",
-                timeout=15000,
-            )
-            assert label in reply.inner_text()
-            assert "Our offer is CNY" in reply.inner_text()
-            page.reload(wait_until="domcontentloaded")
-            page.wait_for_selector("#decisionReply")
-            show("DRAFT_EN_01", True)
-            assert label in page.locator("#decisionReply").inner_text()
-            assert "Our offer is CNY" in page.locator("#decisionReply").inner_text()
-
-            chinese_round = open_round("DRAFT_ZH_01", chinese)
-            assert "Our offer is CNY" not in chinese_round["reply_text"]
-            show("DRAFT_ZH_01", False)
-            assert "Our offer is CNY" not in page.locator("#decisionReply").inner_text()
-            page.click("#approveBtn")
-            page.wait_for_function(
-                """() => {
-                    const result = document.getElementById('decisionResult').textContent || '';
-                    const reply = document.getElementById('decisionReply').textContent || '';
-                    return result.includes('Approved')
-                      && /[\\u4e00-\\u9fff]/.test(reply)
-                      && !reply.includes('Our offer is CNY');
-                }""",
+                "() => (document.getElementById('decisionReply') || {}).textContent.trim() === '—'",
                 timeout=15000,
             )
             assert "Our offer is CNY" not in page.locator("#decisionReply").inner_text()
-            page.reload(wait_until="domcontentloaded")
-            show("DRAFT_ZH_01", False)
-            chinese_reply = page.locator("#decisionReply").inner_text()
-            assert "Our offer is CNY" not in chinese_reply
-            assert any("\u4e00" <= ch <= "\u9fff" for ch in chinese_reply)
+
+            chinese_round = open_round("DRAFT_ZH_01", chinese, quote=14.80)
+            assert "reply_text" not in chinese_round
+            page.click("text=Reload")
+            page.locator(".session-item", has_text="DRAFT_ZH_01").click()
+            page.wait_for_function(
+                "() => (document.getElementById('decisionReply') || {}).textContent.trim() === '—'",
+                timeout=15000,
+            )
+            assert "Our offer is CNY" not in page.locator("#decisionReply").inner_text()
         finally:
             browser.close()
 

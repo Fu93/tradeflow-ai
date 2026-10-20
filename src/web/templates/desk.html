@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" />
+  <title>TradeFlow AI — Live supplier desk</title>
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="stylesheet" href="/static/css/theme.css" />
+  <link rel="stylesheet" href="/static/css/desk.css" />
+</head>
+<body>
+  <main class="dossier live-desk">
+    <header class="desk-head">
+      <div>
+        <p class="file-kicker">Live supplier desk</p>
+        <h1>Quotes in, counters out</h1>
+      </div>
+      <a href="/">Auction desk</a>
+    </header>
+    <p>Four or five suppliers. A new accepted quote recomputes the desk. Replies stay drafts until you approve a send.</p>
+
+    <form id="desk-form" class="desk-form">
+      <label>API key <input id="api-key" name="api-key" type="password" autocomplete="off" /></label>
+      <label>Product <input id="product" name="product" required maxlength="200" /></label>
+      <label>Quantity <input id="quantity" name="quantity" type="number" min="1" required /></label>
+      <label>Target <input id="target" name="target" type="number" min="0" step="any" required /></label>
+      <label>Ceiling <input id="ceiling" name="ceiling" type="number" min="0" step="any" required /></label>
+      <label>Risk tolerance <input id="risk" name="risk" type="number" min="0" step="any" placeholder="leave blank for the configured default" /></label>
+      <label>Suppliers, one per line. The last comma separates the email, so a name may contain commas.
+        <textarea id="suppliers" rows="5" required placeholder="Ningbo Co., Ltd., sales@example.test"></textarea>
+      </label>
+      <div class="desk-actions">
+        <button type="submit">Open desk</button>
+      </div>
+      <p id="form-error" class="desk-error" role="alert"></p>
+    </form>
+
+    <section id="board" hidden>
+      <p id="deal-line"></p>
+      <p id="basis-line"></p>
+      <p id="audit-line"></p>
+      <p id="shadow-line"></p>
+      <p id="headline-line"></p>
+      <p id="heuristic-line"></p>
+      <p id="hazard-line"></p>
+      <p id="cvar-line"></p>
+      <form id="assumptions" class="desk-form">
+        <h2>Walk-away assumptions</h2>
+        <p id="hazard-sensitivity"></p>
+        <label>Baseline intercept <input id="hazard-intercept" type="number" step="any" /></label>
+        <label>Supplier spread <input id="hazard-tau" type="number" step="any" min="0" /></label>
+        <label>Quote-gap coefficient <input id="hazard-quote-gap" type="number" step="any" /></label>
+        <label>Reserve-gap coefficient <input id="hazard-reserve-gap" type="number" step="any" /></label>
+        <label>Observation noise <input id="obs-noise" type="number" step="any" min="0" /></label>
+        <label>Plausibility multiple <input id="sanity-multiple" type="number" step="any" min="0" /></label>
+        <label>D prior mean, user policy <input id="reserve-prior" type="number" step="any" min="0" max="1" placeholder="blank uses the labelled policy" /></label>
+        <label>D prior spread, user policy <input id="reserve-std" type="number" step="any" min="0" placeholder="blank uses the labelled strength" /></label>
+        <label>Expected markup, fraction of the target <input id="expected-markup" type="number" step="any" min="0" placeholder="a typed markup is not applied" title="A typed markup is not applied. The reserve is this supplier's ask times a labelled Beta prior." /></label>
+        <label>Search cost <input id="search-cost" type="number" step="any" min="0" /></label>
+        <label><input id="include-unverified" type="checkbox" /> Include fixture and simulated quotes in the decision</label>
+        <div class="desk-actions">
+          <button type="submit">Save assumptions</button>
+        </div>
+      </form>
+      <div id="cards" class="cards"></div>
+      <div class="desk-grid">
+        <section class="desk-log">
+          <h2>Review queue</h2>
+          <div id="review"></div>
+        </section>
+        <section class="desk-log">
+          <h2>Event log</h2>
+          <div id="events"></div>
+        </section>
+      </div>
+      <section class="desk-draft">
+        <h2>Drafts</h2>
+        <p>Copy a draft, or approve a send. Approval is the only way a draft can leave this desk.</p>
+        <div id="drafts"></div>
+      </section>
+      <form id="paste-form" class="desk-paste desk-form">
+        <h2>Paste a quote</h2>
+        <label>Supplier
+          <select id="paste-supplier"></select>
+        </label>
+        <label>Raw text
+          <textarea id="paste-text" rows="4" required></textarea>
+        </label>
+        <div class="desk-actions">
+          <button type="submit">Add quote</button>
+        </div>
+        <p id="paste-error" class="desk-error" role="alert"></p>
+      </form>
+    </section>
+  </main>
+  <script src="/static/js/desk.js"></script>
+</body>
+</html>

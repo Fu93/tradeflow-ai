@@ -38,22 +38,42 @@ def wilson_ci(successes: int, n: int, z: float | None = None) -> tuple:
     return (max(0.0, centre - half), min(1.0, centre + half))
 
 
+def _binom_cdf_leq(successes: int, n: int, p: float) -> float:
+    """P(X <= successes) in log space so a moderate n does not overflow."""
+    if n < 0 or successes < 0:
+        return 0.0
+    if p <= 0.0:
+        return 1.0 if successes >= 0 else 0.0
+    if p >= 1.0:
+        return 1.0 if successes >= n else 0.0
+    log_term = n * math.log(1.0 - p)
+    total = math.exp(log_term)
+    for k in range(successes):
+        log_term += math.log(n - k) - math.log(k + 1) + math.log(p) - math.log(1.0 - p)
+        total += math.exp(log_term)
+    return min(1.0, total)
+
+
 def clopper_pearson_upper(successes: int, n: int, alpha: float | None = None) -> float:
-    """單邊精確上界。0 事件時即 1 - alpha^(1/n)。"""
+    """One-sided Clopper-Pearson upper bound.
+
+    The bound is the p where P(X <= successes | p) = alpha, which is the
+    Beta(successes+1, n-successes) quantile at 1-alpha. Zero events stay
+    ``1 - alpha^(1/n)``.
+    """
     if alpha is None:
         alpha = WILSON_ALPHA
+    if n <= 0:
+        return 1.0
     if successes >= n:
         return 1.0
-    if successes == 0:
+    if successes <= 0:
         return 1.0 - alpha ** (1.0 / n)
-    # 一般情形：以二分求解 Beta 分位點
-    lo, hi = successes / n, 1.0
-    for _ in range(200):
+    lo, hi = 0.0, 1.0
+    for _ in range(80):
         mid = (lo + hi) / 2
-        # P[X >= successes | p=mid] 用二項尾部機率
-        tail = sum(math.comb(n, k) * mid ** k * (1 - mid) ** (n - k)
-                   for k in range(successes, n + 1))
-        if tail > alpha:
+        cdf = _binom_cdf_leq(successes, n, mid)
+        if cdf > alpha:
             lo = mid
         else:
             hi = mid

@@ -18,7 +18,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       # [FAIL-CLOSED] A workflow GitHub refuses to validate produces a run with
       # ZERO jobs and conclusion=failure, so no step in this file can report it —
@@ -29,6 +29,13 @@ jobs:
           python -m pip install --quiet actionlint-py
           actionlint .github/workflows/*.yml
 
+      # Phase-1 modules only. ruff (F, E, W, B) then mypy, then the suite.
+      - name: Ruff phase-1 modules
+        run: python -m ruff check src/desk src/engine/decision.py src/engine/reserve.py src/engine/hazard_fit.py
+
+      - name: Mypy phase-1 modules
+        run: python -m mypy src/desk src/engine/decision.py src/engine/reserve.py src/engine/hazard_fit.py
+
       # tests/test_dashboard_prior_chart.py renders the real dashboard in
       # Chromium. Without the binary those 3 assertions fail with "Executable
       # doesn't exist" — CI has to install the browser, not skip the tests.
@@ -38,8 +45,22 @@ jobs:
       # Previously this job ran only 4 test files directly (test_engine,
       # test_evolus, test_benchmark, test_api), so 97 of 101 tests never ran in
       # CI and a regression anywhere else could not be detected.
+      # The 90% gate is the phase-1 path: the desk plus the one offer, the
+      # reserve, and the hazard fit. Legacy engines stay out of this percentage.
       - name: Run full test suite
-        run: python -m pytest tests -q
+        run: >
+          python -m pytest tests -q
+          --cov=src.desk
+          --cov=src.engine.decision
+          --cov=src.engine.reserve
+          --cov=src.engine.hazard_fit
+          --cov-fail-under=90
+
+      - name: Mutation sanity for the decision path
+        run: python scripts/mutation_sanity.py
+
+      - name: Audit runtime dependencies
+        run: python -m pip_audit --requirement requirements.lock --disable-pip --strict
 
       # No API key in CI. The script must exit 0 and record a skip, not a pass
       # that pretends the AMD endpoint was checked.
@@ -106,6 +127,9 @@ jobs:
       - name: Reject undeclared scenario numbers outside the simulator
         run: python scripts/check_no_fake_literals.py
 
+      - name: Reject unregistered decision literals
+        run: python scripts/check_decision_literals.py
+
       # Run the guard tests explicitly so a regression in a security/integrity
       # gate is visible as a named CI step rather than buried in the suite.
       - name: Run security and integrity guard tests
@@ -140,7 +164,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
           python -m playwright install --with-deps chromium
 
       - name: Extension end-to-end (real Chromium, headed via xvfb)

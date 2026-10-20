@@ -14,16 +14,15 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from src.sim.scenarios import UMBRELLA
 from . import model
 
 
 def _sample_reserve(reserve_mean, reserve_std, n=20000, seed=0):
     rng = np.random.default_rng(seed)
-    return reserve_mean * (1 + rng.normal(0, reserve_std, n))
+    return reserve_mean + rng.normal(0, reserve_std, n)
 
 
-def plot_posterior(reserve_mean, reserve_std, target_price=UMBRELLA.target,
+def plot_posterior(reserve_mean, reserve_std, target_price, ceiling,
                    recommended_open_norm=None, save_path=None, seed=0):
     """Posterior over supplier reserve (normalized), with target/walk-away/recommended lines."""
     samples = _sample_reserve(reserve_mean, reserve_std, seed=seed)
@@ -32,8 +31,8 @@ def plot_posterior(reserve_mean, reserve_std, target_price=UMBRELLA.target,
             label="Posterior samples")
     ax.axvline(1.0, color="green", lw=2,
                label=f"Target price (¥{target_price:.1f})")
-    ax.axvline(model.YOUR_CEILING, color="red", lw=2,
-               label=f"Walk-away ceiling (¥{model.YOUR_CEILING*target_price:.1f})")
+    ax.axvline(ceiling, color="red", lw=2,
+               label=f"Walk-away ceiling (¥{ceiling*target_price:.1f})")
     if recommended_open_norm is not None:
         ax.axvline(recommended_open_norm, color="orange", lw=2, ls="--",
                    label=f"Recommended opening (¥{recommended_open_norm*target_price:.2f})")
@@ -49,7 +48,7 @@ def plot_posterior(reserve_mean, reserve_std, target_price=UMBRELLA.target,
     return fig
 
 
-def plot_belief_update(trace, target_price=UMBRELLA.target, save_path=None):
+def plot_belief_update(trace, target_price, ceiling, save_path=None):
     """Belief evolution: posterior mean±std + recommended opening, per round."""
     rounds = [t["round"] for t in trace]
     means = [t["mean"] for t in trace]
@@ -62,7 +61,7 @@ def plot_belief_update(trace, target_price=UMBRELLA.target, save_path=None):
     ax.plot(rounds, means_a, "o-", color="#C44E52", label="Posterior mean (reserve)")
     ax.plot(rounds, opens, "s--", color="#4C72B0", label="Recommended opening (normalized)")
     ax.axhline(1.0, color="green", lw=1.5, ls=":", label="Target")
-    ax.axhline(model.YOUR_CEILING, color="red", lw=1.5, ls=":", label="Walk-away")
+    ax.axhline(ceiling, color="red", lw=1.5, ls=":", label="Walk-away")
     ax.set_xlabel("Round")
     ax.set_ylabel("Normalized price")
     ax.set_title("Belief update across rounds: posterior and recommended opening evolve together")
@@ -75,13 +74,16 @@ def plot_belief_update(trace, target_price=UMBRELLA.target, save_path=None):
     return fig
 
 
-def save_all(reserve_mean, reserve_std, trace, target_price=UMBRELLA.target,
+def save_all(reserve_mean, reserve_std, trace, target_price, ceiling,
              out_dir="results", seed=0):
     p1 = os.path.join(out_dir, "posterior.png")
     p2 = os.path.join(out_dir, "belief_update.png")
     last = trace[-1] if trace else {"recommended_open_norm": None}
-    plot_posterior(reserve_mean, reserve_std, target_price, last.get("recommended_open_norm"), p1, seed)
-    plot_belief_update(trace, target_price, p2)
+    plot_posterior(
+        reserve_mean, reserve_std, target_price, ceiling,
+        last.get("recommended_open_norm"), p1, seed,
+    )
+    plot_belief_update(trace, target_price, ceiling, p2)
     return p1, p2
 
 
@@ -185,24 +187,36 @@ def plot_robustness(report_data, save_path=None):
     return fig
 
 
-def plot_prior_decomp(reserve_mean, reserve_std, target_price=UMBRELLA.target, save_path=None, seed=0):
+def plot_prior_decomp(reserve_mean, reserve_std, target_price, ceiling, save_path=None, seed=0):
     """Wow #1 加強：把底價後驗分解成 4 類供應商成分（按 type-center 距離加權）。"""
     from . import model
     rng = np.random.default_rng(seed)
     n = 4000
-    samples = reserve_mean * (1 + rng.normal(0, reserve_std, n))
+    samples = reserve_mean + rng.normal(0, reserve_std, n)
     fig, ax = plt.subplots(figsize=(7, 4))
     colors = ["#4C72B0", "#DD8452", "#55A868", "#C44E52"]
-    for t in range(4):
-        center = model.OPP_TYPES[t, 0]
+    rows = model.OPP_TYPES
+    names = model.OPP_NAMES
+    if rows is None:
+        ax.hist(samples, bins=40, color=colors[0], alpha=0.7, label="posterior")
+        ax.axvline(1.0, color="green", lw=2, label="target (1.0)")
+        ax.axvline(ceiling, color="red", lw=2, label="walk-away")
+        fig.tight_layout()
+        if save_path:
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            fig.savefig(save_path, dpi=120)
+            plt.close(fig)
+        return fig
+    for t in range(int(rows.shape[0])):
+        center = rows[t, 0]
         w = np.exp(-((samples - center) ** 2) / (2 * reserve_std**2))
         if w.sum() < 1e-6:
             continue
         ax.hist(samples, bins=40, weights=w / w.sum() * len(samples),
                 density=False, alpha=0.55, color=colors[t],
-                label=f"{model.OPP_NAMES[t]} (center {center:.2f})")
-    ax.axvline(target_price / target_price, color="green", lw=2, label="target (1.0)")
-    ax.axvline(model.YOUR_CEILING, color="red", lw=2, label="walk-away")
+                label=f"{names[t]} (center {center:.2f})")
+    ax.axvline(1.0, color="green", lw=2, label="target (1.0)")
+    ax.axvline(ceiling, color="red", lw=2, label="walk-away")
     ax.set_title(f"Posterior decomposed into 4 supplier types (mean={reserve_mean:.3f})")
     ax.set_xlabel("Normalized reserve price")
     ax.set_ylabel("Weighted count")

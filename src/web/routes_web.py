@@ -74,6 +74,12 @@ async def dashboard():
     return HTMLResponse(content=html)
 
 
+@router.get("/desk", response_class=HTMLResponse, include_in_schema=False)
+async def live_desk():
+    html = (TEMPLATES_DIR / "desk.html").read_text(encoding="utf-8")
+    return HTMLResponse(content=html)
+
+
 _FAVICON_PATH = Path(__file__).resolve().parents[2] / "extension" / "icons" / "icon48.png"
 
 

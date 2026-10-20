@@ -141,7 +141,8 @@ class TestHazardMonotonicity(unittest.TestCase):
         self.assertLess(_brier(prior[n // 2:]), _brier(reversed_pred[n // 2:]) + 1e-9)
         self.assertLessEqual(_brier(updated[n // 2:]), _brier(prior[n // 2:]) + 0.02)
         self.assertTrue(HazardBelief().prior_driven)
-        self.assertFalse(belief.prior_driven)
+        self.assertTrue(belief.prior_driven)
+        self.assertEqual(belief.snapshot()["coefficients"], "labelled policy")
         self.assertGreaterEqual(belief.n_events, 30)
 
 
@@ -323,6 +324,7 @@ class TestPriceIndependence(unittest.TestCase):
             "max_rounds": 1,
             "supplier_id": "S",
             "supplier_channel": "web_chat",
+            "expected_markup": 0.0,
         })
         self.assertEqual(created.status_code, 200, created.text)
         response = client.post("/api/v1/sessions/risk-cap/round", json={
@@ -330,13 +332,13 @@ class TestPriceIndependence(unittest.TestCase):
             "opponent_raw_text": "14.50",
             "risk_tolerance": 0.01,
         })
-        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.status_code, 422, response.text)
         body = response.json()
-        self.assertTrue(body["circuit_tripped"])
-        self.assertTrue(body["pending_human_approval"])
-        self.assertIsNone(body["reply_text"])
-        price = body["action_object"]["authorized_price"]
-        self.assertLessEqual(price, 16.2)
+        self.assertIn("unconfirmed numbers used in decisions: 1", body["detail"])
+        self.assertNotIn("recommended_offer_price", body)
+        stored = client.get("/api/v1/sessions/risk-cap")
+        self.assertEqual(stored.json()["history"], [])
+        self.assertNotEqual(stored.json()["state"], "CIRCUIT_TRIPPED_ESCALATED")
 
 
 class TestSimulationBenchmark(unittest.TestCase):
@@ -371,7 +373,13 @@ class TestSimulationBenchmark(unittest.TestCase):
 
 class TestDirectAuctionStillRuns(unittest.TestCase):
     def test_omitted_quotes_stay_simulated_and_quoted_rows_do_not(self):
-        simulated = simulate_reverse_auction(n_samples=200, n_rounds=1, target_price=12.0, walk_away_ceiling=16.2)
+        with self.assertRaises(ValueError):
+            simulate_reverse_auction(n_samples=200, n_rounds=1, target_price=12.0, walk_away_ceiling=16.2)
+        from src.app.demo_data import self_play_bundle
+        simulated = simulate_reverse_auction(
+            n_samples=200, n_rounds=1, target_price=12.0, walk_away_ceiling=16.2,
+            demo=True, self_play=self_play_bundle(),
+        )
         self.assertTrue(simulated["simulated"])
         quoted = simulate_reverse_auction(
             n_samples=200,

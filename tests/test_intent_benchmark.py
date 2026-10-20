@@ -261,6 +261,7 @@ def test_api_key_security_gate(monkeypatch):
         "product_name": "加固自動傘",
         "target_price": 12.0,
         "ceiling_price": 15.0,
+        "expected_markup": 0.0,
     }
 
     # 2.1 無標頭請求 -> 401 Unauthorized

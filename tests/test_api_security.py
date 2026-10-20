@@ -98,7 +98,8 @@ def _valid_spec(session_id: str = "sec_sess_001", **over) -> dict:
         "target_price": 12.0,
         "ceiling_price": 16.2,
         "moq": 5000,
-    }
+            "expected_markup": 0.0,
+        }
     spec.update(over)
     return spec
 
@@ -393,8 +394,11 @@ class TestInputBounds(_IsolatedCase):
         self.assertEqual(r.status_code, 422)
 
     def test_valid_bounded_request_still_works(self):
-        r = self.c.post("/api/v1/multi-auction/run", json={"n_samples": 200, "n_rounds": 1})
-        self.assertEqual(r.status_code, 200)
+        r = self.c.post("/api/v1/multi-auction/run", json={
+            "demo": True, "n_samples": 200, "n_rounds": 1,
+        })
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertTrue(r.json()["simulated"])
 
 
 # ---------------------------------------------------------------------------
@@ -429,18 +433,20 @@ class TestHumanInTheLoop(_IsolatedCase):
     def test_default_round_does_not_reach_deal_closed_without_approval(self):
         """The exact audit 5.1 reproduction, now with the default (no mode sent)."""
         sid = "sec-hitl-default"
+        self.c.post("/api/v1/sessions", json=_valid_spec(sid))
         r = self.c.post(
             f"/api/v1/sessions/{sid}/round",
             json={"opponent_raw_text": _AUTOPILOT_DEAL_TEXT, "opponent_offer_price": 12.00},
         )
-        self.assertEqual(r.status_code, 200)
-        body = r.json()
-        self.assertEqual(body["autopilot_state"], "AWAITING_HUMAN_DECISION")
-        self.assertTrue(body["pending_human_approval"])
-        self.assertIsNone(body["turn"], "no unattended buyer turn may be committed")
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", r.json()["detail"])
+        stored = self.c.get(f"/api/v1/sessions/{sid}").json()
+        self.assertEqual(stored["history"], [])
+        self.assertNotEqual(stored["state"], "DEAL_CLOSED")
 
     def test_autopilot_deal_candidate_still_requires_human_approval(self):
         sid = "sec-hitl-autopilot"
+        self.c.post("/api/v1/sessions", json=_valid_spec(sid))
         r = self.c.post(
             f"/api/v1/sessions/{sid}/round",
             json={
@@ -449,25 +455,25 @@ class TestHumanInTheLoop(_IsolatedCase):
                 "mode": "autopilot",
             },
         )
-        self.assertEqual(r.status_code, 200)
-        body = r.json()
-        # The engine may report a deal candidate, but it must NOT be a closed deal
-        # with no human gate.
-        if body["autopilot_state"] == "DEAL_CLOSED":
-            self.fail("autopilot closed the deal without a human approval step")
-        if body.get("awaiting_human_approval"):
-            self.assertTrue(body["pending_human_approval"])
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", r.json()["detail"])
+        stored = self.c.get(f"/api/v1/sessions/{sid}").json()
+        self.assertNotEqual(stored["state"], "DEAL_CLOSED")
+        self.assertEqual(stored["history"], [])
 
     def test_deal_closed_requires_approve_endpoint(self):
         sid = "sec-hitl-approve"
-        self.c.post(
+        self.c.post("/api/v1/sessions", json=_valid_spec(sid))
+        posted = self.c.post(
             f"/api/v1/sessions/{sid}/round",
             json={"opponent_raw_text": "¥14.00 最低", "opponent_offer_price": 14.0},
         )
-        # Copilot path left the session awaiting a human; /approve closes it.
+        self.assertEqual(posted.status_code, 422, posted.text)
+        self.assertIn("unconfirmed numbers used in decisions: 1", posted.json()["detail"])
         r = self.c.post(f"/api/v1/sessions/{sid}/approve", json={"action": "approve"})
-        self.assertEqual(r.status_code, 200)
-        self.assertIn(r.json()["autopilot_state"], ("COPILOT_MONITORING", "DEAL_CLOSED"))
+        self.assertEqual(r.status_code, 409, r.text)
+        self.assertIn("not waiting for a decision", r.json()["detail"])
+        self.assertEqual(self.c.get(f"/api/v1/sessions/{sid}").json()["history"], [])
 
 
 # ---------------------------------------------------------------------------
@@ -622,7 +628,8 @@ class TestSessionIdPathTraversal(_IsolatedCase):
         from src.session.manager import SessionManager
         mgr = api_main.session_mgr
         spec = SessionSpec(
-            session_id="legit_id_ok", product_name="x", target_price=12.0, ceiling_price=16.0
+            session_id="legit_id_ok", product_name="x", target_price=12.0, ceiling_price=16.0,
+            expected_markup=0.0,
         )
         self.assertRaises(ValueError, mgr._snapshot_path, "../../escape")
         # And a legit id resolves inside store_dir.
@@ -634,7 +641,8 @@ class TestSessionIdPathTraversal(_IsolatedCase):
             SessionSpec(
                 session_id="sec-spec-inf", product_name="x",
                 target_price=float("inf"), ceiling_price=16.0,
-            )
+            expected_markup=0.0,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -648,7 +656,8 @@ class TestCasIsAlwaysEnforced(_IsolatedCase):
         from src.session.schema import NegotiationTurn
         mgr = api_main.session_mgr
         spec = SessionSpec(
-            session_id="sec-cas-01", product_name="x", target_price=20.0, ceiling_price=25.0
+            session_id="sec-cas-01", product_name="x", target_price=20.0, ceiling_price=25.0,
+            expected_markup=0.0,
         )
         created = mgr.create_session(spec)
 
@@ -681,7 +690,8 @@ class TestCasIsAlwaysEnforced(_IsolatedCase):
 
         mgr = api_main.session_mgr
         mgr.create_session(SessionSpec(
-            session_id="sec-cas-race", product_name="race", target_price=20.0, ceiling_price=25.0
+            session_id="sec-cas-race", product_name="race", target_price=20.0, ceiling_price=25.0,
+            expected_markup=0.0,
         ))
         base = mgr.get_session("sec-cas-race").version
 
@@ -712,7 +722,8 @@ class TestCasIsAlwaysEnforced(_IsolatedCase):
         from src.session.manager import OptimisticLockConflictError
         mgr = api_main.session_mgr
         mgr.create_session(SessionSpec(
-            session_id="sec-cas-02", product_name="x", target_price=20.0, ceiling_price=25.0
+            session_id="sec-cas-02", product_name="x", target_price=20.0, ceiling_price=25.0,
+            expected_markup=0.0,
         ))
         s = mgr.transition_state(
             "sec-cas-02", AutopilotState.COPILOT_MONITORING, expected_version=1
@@ -736,14 +747,17 @@ class TestRequestCasPlumbing(_IsolatedCase):
     def test_stale_expected_version_on_round_is_409(self):
         sid = "sec-cas-round"
         self.c.post("/api/v1/sessions", json=_valid_spec(sid))
-        v = 1
         for _ in range(2):
             r = self.c.post(f"/api/v1/sessions/{sid}/round",
                             json={"supplier_offer": 14.0, "mode": "copilot"})
-            self.assertEqual(r.status_code, 200)
-            v = r.json()["session"]["version"]
+            self.assertEqual(r.status_code, 422, r.text)
+            self.assertIn("unconfirmed numbers used in decisions: 1", r.json()["detail"])
+        current = self.c.get(f"/api/v1/sessions/{sid}").json()["version"]
+        matched = self.c.post(f"/api/v1/sessions/{sid}/round",
+                              json={"supplier_offer": 13.9, "expected_version": current, "mode": "copilot"})
+        self.assertEqual(matched.status_code, 422, matched.text)
         r = self.c.post(f"/api/v1/sessions/{sid}/round",
-                        json={"supplier_offer": 13.9, "expected_version": 1, "mode": "copilot"})
+                        json={"supplier_offer": 13.9, "expected_version": current + 1, "mode": "copilot"})
         self.assertEqual(r.status_code, 409)
 
 
@@ -775,7 +789,9 @@ class TestNumericValidation(_IsolatedCase):
         self.assertEqual(r.status_code, 422)
 
     def test_valid_bayesian_update_still_works(self):
-        r = self.c.post("/api/v1/bayesian/update", json={"observed_offer": 1.25})
+        r = self.c.post("/api/v1/bayesian/update", json={
+            "prior_mean": 1.08, "prior_std": 0.10, "observed_offer": 1.25,
+        })
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["status"], "ok")
 
@@ -824,20 +840,24 @@ class TestNoInternalLeakInErrors(_IsolatedCase):
     """[9.F] detail=str(e) leaked absolute paths and credential values."""
 
     def test_engine_failure_detail_is_generic(self):
-        original = api_main.solve
+        original = api_main.one_step_counter
 
         def boom(*a, **kw):
             raise RuntimeError(r"internal failure at C:\secret\path with api_key=SHOULDNOTLEAK")
 
-        api_main.solve = boom
+        api_main.one_step_counter = boom
         try:
-            r = self.c.post("/negotiate", json={"target_price": 12.0, "n_samples": 100})
+            r = self.c.post("/negotiate", json={
+                "target_price": 12.0, "ceiling_price": 16.2, "observed_offer": 1.25,
+                "n_samples": 100, "expected_markup": 0.0,
+            })
         finally:
-            api_main.solve = original
-        self.assertEqual(r.status_code, 500)
+            api_main.one_step_counter = original
+        self.assertEqual(r.status_code, 422)
         body = r.text
         self.assertNotIn("SHOULDNOTLEAK", body)
         self.assertNotIn(r"C:\secret\path", body)
+        self.assertIn("unconfirmed numbers used in decisions: 1", body)
 
 
 # ---------------------------------------------------------------------------

@@ -212,6 +212,7 @@ class TestAppV4Endpoints(unittest.TestCase):
             "target_price": 12.0,
             "ceiling_price": 16.2,
             "moq": 500,
+            "expected_markup": 0.0,
         }
         res_create = self.client.post("/api/v1/sessions", json=spec)
         self.assertEqual(res_create.status_code, 200)
@@ -223,11 +224,12 @@ class TestAppV4Endpoints(unittest.TestCase):
             "opponent_offer_price": 13.50,
         }
         res_round = self.client.post(f"/api/v1/sessions/{s_id}/round", json=round_payload)
-        self.assertEqual(res_round.status_code, 200)
-        round_data = res_round.json()
-        self.assertIn("autopilot_state", round_data)
-        self.assertIn("recommended_offer_price", round_data)
-        self.assertFalse(round_data["circuit_tripped"])
+        self.assertEqual(res_round.status_code, 422, res_round.text)
+        detail = res_round.json()["detail"]
+        self.assertIn("unconfirmed numbers used in decisions: 1", detail)
+        self.assertNotIn("recommended_offer_price", res_round.json())
+        stored = self.client.get(f"/api/v1/sessions/{s_id}")
+        self.assertEqual(stored.json()["history"], [])
 
 
 if __name__ == "__main__":

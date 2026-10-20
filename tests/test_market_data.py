@@ -214,7 +214,8 @@ def test_recommended_price_ignores_market_context():
         "product_name": "Custom Carbon Auto Umbrella",
         "target_price": 12.0,
         "ceiling_price": 16.2,
-    }
+            "expected_markup": 0.0,
+        }
     wild = dict(plain)
     wild["session_id"] = "mkt-wild"
     wild["market_context"] = {
@@ -235,9 +236,12 @@ def test_recommended_price_ignores_market_context():
     offer = {"supplier_offer": 14.5, "mode": "copilot"}
     left = client.post("/api/v1/sessions/mkt-plain/round", json=offer)
     right = client.post("/api/v1/sessions/mkt-wild/round", json=offer)
-    assert left.status_code == 200
-    assert right.status_code == 200
-    assert left.json()["recommended_offer_price"] == right.json()["recommended_offer_price"]
+    assert left.status_code == 422
+    assert right.status_code == 422
+    assert "unconfirmed numbers used in decisions: 1" in left.json()["detail"]
+    assert "unconfirmed numbers used in decisions: 1" in right.json()["detail"]
+    assert "recommended_offer_price" not in left.json()
+    assert "recommended_offer_price" not in right.json()
 
 
 def test_llm_cannot_set_the_price():
@@ -290,12 +294,13 @@ def test_auction_attaches_context_without_changing_the_winner():
     assert "market_context" not in inspect.signature(simulate_reverse_auction).parameters
     client = TestClient(api_main.app)
     with_context = {
+        "demo": True,
         "n_samples": 400,
         "n_rounds": 1,
         "product_name": "Custom Carbon Auto Umbrella",
         "hs_code": "6601",
     }
-    without_context = {"n_samples": 400, "n_rounds": 1}
+    without_context = {"demo": True, "n_samples": 400, "n_rounds": 1}
     left = client.post("/api/v1/multi-auction/run", json=with_context)
     right = client.post("/api/v1/multi-auction/run", json=without_context)
     assert left.status_code == 200

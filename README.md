@@ -4,11 +4,52 @@
 
 ## 30-second pitch
 
-Small cross-border sellers lose procurement margin when they negotiate factory quotes alone, often across a language gap, or pay a sourcing agent a commission. TradeFlow is a one-person desk for that problem: a Bayesian Expectimax engine chooses the price, an optional language model only reads and phrases the offer, and a human sends it. No factory has closed a deal through this prototype.
+Small cross-border sellers lose procurement margin when they negotiate factory quotes alone, often across a language gap, or pay a sourcing agent a commission. TradeFlow is a one-person desk for that problem: expected surplus of a one-step accept-or-reject model chooses the next price, an optional language model only reads and phrases the offer, and a human sends it. No factory has closed a deal through this prototype.
 
-Benchmark numbers below come from this repository's CPU runs or from a parameterised simulator. The full boundary note is [docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md). The claim-by-claim check is [docs/DATA_INTEGRITY.md](docs/DATA_INTEGRITY.md).
+The formulas, and the registry for every constant the decision code is allowed to use, are in [docs/MATH.md](docs/MATH.md). Benchmark numbers below come from this repository's CPU runs or from a parameterised simulator. The full boundary note is [docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md). The claim-by-claim check is [docs/DATA_INTEGRITY.md](docs/DATA_INTEGRITY.md).
 
 Track: **Reinvent Commerce** (AMD Developer Hackathon ACT III, lablab.ai). License: MIT.
+
+## What is proven
+
+Each desk step has a guard, a test, and a chain record. A failed check withholds the counter. The language model does not set a price. A person approves every send.
+
+| Step | Guard | Test | Record |
+|---|---|---|---|
+| T1 Intake | `QuoteIn` extra=forbid; currency from the deal; `raw_sha256` on the event; status stays `review` | `tests/steps/test_t1_intake.py` | `quote_ingested` |
+| T2 Extract | `Mention` extra=forbid; numeric price keys stripped; byte cap; the call does not block the desk; fail closed | `tests/steps/test_t2_extract.py` | `extractor_result` |
+| T3 Shadow | would-accept is recorded; `applied` and `auto_accept` stay false | `tests/steps/test_t3_shadow.py` | shadow fields on the quote provenance |
+| T4 Confirm | `review` may become `accepted` or `rejected`; both of those are terminal | `tests/steps/test_t4_confirm.py` | `review` |
+| T5 Reserve | truncated Beta; a later higher ask does not raise the mean; a rejection is a lower bound | `tests/steps/test_t5_reserve.py` | prior alpha, beta, n, source on the decision record |
+| T6 Hazard | one module, `src/engine/hazard_fit.py`; increment is 0 at the ask | `tests/steps/test_t6_hazard.py` | `hazard_fit_sha256` on the decision record |
+| T7 Optimiser | desk calls `decision.choose_offer` only; sample and grid budgets are not inputs | `tests/steps/test_t7_optimiser.py` | optimiser name on the decision record |
+| T8 Draft | pure decide, then `project_open_drafts`; body contains the issued counter | `tests/steps/test_t8_draft.py` | `decision`, then `draft_created` |
+| T9 Send | human approval; `_guard_send` re-derives the counter from the stored record | `tests/steps/test_t9_send.py` | `send_approved`, `send_result` |
+| T10 Audit | HMAC-SHA256 chain keyed by `TRADEFLOW_CHAIN_KEY`; append-only; verify endpoint reports `anchor not configured` when no anchor is set | `tests/steps/test_t10_audit.py` | `GET /api/v1/desk/deals/{id}/audit/verify` |
+| T11 Release | ruff, mypy, 90% phase-1 coverage, hash-pinned locks, pip-audit | `.github/workflows/ci.yml` | CI log |
+
+| Evidence tier | What it covers |
+|---|---|
+| Live | `python scripts/desk_verify.py <base-url>` creates a deal, ingests a fixture email, confirms it, checks the chain, refuses a send without approval, then approves. Exit 0 means every check passed. |
+| Test | `python -m pytest tests` plus `python scripts/mutation_sanity.py` (30 planted bugs in `decision.py`, `reserve.py`, and `shadow.py`). |
+| Fixture | `data/hazard_ebay_bi.json` is the fitted walk-away file. The reserve prior is labelled policy until this supplier has enough of their own responses. |
+| Not claimed | No factory has closed a deal through this prototype. The eBay fit is not a Chinese factory rate. `/round`, `/negotiate`, and the v1 engines stay in `src/legacy/` and mount only when `TRADEFLOW_LEGACY=1`. |
+
+Code freeze after 27 Oct 2026. From 28 Oct through 30 Oct, commits are fixes only.
+
+Internal notes, filming guides, and older audits are indexed in [docs/internal/README.md](docs/internal/README.md).
+
+Desk environment variables (unset means the feature stays off, except the database path and the poll interval):
+
+`TRADEFLOW_API_KEY` `TRADEFLOW_LEGACY` `TRADEFLOW_DESK_DB` `TRADEFLOW_STORE_DIR` `DESK_N_SAMPLES` `DESK_N_GRID` `DESK_SMTP_SEND` `SMTP_HOST` `EMAIL_USERNAME` `EMAIL_PASSWORD` `IMAP_HOST` `IMAP_PORT` `IMAP_SSL` `IMAP_USERNAME` `IMAP_PASSWORD` `IMAP_LOOKBACK_DAYS` `IMAP_POLL_SECONDS` `GMAIL_DRAFTS` `GMAIL_CLIENT_ID` `GMAIL_CLIENT_SECRET` `GMAIL_REFRESH_TOKEN` `TRADEFLOW_LLM_BASE_URL` `OPENAI_BASE_URL` `TRADEFLOW_LLM_MODEL` `OPENAI_MODEL` `TRADEFLOW_LLM_API_KEY` `OPENAI_API_KEY` `NVIDIA_API_KEY` `TRADEFLOW_EXTRACTOR_TIMEOUT_ULTRA` `TRADEFLOW_EXTRACTOR_TIMEOUT_SUPER` `TRADEFLOW_EXTRACTOR_TIMEOUT_NVIDIA` `TRADEFLOW_EXTRACTOR_TIMEOUT_BUDGET` `TRADEFLOW_CHAIN_KEY` `TRADEFLOW_CHAIN_KEY_ID` `TRADEFLOW_CHAIN_KEYS` `TRADEFLOW_CHAIN_ANCHOR`
+
+The audit chain is HMAC-SHA256 with `TRADEFLOW_CHAIN_KEY`. The key is not stored in the database. Desk sends refuse to start when that variable is unset, and `GET /health` reports `desk sends disabled: chain key missing`. `TRADEFLOW_CHAIN_KEY_ID` names the current key (default `primary`). `TRADEFLOW_CHAIN_KEYS` is a comma-separated `id:secret` list of retired keys so older rows still verify after a rotation. A chain written by the round-5 code has an empty `key_id`. Its MAC is HMAC-SHA256 of `{deal_id, seq, type, ts, payload, prev_hash}` with the current key, and verify accepts those rows in place. They are not re-signed. A round-5 row has no key id, so a rotated key does not verify it; restoring `TRADEFLOW_CHAIN_KEY` to the key that signed it does. An intact pre-key SHA-256 chain is a different object and is not verified as HMAC.
+
+Opening the database does not migrate. `POST /api/v1/desk/deals/{id}/migrate` with `human_confirmed: true` is the only migration. It refuses a deal that already has a keyed chain (including a round-5 chain) or an anchor head, and it does not overwrite that head. An intact pre-key chain is archived as `legacy unverified` and a new keyed chain starts at genesis. A deal with no chain rows gets one migrated head. Accepted quotes return to review. A migrated deal cannot be sent until a person re-confirms each quote and, after the migration mark, appends a human `supplier_address` for every supplier that was already on the deal and a human `policy_confirmed` event (`POST /api/v1/desk/deals/{id}/policy`) for the product, quantity, target, ceiling, risk, and currency. Policy confirmation is only for a migrated deal. The chain payload records the previous limits. A supplier row that was not in that opened list is flagged on the card and is not a rival until `POST .../suppliers/{id}/keep` with `human_confirmed: true` and an address typed on that request appends `supplier_kept`. Keep is only for a migrated deal and only for a flagged supplier. The chained address is that request, not the supplier row.
+
+When `TRADEFLOW_CHAIN_ANCHOR` is a file path or an http(s) URL, each new head (sequence and MAC), including each approval and each transmission result, is written there after the database row. The file index is replaced atomically (temp file, fsync, rename). A matching index is one seek of that deal's latest line, so verify does not read the whole log. A URL anchor that stores only its latest head still has every accepted post in a history file beside the desk database, so a posted approval stays visible after a later head replaces it. A missing or mismatched index is scanned for the deal being read, and only a deal with no valid line fails closed. If that write fails, the deal is marked pending and verification fails closed with `anchor missing because the anchor store was down`. The pending mark stays until a re-anchor export succeeds. Saving another event does not clear it. A send whose anchor write failed does not release the mail, and the draft stays unsent. After a re-anchor that does not shorten the chain, that same draft can be approved once more, and only when the anchor history never recorded that approval. A recorded approval is a duplicate, including when the database rows after it were removed. Deleting the unanchored chain row does not make a resend succeed while the pending mark remains. `POST /api/v1/desk/deals/{id}/reanchor` with `human_confirmed: true` appends a chained `reanchor` event only when the links verify and every recorded anchor head is still in the chain. A missing head is `anchor missing because the chain was cut`, and re-anchor refuses with possible truncation. An anchor store that errors is the down phrase, and re-anchor refuses that too, without writing a new head. A missing anchor file or a missing deal line also fails verification when an anchor is configured, and re-anchor will not sign over that gap. If `TRADEFLOW_CHAIN_ANCHOR` is unset, verify reports `anchor not configured`, and tail truncation is detectable only with an anchor. A deploy that changes policy constants marks the open draft stale: the desk writes a new draft and the old approval does not send. A clause with a primary price plus a parenthetical conversion, such as a CNY amount and `about USD`, keeps the primary currency. A parenthetical price in the same currency, such as a rebate, stays unconfirmed. `31.00 dollars or yuan` stays unconfirmed. The quote parser is warmed at startup so the one-time pattern cost is outside the match deadline. A match that passes the deadline still fails closed.
+
+A supplier who walks away is not a rival and gets no new counter. A later quote does not put them back. A person re-opens them with `POST /api/v1/desk/deals/{id}/suppliers/{supplier_id}/reopen` and `human_confirmed: true`, which appends a chained `reopen_supplier` event. The draft card and the send guard use one reserve-aware decision, so a walk-away, a re-open, and a new quote produce the same counter in both places. A changed email is the same kind of action: `POST .../address` with `human_confirmed: true` appends `supplier_address`. The address has to be one addr-spec; a list, a display name, or a CR/LF is rejected when the deal or the address is saved. A control character in the product is rejected at the same time, before it can become the subject. The send uses the chained id, name, and address, the chained product in the subject, and the chained In-Reply-To and References. Inbound `Message-ID` and `References` values are reused only when each token is one message-id. Those fields and the body are hashed together. An amount written as `31.00 dollars` is USD. If the same clause also names another currency, the amount stays unconfirmed.
 
 ## Quick start (Docker)
 
@@ -27,6 +68,7 @@ Without Docker (use `python3` if `python` is not on your PATH):
 
 ```bash
 python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt  # pytest, ruff, mypy; not the runtime image
 python -m src.app.main
 ```
 
@@ -65,7 +107,7 @@ Roadmap: deploy the offline demo, turn on AMD live mode only when `VLLM_API_KEY`
 
 ## Public demo
 
-[render.yaml](render.yaml) is a Docker web service on the free plan, health check `GET /health`, offline by default. Secrets (`VLLM_API_KEY`, `EVOLUS_API_KEY`, `EVOLUS_APP_ID`, `TRADEFLOW_API_KEY`, `TRADEFLOW_WEBHOOK_TOKEN`) are `sync: false` so a Blueprint sync does not overwrite them. The file does not set `PORT`; Render injects it and the process binds `0.0.0.0:$PORT`. This repository does not name a public hostname until a deploy exists. The filesystem on that plan is ephemeral, so session files do not survive a restart.
+[render.yaml](render.yaml) matches the live Docker web service `tradeflow-ai-demo` in Frankfurt (`https://tradeflow-ai-demo.onrender.com`), instance type 0.5 CPU / 512 MB, health check `GET /health`, offline by default. `WEB_CONCURRENCY` is `1`. `TRADEFLOW_ENV` is `production`, so webhooks fail closed when `TRADEFLOW_WEBHOOK_TOKEN` is unset. `TRADEFLOW_LEGACY` is `0`. `TRADEFLOW_CHAIN_ANCHOR`, `TRADEFLOW_DESK_DB`, and `TRADEFLOW_CHAIN_KEYS` are listed with `sync: false` (blank until set in the dashboard). Other secrets are `sync: false` so a Blueprint sync does not overwrite them: `VLLM_API_KEY`, `EVOLUS_API_KEY`, `EVOLUS_APP_ID`, `TRADEFLOW_API_KEY`, `TRADEFLOW_CHAIN_KEY`, `TRADEFLOW_CHAIN_KEY_ID`, and `TRADEFLOW_WEBHOOK_TOKEN`. The file does not set `PORT`; Render injects it and the process binds `0.0.0.0:$PORT`. The filesystem is ephemeral, so `TRADEFLOW_DESK_DB` and a file anchor do not survive a restart unless a disk is attached.
 
 Routes that can call the AMD endpoint (`POST /api/v1/quotes/read` with AMD live mode, and `POST /api/v1/classify/semantic` when stage 2 is requested) are capped in-process at 8 requests a minute per client address and 30 an hour for the whole process. A 429 does not echo the quote or any credential. With no real `VLLM_API_KEY`, those routes stay on the offline reader and the cap is not consumed.
 
@@ -104,7 +146,7 @@ flowchart LR
     Buyer["Human buyer"]
     Ext["Chrome MV3 copilot"]
     API["FastAPI dashboard"]
-    Solver["Expectimax solver<br/>NumPy, or CuPy if configured"]
+    Solver["One-step lookahead<br/>NumPy, or CuPy if configured"]
     Phrase["Optional phrasing call<br/>AMD tokenfactory or vLLM"]
     Buyer --> Ext --> API
     API --> Solver
@@ -114,6 +156,30 @@ flowchart LR
 ```
 
 The solver updates a reserve-price belief and searches opening prices and concession curves. The Chrome extension shows a decision card. The buyer copies and sends. Nothing in the extension clicks Send.
+
+## Live supplier desk
+
+A deal keeps four or five supplier threads in SQLite (`TRADEFLOW_DESK_DB`, or `desk.db` under `TRADEFLOW_STORE_DIR`, or `data/desk.db`). Each quote stores its source (`email`, `chat-import`, or `paste`), the raw text, the parsed fields, the time, and provenance. An accepted quote updates that supplier's reserve belief from the full accepted history and runs the coupled solver again. The page at `/desk` polls the snapshot. The same snapshot is available as a server-sent stream for a client that can send the API key.
+
+Mailbox intake leaves the seen flag alone. IMAP opens the inbox with EXAMINE and reads with BODY.PEEK. `IMAP_LOOKBACK_DAYS` (14) is the window, including mail that is already read. A message is remembered only after it is stored on a deal, keyed by that deal plus UID and Message-ID, so a wiped database can scan the window again. Mail that matches no deal, and a quote that arrives before its deal exists, stays in the window for a later poll. A poll for one deal does not hide another deal's mail. Mail whose sender is not a supplier on the deal is not stored.
+
+- IMAP: `IMAP_HOST`, `IMAP_PORT` (993 with SSL), `IMAP_USERNAME`, `IMAP_PASSWORD`, `IMAP_SSL` (1), `IMAP_POLL_SECONDS` (60), `IMAP_LOOKBACK_DAYS` (14). The poller starts only when host, username, and password are all set. Login uses TLS with the default certificate check. Plain IMAP is only the loopback test fixture. A non-loopback host without TLS is refused. The poll route does not accept a host, port, or password from the request. Gmail app passwords use IMAP with SSL.
+- Gmail API, optional: `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`. Ingestion lists recent mail and reads it without marking it read. `GMAIL_DRAFTS=1` creates or replaces a Gmail draft. The desk does not call the send method.
+- A reply is a draft in the supplier's language, English or Chinese, taken from their messages. It carries In-Reply-To, References (the earlier References plus the parent Message-ID), and its own Message-ID. It does not include engine notes. Approval is the hash of that exact text. A newer quote replaces the draft, and the previous approval no longer sends. A counter that is withheld withdraws the open draft. A draft that was already sent is not created again, and approving it does not send a second copy. A failed send can be approved again. `DESK_SMTP_SEND=1` together with `SMTP_HOST`, `EMAIL_USERNAME`, and `EMAIL_PASSWORD` is what hands that approved text to SMTP. The send runs off the request thread with a timeout. A failed attempt is stored as failed. Without the flag, approval stays on this desk and the text is left to copy. Nothing is sent from ingest, from a poll, or from the extension.
+
+Every desk route, including the snapshot and the event stream, requires `TRADEFLOW_API_KEY` in every mode, including sandbox. The sandbox demo token does not open the desk.
+
+Every ingested number stays in review until a person confirms it. The decision reads only accepted events. A posted `/round` or `/negotiate` price is not a confirmation: the server does not stamp it as accepted by a person, and the counter comes from the desk confirm flow. Raw text alone is rejected and is not a price. The audit line is `unconfirmed numbers used in decisions: N`, and N is counted from the provenance of the numbers that decision consumed. An optional extractor may name an evidence span and a class. It does not set a price. A malformed extractor response fails closed and the quote stays in review. Deterministic code reads the amount from a span that occurs verbatim in the message. A rule reader is the second opinion, and it does not share that tokenizer. The agreement gate only logs what it would have accepted. Phase 1 does not auto-accept. A rejected shadow-accept counts as a disagreement. An instruction mention on a span blocks that span. The desk shows how many of those shadow accepts the user later confirmed unchanged, toward 189, which is the two-sided Wilson sample size at which zero errors put the 95% lower bound at 0.98. Without an extractor endpoint, the rule reader prefills and the gate does not accept. Unknown senders are not stored.
+
+The Chrome extension adds a Desk tab. The API key is typed there and stored in the extension; a missing or rejected key is reported as a key error. One click, or Alt+Shift+I, imports the supplier message that is visible in the open chat. A shop name or a contact name matches as a whole phrase, and a unique match picks that thread. A page that matches several suppliers asks for a choice among those matches. A page that matches nobody asks for a choice, and that choice applies only on that page. The mock chat page is labelled simulated, and that import stays in review until a person accepts a figure from the text. The import does not crawl, type, or press Send. A visible captcha pauses it. The panel shows the ranking, the default counter, the push-lower counter, the hazard, and a draft to copy.
+
+The default counter matches the best other confirmed landed quote, and it never exceeds this supplier's ask or the user's ceiling. When this supplier is already the cheapest, the default is their own ask. The model's push-lower counter maximises expected landed-cost saving minus the incremental walk hazard on that interval. The maximiser is a closed form or a bounded golden-section search. A mesh step is not an input. Samples fill the reported tail and do not pick the price. A tighter rival can lower a counter and cannot raise one. This is a per-round heuristic: other quotes are treated as fixed and recallable, and the offer is not an exact multi-round equilibrium.
+
+The reserve is the supplier's first ask times `D`, with `D` in `[0, 1]` and a Beta prior of its own. The latest ask caps the offer and does not rescale `D`. Another supplier's ask is not used. A typed markup is not applied. A later ask, an acceptance, and a closed deal are upper bounds on `D`. A rejection is a lower bound. The posterior is that Beta truncated to the interval, in closed form. The card shows the prior mean and strength, labelled user policy, and those two inputs are what the decision uses. It shows the push-lower counter at half the prior strength and at double it, with the mean held fixed. The walk penalty is the incremental hazard times the surplus at stake, not the full outside price. A push whose expected value is negative is withheld. The walk-away hazard is the quote gap plus a small-gap hinge, transferred from the seller-ended eBay Best Offer fit for Business & Industrial in 2012–13. The fit is the first buyer offer of a thread and is applied per round to the latest ask. It is not a measured Chinese-factory rate. The hinge peaks at a zero gap, so it is not the increment the risk cap uses. The cap uses the gap slope with the hinge held at zero, and a tighter cap can withhold a push. The published coefficients are unchanged. An offer at the ask has incremental hazard 0. The fit script runs offline and is not part of the Render service. For a real closed deal, the headline compares landed with landed. A simulated or fixture deal is labelled and is not counted.
+
+Tests cover an in-process IMAP server, the mock chat import, the price and approval gates, and the resident set of a five-supplier update. That test prints the resident set and the elapsed time; this file does not copy them.
+
+On Render's free plan the disk is ephemeral, so `TRADEFLOW_DESK_DB` does not survive spin-down unless a disk is attached. The desk is built to stay inside the same 512 MB instance as the rest of the app.
 
 ## AMD integration
 

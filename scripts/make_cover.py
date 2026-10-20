@@ -41,11 +41,19 @@ def _robustness_chips():
     刻意不在例外時退回任何寫死數字 —— 計算不出来就顯示 unavailable。
     """
     try:
+        from src.app.demo_data import DEMO_SPEC
         from src.engine import robustness
-        _, data = robustness.report(target_price=TARGET_PRICE)
+        from src.engine.model import bind_archetypes
+        from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS
+        bind_archetypes(OPPONENT_TYPE_ROWS, OPPONENT_TYPE_NAMES)
+        target = float(DEMO_SPEC["target_price"])
+        _, data = robustness.report(
+            target_price=target,
+            value_ceiling=float(DEMO_SPEC["ceiling_price"]) / target,
+        )
         return (
             f"{data['engine_break']:.1%} vs {data['baseline_break']:.1%}",
-            f"+¥{data['gain'] * TARGET_PRICE:.2f} / unit",
+            f"+¥{data['gain'] * target:.2f} / unit",
         )
     except Exception as exc:
         print(f"[warn] robustness.report() failed ({exc}); chips show 'unavailable'")

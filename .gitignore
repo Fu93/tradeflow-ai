@@ -9,6 +9,8 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+.coverage
+.coverage.*
 
 # ---- Runtime state (regenerated locally, never shared) ----
 # SQLite in WAL mode names its sidecars `<db>-wal` / `<db>-shm`, i.e. the suffix

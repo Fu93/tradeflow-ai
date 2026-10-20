@@ -43,6 +43,14 @@ def test_stage1_only_never_makes_network_calls():
 
 def test_round_endpoint_default_does_not_invoke_stage2(client):
     """主輪次端點預設必須走快速路徑。"""
+    created = client.post("/api/v1/sessions", json={
+        "session_id": "async-regression-01",
+        "product_name": "Sample",
+        "target_price": 12.0,
+        "ceiling_price": 16.2,
+            "expected_markup": 0.0,
+        })
+    assert created.status_code == 200, created.text
     t0 = time.perf_counter()
     r = client.post(
         "/api/v1/sessions/async-regression-01/round",
@@ -50,7 +58,8 @@ def test_round_endpoint_default_does_not_invoke_stage2(client):
     )
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
-    assert r.status_code == 200
+    assert r.status_code == 422, r.text
+    assert "unconfirmed numbers used in decisions: 1" in r.json()["detail"]
     # 引擎本身約需 1–3 秒；Stage-2 會額外增加 2–13 秒。
     # 門檻設在 8 秒以容納慢速 CI，同時仍能抓到「Stage-2 被誤觸發」的情況。
     assert elapsed_ms < 8000, (

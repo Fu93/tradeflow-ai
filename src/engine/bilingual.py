@@ -111,6 +111,9 @@ def sanitize_product_name(name: Optional[str]) -> str:
     return cleaned or "產品"
 
 
+_FULL_TEXT_PATTERNS: dict[tuple[str, int], Any] = {}
+
+
 def _safety_full_text_pattern(safe_pattern: SafeLinearPattern):
     """
     [H3] 取回**不做長度截斷**的底層編譯樣式，供安全閘門掃描完整原文。
@@ -122,9 +125,15 @@ def _safety_full_text_pattern(safe_pattern: SafeLinearPattern):
     安全樣式皆為 RE2/`regex` 可編譯**且**內建 `re` 也能安全處理的字面交替
     （多字元字面詞，無嵌套量詞），因此在此以內建 `re` 編譯同一 pattern 並掃描
     完整字串是安全的；同時保留 safe_regex 對 RE2 不相容樣式的降級警告。
+    The compiled pattern is kept so the first message does not pay compile again.
     """
+    key = (safe_pattern.raw_pattern, int(safe_pattern.flags or 0))
+    compiled = _FULL_TEXT_PATTERNS.get(key)
+    if compiled is not None:
+        return compiled
     import re as _re
     compiled = _re.compile(safe_pattern.raw_pattern, safe_pattern.flags or 0)
+    _FULL_TEXT_PATTERNS[key] = compiled
     return compiled
 
 
@@ -250,7 +259,7 @@ class InboundIntentClassifier:
         r"USD|US\$|RMB|CNY|EUR|HKD|NTD|TWD|GBP|JPY|美元|美金|[¥￥$]"
     )
     _CURRENCY_SUFFIX = (
-        r"USD|US\$|RMB|CNY|EUR|HKD|NTD|TWD|GBP|JPY|美元|美金|元|块|塊"
+        r"USD|US\$|RMB|CNY|EUR|HKD|NTD|TWD|GBP|JPY|美元|美金|元|块|塊|dollars?"
     )
     # Thousands separators and a decimal comma. Alternation is left-first and
     # bounded, so "1,000" is not read as 1 and "3,20" is not read as 3.
@@ -392,7 +401,7 @@ class InboundIntentClassifier:
         compact = token.strip().upper()
         if compact in {"RMB", "CNY", "元", "块", "塊", "¥", "￥"}:
             return "CNY"
-        if compact in {"USD", "US$", "$", "美元", "美金"}:
+        if compact in {"USD", "US$", "$", "美元", "美金", "DOLLAR", "DOLLARS"}:
             return "USD"
         return compact
 
@@ -998,9 +1007,9 @@ class TacticalActionObject(BaseModel):
     tactical_mode: TacticalModeEnum = Field(default=TacticalModeEnum.LEAN_IN, description="主戰術模式")
     product_name: str = Field(default="項目", description="標的品名")
     supplier_contact_name: str = Field(default="老闆", description="對手工廠稱呼")
-    lead_days: int = Field(default=25, ge=1, description="承諾交期天數")
+    lead_days: Optional[int] = Field(default=None, ge=1, description="承諾交期天數。未設定時渲染為 not set。")
     deposit_pct: float = Field(default=BASELINE_DEPOSIT_PCT, ge=0.0, le=1.0, description="承諾定金比例")
-    moq: int = Field(default=500, ge=1, description="採購起訂批量")
+    moq: Optional[int] = Field(default=None, ge=1, description="採購起訂批量。未設定時渲染為 not set。")
     mold_fee_exempted: bool = Field(default=False, description="是否要求減免模具/打樣費")
     waive_mold_fee_amount: float = Field(default=0.0, description="要求減免之模具費金額")
 
@@ -1202,7 +1211,7 @@ class ActionObjectASTGuardrail:
         "        raise ValueError('Authorized price exceeds walk-away ceiling')\n"
         "    if not dep <= 0.6001:\n"
         "        raise ValueError('Deposit percentage exceeds 60% system safety threshold')\n"
-        "    if not lead >= 1:\n"
+        "    if lead is not None and not lead >= 1:\n"
         "        raise ValueError('Lead time must be at least 1 day')\n"
         "    return True\n"
     )
@@ -1237,6 +1246,13 @@ class ActionObjectASTGuardrail:
         except ValueError as exc:
             raise GuardrailViolationError(f"AST Invariant Violation: {exc}") from exc
         return True
+
+
+def _term(value, suffix: str = "") -> str:
+    """Render a term the caller set. An omitted term stays omitted."""
+    if value is None:
+        return "not set"
+    return f"{value}{suffix}"
 
 
 # ---------------------------------------------------------------------------
@@ -1310,7 +1326,7 @@ class ChineseSurfaceRenderer:
             # 變體 B: 面對以量壓價/小單推託
             elif obj.counterpart_intent == VendorTacticEnum.TIER_VOLUME_BLACKMAIL:
                 return (
-                    f"首批 {obj.moq} 件試單看品控，跑順了下半年翻單一萬起。¥{p_val:.2f} 出廠價，"
+                    f"首批 {_term(obj.moq)} 件試單看品控，跑順了下半年翻單一萬起。¥{p_val:.2f} 出廠價，"
                     f"能做今天下 PO，別因小失大。"
                 )
             # 變體 C: 面對背景刺探/閒聊雜訊 (標準邊界鎖定)
@@ -1330,7 +1346,7 @@ class ChineseSurfaceRenderer:
         if obj.counterpart_intent == VendorTacticEnum.OFFLINE_BYPASS_DIVERT:
             return (
                 f"{contact}，公司財務合規審計明確要求走系統留痕，私下微信恕不方便。"
-                f"首批 {obj.moq} 件試單預算嚴格卡在 ¥{p_val:.2f}，現款現結走平台擔保，能排單我們即刻立項。"
+                f"首批 {_term(obj.moq)} 件試單預算嚴格卡在 ¥{p_val:.2f}，現款現結走平台擔保，能排單我們即刻立項。"
             )
 
         if obj.counterpart_intent == VendorTacticEnum.MATERIAL_SPEC_DEGRADE:
@@ -1366,8 +1382,8 @@ class ChineseSurfaceRenderer:
             mold_clause = f"，且首批免除模具費 ¥{obj.waive_mold_fee_amount:.0f}" if obj.mold_fee_exempted else ""
             return (
                 f"{contact}，理解貴廠在製程與排單成本上的考量。若單價落定在 ¥{p_val:.2f}，"
-                f"我方展現充分誠意：首批訂單批量拉升至 {obj.moq} 件，今天特批預付 {deposit_pct_str} 定金現款秒結排單。"
-                f"但作為對等條件，交期必須壓縮至 {obj.lead_days} 天內交付{mold_clause}。"
+                f"我方展現充分誠意：首批訂單批量拉升至 {_term(obj.moq)} 件，今天特批預付 {deposit_pct_str} 定金現款秒結排單。"
+                f"但作為對等條件，交期必須壓縮至 {_term(obj.lead_days)} 天內交付{mold_clause}。"
                 f"若貴方確認，今天立即蓋章回傳 PO；否則我方只得啟動備案產能。"
             )
 
@@ -1522,7 +1538,7 @@ class EnglishExecutiveRenderer:
             f"• Inbound Counterpart Intent: {obj.counterpart_intent.value}\n"
             f"{mixed_note}"
             f"• Package Terms (OUR proposal, not counterpart-confirmed): "
-            f"Lead Time: {obj.lead_days}d | Deposit: {obj.deposit_pct*100:.0f}% | MOQ: {obj.moq}"
+            f"Lead Time: {_term(obj.lead_days, 'd')} | Deposit: {obj.deposit_pct*100:.0f}% | MOQ: {_term(obj.moq)}"
             f"{circuit_warning}\n\n"
             f"DIRECTIVES (Reply to execute):\n"
             f"[ 1 ] CONCEDE: Accept proposed step to {t_price_str}\n"
@@ -1543,7 +1559,7 @@ class EnglishExecutiveRenderer:
         # 都已經對方確認過。現在明確標示為「我方提案條款」，未經對方確認。
         package_terms = (
             f"• Package Terms (OUR proposal, not counterpart-confirmed): "
-            f"Lead Time: {obj.lead_days}d | Deposit: {obj.deposit_pct*100:.0f}% | MOQ: {obj.moq}"
+            f"Lead Time: {_term(obj.lead_days, 'd')} | Deposit: {obj.deposit_pct*100:.0f}% | MOQ: {_term(obj.moq)}"
         )
         card = (
             f"=== [TradeFlow Action Execution Confirmation] ===\n"

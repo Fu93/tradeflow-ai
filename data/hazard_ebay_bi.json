@@ -1,0 +1,185 @@
+{
+  "used_for_decision": "seller_ended",
+  "seller_ended": {
+    "intercept": -2.181004319580907,
+    "gap": 3.11791041571198,
+    "se_intercept_clustered": 0.030929174959500046,
+    "se_gap_clustered": 0.06331420335894429,
+    "n": 919905,
+    "clusters": 80186,
+    "outcome": "seller declined, auto-declined, or let the buyer's last offer expire; deals and buyer-ended threads are 0",
+    "ci95_intercept": [
+      -2.2416242653345284,
+      -2.120384373827285
+    ],
+    "ci95_gap": [
+      2.9938171096965838,
+      3.2420037217273765
+    ],
+    "small_gap": 12.710929093586042,
+    "se_small_gap_clustered": 0.5077777843171032,
+    "ci95_small_gap": [
+      11.715704947435892,
+      13.706153239736192
+    ],
+    "small_gap_knot": 0.1,
+    "model": "quote_gap_plus_small_gap_hinge",
+    "holdout_seller": {
+      "n_test": 191179,
+      "max_abs_decile_error": 0.03227726489629529,
+      "split": "every fifth seller id in sorted order, fit on the rest"
+    },
+    "holdout_time": {
+      "n_test": 529500,
+      "max_abs_decile_error": 0.04515685256341556,
+      "split": "train on first-buyer-offer dates before 2013-01-01"
+    }
+  },
+  "thread_no_deal": {
+    "intercept": -1.7952322571647787,
+    "gap": 4.589759156321141,
+    "se_intercept_clustered": 0.02977200696183359,
+    "se_gap_clustered": 0.0857531037520913,
+    "n": 919905,
+    "clusters": 80186,
+    "outcome": "thread ended with no accepted offer, including threads the buyer ended",
+    "ci95_intercept": [
+      -1.853584199929694,
+      -1.7368803143998635
+    ],
+    "ci95_gap": [
+      4.421686503091192,
+      4.75783180955109
+    ],
+    "small_gap": 13.940765560879974,
+    "se_small_gap_clustered": 0.5406391044891775,
+    "ci95_small_gap": [
+      12.881134541645366,
+      15.000396580114582
+    ],
+    "small_gap_knot": 0.1,
+    "model": "quote_gap_plus_small_gap_hinge",
+    "holdout_seller": {
+      "n_test": 191179,
+      "max_abs_decile_error": 0.041148695645214395,
+      "split": "every fifth seller id in sorted order, fit on the rest"
+    },
+    "holdout_time": {
+      "n_test": 529500,
+      "max_abs_decile_error": 0.055179853132569456,
+      "split": "train on first-buyer-offer dates before 2013-01-01"
+    }
+  },
+  "linear_only": {
+    "seller_ended": {
+      "intercept": -2.12902642034848,
+      "gap": 3.024877379153445,
+      "se_intercept_clustered": 0.03006831233357495,
+      "se_gap_clustered": 0.0615918998720338,
+      "n": 919905,
+      "clusters": 80186,
+      "outcome": "seller declined, auto-declined, or let the buyer's last offer expire; deals and buyer-ended threads are 0",
+      "ci95_intercept": [
+        -2.1879591097897935,
+        -2.0700937309071668
+      ],
+      "ci95_gap": [
+        2.904159719080254,
+        3.1455950392266363
+      ],
+      "small_gap": null,
+      "se_small_gap_clustered": null,
+      "ci95_small_gap": null,
+      "small_gap_knot": null,
+      "model": "quote_gap",
+      "holdout_seller": {
+        "n_test": 191179,
+        "max_abs_decile_error": 0.033797196528563556,
+        "split": "every fifth seller id in sorted order, fit on the rest"
+      },
+      "holdout_time": {
+        "n_test": 529500,
+        "max_abs_decile_error": 0.04641167318197931,
+        "split": "train on first-buyer-offer dates before 2013-01-01"
+      }
+    },
+    "thread_no_deal": {
+      "intercept": -1.727301725432267,
+      "gap": 4.450455949734067,
+      "se_intercept_clustered": 0.028538291035374096,
+      "se_gap_clustered": 0.08176359688619472,
+      "n": 919905,
+      "clusters": 80186,
+      "outcome": "thread ended with no accepted offer, including threads the buyer ended",
+      "ci95_intercept": [
+        -1.7832356343299587,
+        -1.6713678165345751
+      ],
+      "ci95_gap": [
+        4.290202570381001,
+        4.6107093290871335
+      ],
+      "small_gap": null,
+      "se_small_gap_clustered": null,
+      "ci95_small_gap": null,
+      "small_gap_knot": null,
+      "model": "quote_gap",
+      "holdout_seller": {
+        "n_test": 191179,
+        "max_abs_decile_error": 0.04124460353185555,
+        "split": "every fifth seller id in sorted order, fit on the rest"
+      },
+      "holdout_time": {
+        "n_test": 529500,
+        "max_abs_decile_error": 0.05491156574363176,
+        "split": "train on first-buyer-offer dates before 2013-01-01"
+      }
+    }
+  },
+  "gap_bins": {
+    "below_half_knot": {
+      "n": 6604,
+      "lo": 0.0,
+      "hi": 0.05,
+      "observed": 0.25378558449424593,
+      "linear_mean": 0.11237503706859364,
+      "hinge_mean": 0.2507725718699307,
+      "linear_abs_error": 0.1414105474256523,
+      "hinge_abs_error": 0.0030130126243152477
+    },
+    "half_knot_to_knot": {
+      "n": 25831,
+      "lo": 0.05,
+      "hi": 0.1,
+      "observed": 0.15810460299639967,
+      "linear_mean": 0.13226065020356545,
+      "hinge_mean": 0.1561992743775557,
+      "linear_abs_error": 0.02584395279283422,
+      "hinge_abs_error": 0.00190532861884396
+    }
+  },
+  "provenance": {
+    "paper": "Backus, Blake, Larsen, and Tadelis (2020), Quarterly Journal of Economics",
+    "doi": "10.1093/qje/qjaa003",
+    "nber": "w24306",
+    "data_page": "https://www.nber.org/research/data/best-offer-sequential-bargaining",
+    "threads_url": "https://data.nber.org/data-appendix/w24306/bargaining/anon_bo_threads.csv.gz",
+    "lists_url": "https://data.nber.org/data-appendix/w24306/bargaining/anon_bo_lists.csv.gz",
+    "dataverse_doi": "10.7910/DVN/ZOWWO7",
+    "licence": "NBER files are cleared for research purposes; cite the paper. The Dataverse record is CC0, and the large files are hosted off Dataverse.",
+    "fit_date": "2026-10-19",
+    "category": "Business & Industrial",
+    "meta_categ_id": 12576,
+    "sample": "Threads whose listing meta category is 12576, with a positive Buy-It-Now price and a positive first buyer offer at or below that price. Gap is 1 minus the offer over the Buy-It-Now price. Offers above the Buy-It-Now are dropped: a few ratios reach the thousands and a logit on the raw gap has a slope near zero even though the seller-ended rate rises with the discount.",
+    "dropped_above_bin": 5497,
+    "cluster": "anon_slr_id",
+    "standard_errors": "sandwich, clustered by seller, bread from the IRLS Hessian",
+    "decision_terms": [
+      "quote_gap",
+      "small_gap_hinge"
+    ],
+    "small_gap_knot": 0.1,
+    "transfer_caveat": "The logit is fit on the first buyer offer of each thread and is applied per round to the latest ask. A small-gap hinge is in the decision model because a straight line understated seller-ended walk-away on small gaps. Below half the knot the observed rate is 0.25378558449424593, the line predicted 0.11237503706859364, and the hinge predicts 0.2507725718699307. This is still a 2012-13 eBay Business and Industrial transfer, not a measured Chinese-factory rate.",
+    "partial": false
+  }
+}

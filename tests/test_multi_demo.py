@@ -1,5 +1,6 @@
 """單元測試：多供應商逆向拍賣模擬協同與動態 BATNA 收斂流程。"""
 import unittest
+from src.app.demo_data import self_play_bundle
 from src.engine.multi_solver import simulate_reverse_auction
 
 
@@ -11,6 +12,8 @@ class TestMultiSupplierSimulation(unittest.TestCase):
             walk_away_ceiling=16.2,
             moq=10000,
             n_samples=5000,
+            demo=True,
+            self_play=self_play_bundle(),
         )
 
         self.assertTrue(res["success"])
@@ -96,6 +99,7 @@ class TestMultiSupplierSimulation(unittest.TestCase):
             walk_away_ceiling=16.0,
             moq=5000,
             n_samples=2000,
+            expected_markup=0.08,
         )
 
         # 第 1 輪獨立即時傳入
@@ -128,6 +132,8 @@ class TestMultiSupplierSimulation(unittest.TestCase):
             moq=10000,
             n_samples=2000,
             n_rounds=3,
+            demo=True,
+            self_play=self_play_bundle(),
         )
         self.assertTrue(res["success"])
         self.assertIn("winning_supplier", res)

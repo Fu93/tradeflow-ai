@@ -113,7 +113,7 @@ def build_slides() -> list[tuple[str, list[str]]]:
         (
             "5. Decision core",
             [
-                "A belief about the supplier reserve, then a vectorised Expectimax search over openings and concession curves.",
+                "The next offer maximises expected landed saving minus incremental walk risk. It is a per-round heuristic, not a multi-round equilibrium.",
                 "Read the recommended price and the breakdown probability off the dashboard you just captured.",
                 "This slide does not state a latency. Use the number on the screen.",
             ],

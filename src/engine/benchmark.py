@@ -23,7 +23,6 @@ import os
 import time
 from typing import Dict, Any, List, Tuple
 import numpy as np
-from src.sim.scenarios import UMBRELLA
 from . import model, solver
 from .multi_solver import simulate_reverse_auction
 from .roofline import label as roofline_label
@@ -53,7 +52,7 @@ def detect_gpu_hardware() -> Tuple[bool, str]:
     return False, "CPU Vectorized (NumPy SIMD Fallback)"
 
 
-def _measure_working_set_mb(n: int, opens, scheds, use_gpu: bool) -> float:
+def _measure_working_set_mb(n: int, opens, scheds, use_gpu: bool, value_ceiling: float) -> float:
     """以 tracemalloc 實測 solve() 的峰值配置量 (MB)。
 
     [修正] 舊版以 `n_rollouts * 8` 估算工作集，並在註解中聲稱 float32。
@@ -72,14 +71,25 @@ def _measure_working_set_mb(n: int, opens, scheds, use_gpu: bool) -> float:
 
     tracemalloc.start()
     try:
-        solver.solve(n_opp_samples=n, opens=opens, scheds=scheds, use_gpu=use_gpu)
+        solver.solve(
+            n_opp_samples=n, opens=opens, scheds=scheds, use_gpu=use_gpu, value_ceiling=value_ceiling,
+        )
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
     return peak / (1024 * 1024)
 
 
-def run(n_list=(2_000, 10_000, 20_000, 50_000), force_cpu=False) -> Dict[str, Any]:
+def run(
+    n_list=(2_000, 10_000, 20_000, 50_000),
+    force_cpu=False,
+    *,
+    target_price: float | None = None,
+    walk_away_ceiling: float | None = None,
+    value_ceiling: float | None = None,
+    self_play: dict | None = None,
+    moq: int | None = None,
+) -> Dict[str, Any]:
     """執行全鏈路基準測試並產出具備審計效力的硬體效能報告。
 
     [重要] 本函式**不**回報「GPU 加速倍率」。原因：在無 GPU 的機器上，唯一能
@@ -91,22 +101,30 @@ def run(n_list=(2_000, 10_000, 20_000, 50_000), force_cpu=False) -> Dict[str, An
     has_gpu, hardware_name = detect_gpu_hardware()
     use_gpu = has_gpu and not force_cpu
 
-    opens, scheds = model.strategy_grid()
+    if value_ceiling is None or target_price is None or walk_away_ceiling is None or self_play is None:
+        raise ValueError(
+            "run requires target_price, walk_away_ceiling, value_ceiling, and the labelled self-play bundle."
+        )
+    opens, scheds = model.strategy_grid(ceiling=float(value_ceiling))
     grid_size = opens.shape[0] * scheds.shape[0]  # 40 * 12 = 480
     rows: List[Dict[str, Any]] = []
 
     for n in n_list:
         t0 = time.perf_counter()
-        _ = solver.solve(n_opp_samples=n, opens=opens, scheds=scheds, use_gpu=use_gpu)
+        _ = solver.solve(
+            n_opp_samples=n, opens=opens, scheds=scheds, use_gpu=use_gpu, value_ceiling=float(value_ceiling),
+        )
         dt_cpu = time.perf_counter() - t0
         n_rollouts = n * grid_size
 
         # 實測工作集（見 _measure_working_set_mb 的修正說明）。
-        working_set_mb = _measure_working_set_mb(n, opens, scheds, use_gpu)
+        working_set_mb = _measure_working_set_mb(n, opens, scheds, use_gpu, float(value_ceiling))
 
         if use_gpu:
             t_gpu_0 = time.perf_counter()
-            _ = solver.solve(n_opp_samples=n, opens=opens, scheds=scheds, use_gpu=True)
+            _ = solver.solve(
+                n_opp_samples=n, opens=opens, scheds=scheds, use_gpu=True, value_ceiling=float(value_ceiling),
+            )
             dt_gpu_measured = time.perf_counter() - t_gpu_0
             transfer_s = None
             mode = "MEASURED_GPU"
@@ -137,11 +155,13 @@ def run(n_list=(2_000, 10_000, 20_000, 50_000), force_cpu=False) -> Dict[str, An
     # 多供應商張量逆向拍賣模擬基準測試 (Reverse Auction 4-Supplier Benchmark)
     t_multi_0 = time.perf_counter()
     multi_res = simulate_reverse_auction(
-        target_price=UMBRELLA.target,
-        walk_away_ceiling=UMBRELLA.ceiling,
-        moq=10000,
+        target_price=target_price,
+        walk_away_ceiling=walk_away_ceiling,
+        moq=moq,
         n_samples=50_000,
         use_gpu=use_gpu,
+        demo=True,
+        self_play=self_play,
     )
     dt_multi_cpu = time.perf_counter() - t_multi_0
     total_rollouts_multi = multi_res.get("total_rollouts_accum") or multi_res.get("total_rollouts")

@@ -133,6 +133,7 @@ class AdversarialArena:
                 rng=rng,
                 reserve_mean=self.market_prior_mean,
                 reserve_std=self.market_prior_std,
+                value_ceiling=self.walk_away_ceiling,
             )
             rec = solver.recommend(init_solve, target_price=self.target_price)
             current_buyer_offer = min(self.walk_away_ceiling, rec["opening_offer_norm"])
@@ -175,6 +176,7 @@ class AdversarialArena:
                         rng=rng,
                         reserve_mean=post_mean,
                         reserve_std=post_std,
+                        value_ceiling=self.walk_away_ceiling,
                     )
                     rec = solver.recommend(solve_res, target_price=self.target_price)
                     curve_step = rec["concession_curve"][min(r - 1, len(rec["concession_curve"]) - 1)]

@@ -1,0 +1,2896 @@
+{
+  "categories": {
+    "c": "cited official identity or statistical constant",
+    "d": "labelled user-adjustable policy or labelled assumption",
+    "n": "numerical or display guard"
+  },
+  "constants": {
+    "YOUR_CEILING": {
+      "value": 1.35,
+      "category": "d",
+      "justification": "Legacy demo opening-grid bound. The live desk and /round do not read it."
+    },
+    "GRID_EDGE_INSET": {
+      "value": 0.02,
+      "category": "n",
+      "justification": "inset so the highest opening sits just under YOUR_CEILING."
+    },
+    "BREAKDOWN_TRIP_THRESHOLD": {
+      "value": 0.15,
+      "category": "d",
+      "justification": "safety gate. At this breakdown probability the engine stops proposing and waits for a person. Not fitted to factory data."
+    },
+    "CAUTION_RISK_THRESHOLD": {
+      "value": 0.06,
+      "category": "d",
+      "justification": "display band for a mild walk-away hazard. It sits just above the zero-gap prior (the logistic intercept) and below the trip cap, so a small opening gap is labelled caution. Not a measured rate and not a second trip. The old 0.08 band was chosen for 1 - p_deal, which sat higher."
+    },
+    "ANCHORING_REF": {
+      "value": 0.1,
+      "category": "d",
+      "justification": "neutral opening gap (normalised) for the anchoring reaction."
+    },
+    "ANCHORING_BETA": {
+      "value": 1.0,
+      "category": "d",
+      "justification": "how strongly an opening gap changes the opponent's concession. 1.0 means a gap one full target-unit away scales the concession by that amount. Setting this to 0 restores the pre-anchoring payoff. Not fitted."
+    },
+    "ANCHORING_CLIP": {
+      "value": [
+        0.5,
+        1.5
+      ],
+      "category": "d",
+      "justification": "clip on the anchoring multiplier so a wild gap cannot zero or explode the concession rate. Chosen bounds, not a fit."
+    },
+    "DEAL_TOLERANCE": {
+      "value": 0.02,
+      "category": "d",
+      "justification": "a final gap at or under 2% of the target counts as a deal."
+    },
+    "DEAL_DECAY_SCALE": {
+      "value": 0.05,
+      "category": "d",
+      "justification": "exponential scale of deal probability. Each extra 5% of gap multiplies acceptance by 1/e. Chosen, not fitted."
+    },
+    "BREAK_PENALTY": {
+      "value": 0.1,
+      "category": "d",
+      "justification": "payoff penalty subtracted once per unit of break probability."
+    },
+    "OPPONENT_GAP_SHARE": {
+      "value": 0.45,
+      "category": "d",
+      "justification": "fraction of the remaining gap the opponent is assumed to eat, before bluff scales it down. Chosen, not fitted."
+    },
+    "CONCESSION_RATE_CAP": {
+      "value": 0.95,
+      "category": "d",
+      "justification": "cap on an effective per-round concession rate."
+    },
+    "PRIOR_RESERVE_MEAN": {
+      "value": 1.08,
+      "category": "d",
+      "justification": "Labelled suggestion only. The desk and /round do not apply it unless the request sets a prior."
+    },
+    "PRIOR_RESERVE_STD": {
+      "value": 0.1,
+      "category": "d",
+      "justification": "Labelled suggestion for the width when a caller sets a mean and not a width. Not a fitted posterior."
+    },
+    "SAMPLE_NOISE": {
+      "value": 0.08,
+      "category": "d",
+      "justification": "noise used when sampling a reserve around its type centre."
+    },
+    "SAMPLE_AXIS_NOISE": {
+      "value": 0.1,
+      "category": "d",
+      "justification": "noise on urgency, bluff, and concession when sampling opponents."
+    },
+    "PARAM_FLOOR": {
+      "value": 0.05,
+      "category": "n",
+      "justification": "lower clip for sampled urgency and concession."
+    },
+    "BELIEF_CONF_BASE": {
+      "value": 0.75,
+      "category": "d",
+      "justification": "belief-meter map. raw = BASE + VAR * variance_reduction - CV * cv, then clipped. A display score, not a confidence interval."
+    },
+    "BELIEF_CONF_VAR": {
+      "value": 0.35,
+      "category": "d",
+      "justification": "Weight on variance reduction in the belief-meter display. A display score, not a confidence interval."
+    },
+    "BELIEF_CONF_CV": {
+      "value": 0.8,
+      "category": "d",
+      "justification": "Penalty on the coefficient of variation in the belief-meter display. A display score, not a confidence interval."
+    },
+    "BELIEF_CONF_LO": {
+      "value": 0.5,
+      "category": "d",
+      "justification": "Lower clip of the belief-meter display score. A display bound, not a measured confidence."
+    },
+    "BELIEF_CONF_HI": {
+      "value": 0.98,
+      "category": "d",
+      "justification": "Upper clip of the belief-meter display score. A display bound, not a measured confidence."
+    },
+    "BAYES_OBS_NOISE": {
+      "value": 0.06,
+      "category": "d",
+      "justification": "scale of the Student-t observation in the reserve update. A numerical robustness setting, not a measured quote error."
+    },
+    "STUDENT_T_DF": {
+      "value": 4.0,
+      "category": "n",
+      "justification": "degrees of freedom of that Student-t. A heavy-tailed robustness setting so a far quote is down-weighted and still moves the mean. Not an economic claim about suppliers."
+    },
+    "MAD_NORMAL_CONSISTENCY": {
+      "value": 1.4826,
+      "category": "c",
+      "justification": "1/Phi^{-1}(0.75), so a normal median absolute deviation matches the standard deviation (Rousseeuw and Croux)."
+    },
+    "BAYES_MARKUP": {
+      "value": 0.08,
+      "category": "d",
+      "justification": "Optional markup a person may type. The dashboard does not fill it in and does not send it when the field is blank."
+    },
+    "CREDIBLE_MASS": {
+      "value": 0.95,
+      "category": "c",
+      "justification": "Conventional 95% central credible mass. A reporting convention, not a fitted coverage rate."
+    },
+    "Z_95": {
+      "value": 1.95996,
+      "category": "c",
+      "justification": "Phi^{-1}(0.975), the standard-normal quantile for a two-sided 95% interval."
+    },
+    "CONCESSION_FLAT_RATES": {
+      "value": [
+        0.05,
+        0.1,
+        0.15,
+        0.2
+      ],
+      "category": "d",
+      "justification": "flat concession rates on the five-round search grid."
+    },
+    "CONCESSION_RAMPS": {
+      "value": [
+        [
+          0.03,
+          0.27
+        ],
+        [
+          0.27,
+          0.03
+        ],
+        [
+          0.06,
+          0.2
+        ],
+        [
+          0.2,
+          0.06
+        ]
+      ],
+      "category": "d",
+      "justification": "(start, end) linear concession ramps on that same grid."
+    },
+    "CONCESSION_FIXED_ROWS": {
+      "value": [
+        [
+          0.08,
+          0.1,
+          0.12,
+          0.14,
+          0.16
+        ],
+        [
+          0.16,
+          0.14,
+          0.12,
+          0.1,
+          0.08
+        ],
+        [
+          0.1,
+          0.08,
+          0.12,
+          0.1,
+          0.1
+        ],
+        [
+          0.12,
+          0.14,
+          0.1,
+          0.12,
+          0.1
+        ]
+      ],
+      "category": "d",
+      "justification": "shaped five-round curves so the grid contains front-loaded and back-loaded concessions. Not transcripts."
+    },
+    "LEAD_DAY_SHADOW": {
+      "value": 0.15,
+      "category": "d",
+      "justification": "buyer planning defaults for logrolling when a session does not override them. Shadow prices and rates are not supplier quotes."
+    },
+    "BASELINE_DEPOSIT_PCT": {
+      "value": 0.3,
+      "category": "d",
+      "justification": "Buyer planning deposit when a mandate does not override it. A labelled policy, not a supplier quote."
+    },
+    "MAX_DEPOSIT_PCT": {
+      "value": 0.5,
+      "category": "d",
+      "justification": "Highest deposit a logrolling proposal may offer when the mandate does not override it. Labelled policy."
+    },
+    "BUYER_CAPITAL_RATE": {
+      "value": 0.08,
+      "category": "d",
+      "justification": "Annual capital rate used in the buyer's deposit cost. Labelled planning rate, not a quoted price."
+    },
+    "SUPPLIER_RELIEF_RATE": {
+      "value": 0.22,
+      "category": "d",
+      "justification": "Annual rate used for the supplier's cash-flow relief in logrolling. Labelled planning rate, not a quote."
+    },
+    "EXCESS_HOLDING_RATE": {
+      "value": 0.05,
+      "category": "d",
+      "justification": "Annual rate for holding stock above the baseline quantity. Labelled planning rate, not a quote."
+    },
+    "PLANNING_MOLD_FEE": {
+      "value": 3000.0,
+      "category": "d",
+      "justification": "planning figure used only inside the buyer's own surplus math when nobody has quoted a mold fee. It must not be described as the supplier's price. Uncalibrated."
+    },
+    "VOLUME_DISCOUNT_RATIO": {
+      "value": 0.08,
+      "category": "d",
+      "justification": "Assumed unit-price discount when volume is raised. Labelled policy until a supplier quotes that discount."
+    },
+    "SUPPLIER_COST_RATIO": {
+      "value": 0.82,
+      "category": "d",
+      "justification": "Assumed production cost as a fraction of the target, used only inside logrolling surplus. Not a cost sheet."
+    },
+    "RUSH_COST_COEFFICIENT": {
+      "value": 0.08,
+      "category": "d",
+      "justification": "Scale of the supplier rush-cost curve in logrolling. Labelled shape, not a factory cost sheet."
+    },
+    "RUSH_COST_EXPONENT": {
+      "value": 1.25,
+      "category": "d",
+      "justification": "Curvature of the supplier rush-cost curve in logrolling. Labelled shape, not a factory cost sheet."
+    },
+    "MOLD_SURPLUS_SHARE": {
+      "value": 0.5,
+      "category": "d",
+      "justification": "share of an unquoted planning mold fee counted as buyer surplus. Not a received waiver."
+    },
+    "MOQ_STRETCH": {
+      "value": 1.5,
+      "category": "d",
+      "justification": "volume-trade stretch offered against the supplier's stated MOQ."
+    },
+    "INVENTORY_HOLDING_DAYS": {
+      "value": 90.0,
+      "category": "d",
+      "justification": "assumed days of inventory when turning an annual holding rate into a unit cost. Not this buyer's measured turnover."
+    },
+    "DAILY_LEAD_PENALTY": {
+      "value": 0.003,
+      "category": "d",
+      "justification": "Per-day lead penalty in the total-cost shadow when a baseline lead time is set. Labelled rate."
+    },
+    "TCO_MARKDOWN_RATE": {
+      "value": 0.08,
+      "category": "d",
+      "justification": "Markdown rate in the total-cost shadow when a lead baseline is set. Labelled shape, not a contract clause."
+    },
+    "TCO_MARKDOWN_EXP": {
+      "value": 1.2,
+      "category": "d",
+      "justification": "Exponent of the markdown curve in the total-cost shadow. Labelled shape, not a contract clause."
+    },
+    "TCO_UNFAVORABLE_PREMIUM": {
+      "value": 1.05,
+      "category": "d",
+      "justification": "Premium applied to an unfavorable term in the total-cost shadow. Labelled multiple, not a quote."
+    },
+    "TCO_CRISIS_RATE": {
+      "value": 0.015,
+      "category": "d",
+      "justification": "Rate of the crisis delay term in the total-cost shadow. Labelled shape, not a contract clause."
+    },
+    "TCO_CRISIS_EXPONENT": {
+      "value": 1.75,
+      "category": "d",
+      "justification": "Exponent of the crisis delay term in the total-cost shadow. Labelled shape, not a contract clause."
+    },
+    "TCO_CRISIS_DELAY_START": {
+      "value": 5.0,
+      "category": "d",
+      "justification": "delay, in days, after which the crisis term starts, and the scale of that term. Chosen shape, not a contract clause."
+    },
+    "TCO_CRISIS_DELAY_SCALE": {
+      "value": 10.0,
+      "category": "d",
+      "justification": "Day scale of the crisis delay term after the start day. Labelled shape, not a contract clause."
+    },
+    "SILENCE_CONCESSION_RATIO": {
+      "value": 0.97,
+      "category": "d",
+      "justification": "a new offer at or under 97% of the previous one ends a silence hold. A 3% move was chosen as \"a real concession\". Not fitted."
+    },
+    "SUPERVISOR_MIN_PRICE_RATIO": {
+      "value": 0.5,
+      "category": "n",
+      "justification": "a supervisor numeric override below half the target is refused."
+    },
+    "DEPOSIT_HARD_CAP": {
+      "value": 0.6,
+      "category": "n",
+      "justification": "hard safety cap on a deposit fraction, stricter than the business default on the mandate. An input bound, not a quote."
+    },
+    "API_NORM_CAP": {
+      "value": 100.0,
+      "category": "n",
+      "justification": "upper bounds on API numeric fields so one request cannot ask the solver to treat an unbounded price as real."
+    },
+    "API_EXTRACTED_PRICE_CAP": {
+      "value": 1000.0,
+      "category": "n",
+      "justification": "Upper bound on a price extracted into an API field so one request cannot pass an unbounded number."
+    },
+    "API_PRICE_CAP": {
+      "value": 1000000.0,
+      "category": "n",
+      "justification": "Upper bound on an API price field. One million is an input cap, not a market quote."
+    },
+    "API_MARKUP_CAP": {
+      "value": 10.0,
+      "category": "n",
+      "justification": "Upper bound on a markup the caller may set. An input cap, not a measured supplier markup."
+    },
+    "STAGNATION_PREMIUM": {
+      "value": 1.05,
+      "category": "d",
+      "justification": "ratios used when comparing an offer to the target. 1.05 is \"a little above target\", 1.02 is \"close enough to call a deal\"."
+    },
+    "NEAR_DEAL_RATIO": {
+      "value": 1.02,
+      "category": "d",
+      "justification": "An offer within this multiple of the target is treated as close to a deal. Labelled comparison, not a quote."
+    },
+    "PRICE_MATCH_RATIO": {
+      "value": 0.02,
+      "category": "d",
+      "justification": "Relative gap at which two prices count as the same mention. A parser tolerance, not a market range."
+    },
+    "MIN_MENTIONED_PRICE": {
+      "value": 0.1,
+      "category": "n",
+      "justification": "clamps for a price or fee mentioned in text, so a parsed token cannot become an unbounded float. Not a market range."
+    },
+    "MAX_MENTIONED_PRICE": {
+      "value": 50000.0,
+      "category": "n",
+      "justification": "Upper clamp on a price token read from text. An input bound, not a market range."
+    },
+    "MAX_MENTIONED_MOLD_FEE": {
+      "value": 100000000.0,
+      "category": "n",
+      "justification": "Upper clamp on a mold-fee token read from text. An input bound, not a quoted fee."
+    },
+    "REGEX_CONF_OFFLINE": {
+      "value": 0.95,
+      "category": "d",
+      "justification": "pattern-ladder scores. A regex hit is not a calibrated probability. The number only ranks which rule fired."
+    },
+    "REGEX_CONF_SPEC": {
+      "value": 0.9,
+      "category": "d",
+      "justification": "Rank of a specification-pattern hit. A rule order, not a calibrated probability."
+    },
+    "REGEX_CONF_IDENTITY": {
+      "value": 0.92,
+      "category": "d",
+      "justification": "Rank of an identity-pattern hit. A rule order, not a calibrated probability."
+    },
+    "REGEX_CONF_DEAL": {
+      "value": 0.9,
+      "category": "d",
+      "justification": "Rank of a deal-pattern hit. A rule order, not a calibrated probability."
+    },
+    "REGEX_CONF_POVERTY": {
+      "value": 0.85,
+      "category": "d",
+      "justification": "Rank of a poverty-plea pattern hit. A rule order, not a calibrated probability."
+    },
+    "REGEX_CONF_VOLUME": {
+      "value": 0.85,
+      "category": "d",
+      "justification": "Rank of a volume-pattern hit. A rule order, not a calibrated probability."
+    },
+    "REGEX_CONF_TAX": {
+      "value": 0.85,
+      "category": "d",
+      "justification": "Rank of a tax-pattern hit. A rule order, not a calibrated probability."
+    },
+    "REGEX_CONF_UNRECOGNIZED": {
+      "value": 0.3,
+      "category": "d",
+      "justification": "Rank when no pattern matches. A rule order, not a calibrated probability."
+    },
+    "ONNX_ACCEPT_CONFIDENCE": {
+      "value": 0.7,
+      "category": "d",
+      "justification": "Score at which the on-device intent export accepts a label. A threshold, not a measured accuracy."
+    },
+    "LLM_DEFAULT_CONFIDENCE": {
+      "value": 0.85,
+      "category": "d",
+      "justification": "Score written when a language-model intent call returns no score. A placeholder, not a calibration."
+    },
+    "FIELD_DEFAULT_CONFIDENCE": {
+      "value": 0.8,
+      "category": "d",
+      "justification": "Score written when a field extractor returns no score. A placeholder, not a calibration."
+    },
+    "POSTERIOR_STD_PLACEHOLDER": {
+      "value": 0.1,
+      "category": "d",
+      "justification": "Width shown when a caller sets a reserve mean and no width. Labelled suggestion, not a fitted posterior."
+    },
+    "PRICE_MENTION_TOLERANCE": {
+      "value": 0.05,
+      "category": "n",
+      "justification": "relative tolerance when two parsed prices are treated as the same mention."
+    },
+    "MENTION_CONFUSION_TOLERANCE": {
+      "value": 0.01,
+      "category": "n",
+      "justification": "a parsed number within one percent of a deposit is treated as that deposit, not as a lead time in days."
+    },
+    "GUARDRAIL_CEILING_MULTIPLE": {
+      "value": 1.5,
+      "category": "d",
+      "justification": "guardrail ceiling used when a tactical object is built without a session ceiling. 1.5 times the authorised price. A safety multiple, not a quote."
+    },
+    "LADDER_EDGE_LO": {
+      "value": 0.06,
+      "category": "d",
+      "justification": "ladder label spacing, as a fraction of the target-to-ceiling span, so tick labels do not collide with the two end labels."
+    },
+    "LADDER_EDGE_HI": {
+      "value": 0.94,
+      "category": "d",
+      "justification": "Upper fraction of the ladder span kept clear of the end label. Display spacing, not a price."
+    },
+    "LADDER_STEP_FINE": {
+      "value": 0.1,
+      "category": "d",
+      "justification": "Fine tick spacing on the price ladder, as a fraction of the span. Display spacing, not a price."
+    },
+    "LADDER_STEP_MID": {
+      "value": 0.5,
+      "category": "d",
+      "justification": "Mid tick spacing on the price ladder, as a fraction of the span. Display spacing, not a price."
+    },
+    "ROBUSTNESS_CONCESSIONS": {
+      "value": [
+        0.03,
+        0.05,
+        0.1,
+        0.15
+      ],
+      "category": "d",
+      "justification": "concession rates the robustness report sweeps. A sensitivity grid, not a claim about a supplier."
+    },
+    "ROBUSTNESS_FACTORS": {
+      "value": [
+        0.5,
+        1.0,
+        1.5
+      ],
+      "category": "d",
+      "justification": "Multiples of the reserve width the robustness report sweeps. A sensitivity grid, not a supplier claim."
+    },
+    "ROBUSTNESS_STABLE_BREAK": {
+      "value": 0.15,
+      "category": "d",
+      "justification": "Break probability the robustness report treats as stable. A report band, not a fitted rate."
+    },
+    "ROBUSTNESS_STABLE_GAP": {
+      "value": 0.05,
+      "category": "d",
+      "justification": "Gap the robustness report treats as stable. A report band, not a fitted rate."
+    },
+    "ROBUSTNESS_BREAK_MULTIPLE": {
+      "value": 2.0,
+      "category": "d",
+      "justification": "How many times the stable break band a point may sit before the report flags it. A report rule."
+    },
+    "FIXED_BASELINE_CONCESSION": {
+      "value": 0.05,
+      "category": "d",
+      "justification": "baseline fixed concession used by the robustness comparison."
+    },
+    "PLAUSIBLE_OFFER_MIN": {
+      "value": 5.0,
+      "category": "d",
+      "justification": "offers outside this yuan band in the real-model benchmark are recorded as parse failures. They are not imputed. The band is a unit check, not a market range."
+    },
+    "PLAUSIBLE_OFFER_MAX": {
+      "value": 30.0,
+      "category": "d",
+      "justification": "Upper yuan bound of the offline benchmark's unit check. Offers outside the band are parse failures, not imputed."
+    },
+    "BENCHMARK_FINAL_STEP": {
+      "value": 0.01,
+      "category": "d",
+      "justification": "when the offline real-model benchmark is within this normalised step of the supplier, it records the supplier's price. A scoring rule for that script, not a live-desk quote."
+    },
+    "WILSON_Z": {
+      "value": 1.96,
+      "category": "c",
+      "justification": "Wilson score normal quantile for a 95% interval."
+    },
+    "WILSON_ALPHA": {
+      "value": 0.05,
+      "category": "c",
+      "justification": "One-sided 5% tail used by the Wilson interval and the Clopper-Pearson bound."
+    },
+    "ONNX_LOGREG_C": {
+      "value": 3.0,
+      "category": "n",
+      "justification": "logistic-regression settings for the on-device intent export. Training hyperparameters, not a measured accuracy."
+    },
+    "ONNX_TEMPERATURE": {
+      "value": 1.2,
+      "category": "n",
+      "justification": "Temperature of the on-device intent export. A training hyperparameter, not a measured accuracy."
+    },
+    "HAZARD_INTERCEPT": {
+      "value": -2.9,
+      "category": "d",
+      "justification": "Labelled walk-away baseline. No recorded outcomes were fitted. The desk exposes it."
+    },
+    "HAZARD_QUOTE_GAP": {
+      "value": 3.4,
+      "category": "d",
+      "justification": "Labelled coefficient on the gap between the quote and the offer. The desk exposes it."
+    },
+    "HAZARD_RESERVE_GAP": {
+      "value": 2.2,
+      "category": "d",
+      "justification": "logit slope on max(reserve - offer, 0) / reserve. Positive, so the same offer is riskier against a higher reserve. Assumption, not fitted."
+    },
+    "HAZARD_RECIPROCITY": {
+      "value": 0.8,
+      "category": "d",
+      "justification": "logit slope on a reciprocity violation. Assumption. With no concession history the term is zero."
+    },
+    "HAZARD_ROUND": {
+      "value": 0.0,
+      "category": "d",
+      "justification": "logit slope on the round index. Zero because the sign of time pressure is not assumed without observed walk-aways."
+    },
+    "HAZARD_N_ALT": {
+      "value": 0.0,
+      "category": "d",
+      "justification": "logit slope on the number of better rival quotes. Zero. Competition enters through the outside option. A direct hazard sign is not assumed."
+    },
+    "HAZARD_SUPPLIER_TAU": {
+      "value": 0.35,
+      "category": "d",
+      "justification": "Labelled supplier spread around the baseline. The desk exposes the resulting rate band."
+    },
+    "HAZARD_U_HALF": {
+      "value": 2.0,
+      "category": "n",
+      "justification": "Minimum half-width of the random-effect grid. The grid widens with the user's supplier spread. Not a price."
+    },
+    "HAZARD_LOGIT_CLIP": {
+      "value": 20.0,
+      "category": "n",
+      "justification": "clip on the hazard logit so an extreme gap cannot overflow the sigmoid. Not a price."
+    },
+    "HAZARD_CREDIBLE_ALPHA": {
+      "value": 0.05,
+      "category": "d",
+      "justification": "Labelled 95% credible level. Moving it from 0.05 to 0.10 changed the block bit on 28 of 539 seed-19 quotes (5.2%) at markup 0.05. Auction and negotiate can override it."
+    },
+    "HAZARD_MIN_EVENTS": {
+      "value": 30,
+      "category": "n",
+      "justification": "Count reported beside the labelled hazard. Recorded outcomes update the supplier effect only. The coefficients stay labelled."
+    },
+    "HAZARD_U_POINTS": {
+      "value": 64,
+      "category": "n",
+      "justification": "number of points on the random-effect grid."
+    },
+    "OFFER_GRID_FLOOR": {
+      "value": 0.5,
+      "category": "n",
+      "justification": "Unused by the live counter. The analytic search starts at a tiny positive offer, not at half the target."
+    },
+    "MOQ_HEADROOM_MULTIPLE": {
+      "value": 2,
+      "category": "d",
+      "justification": "Labelled cap when a user mandate sets a MOQ and omits max_allowed_moq."
+    },
+    "ROUND_N_SAMPLES": {
+      "value": 2000,
+      "category": "n",
+      "justification": "sample budget for one /round or /negotiate solve. A numerical budget, not a price."
+    },
+    "DESK_N_SAMPLES": {
+      "value": 5000,
+      "category": "n",
+      "justification": "Monte Carlo sample budget for the desk report. The samples do not choose the counter. A numerical budget, not a price."
+    },
+    "DESK_N_GRID": {
+      "value": 20,
+      "category": "n",
+      "justification": "Unused by the live counter. The offer search uses SEARCH_STEP. This count remains for older callers and the reported field."
+    },
+    "CVAR_TAIL_FRACTION": {
+      "value": 0.05,
+      "category": "d",
+      "justification": "Reported joint tail only. It is not a term in the offer score."
+    },
+    "RISK_TOLERANCE_FLOOR": {
+      "value": 0.01,
+      "category": "d",
+      "justification": "smallest accepted user risk tolerance. Below this the hazard cap is not a meaningful policy. A bound, not a measured rate."
+    },
+    "RISK_TOLERANCE_MAX": {
+      "value": 0.5,
+      "category": "d",
+      "justification": "largest accepted user risk tolerance. A cap of one would disable the hazard limit on ordinary openings. A policy bound, not a measured rate."
+    },
+    "WEITZMAN_SEARCH_COST": {
+      "value": 0.02,
+      "category": "d",
+      "justification": "Labelled search cost. The desk can replace it."
+    },
+    "WEITZMAN_BISECTION_ITERS": {
+      "value": 64,
+      "category": "n",
+      "justification": "bisection steps for the Weitzman reservation. Sixty-four halvings put the root well inside a double's spacing on a bracket a few units wide. A numerical budget, not a price."
+    },
+    "WEITZMAN_BRACKET_SIGMAS": {
+      "value": 8,
+      "category": "n",
+      "justification": "how many belief standard deviations the Weitzman bracket extends on each side of the mean. The root sits below the mean when the search cost is smaller than the expected improvement at the mean. A bracket width, not a price."
+    },
+    "DEFAULT_SOLVER_SEED": {
+      "value": 20261013,
+      "category": "n",
+      "justification": "default NumPy seed when a coupled solve is not given one. Reproducibility only. Not a price."
+    },
+    "OFFER_TIE_BREAK": {
+      "value": 1e-06,
+      "category": "n",
+      "justification": "subtracted from the coupled score per unit of offer so equal surplus prefers the lower offer. A numerical epsilon, not a price."
+    },
+    "TACTIC_PRICE_TIE": {
+      "value": 0.0001,
+      "category": "n",
+      "justification": "quotes within this gap of the cheapest quote share the lean-in label. A display band, not a price."
+    },
+    "TACTIC_SIDELINE_RATIO": {
+      "value": 1.12,
+      "category": "d",
+      "justification": "a quote above this multiple of the cheapest quote is labelled sideline. Display band carried forward from the previous hand-set rule. Not a price and not a fitted threshold."
+    },
+    "SHARED_FACTOR_RHO": {
+      "value": 0.0,
+      "category": "d",
+      "justification": "Labelled correlation of reserve shocks. Zero is independence. The loading uses sqrt(rho)."
+    },
+    "COUPLED_SWEEPS": {
+      "value": 1,
+      "category": "n",
+      "justification": "passes of the coupled offer search. The outside option is the rival quote, which does not move inside the pass, so a second pass would repeat the same decision and inflate the cell count. One pass is the search budget."
+    },
+    "D_PRIOR_MEAN": {
+      "value": 0.9,
+      "category": "d",
+      "justification": "Labelled Beta mean for D, the fraction of a supplier's own first ask at which their reserve sits. It is not fitted, and the eBay auto-decline ratio is not this number."
+    },
+    "D_PRIOR_STRENGTH": {
+      "value": 4.0,
+      "category": "d",
+      "justification": "Pseudo-count strength, alpha plus beta, of the labelled Beta prior on D. The card shows the push-lower offer at half this strength and at double it, with the mean held fixed."
+    },
+    "REJECT_SOFTNESS": {
+      "value": 8.0,
+      "category": "d",
+      "justification": "Slope of the soft likelihood when a supplier rejects an offer. Weight rises above the rejected ratio and probability remains below it. It is not a hard cut."
+    },
+    "QUAD_NODES": {
+      "value": 64,
+      "category": "n",
+      "justification": "Quadrature nodes for a censored or reweighted Beta distribution. This integrates the belief. It does not choose the offer."
+    },
+    "BRENT_ITERS": {
+      "value": 80,
+      "category": "n",
+      "justification": "Iteration budget for the golden-section maximiser of the one-dimensional offer. The offer is that maximiser, not a mesh point."
+    },
+    "GOLDEN_CONJUGATE": {
+      "value": 0.6180339887498949,
+      "category": "c",
+      "justification": "Golden-section conjugate, (sqrt(5) - 1) / 2. A mathematical identity used by the bounded scalar maximiser."
+    },
+    "OPT_TOL": {
+      "value": 1e-12,
+      "category": "n",
+      "justification": "Relative tolerance of the bounded scalar maximiser and the incomplete-beta continued fraction. A numerical guard, not a price."
+    },
+    "BETA_CF_ITERS": {
+      "value": 200,
+      "category": "n",
+      "justification": "Continued-fraction iterations for the regularized incomplete beta function. A numerical guard, not a price."
+    },
+    "GATE_CERTIFY_ACCEPTS": {
+      "value": 189,
+      "category": "c",
+      "justification": "Resolved shadow accepts, all confirmed unchanged, that put the two-sided Wilson 95 percent lower bound at 0.98. The desk shows progress toward this count. Auto-accept stays off."
+    },
+    "SPAN_GROUP": {
+      "value": 3,
+      "category": "n",
+      "justification": "Digit-group length the span reader treats as a thousands separator. The rule reader does not call this tokenizer."
+    },
+    "LLM_TIMEOUT_SECONDS": {
+      "value": 20,
+      "category": "n",
+      "justification": "Timeout, in seconds, for one optional extractor call. A missing key leaves the rule prefill only. No key is stored in code."
+    },
+    "EXTRACTOR_BASE_URL": {
+      "value": "https://api.tokenfactory.nebius.com/v1",
+      "category": "d",
+      "justification": "Default OpenAI-compatible base for the desk span extractor on Nebius Token Factory. An unset URL uses this. A key is still required before any call."
+    },
+    "EXTRACTOR_MODEL": {
+      "value": "nvidia/Nemotron-3-Ultra-550b-a55b",
+      "category": "d",
+      "justification": "Default chat model for the desk span extractor. It names evidence spans and does not set a price. Temperature stays zero."
+    },
+    "EXTRACTOR_FALLBACK_MODEL": {
+      "value": "nvidia/nemotron-3-super-120b-a12b",
+      "category": "d",
+      "justification": "Second Nebius chat model. Called when Ultra times out, gets a server or rate-limit response, or returns a body that is not a mentions object."
+    },
+    "EXTRACTOR_NVIDIA_BASE_URL": {
+      "value": "https://integrate.api.nvidia.com/v1",
+      "category": "d",
+      "justification": "NVIDIA integrate base used only after Nebius itself fails. The Ultra model on this host is not part of the chain."
+    },
+    "EXTRACTOR_NVIDIA_MODEL": {
+      "value": "nvidia/nemotron-3-super-120b-a12b",
+      "category": "d",
+      "justification": "NVIDIA chat model for the third extractor hop. It is the Super model. The Ultra model on this host is not called."
+    },
+    "EXTRACTOR_TIMEOUT_ULTRA_SECONDS": {
+      "value": 12,
+      "category": "d",
+      "justification": "Seconds allowed for the Nebius Ultra extractor hop before the desk moves to the next hop or to human review."
+    },
+    "EXTRACTOR_TIMEOUT_SUPER_SECONDS": {
+      "value": 15,
+      "category": "d",
+      "justification": "Seconds allowed for the Nebius Super extractor hop. This is the second hop and it is a policy limit, not a price."
+    },
+    "EXTRACTOR_TIMEOUT_NVIDIA_SECONDS": {
+      "value": 30,
+      "category": "d",
+      "justification": "Seconds allowed for the NVIDIA Super extractor hop. It runs only after Nebius itself fails, and only inside the overall budget."
+    },
+    "EXTRACTOR_TIMEOUT_BUDGET_SECONDS": {
+      "value": 57,
+      "category": "d",
+      "justification": "Overall seconds one quote may spend in the extractor chain. It is the Ultra, Super, and NVIDIA hop limits added together."
+    },
+    "EXTRACTOR_MAX_OUTPUT_TOKENS": {
+      "value": 4096,
+      "category": "d",
+      "justification": "Maximum completion tokens sent on every extractor hop. A long supplier message was truncated when the provider default was left unset."
+    },
+    "EXTRACTOR_REASONING_BUDGET": {
+      "value": 2048,
+      "category": "d",
+      "justification": "Maximum reasoning tokens sent on every extractor hop so the JSON answer still fits inside the output cap."
+    },
+    "EXTRACTOR_CHARS_PER_TOKEN": {
+      "value": 4,
+      "category": "n",
+      "justification": "Characters of supplier text counted as one output token when the completion cap grows for a long message."
+    },
+    "EXTRACTOR_OUTPUT_TOKEN_CAP": {
+      "value": 32768,
+      "category": "d",
+      "justification": "Ceiling on extractor completion tokens. A long message may exceed the floor, and a truncated completion still fails closed."
+    },
+    "EXTRACTOR_MAX_IN_FLIGHT": {
+      "value": 4,
+      "category": "n",
+      "justification": "How many extractor HTTP calls may run at once. A hop that misses its deadline is abandoned, and a further call waits for a free slot."
+    },
+    "CHAIN_ANCHOR_TIMEOUT_SECONDS": {
+      "value": 5,
+      "category": "n",
+      "justification": "Seconds allowed for one read or write of the external chain anchor. It bounds that network call. It is not a price and not a quote."
+    },
+    "HTTP_UNAVAILABLE": {
+      "value": 503,
+      "category": "n",
+      "justification": "HTTP status when a deal cannot be created because the chain key is missing. The process stays up and the route says why."
+    },
+    "EXTRACTOR_HTTP_TOO_MANY": {
+      "value": 429,
+      "category": "n",
+      "justification": "HTTP status that means the extractor was rate limited. That status is a provider failure and the next hop is tried."
+    },
+    "EXTRACTOR_HTTP_SERVER": {
+      "value": 500,
+      "category": "n",
+      "justification": "HTTP statuses at or above this value are provider failures. The desk records them and tries the next hop."
+    },
+    "NEWTON_STEP_BITS": {
+      "value": 20,
+      "category": "n",
+      "justification": "Newton polish step is two to the minus this many bits, times the offer scale. A numerical guard so the closed forms land inside the pass bar."
+    },
+    "NEIGHBORHOOD_CHARS": {
+      "value": 24,
+      "category": "n",
+      "justification": "Characters of the message kept on each side of an evidence span when a currency or unit mark sits beside the number."
+    },
+    "WILSON_QUARTIC": {
+      "value": 4,
+      "category": "c",
+      "justification": "The four in the two-sided Wilson variance, z squared over four n. An identity of the interval, not a price and not a sample size."
+    },
+    "SMALL_GAP_KNOT": {
+      "value": 0.1,
+      "category": "d",
+      "justification": "Quote-gap knot for the small-gap hinge in the eBay walk-away logit. Gaps below it get an extra term because a straight line understated seller-ended walk-away."
+    },
+    "DEAL_CURRENCY": {
+      "value": "CNY",
+      "category": "d",
+      "justification": "ISO code for the yuan. A deal stores its own currency. This is the parser's yuan code and the labelled default when the caller omits one."
+    },
+    "DEAL_CURRENCIES": {
+      "value": ["CNY", "USD", "EUR"],
+      "category": "d",
+      "justification": "Currencies a deal may store. The decision reads the deal row and does not choose among these itself."
+    },
+    "MINOR_SCALE": {
+      "value": 100,
+      "category": "c",
+      "justification": "Minor units per major unit for the desk currencies. A decision record stores prices as integers of this scale."
+    },
+    "EXTRACTOR_MAX_BYTES": {
+      "value": 65536,
+      "category": "n",
+      "justification": "Largest extractor response, in bytes, that is parsed. A larger body is dropped and the quote stays in human review."
+    },
+    "FIELD_MAX_CHARS": {
+      "value": 500,
+      "category": "n",
+      "justification": "Maximum characters stored for one extractor evidence span or a caller note. Longer text is rejected by the schema."
+    },
+    "ONE_HALF": {
+      "value": 0.5,
+      "category": "c",
+      "justification": "The one-half in the Student-t incomplete-beta shape and in the Gaussian KL. An identity."
+    },
+    "STUDENT_T_BRACKET": {
+      "value": 1000.0,
+      "category": "n",
+      "justification": "Bisection bracket for a standard Student-t quantile. A numerical guard."
+    },
+    "HAZARD_U_TAILS": {
+      "value": 8.0,
+      "category": "n",
+      "justification": "How many supplier-spread units the walk-away grid must cover on each side. A support width, not a price."
+    },
+    "HAZARD_U_STEP": {
+      "value": 0.05,
+      "category": "n",
+      "justification": "Spacing of the walk-away effect grid. A quadrature step, not a price and not a fitted coefficient."
+    },
+    "SEARCH_STEP": {
+      "value": 0.001,
+      "category": "n",
+      "justification": "Normalised step of the expected-surplus search. The coarse desk grid does not choose the offer."
+    },
+    "SEARCH_MESH_CAP": {
+      "value": 20001,
+      "category": "n",
+      "justification": "Most points the surplus mesh may hold. A wider domain uses a coarser step instead of an unbounded loop."
+    },
+    "UNIT_SANITY_MULTIPLE": {
+      "value": 3.0,
+      "category": "d",
+      "justification": "Auto-accept only from target divided by this multiple up to max(target, ceiling) times it. Three still allows about twice the ceiling and reviews an eighth of the target."
+    }
+  },
+  "inline": [
+    {
+      "file": "src/legacy/coupled.py",
+      "value": 1e-08,
+      "context": "return bool(np.max(np.abs(worst - float(ceiling))) <= span * 1e-8)",
+      "justification": "Use of 1e-08 on this line of src/engine/coupled.py: return bool(np.max(np.abs(worst - float(ceiling))) <= span * 1e-8). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 200,
+      "context": "max_iter = 200",
+      "justification": "Use of 200 on this line of src/engine/bayesian_v2.py: max_iter = 200. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 3e-14,
+      "context": "eps = 3e-14",
+      "justification": "Use of 3e-14 on this line of src/engine/bayesian_v2.py: eps = 3e-14. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 1e-30,
+      "context": "tiny = 1e-30",
+      "justification": "Use of 1e-30 on this line of src/engine/bayesian_v2.py: tiny = 1e-30. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 1000000.0,
+      "context": "return 1e6",
+      "justification": "Use of 1000000.0 on this line of src/engine/bayesian_v2.py: return 1e6. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 80,
+      "context": "for _ in range(80):",
+      "justification": "Use of 80 on this line of src/engine/bayesian_v2.py: for _ in range(80):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 1e-08,
+      "context": "if scale <= 1e-8:",
+      "justification": "Use of 1e-08 on this line of src/engine/bayesian_v2.py: if scale <= 1e-8:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 20,
+      "context": "for _ in range(20):",
+      "justification": "Use of 20 on this line of src/engine/bayesian_v2.py: for _ in range(20):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 1000000.0,
+      "context": "return -1e6",
+      "justification": "Use of 1000000.0 on this line of src/engine/bayesian_v2.py: return -1e6. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 1e-07,
+      "context": "if std <= 1e-7:",
+      "justification": "Use of 1e-07 on this line of src/engine/bayesian_v2.py: if std <= 1e-7:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 1e-12,
+      "context": "post_var = max((1.0 - kalman) * (prior_std ** 2), 1e-12)",
+      "justification": "Use of 1e-12 on this line of src/engine/bayesian_v2.py: post_var = max((1.0 - kalman) * (prior_std ** 2), 1e-12). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 1e-12,
+      "context": "scale = math.sqrt(max(variance / max(len(clean), 1), 1e-12))",
+      "justification": "Use of 1e-12 on this line of src/engine/bayesian_v2.py: scale = math.sqrt(max(variance / max(len(clean), 1), 1e-12)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 1e-12,
+      "context": "pred_std = math.sqrt(max(pred_var, 1e-12))",
+      "justification": "Use of 1e-12 on this line of src/engine/bayesian_v2.py: pred_std = math.sqrt(max(pred_var, 1e-12)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 1e-08,
+      "context": "obs_var = (self.obs_noise_std ** 2) / max(weight, 1e-8)",
+      "justification": "Use of 1e-08 on this line of src/engine/bayesian_v2.py: obs_var = (self.obs_noise_std ** 2) / max(weight, 1e-8). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 4,
+      "context": "posterior_mean=round(post_mean, 4),",
+      "justification": "Use of 4 on this line of src/engine/bayesian_v2.py: posterior_mean=round(post_mean, 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 4,
+      "context": "posterior_std=round(post_std, 4),",
+      "justification": "Use of 4 on this line of src/engine/bayesian_v2.py: posterior_std=round(post_std, 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 4,
+      "context": "clean_responsibility=round(influence, 4),",
+      "justification": "Use of 4 on this line of src/engine/bayesian_v2.py: clean_responsibility=round(influence, 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 4,
+      "context": "info_gain_bits=round(info_gain_bits, 4),",
+      "justification": "Use of 4 on this line of src/engine/bayesian_v2.py: info_gain_bits=round(info_gain_bits, 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 4,
+      "context": "deal_probability=round(deal_prob, 4),",
+      "justification": "Use of 4 on this line of src/engine/bayesian_v2.py: deal_probability=round(deal_prob, 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 4,
+      "context": "robust_weight=round(weight, 4),",
+      "justification": "Use of 4 on this line of src/engine/bayesian_v2.py: robust_weight=round(weight, 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 4,
+      "context": "posterior_mean=round(prior_mean, 4),",
+      "justification": "Use of 4 on this line of src/engine/bayesian_v2.py: posterior_mean=round(prior_mean, 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 4,
+      "context": "posterior_std=round(prior_std, 4),",
+      "justification": "Use of 4 on this line of src/engine/bayesian_v2.py: posterior_std=round(prior_std, 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 4,
+      "context": "credible_interval_95=(round(low, 4), round(high, 4)),",
+      "justification": "Use of 4 on this line of src/engine/bayesian_v2.py: credible_interval_95=(round(low, 4), round(high, 4)),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/bayesian_v2.py",
+      "value": 4,
+      "context": "deal_probability=None if deal_prob is None else round(deal_prob, 4),",
+      "justification": "Use of 4 on this line of src/engine/bayesian_v2.py: deal_probability=None if deal_prob is None else round(deal_prob, 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/proposal.py",
+      "value": 3,
+      "context": "\"ceiling_ref_multiple\": round(float(ceiling) / float(target), 3),",
+      "justification": "Use of 3 on this line of src/engine/proposal.py: \"ceiling_ref_multiple\": round(float(ceiling) / float(target), 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/proposal.py",
+      "value": 4,
+      "context": "\"breakdown_prob\": round(float(decision[\"breakdown_prob\"]), 4),",
+      "justification": "Use of 4 on this line of src/engine/proposal.py: \"breakdown_prob\": round(float(decision[\"breakdown_prob\"]), 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/proposal.py",
+      "value": 4,
+      "context": "\"posterior_reserve_mean\": round(float(mean), 4),",
+      "justification": "Use of 4 on this line of src/engine/proposal.py: \"posterior_reserve_mean\": round(float(mean), 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/proposal.py",
+      "value": 4,
+      "context": "\"posterior_reserve_std\": round(float(std), 4),",
+      "justification": "Use of 4 on this line of src/engine/proposal.py: \"posterior_reserve_std\": round(float(std), 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/solver.py",
+      "value": 512,
+      "context": "EXPECTIMAX_SAMPLE_CHUNK = 512",
+      "justification": "Use of 512 on this line of src/engine/solver.py: EXPECTIMAX_SAMPLE_CHUNK = 512. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/solver.py",
+      "value": 20000,
+      "context": "n_opp_samples: int = 20_000,",
+      "justification": "Use of 20000 on this line of src/engine/solver.py: n_opp_samples: int = 20_000,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/solver.py",
+      "value": 3,
+      "context": "return round(float(np.clip(raw_conf, BELIEF_CONF_LO, BELIEF_CONF_HI)), 3)",
+      "justification": "Use of 3 on this line of src/engine/solver.py: return round(float(np.clip(raw_conf, BELIEF_CONF_LO, BELIEF_CONF_HI)), 3). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/solver.py",
+      "value": 20261013,
+      "context": "rng = np.random.default_rng(20261013)",
+      "justification": "Use of 20261013 on this line of src/engine/solver.py: rng = np.random.default_rng(20261013). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/solver.py",
+      "value": 1e-06,
+      "context": "variance_reduction = max(0.0, (prior_std - post_std) / (prior_std + 1e-6))",
+      "justification": "Use of 1e-06 on this line of src/engine/solver.py: variance_reduction = max(0.0, (prior_std - post_std) / (prior_std + 1e-6)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/multi_solver.py",
+      "value": 20000,
+      "context": "n_samples: int = 20000,",
+      "justification": "Use of 20000 on this line of src/engine/multi_solver.py: n_samples: int = 20000,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/multi_solver.py",
+      "value": 3,
+      "context": "n_rounds: int = 3,",
+      "justification": "Use of 3 on this line of src/engine/multi_solver.py: n_rounds: int = 3,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/multi_solver.py",
+      "value": 42,
+      "context": "seed: int = 42,",
+      "justification": "Use of 42 on this line of src/engine/multi_solver.py: seed: int = 42,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/multi_solver.py",
+      "value": 50000,
+      "context": "n_opp_samples: int = 50_000,",
+      "justification": "Use of 50000 on this line of src/engine/multi_solver.py: n_opp_samples: int = 50_000,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/multi_solver.py",
+      "value": 40,
+      "context": "n_open: int = 40,",
+      "justification": "Use of 40 on this line of src/engine/multi_solver.py: n_open: int = 40,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/multi_solver.py",
+      "value": 12,
+      "context": "n_sched: int = 12,",
+      "justification": "Use of 12 on this line of src/engine/multi_solver.py: n_sched: int = 12,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/multi_solver.py",
+      "value": 20,
+      "context": "n_open: int = 20,",
+      "justification": "Use of 20 on this line of src/engine/multi_solver.py: n_open: int = 20,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/multi_solver.py",
+      "value": 6,
+      "context": "n_sched: int = 6,",
+      "justification": "Use of 6 on this line of src/engine/multi_solver.py: n_sched: int = 6,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/multi_solver.py",
+      "value": 4,
+      "context": "\"elapsed_seconds\": round(float(result[\"elapsed_seconds\"]), 4),",
+      "justification": "Use of 4 on this line of src/engine/multi_solver.py: \"elapsed_seconds\": round(float(result[\"elapsed_seconds\"]), 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/multi_solver.py",
+      "value": 4,
+      "context": "\"total_compute_seconds\": round(self.total_compute_seconds, 4),",
+      "justification": "Use of 4 on this line of src/engine/multi_solver.py: \"total_compute_seconds\": round(self.total_compute_seconds, 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 100,
+      "context": "val = float(pct_str) / 100",
+      "justification": "Use of 100 on this line of src/engine/logrolling.py: val = float(pct_str) / 100. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 0.0001,
+      "context": "premise = f\"\u82e5\u55ae\u50f9\u7dad\u6301\u5728\u8cb4\u5ee0\u5831\u50f9 \u00a5{offer.price:.2f}\" if abs(p - offer.price) < 1e-4 else f\"\u82e5\u55ae\u50f9\u6309\u6279\u91cf\u6298\u8b93\u843d\u5b9a\u5728 \u00a5{p:.2f}\"",
+      "justification": "Use of 0.0001 on this line of src/engine/logrolling.py: premise = f\"\u82e5\u55ae\u50f9\u7dad\u6301\u5728\u8cb4\u5ee0\u5831\u50f9 \u00a5{offer.price:.2f}\" if abs(p - offer.price) < 1e-4 else f\"\u82e5\u55ae\u50f9\u6309\u6279\u91cf\u6298\u8b93\u843d\u5b9a\u5728 \u00a5{p:.2f}\". A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 1e-06,
+      "context": "if proposal.proposed_price > mandate.walk_away_ceiling + 1e-6:",
+      "justification": "Use of 1e-06 on this line of src/engine/logrolling.py: if proposal.proposed_price > mandate.walk_away_ceiling + 1e-6:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 1e-06,
+      "context": "if proposal.proposed_deposit_pct > mandate.max_allowed_deposit_pct + 1e-6:",
+      "justification": "Use of 1e-06 on this line of src/engine/logrolling.py: if proposal.proposed_deposit_pct > mandate.max_allowed_deposit_pct + 1e-6:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 365,
+      "context": "buyer_deposit_cost = p * q * extra_deposit_pct * mandate.buyer_capital_cost_rate * (l / 365)",
+      "justification": "Use of 365 on this line of src/engine/logrolling.py: buyer_deposit_cost = p * q * extra_deposit_pct * mandate.buyer_capital_cost_rate * (l / 365). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 365,
+      "context": "supplier_cash_gain = p * q * extra_deposit_pct * mandate.supplier_capital_relief_rate * (l / 365)",
+      "justification": "Use of 365 on this line of src/engine/logrolling.py: supplier_cash_gain = p * q * extra_deposit_pct * mandate.supplier_capital_relief_rate * (l / 365). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 0.0001,
+      "context": "if val > mandate.max_allowed_deposit_pct + 1e-4:",
+      "justification": "Use of 0.0001 on this line of src/engine/logrolling.py: if val > mandate.max_allowed_deposit_pct + 1e-4:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 100,
+      "context": "d_pct = int(round(proposal.proposed_deposit_pct * 100))",
+      "justification": "Use of 100 on this line of src/engine/logrolling.py: d_pct = int(round(proposal.proposed_deposit_pct * 100)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 100,
+      "context": "f\"\u5b9a\u91d1 {best_proposal.proposed_deposit_pct*100:.0f}% (\u539f {offer.deposit_pct*100:.0f}%)\uff0c\"",
+      "justification": "Use of 100 on this line of src/engine/logrolling.py: f\"\u5b9a\u91d1 {best_proposal.proposed_deposit_pct*100:.0f}% (\u539f {offer.deposit_pct*100:.0f}%)\uff0c\". A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 3,
+      "context": "proposed_deposit_pct=round(d, 3),",
+      "justification": "Use of 3 on this line of src/engine/logrolling.py: proposed_deposit_pct=round(d, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 3,
+      "context": "buyer_effective_unit_saving=round(unit_effective_saving, 3),",
+      "justification": "Use of 3 on this line of src/engine/logrolling.py: buyer_effective_unit_saving=round(unit_effective_saving, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 100,
+      "context": "f\"\u5b9a\u91d1 {d*100:.0f}% \u63db\u53d6\u4ea4\u671f\u58d3\u7e2e\u81f3 {l} \u5929 (\u7bc0\u7701 {mandate.baseline_lead_days - l} \u5929)\uff0c\"",
+      "justification": "Use of 100 on this line of src/engine/logrolling.py: f\"\u5b9a\u91d1 {d*100:.0f}% \u63db\u53d6\u4ea4\u671f\u58d3\u7e2e\u81f3 {l} \u5929 (\u7bc0\u7701 {mandate.baseline_lead_days - l} \u5929)\uff0c\". A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 5,
+      "context": "for l_candidate in [mandate.min_desired_lead_days, mandate.baseline_lead_days - 5, mandate.baseline_lead_days - 10]:",
+      "justification": "Use of 5 on this line of src/engine/logrolling.py: for l_candidate in [mandate.min_desired_lead_days, mandate.baseline_lead_days - 5, mandate.baseline_lead_days - 10]:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 10,
+      "context": "for l_candidate in [mandate.min_desired_lead_days, mandate.baseline_lead_days - 5, mandate.baseline_lead_days - 10]:",
+      "justification": "Use of 10 on this line of src/engine/logrolling.py: for l_candidate in [mandate.min_desired_lead_days, mandate.baseline_lead_days - 5, mandate.baseline_lead_days - 10]:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/logrolling.py",
+      "value": 100,
+      "context": "f\"AST: \u8a71\u8853\u627f\u8afe\u5b9a\u91d1 {pct_str}% \u8d85\u51fa\u516c\u53f8\u6700\u9ad8\u6388\u6b0a {mandate.max_allowed_deposit_pct*100:.1f}%\"",
+      "justification": "Use of 100 on this line of src/engine/logrolling.py: f\"AST: \u8a71\u8853\u627f\u8afe\u5b9a\u91d1 {pct_str}% \u8d85\u51fa\u516c\u53f8\u6700\u9ad8\u6388\u6b0a {mandate.max_allowed_deposit_pct*100:.1f}%\". A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 365,
+      "context": "holding_years = INVENTORY_HOLDING_DAYS / 365",
+      "justification": "Use of 365 on this line of src/engine/tco.py: holding_years = INVENTORY_HOLDING_DAYS / 365. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "\"raw_price\": round(raw_price, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: \"raw_price\": round(raw_price, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "\"lead_time_shadow_cost\": round(lead_penalty, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: \"lead_time_shadow_cost\": round(lead_penalty, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "\"moq_inventory_shadow_cost\": round(moq_penalty, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: \"moq_inventory_shadow_cost\": round(moq_penalty, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "\"effective_tco_price\": round(effective_price, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: \"effective_tco_price\": round(effective_price, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "\"effective_unit_tco\": round(effective_price, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: \"effective_unit_tco\": round(effective_price, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "\"effective_unit_price\": round(effective_price, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: \"effective_unit_price\": round(effective_price, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "raw_unit_price=round(p_raw, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: raw_unit_price=round(p_raw, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "lead_time_penalty=round(lead_penalty, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: lead_time_penalty=round(lead_penalty, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "moq_holding_penalty=round(moq_penalty, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: moq_holding_penalty=round(moq_penalty, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "payment_cost_penalty=round(payment_penalty, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: payment_cost_penalty=round(payment_penalty, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "tax_packaging_adjustment=round(tax_pack_adj, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: tax_packaging_adjustment=round(tax_pack_adj, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "effective_unit_price=round(p_effective, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: effective_unit_price=round(p_effective, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "\"capital_cost\": round(cap_cost, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: \"capital_cost\": round(cap_cost, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "\"stockout_risk_cost\": round(crisis_cost, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: \"stockout_risk_cost\": round(crisis_cost, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "\"holding_cost\": round(holding_cost, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: \"holding_cost\": round(holding_cost, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 3,
+      "context": "\"markdown_risk_cost\": round(markdown_risk, 3),",
+      "justification": "Use of 3 on this line of src/engine/tco.py: \"markdown_risk_cost\": round(markdown_risk, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 365,
+      "context": "payment_penalty = p_raw * deposit_delta * (terms_spec.annual_cost_of_capital * (lead_days / 365))",
+      "justification": "Use of 365 on this line of src/engine/tco.py: payment_penalty = p_raw * deposit_delta * (terms_spec.annual_cost_of_capital * (lead_days / 365)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 365,
+      "context": "cap_cost = raw_price * (wacc * (delay / 365))",
+      "justification": "Use of 365 on this line of src/engine/tco.py: cap_cost = raw_price * (wacc * (delay / 365)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/tco.py",
+      "value": 365,
+      "context": "holding_cost = raw_price * excess_ratio * (wacc * (INVENTORY_HOLDING_DAYS / 365))",
+      "justification": "Use of 365 on this line of src/engine/tco.py: holding_cost = raw_price * excess_ratio * (wacc * (INVENTORY_HOLDING_DAYS / 365)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/recompute.py",
+      "value": 20000,
+      "context": "high=20000,",
+      "justification": "Use of 20000 on this line of src/desk/recompute.py: high=20000,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/recompute.py",
+      "value": 40,
+      "context": "high=40,",
+      "justification": "Use of 40 on this line of src/desk/recompute.py: high=40,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/recompute.py",
+      "value": 20,
+      "context": "for draft in store.drafts(deal_id)[:20]:",
+      "justification": "Use of 20 on this line of src/desk/recompute.py: for draft in store.drafts(deal_id)[:20]:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/recompute.py",
+      "value": 1000,
+      "context": "elapsed_ms = int(round((time.perf_counter() - started) * 1000))",
+      "justification": "Use of 1000 on this line of src/desk/recompute.py: elapsed_ms = int(round((time.perf_counter() - started) * 1000)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/recompute.py",
+      "value": 100,
+      "context": "public_events = [_public(event) for event in reversed(events[-100:])]",
+      "justification": "Use of 100 on this line of src/desk/recompute.py: public_events = [_public(event) for event in reversed(events[-100:])]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 1000,
+      "context": "_THOUSAND = 1000",
+      "justification": "Use of 1000 on this line of src/desk/parse.py: _THOUSAND = 1000. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 10000,
+      "context": "_WAN = 10000",
+      "justification": "Use of 10000 on this line of src/desk/parse.py: _WAN = 10000. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 10,
+      "context": "_MIN_TIER_QTY = 10",
+      "justification": "Use of 10 on this line of src/desk/parse.py: _MIN_TIER_QTY = 10. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 4,
+      "context": "key = round(float(value), 4)",
+      "justification": "Use of 4 on this line of src/desk/parse.py: key = round(float(value), 4). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 1e-06,
+      "context": "if abs(qty - float(price)) < 1e-6:",
+      "justification": "Use of 1e-06 on this line of src/desk/parse.py: if abs(qty - float(price)) < 1e-6:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 4,
+      "context": "if round(float(settled.cny_amount), 4) != round(float(value), 4):",
+      "justification": "Use of 4 on this line of src/desk/parse.py: if round(float(settled.cny_amount), 4) != round(float(value), 4):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 7,
+      "context": "if len(digits) >= 7 and \".\" not in group and \",\" not in group:",
+      "justification": "Use of 7 on this line of src/desk/parse.py: if len(digits) >= 7 and \".\" not in group and \",\" not in group:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 12,
+      "context": "window = text[max(0, match.start() - 12):min(len(text), match.end() + 12)]",
+      "justification": "Use of 12 on this line of src/desk/parse.py: window = text[max(0, match.start() - 12):min(len(text), match.end() + 12)]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 6,
+      "context": "tail = clause[amount_at:amount_at + len(token) + 6]",
+      "justification": "Use of 6 on this line of src/desk/parse.py: tail = clause[amount_at:amount_at + len(token) + 6]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 16,
+      "context": "near = clause[max(0, amount_at - 16):amount_at + len(token) + 16]",
+      "justification": "Use of 16 on this line of src/desk/parse.py: near = clause[max(0, amount_at - 16):amount_at + len(token) + 16]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/service.py",
+      "value": 4,
+      "context": "if not 4 <= len(suppliers) <= 5:",
+      "justification": "Use of 4 on this line of src/desk/service.py: if not 4 <= len(suppliers) <= 5:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/service.py",
+      "value": 5,
+      "context": "if not 4 <= len(suppliers) <= 5:",
+      "justification": "Use of 5 on this line of src/desk/service.py: if not 4 <= len(suppliers) <= 5:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/service.py",
+      "value": 60,
+      "context": "return 60",
+      "justification": "Use of 60 on this line of src/desk/service.py: return 60. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/service.py",
+      "value": 8,
+      "context": "mailbox_queue: queue.Queue = self._queue.Queue(maxsize=8)",
+      "justification": "Use of 8 on this line of src/desk/service.py: the desk bus keeps eight snapshots. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 200,
+      "context": "name: str = Field(min_length=1, max_length=200)",
+      "justification": "Use of 200 on this line of src/desk/routes.py: name: str = Field(min_length=1, max_length=200). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 320,
+      "context": "address: str = Field(min_length=1, max_length=320)",
+      "justification": "Use of 320 on this line of src/desk/routes.py: address: str = Field(min_length=1, max_length=320). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 40,
+      "context": "channel: str = Field(default=\"email\", max_length=40)",
+      "justification": "Use of 40 on this line of src/desk/routes.py: channel: str = Field(default=\"email\", max_length=40). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 200,
+      "context": "product: str = Field(min_length=1, max_length=200)",
+      "justification": "Use of 200 on this line of src/desk/routes.py: product: str = Field(min_length=1, max_length=200). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 200,
+      "context": "name: str | None = Field(default=None, max_length=200)",
+      "justification": "Use of 200 on this line of src/desk/routes.py: name: str | None = Field(default=None, max_length=200). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 10000000,
+      "context": "quantity: int = Field(ge=1, le=10_000_000)",
+      "justification": "Use of 10000000 on this line of src/desk/routes.py: quantity: int = Field(ge=1, le=10_000_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 11,
+      "context": "seed: int = Field(default=11, ge=0, le=2_000_000_000)",
+      "justification": "Use of 11 on this line of src/desk/routes.py: seed: int = Field(default=11, ge=0, le=2_000_000_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 2000000000,
+      "context": "seed: int = Field(default=11, ge=0, le=2_000_000_000)",
+      "justification": "Use of 2000000000 on this line of src/desk/routes.py: seed: int = Field(default=11, ge=0, le=2_000_000_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 4,
+      "context": "suppliers: list[SupplierIn] = Field(min_length=4, max_length=5)",
+      "justification": "Use of 4 on this line of src/desk/routes.py: suppliers: list[SupplierIn] = Field(min_length=4, max_length=5). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 5,
+      "context": "suppliers: list[SupplierIn] = Field(min_length=4, max_length=5)",
+      "justification": "Use of 5 on this line of src/desk/routes.py: suppliers: list[SupplierIn] = Field(min_length=4, max_length=5). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 40,
+      "context": "source: str = Field(min_length=1, max_length=40)",
+      "justification": "Use of 40 on this line of src/desk/routes.py: source: str = Field(min_length=1, max_length=40). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 20000,
+      "context": "raw_text: str = Field(min_length=1, max_length=20000)",
+      "justification": "Use of 20000 on this line of src/desk/routes.py: raw_text: str = Field(min_length=1, max_length=20000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 320,
+      "context": "sender: str | None = Field(default=None, max_length=320)",
+      "justification": "Use of 320 on this line of src/desk/routes.py: sender: str | None = Field(default=None, max_length=320). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 500,
+      "context": "external_id: str | None = Field(default=None, max_length=500)",
+      "justification": "Use of 500 on this line of src/desk/routes.py: external_id: str | None = Field(default=None, max_length=500). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 2000,
+      "context": "page_url: str | None = Field(default=None, max_length=2000)",
+      "justification": "Use of 2000 on this line of src/desk/routes.py: page_url: str | None = Field(default=None, max_length=2000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 500,
+      "context": "page_title: str | None = Field(default=None, max_length=500)",
+      "justification": "Use of 500 on this line of src/desk/routes.py: page_title: str | None = Field(default=None, max_length=500). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 80,
+      "context": "chosen_token: str | None = Field(default=None, max_length=80)",
+      "justification": "Use of 80 on this line of src/desk/routes.py: chosen_token: str | None = Field(default=None, max_length=80). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 64,
+      "context": "body_sha256: str = Field(min_length=64, max_length=64)",
+      "justification": "Use of 64 on this line of src/desk/routes.py: body_sha256: str = Field(min_length=64, max_length=64). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 422,
+      "context": "return HTTPException(status_code=422, detail=str(exc))",
+      "justification": "Use of 422 on this line of src/desk/routes.py: return HTTPException(status_code=422, detail=str(exc)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 422,
+      "context": "raise HTTPException(status_code=422, detail=\"Invalid id\")",
+      "justification": "Use of 422 on this line of src/desk/routes.py: raise HTTPException(status_code=422, detail=\"Invalid id\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 404,
+      "context": "raise HTTPException(status_code=404, detail=\"No such deal\")",
+      "justification": "Use of 404 on this line of src/desk/routes.py: raise HTTPException(status_code=404, detail=\"No such deal\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 422,
+      "context": "raise HTTPException(status_code=422, detail=\"Review action must be accept or reject.\")",
+      "justification": "Use of 422 on this line of src/desk/routes.py: raise HTTPException(status_code=422, detail=\"Review action must be accept or reject.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 404,
+      "context": "raise HTTPException(status_code=404, detail=\"No such deal\") from exc",
+      "justification": "Use of 404 on this line of src/desk/routes.py: raise HTTPException(status_code=404, detail=\"No such deal\") from exc. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 404,
+      "context": "raise HTTPException(status_code=404, detail=\"No such review item\") from exc",
+      "justification": "Use of 404 on this line of src/desk/routes.py: raise HTTPException(status_code=404, detail=\"No such review item\") from exc. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 422,
+      "context": "raise HTTPException(status_code=422, detail=str(exc)) from exc",
+      "justification": "Use of 422 on this line of src/desk/routes.py: raise HTTPException(status_code=422, detail=str(exc)) from exc. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 409,
+      "context": "raise HTTPException(status_code=409, detail=str(exc)) from exc",
+      "justification": "Use of 409 on this line of src/desk/routes.py: raise HTTPException(status_code=409, detail=str(exc)) from exc. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 404,
+      "context": "raise HTTPException(status_code=404, detail=\"No such draft\") from exc",
+      "justification": "Use of 404 on this line of src/desk/routes.py: raise HTTPException(status_code=404, detail=\"No such draft\") from exc. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 422,
+      "context": "raise HTTPException(status_code=422, detail=\"Poll channel must be imap or gmail.\")",
+      "justification": "Use of 422 on this line of src/desk/routes.py: raise HTTPException(status_code=422, detail=\"Poll channel must be imap or gmail.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 502,
+      "context": "raise HTTPException(status_code=502, detail=str(exc)) from exc",
+      "justification": "Use of 502 on this line of src/desk/routes.py: raise HTTPException(status_code=502, detail=str(exc)) from exc. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 502,
+      "context": "status_code=502,",
+      "justification": "Use of 502 on this line of src/desk/routes.py: status_code=502,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 5,
+      "context": "item = await asyncio.to_thread(mailbox_queue.get, True, 5)",
+      "justification": "Use of 5 on this line of src/desk/routes.py: item = await asyncio.to_thread(mailbox_queue.get, True, 5). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/quote_fields.py",
+      "value": 3650,
+      "context": "LEAD_TIME_MAX_DAYS = 3650",
+      "justification": "Use of 3650 on this line of src/engine/quote_fields.py: LEAD_TIME_MAX_DAYS = 3650. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/quote_fields.py",
+      "value": 100,
+      "context": "fraction = value / 100 if value > 1 else value",
+      "justification": "Use of 100 on this line of src/engine/quote_fields.py: fraction = value / 100 if value > 1 else value. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 10000000,
+      "context": "MAX_DEMANDED_MOQ = 10_000_000",
+      "justification": "Use of 10000000 on this line of src/engine/bilingual.py: MAX_DEMANDED_MOQ = 10_000_000. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 1000,
+      "context": "MAX_INPUT_LEN = 1000",
+      "justification": "Use of 1000 on this line of src/engine/bilingual.py: MAX_INPUT_LEN = 1000. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 500,
+      "context": "moq: int = 500,",
+      "justification": "Use of 500 on this line of src/engine/bilingual.py: moq: int = 500,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 3,
+      "context": "if label and label.group(3):",
+      "justification": "Use of 3 on this line of src/engine/bilingual.py: if label and label.group(3):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 200,
+      "context": "if resp.status_code != 200:",
+      "justification": "Use of 200 on this line of src/engine/bilingual.py: if resp.status_code != 200:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 500,
+      "context": "moq=int(moq) if moq else 500,",
+      "justification": "Use of 500 on this line of src/engine/bilingual.py: moq=int(moq) if moq else 500,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 1000,
+      "context": "cls.last_llm_latency_ms = round((_time.perf_counter() - _t0) * 1000, 1)",
+      "justification": "Use of 1000 on this line of src/engine/bilingual.py: cls.last_llm_latency_ms = round((_time.perf_counter() - _t0) * 1000, 1). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 100,
+      "context": "dep_val = float(dep_match.group(1)) / 100",
+      "justification": "Use of 100 on this line of src/engine/bilingual.py: dep_val = float(dep_match.group(1)) / 100. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 365,
+      "context": "if 1 <= days_val <= 365:",
+      "justification": "Use of 365 on this line of src/engine/bilingual.py: if 1 <= days_val <= 365:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 100000,
+      "context": "if p_cand >= 100_000:",
+      "justification": "Use of 100000 on this line of src/engine/bilingual.py: if p_cand >= 100_000:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 100,
+      "context": "f\"Lead Time: {_term(obj.lead_days, 'd')} | Deposit: {obj.deposit_pct*100:.0f}% | MOQ: {_term(obj.moq)}\"",
+      "justification": "Use of 100 on this line of src/engine/bilingual.py: f\"Lead Time: {_term(obj.lead_days, 'd')} | Deposit: {obj.deposit_pct*100:.0f}% | MOQ: {_term(obj.moq)}\". A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 120,
+      "context": "\"max_tokens\": 120,",
+      "justification": "Use of 120 on this line of src/engine/bilingual.py: \"max_tokens\": 120,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 200,
+      "context": "if resp.status_code == 200:",
+      "justification": "Use of 200 on this line of src/engine/bilingual.py: if resp.status_code == 200:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 3,
+      "context": "amount = cls.parse_locale_number(match.group(3))",
+      "justification": "Use of 3 on this line of src/engine/bilingual.py: amount = cls.parse_locale_number(match.group(3)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 4,
+      "context": "token = match.group(2) or match.group(4)",
+      "justification": "Use of 4 on this line of src/engine/bilingual.py: token = match.group(2) or match.group(4). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 200,
+      "context": "(content or \"\")[:200],",
+      "justification": "Use of 200 on this line of src/engine/bilingual.py: (content or \"\")[:200],. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 10,
+      "context": "pre = text[max(0, start - 10):start]",
+      "justification": "Use of 10 on this line of src/engine/bilingual.py: pre = text[max(0, start - 10):start]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 3,
+      "context": "elif parts[0] and len(parts[0]) <= 3 and all(len(part) == 3 for part in parts[1:]):",
+      "justification": "Use of 3 on this line of src/engine/bilingual.py: elif parts[0] and len(parts[0]) <= 3 and all(len(part) == 3 for part in parts[1:]):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 24,
+      "context": "prefix = raw_text[max(0, match.start() - 24):match.start()]",
+      "justification": "Use of 24 on this line of src/engine/bilingual.py: prefix = raw_text[max(0, match.start() - 24):match.start()]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 8,
+      "context": "prefix = raw_text[max(0, m.start() - 8):m.start()]",
+      "justification": "Use of 8 on this line of src/engine/bilingual.py: prefix = raw_text[max(0, m.start() - 8):m.start()]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 12,
+      "context": "suffix = raw_text[m.end():min(len(raw_text), m.end() + 12)]",
+      "justification": "Use of 12 on this line of src/engine/bilingual.py: suffix = raw_text[m.end():min(len(raw_text), m.end() + 12)]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 6,
+      "context": "prefix = raw_text[max(0, m.start() - 6):m.start()]",
+      "justification": "Use of 6 on this line of src/engine/bilingual.py: prefix = raw_text[max(0, m.start() - 6):m.start()]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 1000,
+      "context": "_mf = cls.MOLD_FEE_PATTERN.search(full_text[:1000])",
+      "justification": "Use of 1000 on this line of src/engine/bilingual.py: _mf = cls.MOLD_FEE_PATTERN.search(full_text[:1000]). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 100,
+      "context": "deposit_pct_str = f\"{int(round(obj.deposit_pct * 100))}%\"",
+      "justification": "Use of 100 on this line of src/engine/bilingual.py: deposit_pct_str = f\"{int(round(obj.deposit_pct * 100))}%\". A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 200,
+      "context": "f\"{(resp.text or '')[:200]}\"",
+      "justification": "Use of 200 on this line of src/engine/bilingual.py: f\"{(resp.text or '')[:200]}\". A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/bilingual.py",
+      "value": 100,
+      "context": "if p_cand != found_days and (found_dep is None or abs(p_cand - found_dep * 100) > MENTION_CONFUSION_TOLERANCE):",
+      "justification": "Use of 100 on this line of src/engine/bilingual.py: if p_cand != found_days and (found_dep is None or abs(p_cand - found_dep * 100) > MENTION_CONFUSION_TOLERANCE):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/orchestrator.py",
+      "value": 2000,
+      "context": "rob = _ROBUSTNESS_CACHE.get((float(target), 2000)) or _robustness_placeholder(float(target))",
+      "justification": "Use of 2000 on this line of src/app/orchestrator.py: rob = _ROBUSTNESS_CACHE.get((float(target), 2000)) or _robustness_placeholder(float(target)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 128,
+      "context": "_SOLVE_CACHE_MAX = 128",
+      "justification": "Use of 128 on this line of src/app/main.py: _SOLVE_CACHE_MAX = 128. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 8,
+      "context": "def wait_for_free_port(host: str, port: int, attempts: int = 8, pause=None) -> None:",
+      "justification": "Use of 8 on this line of src/app/main.py: def wait_for_free_port(host: str, port: int, attempts: int = 8, pause=None) -> None:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 422,
+      "context": "status_code=422,",
+      "justification": "Use of 422 on this line of src/app/main.py: status_code=422,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 512,
+      "context": "product: str = Field(default=\"\", max_length=512)",
+      "justification": "Use of 512 on this line of src/app/main.py: product: str = Field(default=\"\", max_length=512). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10000000,
+      "context": "moq: int | None = Field(default=None, ge=1, le=10_000_000)",
+      "justification": "Use of 10000000 on this line of src/app/main.py: moq: int | None = Field(default=None, ge=1, le=10_000_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 100,
+      "context": "rounds: int = Field(default=model.ROUNDS, ge=1, le=100)",
+      "justification": "Use of 100 on this line of src/app/main.py: rounds: int = Field(default=model.ROUNDS, ge=1, le=100). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 2000,
+      "context": "n_samples: int = Field(default=2000, ge=1, le=50_000)",
+      "justification": "Use of 2000 on this line of src/app/main.py: n_samples: int = Field(default=2000, ge=1, le=50_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 50000,
+      "context": "n_samples: int = Field(default=2000, ge=1, le=50_000)",
+      "justification": "Use of 50000 on this line of src/app/main.py: n_samples: int = Field(default=2000, ge=1, le=50_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 20000,
+      "context": "n_samples: Optional[int] = Field(default=None, ge=1, le=20_000)",
+      "justification": "Use of 20000 on this line of src/app/main.py: n_samples: Optional[int] = Field(default=None, ge=1, le=20_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 20000,
+      "context": "email_body: Optional[str] = Field(default=None, max_length=20_000)",
+      "justification": "Use of 20000 on this line of src/app/main.py: email_body: Optional[str] = Field(default=None, max_length=20_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 512,
+      "context": "command: Optional[str] = Field(default=None, max_length=512)",
+      "justification": "Use of 512 on this line of src/app/main.py: command: Optional[str] = Field(default=None, max_length=512). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 512,
+      "context": "command_text: Optional[str] = Field(default=None, max_length=512)",
+      "justification": "Use of 512 on this line of src/app/main.py: command_text: Optional[str] = Field(default=None, max_length=512). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 64,
+      "context": "source: str = Field(default=\"mobile\", max_length=64)",
+      "justification": "Use of 64 on this line of src/app/main.py: source: str = Field(default=\"mobile\", max_length=64). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10000,
+      "context": "opponent_raw_text: Optional[str] = Field(default=None, max_length=10_000)",
+      "justification": "Use of 10000 on this line of src/app/main.py: opponent_raw_text: Optional[str] = Field(default=None, max_length=10_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10000,
+      "context": "supplier_text: Optional[str] = Field(default=None, max_length=10_000)",
+      "justification": "Use of 10000 on this line of src/app/main.py: supplier_text: Optional[str] = Field(default=None, max_length=10_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 100,
+      "context": "round_index: Optional[int] = Field(default=None, ge=1, le=100)",
+      "justification": "Use of 100 on this line of src/app/main.py: round_index: Optional[int] = Field(default=None, ge=1, le=100). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 3650,
+      "context": "offered_lead_days: Optional[int] = Field(default=None, ge=1, le=3650)",
+      "justification": "Use of 3650 on this line of src/app/main.py: offered_lead_days: Optional[int] = Field(default=None, ge=1, le=3650). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10000000,
+      "context": "offered_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)",
+      "justification": "Use of 10000000 on this line of src/app/main.py: offered_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10000,
+      "context": "custom_reply_text: Optional[str] = Field(default=None, max_length=10_000)",
+      "justification": "Use of 10000 on this line of src/app/main.py: custom_reply_text: Optional[str] = Field(default=None, max_length=10_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 2000,
+      "context": "tactical_rationale: Optional[str] = Field(default=None, max_length=2_000)",
+      "justification": "Use of 2000 on this line of src/app/main.py: tactical_rationale: Optional[str] = Field(default=None, max_length=2_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 3650,
+      "context": "baseline_lead_days: Optional[int] = Field(default=None, ge=1, le=3650)",
+      "justification": "Use of 3650 on this line of src/app/main.py: baseline_lead_days: Optional[int] = Field(default=None, ge=1, le=3650). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10000000,
+      "context": "baseline_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)",
+      "justification": "Use of 10000000 on this line of src/app/main.py: baseline_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10000,
+      "context": "text: str = Field(..., max_length=10_000)",
+      "justification": "Use of 10000 on this line of src/app/main.py: text: str = Field(..., max_length=10_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 256,
+      "context": "name: str = Field(..., min_length=1, max_length=256)",
+      "justification": "Use of 256 on this line of src/app/main.py: name: str = Field(..., min_length=1, max_length=256). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 128,
+      "context": "profile: Optional[str] = Field(default=\"Standard\", max_length=128)",
+      "justification": "Use of 128 on this line of src/app/main.py: profile: Optional[str] = Field(default=\"Standard\", max_length=128). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 8,
+      "context": "currency: Optional[str] = Field(default=None, max_length=8)",
+      "justification": "Use of 8 on this line of src/app/main.py: currency: Optional[str] = Field(default=None, max_length=8). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10000000,
+      "context": "moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)",
+      "justification": "Use of 10000000 on this line of src/app/main.py: moq: Optional[int] = Field(default=None, ge=1, le=10_000_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 20000,
+      "context": "n_samples: int = Field(default=20000, ge=1, le=50_000)",
+      "justification": "Use of 20000 on this line of src/app/main.py: n_samples: int = Field(default=20000, ge=1, le=50_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 50000,
+      "context": "n_samples: int = Field(default=20000, ge=1, le=50_000)",
+      "justification": "Use of 50000 on this line of src/app/main.py: n_samples: int = Field(default=20000, ge=1, le=50_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 3,
+      "context": "n_rounds: int = Field(default=3, ge=1, le=10)",
+      "justification": "Use of 3 on this line of src/app/main.py: n_rounds: int = Field(default=3, ge=1, le=10). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10,
+      "context": "n_rounds: int = Field(default=3, ge=1, le=10)",
+      "justification": "Use of 10 on this line of src/app/main.py: n_rounds: int = Field(default=3, ge=1, le=10). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 32,
+      "context": "suppliers: Optional[List[MultiAuctionSupplierInput]] = Field(default=None, max_length=32)",
+      "justification": "Use of 32 on this line of src/app/main.py: suppliers: Optional[List[MultiAuctionSupplierInput]] = Field(default=None, max_length=32). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10,
+      "context": "rounds_quotes: Optional[List[List[float]]] = Field(default=None, max_length=10)",
+      "justification": "Use of 10 on this line of src/app/main.py: rounds_quotes: Optional[List[List[float]]] = Field(default=None, max_length=10). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 512,
+      "context": "product_name: Optional[str] = Field(default=None, max_length=512)",
+      "justification": "Use of 512 on this line of src/app/main.py: product_name: Optional[str] = Field(default=None, max_length=512). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 3,
+      "context": "base_currency: str = Field(default=\"CNY\", min_length=3, max_length=8)",
+      "justification": "Use of 3 on this line of src/app/main.py: base_currency: str = Field(default=\"CNY\", min_length=3, max_length=8). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 8,
+      "context": "base_currency: str = Field(default=\"CNY\", min_length=3, max_length=8)",
+      "justification": "Use of 8 on this line of src/app/main.py: base_currency: str = Field(default=\"CNY\", min_length=3, max_length=8). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10,
+      "context": "round_outcomes: Optional[List[List[Optional[str]]]] = Field(default=None, max_length=10)",
+      "justification": "Use of 10 on this line of src/app/main.py: round_outcomes: Optional[List[List[Optional[str]]]] = Field(default=None, max_length=10). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10,
+      "context": "if len(v) > 10:",
+      "justification": "Use of 10 on this line of src/app/main.py: if len(v) > 10:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10000,
+      "context": "text: str = Field(default=\"\", max_length=10_000)",
+      "justification": "Use of 10000 on this line of src/app/main.py: text: str = Field(default=\"\", max_length=10_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 1500000,
+      "context": "image_base64: Optional[str] = Field(default=None, max_length=1_500_000)",
+      "justification": "Use of 1500000 on this line of src/app/main.py: image_base64: Optional[str] = Field(default=None, max_length=1_500_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 64,
+      "context": "sample_id: Optional[str] = Field(default=None, max_length=64)",
+      "justification": "Use of 64 on this line of src/app/main.py: sample_id: Optional[str] = Field(default=None, max_length=64). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 65536,
+      "context": "if not 0 < _port < 65536:",
+      "justification": "Use of 65536 on this line of src/app/main.py: if not 0 < _port < 65536:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 422,
+      "context": "raise HTTPException(status_code=422, detail=\"A supplier quote is required.\")",
+      "justification": "Use of 422 on this line of src/app/main.py: raise HTTPException(status_code=422, detail=\"A supplier quote is required.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 422,
+      "context": "raise HTTPException(status_code=422, detail=\"The ceiling must be at or above the target.\")",
+      "justification": "Use of 422 on this line of src/app/main.py: raise HTTPException(status_code=422, detail=\"The ceiling must be at or above the target.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 400,
+      "context": "raise HTTPException(status_code=400, detail=\"Missing command in payload.\")",
+      "justification": "Use of 400 on this line of src/app/main.py: raise HTTPException(status_code=400, detail=\"Missing command in payload.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 400,
+      "context": "raise HTTPException(status_code=400, detail=\"Missing command.\")",
+      "justification": "Use of 400 on this line of src/app/main.py: raise HTTPException(status_code=400, detail=\"Missing command.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 32,
+      "context": "if len(quotes) > 32:",
+      "justification": "Use of 32 on this line of src/app/main.py: if len(quotes) > 32:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 32,
+      "context": "if len(row) > 32:",
+      "justification": "Use of 32 on this line of src/app/main.py: if len(row) > 32:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 404,
+      "context": "raise HTTPException(status_code=404, detail=\"Session not found.\")",
+      "justification": "Use of 404 on this line of src/app/main.py: raise HTTPException(status_code=404, detail=\"Session not found.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 409,
+      "context": "status_code=409,",
+      "justification": "Use of 409 on this line of src/app/main.py: status_code=409,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 409,
+      "context": "raise HTTPException(status_code=409, detail=not_waiting)",
+      "justification": "Use of 409 on this line of src/app/main.py: raise HTTPException(status_code=409, detail=not_waiting). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 404,
+      "context": "status_code=404,",
+      "justification": "Use of 404 on this line of src/app/main.py: status_code=404,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 500,
+      "context": "raise HTTPException(status_code=500, detail=\"Engine failure while solving the negotiation.\")",
+      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Engine failure while solving the negotiation.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 422,
+      "context": "raise HTTPException(status_code=422, detail=str(exc)) from exc",
+      "justification": "Use of 422 on this line of src/app/main.py: raise HTTPException(status_code=422, detail=str(exc)) from exc. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 500,
+      "context": "raise HTTPException(status_code=500, detail=\"Webhook processing failed.\")",
+      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Webhook processing failed.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 1e-09,
+      "context": "if custom_price is not None and custom_price < min_authorized_price - 1e-9:",
+      "justification": "Use of 1e-09 on this line of src/app/main.py: if custom_price is not None and custom_price < min_authorized_price - 1e-9:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 400,
+      "context": "raise HTTPException(status_code=400, detail=str(e))",
+      "justification": "Use of 400 on this line of src/app/main.py: raise HTTPException(status_code=400, detail=str(e)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 500,
+      "context": "raise HTTPException(status_code=500, detail=\"Failed to create the negotiation session.\")",
+      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Failed to create the negotiation session.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 409,
+      "context": "raise HTTPException(status_code=409, detail=str(exc))",
+      "justification": "Use of 409 on this line of src/app/main.py: raise HTTPException(status_code=409, detail=str(exc)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 500,
+      "context": "raise HTTPException(status_code=500, detail=\"Reverse auction simulation failed.\")",
+      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Reverse auction simulation failed.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 48,
+      "context": "if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:",
+      "justification": "Use of 48 on this line of src/app/main.py: if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 98,
+      "context": "if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:",
+      "justification": "Use of 98 on this line of src/app/main.py: if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10048,
+      "context": "if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:",
+      "justification": "Use of 10048 on this line of src/app/main.py: if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 400,
+      "context": "raise HTTPException(status_code=400, detail=\"Invalid request body format.\")",
+      "justification": "Use of 400 on this line of src/app/main.py: raise HTTPException(status_code=400, detail=\"Invalid request body format.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 1000000.0,
+      "context": "if not (0.0 < fq <= 1_000_000.0):",
+      "justification": "Use of 1000000.0 on this line of src/app/main.py: if not (0.0 < fq <= 1_000_000.0):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 500,
+      "context": "moq=int(sess.spec.moq or 500),",
+      "justification": "Use of 500 on this line of src/app/main.py: moq=int(sess.spec.moq or 500),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/quote_read.py",
+      "value": 90,
+      "context": "if value > 90:",
+      "justification": "Use of 90 on this line of src/engine/quote_read.py: if value > 90:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/quote_read.py",
+      "value": 90,
+      "context": "return 90",
+      "justification": "Use of 90 on this line of src/engine/quote_read.py: return 90. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/quote_read.py",
+      "value": 1500000,
+      "context": "if len(image) > 1_500_000:",
+      "justification": "Use of 1500000 on this line of src/engine/quote_read.py: if len(image) > 1_500_000:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/quote_read.py",
+      "value": 20,
+      "context": "return 20",
+      "justification": "Use of 20 on this line of src/engine/quote_read.py: return 20. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/quote_read.py",
+      "value": 180,
+      "context": "return cleaned[:180]",
+      "justification": "Use of 180 on this line of src/engine/quote_read.py: return cleaned[:180]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/quote_read.py",
+      "value": 200,
+      "context": "if status != 200 or not isinstance(body, dict):",
+      "justification": "Use of 200 on this line of src/engine/quote_read.py: if status != 200 or not isinstance(body, dict):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/quote_read.py",
+      "value": 500,
+      "context": "result[\"reading\"] = reading.strip()[:500]",
+      "justification": "Use of 500 on this line of src/engine/quote_read.py: result[\"reading\"] = reading.strip()[:500]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/quote_read.py",
+      "value": 1000,
+      "context": "latency_ms = int(round((time.perf_counter() - started) * 1000))",
+      "justification": "Use of 1000 on this line of src/engine/quote_read.py: latency_ms = int(round((time.perf_counter() - started) * 1000)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/quote_read.py",
+      "value": 1000,
+      "context": "result[\"latency_ms\"] = int(round((time.perf_counter() - started) * 1000))",
+      "justification": "Use of 1000 on this line of src/engine/quote_read.py: result[\"latency_ms\"] = int(round((time.perf_counter() - started) * 1000)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/model.py",
+      "value": 5,
+      "context": "ROUNDS = 5",
+      "justification": "Use of 5 on this line of src/engine/model.py: ROUNDS = 5. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/model.py",
+      "value": 40,
+      "context": "def strategy_grid(n_open: int = 40, n_sched: int = 12, ceiling: float | None = None):",
+      "justification": "Use of 40 on this line of src/engine/model.py: def strategy_grid(n_open: int = 40, n_sched: int = 12, ceiling: float | None = None):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/model.py",
+      "value": 12,
+      "context": "def strategy_grid(n_open: int = 40, n_sched: int = 12, ceiling: float | None = None):",
+      "justification": "Use of 12 on this line of src/engine/model.py: def strategy_grid(n_open: int = 40, n_sched: int = 12, ceiling: float | None = None):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/model.py",
+      "value": 3,
+      "context": "conc = np.clip(OPP_TYPES[t, 3] + rng.normal(0, SAMPLE_NOISE, n_samples), PARAM_FLOOR, CONCESSION_RATE_CAP)",
+      "justification": "Use of 3 on this line of src/engine/model.py: conc = np.clip(OPP_TYPES[t, 3] + rng.normal(0, SAMPLE_NOISE, n_samples), PARAM_FLOOR, CONCESSION_RATE_CAP). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 2000,
+      "context": "n_list=(2_000, 10_000, 20_000, 50_000),",
+      "justification": "Use of 2000 on this line of src/engine/benchmark.py: n_list=(2_000, 10_000, 20_000, 50_000),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 10000,
+      "context": "n_list=(2_000, 10_000, 20_000, 50_000),",
+      "justification": "Use of 10000 on this line of src/engine/benchmark.py: n_list=(2_000, 10_000, 20_000, 50_000),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 20000,
+      "context": "n_list=(2_000, 10_000, 20_000, 50_000),",
+      "justification": "Use of 20000 on this line of src/engine/benchmark.py: n_list=(2_000, 10_000, 20_000, 50_000),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 50000,
+      "context": "n_list=(2_000, 10_000, 20_000, 50_000),",
+      "justification": "Use of 50000 on this line of src/engine/benchmark.py: n_list=(2_000, 10_000, 20_000, 50_000),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 50000,
+      "context": "theoretical_max_rollouts = 4 * 40 * 12 * 50_000",
+      "justification": "Use of 50000 on this line of src/engine/benchmark.py: theoretical_max_rollouts = 4 * 40 * 12 * 50_000. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 1024,
+      "context": "return peak / (1024 * 1024)",
+      "justification": "Use of 1024 on this line of src/engine/benchmark.py: return peak / (1024 * 1024). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 50000,
+      "context": "n_samples=50_000,",
+      "justification": "Use of 50000 on this line of src/engine/benchmark.py: n_samples=50_000,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 12,
+      "context": "theoretical_max_rollouts = 4 * 40 * 12 * 50_000",
+      "justification": "Use of 12 on this line of src/engine/benchmark.py: theoretical_max_rollouts = 4 * 40 * 12 * 50_000. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 4,
+      "context": "theoretical_max_rollouts = 4 * 40 * 12 * 50_000",
+      "justification": "Use of 4 on this line of src/engine/benchmark.py: theoretical_max_rollouts = 4 * 40 * 12 * 50_000. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 40,
+      "context": "theoretical_max_rollouts = 4 * 40 * 12 * 50_000",
+      "justification": "Use of 40 on this line of src/engine/benchmark.py: theoretical_max_rollouts = 4 * 40 * 12 * 50_000. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 3,
+      "context": "\"cpu_seconds\": round(dt_multi_cpu, 3),",
+      "justification": "Use of 3 on this line of src/engine/benchmark.py: \"cpu_seconds\": round(dt_multi_cpu, 3),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 4,
+      "context": "\"cpu_seconds\": round(dt_cpu, 4),",
+      "justification": "Use of 4 on this line of src/engine/benchmark.py: \"cpu_seconds\": round(dt_cpu, 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 4,
+      "context": "\"us_per_rollout\": round(dt_cpu * 1e6 / n_rollouts, 4),",
+      "justification": "Use of 4 on this line of src/engine/benchmark.py: \"us_per_rollout\": round(dt_cpu * 1e6 / n_rollouts, 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 6,
+      "context": "transfer_s if transfer_s is not None else round(dt_gpu_measured, 6)",
+      "justification": "Use of 6 on this line of src/engine/benchmark.py: transfer_s if transfer_s is not None else round(dt_gpu_measured, 6). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 6,
+      "context": "\"mi300x_measured_seconds\": round(dt_gpu_measured, 6) if dt_gpu_measured is not None else None,",
+      "justification": "Use of 6 on this line of src/engine/benchmark.py: \"mi300x_measured_seconds\": round(dt_gpu_measured, 6) if dt_gpu_measured is not None else None,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 1000,
+      "context": "f\"MI300X transfer bound: {bound*1000:>9.4f} ms [{r['execution_mode']}]\")",
+      "justification": "Use of 1000 on this line of src/engine/benchmark.py: f\"MI300X transfer bound: {bound*1000:>9.4f} ms [{r['execution_mode']}]\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/benchmark.py",
+      "value": 1000000,
+      "context": "\"us_per_rollout\": round(dt_cpu * 1e6 / n_rollouts, 4),",
+      "justification": "Use of 1000000 on this line of src/engine/benchmark.py: \"us_per_rollout\": round(dt_cpu * 1e6 / n_rollouts, 4),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/onnx_classifier.py",
+      "value": 100,
+      "context": "def tokenize(self, text: str, max_tokens: int = 100) -> np.ndarray:",
+      "justification": "Use of 100 on this line of src/engine/onnx_classifier.py: def tokenize(self, text: str, max_tokens: int = 100) -> np.ndarray:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/robustness.py",
+      "value": 20000,
+      "context": "def fixed_baseline_margin(rng, n_samples: int = 20_000, fixed_conc: float = FIXED_BASELINE_CONCESSION,",
+      "justification": "Use of 20000 on this line of src/engine/robustness.py: def fixed_baseline_margin(rng, n_samples: int = 20_000, fixed_conc: float = FIXED_BASELINE_CONCESSION,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/robustness.py",
+      "value": 20000,
+      "context": "def multi_baseline(rng, n_samples: int = 20_000, reserve_mean=PRIOR_RESERVE_MEAN, reserve_std=PRIOR_RESERVE_STD,",
+      "justification": "Use of 20000 on this line of src/engine/robustness.py: def multi_baseline(rng, n_samples: int = 20_000, reserve_mean=PRIOR_RESERVE_MEAN, reserve_std=PRIOR_RESERVE_STD,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/robustness.py",
+      "value": 20000,
+      "context": "def prior_sensitivity(rng, n_samples: int = 20_000, base_mean=PRIOR_RESERVE_MEAN, base_std=PRIOR_RESERVE_STD,",
+      "justification": "Use of 20000 on this line of src/engine/robustness.py: def prior_sensitivity(rng, n_samples: int = 20_000, base_mean=PRIOR_RESERVE_MEAN, base_std=PRIOR_RESERVE_STD,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/robustness.py",
+      "value": 20000,
+      "context": "def misbelief_sensitivity(n_samples: int = 20_000, base_mean=PRIOR_RESERVE_MEAN, base_std=PRIOR_RESERVE_STD,",
+      "justification": "Use of 20000 on this line of src/engine/robustness.py: def misbelief_sensitivity(n_samples: int = 20_000, base_mean=PRIOR_RESERVE_MEAN, base_std=PRIOR_RESERVE_STD,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/robustness.py",
+      "value": 20000,
+      "context": "def report(target_price=None, n_samples=20000, seed=20261013, value_ceiling=None):",
+      "justification": "Use of 20000 on this line of src/engine/robustness.py: def report(target_price=None, n_samples=20000, seed=20261013, value_ceiling=None):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/robustness.py",
+      "value": 20261013,
+      "context": "def report(target_price=None, n_samples=20000, seed=20261013, value_ceiling=None):",
+      "justification": "Use of 20261013 on this line of src/engine/robustness.py: def report(target_price=None, n_samples=20000, seed=20261013, value_ceiling=None):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/robustness.py",
+      "value": 3,
+      "context": "base_m, base_b = sens[1][2], sens[1][3]",
+      "justification": "Use of 3 on this line of src/engine/robustness.py: base_m, base_b = sens[1][2], sens[1][3]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/legacy/robustness.py",
+      "value": 100,
+      "context": "out.append({\"name\": f\"fixed {conc*100:.0f}%/rd\", \"margin\": bm, \"break\": bb,",
+      "justification": "Use of 100 on this line of src/engine/robustness.py: out.append({\"name\": f\"fixed {conc*100:.0f}%/rd\", \"margin\": bm, \"break\": bb,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/roofline.py",
+      "value": 9,
+      "context": "return round(lower_bound_seconds(working_set_mb), 9)",
+      "justification": "Use of 9 on this line of src/engine/roofline.py: return round(lower_bound_seconds(working_set_mb), 9). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/roofline.py",
+      "value": 1024,
+      "context": "return (float(working_set_mb) * 1024 * 1024) / peak_bandwidth_bytes_per_s()",
+      "justification": "Use of 1024 on this line of src/engine/roofline.py: return (float(working_set_mb) * 1024 * 1024) / peak_bandwidth_bytes_per_s(). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/safe_regex.py",
+      "value": 1000,
+      "context": "MAX_INPUT_LEN = 1000",
+      "justification": "Use of 1000 on this line of src/engine/safe_regex.py: MAX_INPUT_LEN = 1000. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/safe_regex.py",
+      "value": 0.01,
+      "context": "timeout_sec: float = 0.010,",
+      "justification": "Use of 0.01 on this line of src/engine/safe_regex.py: timeout_sec: float = 0.010,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/safe_regex.py",
+      "value": 10,
+      "context": "def compile(cls, pattern: str, flags: int = 0, timeout_ms: float = 10.0) -> SafeLinearPattern:",
+      "justification": "Use of 10 on this line of src/engine/safe_regex.py: def compile(cls, pattern: str, flags: int = 0, timeout_ms: float = 10.0) -> SafeLinearPattern:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/safe_regex.py",
+      "value": 8,
+      "context": "opts.max_mem = 8 << 20  # 8 MB DFA \u72c0\u614b\u7de9\u5b58",
+      "justification": "Use of 8 on this line of src/engine/safe_regex.py: opts.max_mem = 8 << 20  # 8 MB DFA \u72c0\u614b\u7de9\u5b58. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/safe_regex.py",
+      "value": 20,
+      "context": "opts.max_mem = 8 << 20  # 8 MB DFA \u72c0\u614b\u7de9\u5b58",
+      "justification": "Use of 20 on this line of src/engine/safe_regex.py: opts.max_mem = 8 << 20  # 8 MB DFA \u72c0\u614b\u7de9\u5b58. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/safe_regex.py",
+      "value": 1000,
+      "context": "return SafeLinearPattern(pattern, flags=flags, timeout_sec=timeout_ms / 1000.0)",
+      "justification": "Use of 1000 on this line of src/engine/safe_regex.py: return SafeLinearPattern(pattern, flags=flags, timeout_sec=timeout_ms / 1000.0). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/safe_regex.py",
+      "value": 40,
+      "context": "pattern[:40], MAX_INPUT_LEN,",
+      "justification": "Use of 40 on this line of src/engine/safe_regex.py: pattern[:40], MAX_INPUT_LEN,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/safe_regex.py",
+      "value": 40,
+      "context": "self.raw_pattern[:40],",
+      "justification": "Use of 40 on this line of src/engine/safe_regex.py: self.raw_pattern[:40],. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/safe_regex.py",
+      "value": 40,
+      "context": "pattern[:40], exc,",
+      "justification": "Use of 40 on this line of src/engine/safe_regex.py: pattern[:40], exc,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/safe_regex.py",
+      "value": 30,
+      "context": "logger.warning(f\"[ReDoS Blocked] Pattern '{self.raw_pattern[:30]}' timed out after {self.timeout_sec}s\")",
+      "justification": "Use of 30 on this line of src/engine/safe_regex.py: logger.warning(f\"[ReDoS Blocked] Pattern '{self.raw_pattern[:30]}' timed out after {self.timeout_sec}s\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 20000,
+      "context": "def _sample_reserve(reserve_mean, reserve_std, n=20000, seed=0):",
+      "justification": "Use of 20000 on this line of src/engine/viz.py: def _sample_reserve(reserve_mean, reserve_std, n=20000, seed=0):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 4000,
+      "context": "n = 4000",
+      "justification": "Use of 4000 on this line of src/engine/viz.py: n = 4000. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.4,
+      "context": "ax.bar(x - 0.2, cpu, 0.4, label=\"CPU (vectorized, measured)\", color=\"#4C72B0\")",
+      "justification": "Use of 0.4 on this line of src/engine/viz.py: ax.bar(x - 0.2, cpu, 0.4, label=\"CPU (vectorized, measured)\", color=\"#4C72B0\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.4,
+      "context": "0.4,",
+      "justification": "Use of 0.4 on this line of src/engine/viz.py: 0.4,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.4,
+      "context": "ax1.bar(x - 0.2, ms, 0.4, color=\"#4C72B0\", label=\"margin (norm)\")",
+      "justification": "Use of 0.4 on this line of src/engine/viz.py: ax1.bar(x - 0.2, ms, 0.4, color=\"#4C72B0\", label=\"margin (norm)\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.4,
+      "context": "ax1b.bar(x + 0.2, bs, 0.4, color=\"#C44E52\", alpha=0.5, label=\"breakdown\")",
+      "justification": "Use of 0.4 on this line of src/engine/viz.py: ax1b.bar(x + 0.2, bs, 0.4, color=\"#C44E52\", alpha=0.5, label=\"breakdown\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 60,
+      "context": "ax.hist(samples, bins=60, density=True, color=\"#4C72B0\", alpha=0.75,",
+      "justification": "Use of 60 on this line of src/engine/viz.py: ax.hist(samples, bins=60, density=True, color=\"#4C72B0\", alpha=0.75,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.75,
+      "context": "ax.hist(samples, bins=60, density=True, color=\"#4C72B0\", alpha=0.75,",
+      "justification": "Use of 0.75 on this line of src/engine/viz.py: ax.hist(samples, bins=60, density=True, color=\"#4C72B0\", alpha=0.75,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 8,
+      "context": "ax.legend(loc=\"upper right\", fontsize=8)",
+      "justification": "Use of 8 on this line of src/engine/viz.py: ax.legend(loc=\"upper right\", fontsize=8). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.3,
+      "context": "ax.fill_between(rounds, means_a - stds_a, means_a + stds_a, color=\"#DD8452\", alpha=0.3,",
+      "justification": "Use of 0.3 on this line of src/engine/viz.py: ax.fill_between(rounds, means_a - stds_a, means_a + stds_a, color=\"#DD8452\", alpha=0.3,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 1.5,
+      "context": "ax.axhline(1.0, color=\"green\", lw=1.5, ls=\":\", label=\"Target\")",
+      "justification": "Use of 1.5 on this line of src/engine/viz.py: ax.axhline(1.0, color=\"green\", lw=1.5, ls=\":\", label=\"Target\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 1.5,
+      "context": "ax.axhline(ceiling, color=\"red\", lw=1.5, ls=\":\", label=\"Walk-away\")",
+      "justification": "Use of 1.5 on this line of src/engine/viz.py: ax.axhline(ceiling, color=\"red\", lw=1.5, ls=\":\", label=\"Walk-away\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 8,
+      "context": "ax.legend(loc=\"lower right\", fontsize=8)",
+      "justification": "Use of 8 on this line of src/engine/viz.py: ax.legend(loc=\"lower right\", fontsize=8). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.2,
+      "context": "ax.bar(x - 0.2, cpu, 0.4, label=\"CPU (vectorized, measured)\", color=\"#4C72B0\")",
+      "justification": "Use of 0.2 on this line of src/engine/viz.py: ax.bar(x - 0.2, cpu, 0.4, label=\"CPU (vectorized, measured)\", color=\"#4C72B0\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.2,
+      "context": "x + 0.2,",
+      "justification": "Use of 0.2 on this line of src/engine/viz.py: x + 0.2,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.2,
+      "context": "ax1.bar(x - 0.2, ms, 0.4, color=\"#4C72B0\", label=\"margin (norm)\")",
+      "justification": "Use of 0.2 on this line of src/engine/viz.py: ax1.bar(x - 0.2, ms, 0.4, color=\"#4C72B0\", label=\"margin (norm)\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 15,
+      "context": "ax1.set_xticks(x); ax1.set_xticklabels(names, rotation=15, fontsize=8)",
+      "justification": "Use of 15 on this line of src/engine/viz.py: ax1.set_xticks(x); ax1.set_xticklabels(names, rotation=15, fontsize=8). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 8,
+      "context": "ax1.set_xticks(x); ax1.set_xticklabels(names, rotation=15, fontsize=8)",
+      "justification": "Use of 8 on this line of src/engine/viz.py: ax1.set_xticks(x); ax1.set_xticklabels(names, rotation=15, fontsize=8). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.2,
+      "context": "ax1b.bar(x + 0.2, bs, 0.4, color=\"#C44E52\", alpha=0.5, label=\"breakdown\")",
+      "justification": "Use of 0.2 on this line of src/engine/viz.py: ax1b.bar(x + 0.2, bs, 0.4, color=\"#C44E52\", alpha=0.5, label=\"breakdown\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.5,
+      "context": "ax1b.bar(x + 0.2, bs, 0.4, color=\"#C44E52\", alpha=0.5, label=\"breakdown\")",
+      "justification": "Use of 0.5 on this line of src/engine/viz.py: ax1b.bar(x + 0.2, bs, 0.4, color=\"#C44E52\", alpha=0.5, label=\"breakdown\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 8,
+      "context": "ax2.legend(loc=\"upper left\", fontsize=8); ax2b.legend(loc=\"lower right\", fontsize=8)",
+      "justification": "Use of 8 on this line of src/engine/viz.py: ax2.legend(loc=\"upper left\", fontsize=8); ax2b.legend(loc=\"lower right\", fontsize=8). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 1e-06,
+      "context": "if w.sum() < 1e-6:",
+      "justification": "Use of 1e-06 on this line of src/engine/viz.py: if w.sum() < 1e-6:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 7,
+      "context": "ax.legend(fontsize=7)",
+      "justification": "Use of 7 on this line of src/engine/viz.py: ax.legend(fontsize=7). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 7,
+      "context": "fig, ax = plt.subplots(figsize=(7, 4))",
+      "justification": "Use of 7 on this line of src/engine/viz.py: fig, ax = plt.subplots(figsize=(7, 4)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 4,
+      "context": "fig, ax = plt.subplots(figsize=(7, 4))",
+      "justification": "Use of 4 on this line of src/engine/viz.py: fig, ax = plt.subplots(figsize=(7, 4)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 120,
+      "context": "fig.savefig(save_path, dpi=120)",
+      "justification": "Use of 120 on this line of src/engine/viz.py: fig.savefig(save_path, dpi=120). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.01,
+      "context": "cpu_lbl = f\"{cpu[i]:.2f}s\" if cpu[i] >= 0.01 else f\"{cpu[i]*1000:.1f}ms\"",
+      "justification": "Use of 0.01 on this line of src/engine/viz.py: cpu_lbl = f\"{cpu[i]:.2f}s\" if cpu[i] >= 0.01 else f\"{cpu[i]*1000:.1f}ms\". A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.01,
+      "context": "gpu_lbl = f\"{gpu[i]:.2f}s\" if gpu[i] >= 0.01 else f\"{gpu[i]*1000:.2f}ms\"",
+      "justification": "Use of 0.01 on this line of src/engine/viz.py: gpu_lbl = f\"{gpu[i]:.2f}s\" if gpu[i] >= 0.01 else f\"{gpu[i]*1000:.2f}ms\". A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.2,
+      "context": "ax.text(i - 0.2, cpu[i], cpu_lbl, ha=\"center\", va=\"bottom\", fontsize=7)",
+      "justification": "Use of 0.2 on this line of src/engine/viz.py: ax.text(i - 0.2, cpu[i], cpu_lbl, ha=\"center\", va=\"bottom\", fontsize=7). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 7,
+      "context": "ax.text(i - 0.2, cpu[i], cpu_lbl, ha=\"center\", va=\"bottom\", fontsize=7)",
+      "justification": "Use of 7 on this line of src/engine/viz.py: ax.text(i - 0.2, cpu[i], cpu_lbl, ha=\"center\", va=\"bottom\", fontsize=7). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.2,
+      "context": "ax.text(i + 0.2, gpu[i], gpu_lbl, ha=\"center\", va=\"bottom\", fontsize=7)",
+      "justification": "Use of 0.2 on this line of src/engine/viz.py: ax.text(i + 0.2, gpu[i], gpu_lbl, ha=\"center\", va=\"bottom\", fontsize=7). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 7,
+      "context": "ax.text(i + 0.2, gpu[i], gpu_lbl, ha=\"center\", va=\"bottom\", fontsize=7)",
+      "justification": "Use of 7 on this line of src/engine/viz.py: ax.text(i + 0.2, gpu[i], gpu_lbl, ha=\"center\", va=\"bottom\", fontsize=7). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 11,
+      "context": "fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))",
+      "justification": "Use of 11 on this line of src/engine/viz.py: fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 4,
+      "context": "fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))",
+      "justification": "Use of 4 on this line of src/engine/viz.py: fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 40,
+      "context": "ax.hist(samples, bins=40, color=colors[0], alpha=0.7, label=\"posterior\")",
+      "justification": "Use of 40 on this line of src/engine/viz.py: ax.hist(samples, bins=40, color=colors[0], alpha=0.7, label=\"posterior\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.7,
+      "context": "ax.hist(samples, bins=40, color=colors[0], alpha=0.7, label=\"posterior\")",
+      "justification": "Use of 0.7 on this line of src/engine/viz.py: ax.hist(samples, bins=40, color=colors[0], alpha=0.7, label=\"posterior\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 40,
+      "context": "ax.hist(samples, bins=40, weights=w / w.sum() * len(samples),",
+      "justification": "Use of 40 on this line of src/engine/viz.py: ax.hist(samples, bins=40, weights=w / w.sum() * len(samples),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 0.55,
+      "context": "density=False, alpha=0.55, color=colors[t],",
+      "justification": "Use of 0.55 on this line of src/engine/viz.py: density=False, alpha=0.55, color=colors[t],. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 1000,
+      "context": "cpu_lbl = f\"{cpu[i]:.2f}s\" if cpu[i] >= 0.01 else f\"{cpu[i]*1000:.1f}ms\"",
+      "justification": "Use of 1000 on this line of src/engine/viz.py: cpu_lbl = f\"{cpu[i]:.2f}s\" if cpu[i] >= 0.01 else f\"{cpu[i]*1000:.1f}ms\". A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/engine/viz.py",
+      "value": 1000,
+      "context": "gpu_lbl = f\"{gpu[i]:.2f}s\" if gpu[i] >= 0.01 else f\"{gpu[i]*1000:.2f}ms\"",
+      "justification": "Use of 1000 on this line of src/engine/viz.py: gpu_lbl = f\"{gpu[i]:.2f}s\" if gpu[i] >= 0.01 else f\"{gpu[i]*1000:.2f}ms\". A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/mailbox.py",
+      "value": 5,
+      "context": "for _page in range(5):",
+      "justification": "Use of 5 on this line of src/desk/mailbox.py: for _page in range(5):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/mailbox.py",
+      "value": 14,
+      "context": "return 14",
+      "justification": "Use of 14 on this line of src/desk/mailbox.py: return 14. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/mailbox.py",
+      "value": 993,
+      "context": "port = 993 if use_ssl else 143",
+      "justification": "Use of 993 on this line of src/desk/mailbox.py: port = 993 if use_ssl else 143. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/mailbox.py",
+      "value": 143,
+      "context": "port = 993 if use_ssl else 143",
+      "justification": "Use of 143 on this line of src/desk/mailbox.py: port = 993 if use_ssl else 143. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/mailbox.py",
+      "value": 30,
+      "context": "return opener.open(request, timeout=30)",
+      "justification": "Use of 30 on this line of src/desk/mailbox.py: return opener.open(request, timeout=30). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/mailbox.py",
+      "value": 4,
+      "context": "padding = \"=\" * (-len(encoded) % 4)",
+      "justification": "Use of 4 on this line of src/desk/mailbox.py: padding = \"=\" * (-len(encoded) % 4). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/mailbox.py",
+      "value": 30,
+      "context": "client = imaplib.IMAP4_SSL(host, port, ssl_context=_tls_context(), timeout=30)",
+      "justification": "Use of 30 on this line of src/desk/mailbox.py: client = imaplib.IMAP4_SSL(host, port, ssl_context=_tls_context(), timeout=30). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/mailbox.py",
+      "value": 30,
+      "context": "payload = _read_json(opener.open(request, timeout=30))",
+      "justification": "Use of 30 on this line of src/desk/mailbox.py: payload = _read_json(opener.open(request, timeout=30)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/mailbox.py",
+      "value": 30,
+      "context": "client = imaplib.IMAP4(host, port, timeout=30)",
+      "justification": "Use of 30 on this line of src/desk/mailbox.py: client = imaplib.IMAP4(host, port, timeout=30). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 8,
+      "context": "tail = text[start + len(token):start + len(token) + 8]",
+      "justification": "Use of 8 on this line of src/desk/parse.py: tail = text[start + len(token):start + len(token) + 8]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 12,
+      "context": "head = text[max(0, start - 12):start]",
+      "justification": "Use of 12 on this line of src/desk/parse.py: head = text[max(0, start - 12):start]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/service.py",
+      "value": 8,
+      "context": "tail = raw_text[match.end():match.end() + 8]",
+      "justification": "Use of 8 on this line of src/desk/service.py: tail = raw_text[match.end():match.end() + 8]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/service.py",
+      "value": 12,
+      "context": "head = raw_text[max(0, match.start() - 12):match.start()]",
+      "justification": "Use of 12 on this line of src/desk/service.py: head = raw_text[max(0, match.start() - 12):match.start()]. A different line that repeats the digits is not covered."
+    }
+  ]
+}

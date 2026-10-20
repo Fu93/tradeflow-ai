@@ -5,8 +5,8 @@ MV3 service workers + content scripts run for real), opens the mock sandbox over
 http (so host_permissions / match patterns apply exactly as in the demo), and
 drives the genuine flow:
 
-    supplier quote -> content script detects price -> port -> service worker
-    -> FastAPI /api/v1/.../round -> SESSION_UPDATED -> HUD + decision cards
+    supplier quote -> content script sends the raw message -> service worker
+    -> desk ingest -> confirm a token -> desk counter (or a simulated withhold)
 
 This exists because the extension had never been executed. Every assertion below
 is on REAL rendered DOM, not on source text.
@@ -65,22 +65,57 @@ def wait_for_port(port: int, seconds: float = 40.0) -> bool:
     return False
 
 
-def start_backend():
+def start_backend(api_key=None):
     """Start the FastAPI backend exactly as documented, isolated store."""
     tmp = tempfile.mkdtemp(prefix="tf_ext_backend_")
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONPATH"] = REPO
+    env.setdefault("TRADEFLOW_CHAIN_KEY", "test-chain-key")
     env["TRADEFLOW_DB_PATH"] = os.path.join(tmp, "sessions.db")
     env["TRADEFLOW_STORE_DIR"] = os.path.join(tmp, "sessions_json")
-    env.pop("TRADEFLOW_API_KEY", None)
     env.pop("TRADEFLOW_WEBHOOK_TOKEN", None)
+    if api_key:
+        env["TRADEFLOW_API_KEY"] = api_key
+        env["TRADEFLOW_DESK_DB"] = os.path.join(tmp, "desk.db")
+        env["DESK_N_SAMPLES"] = "40"
+        env["DESK_N_GRID"] = "8"
+    else:
+        env.pop("TRADEFLOW_API_KEY", None)
     log = open(os.path.join(tmp, "backend.log"), "w", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "-m", "src.app.main"],
         cwd=REPO, env=env, stdout=log, stderr=subprocess.STDOUT,
     )
     return proc, tmp, log
+
+
+def create_copilot_deal(api_key: str) -> tuple[str, str]:
+    """Four-supplier desk deal whose first name is the mock chat counterparty."""
+    import urllib.request
+
+    payload = json.dumps({
+        "product": "umbrella",
+        "quantity": 1000,
+        "target_price": 12,
+        "ceiling_price": 16.2,
+        "risk_tolerance": 0.5,
+        "suppliers": [
+            {"name": "浙江頂尖雨具製造實業有限公司", "address": "ningbo@example.test"},
+            {"name": "Wenzhou", "address": "wenzhou@example.test"},
+            {"name": "Yiwu", "address": "yiwu@example.test"},
+            {"name": "Foshan", "address": "foshan@example.test"},
+        ],
+    }).encode()
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{BACKEND_PORT}/api/v1/desk/deals",
+        data=payload,
+        headers={"Content-Type": "application/json", "X-API-Key": api_key},
+    )
+    with urllib.request.urlopen(request, timeout=60) as response:
+        created = json.loads(response.read().decode())
+    supplier = next(row for row in created["suppliers"] if "雨具" in row["name"])
+    return created["deal"]["id"], supplier["id"]
 
 
 def start_sandbox():
@@ -115,11 +150,18 @@ def main() -> int:
         if port_open(BACKEND_PORT):
             print(f"    backend already on :{BACKEND_PORT} -- reusing it")
         else:
-            backend, backend_tmp, backend_log = start_backend()
+            backend, backend_tmp, backend_log = start_backend(api_key="copilot-extension-e2e-key")
             if not wait_for_port(BACKEND_PORT):
                 print("    FATAL: backend did not come up")
                 return 1
             print(f"    backend started on :{BACKEND_PORT}")
+
+        copilot_key = "copilot-extension-e2e-key"
+        copilot_deal = ""
+        copilot_supplier = ""
+        if backend is not None:
+            copilot_deal, copilot_supplier = create_copilot_deal(copilot_key)
+            print(f"    desk deal {copilot_deal} supplier {copilot_supplier}")
 
         sandbox, sandbox_log = start_sandbox()
         if not wait_for_port(SANDBOX_PORT):
@@ -255,51 +297,88 @@ def main() -> int:
                 )
 
                 # ------------------------------------------------- supplier quote
-                print("\n[3] Supplier quote -> engine -> decision cards")
-                page.click("#btn-sim-quote")  # appends '...單價報價為 ¥15.60...'
+                print("\n[3] Supplier quote -> desk confirm, not a scraped counter")
+                if copilot_deal and sw is not None:
+                    sw.evaluate(
+                        """async ({key, deal, supplier}) => {
+                            await chrome.storage.local.set({
+                              tfApiKey: key, tfDeskDeal: deal, tfDeskSupplier: supplier,
+                            });
+                        }""",
+                        {"key": copilot_key, "deal": copilot_deal, "supplier": copilot_supplier},
+                    )
+                page.click("#btn-sim-quote")
                 status_text = ""
                 cards = 0
+                confirms = 0
                 deadline = time.time() + 90
                 while time.time() < deadline:
                     try:
-                        # One read: two evaluates can straddle the paint that
-                        # replaces "ENGINE SOLVING..." with the cards.
                         snap = page.evaluate(
                             """() => {
                                 const el = document.querySelector('[data-tradeflow="overlay"]');
-                                if (!el || !el.shadowRoot) return { status: '', cards: 0 };
+                                if (!el || !el.shadowRoot) return { status: '', cards: 0, confirms: 0 };
                                 const t = el.shadowRoot.querySelector('.tf-title');
                                 const s = el.shadowRoot.querySelector('.tf-subtext');
                                 return {
                                     status: (t ? t.innerText : '') + ' || ' + (s ? s.innerText : ''),
                                     cards: el.shadowRoot.querySelectorAll('.tf-copy-btn').length,
+                                    confirms: el.shadowRoot.querySelectorAll('.tf-confirm-btn').length,
                                 };
                             }"""
                         )
                         status_text = snap.get("status") or ""
                         cards = int(snap.get("cards") or 0)
+                        confirms = int(snap.get("confirms") or 0)
                     except Exception:
                         pass
-                    if cards >= 3 and "SOLVING" not in status_text.upper():
+                    if confirms >= 1 and "SOLVING" not in status_text.upper():
                         break
                     time.sleep(0.5)
 
                 print(f"    HUD status: {status_text.strip()[:160]}")
-                check("engine reached a settled HUD state (not stuck solving)",
-                      "SOLVING" not in status_text.upper(), status_text.strip()[:80])
-                check("3 decision cards rendered", cards == 3, f"copy buttons found = {cards}")
-
-                if cards >= 3:
-                    texts = hud.evaluate(
-                        """el => Array.from(el.shadowRoot.querySelectorAll('.tf-copy-btn'))
-                                   .map(b => decodeURIComponent(b.getAttribute('data-text') || ''))"""
+                check("engine reached a confirm step (not stuck solving, not HTTP 404)",
+                      "SOLVING" not in status_text.upper() and "404" not in status_text,
+                      status_text.strip()[:120])
+                check("scraped price did not render decision cards",
+                      cards == 0, f"copy buttons found = {cards}")
+                check("confirm buttons offer a token from the message",
+                      confirms >= 1, f"confirm buttons = {confirms}")
+                if confirms >= 1:
+                    page.evaluate(
+                        """() => {
+                            const el = document.querySelector('[data-tradeflow="overlay"]');
+                            const btn = el && el.shadowRoot && el.shadowRoot.querySelector('.tf-confirm-btn');
+                            if (btn) btn.click();
+                        }"""
                     )
-                    joined = " ".join(texts)
-                    print(f"    card[0]: {texts[0][:110]}")
-                    check("cards contain real CNY figures (not placeholders)",
-                          "¥" in joined and "--" not in joined.replace("-- ", ""), joined[:80])
-                    check("cards carry an authorised price from the engine",
-                          any(c.isdigit() for c in joined))
+                    confirmed = ""
+                    deadline = time.time() + 60
+                    while time.time() < deadline:
+                        confirmed = page.evaluate(
+                            """() => {
+                                const el = document.querySelector('[data-tradeflow="overlay"]');
+                                if (!el || !el.shadowRoot) return '';
+                                const t = el.shadowRoot.querySelector('.tf-title');
+                                const s = el.shadowRoot.querySelector('.tf-subtext');
+                                return (t ? t.innerText : '') + ' || ' + (s ? s.innerText : '');
+                            }"""
+                        ) or ""
+                        if "CONFIRM A PRICE" not in confirmed.upper() and "SOLVING" not in confirmed.upper():
+                            break
+                        time.sleep(0.4)
+                    priced = page.evaluate(
+                        """() => {
+                            const el = document.querySelector('[data-tradeflow="overlay"]');
+                            if (!el || !el.shadowRoot) return 0;
+                            return el.shadowRoot.querySelectorAll('.tf-copy-btn').length;
+                        }"""
+                    )
+                    print(f"    after confirm: {confirmed.strip()[:160]}")
+                    check("confirm does not invent a live counter on the simulated page",
+                          "404" not in confirmed and int(priced or 0) == 0
+                          and "SIMULATED" in confirmed.upper(),
+                          confirmed.strip()[:120])
 
                 # ------------------------------------------------------ captcha
                 print("\n[4] Captcha sentinel (compliance gate)")
@@ -368,13 +447,14 @@ def main() -> int:
                             return el.shadowRoot.querySelectorAll('.tf-copy-btn').length;
                         }"""
                     )
-                    if "CAPTCHA" not in recovered.upper() and recovered_cards >= 3:
+                    if "CAPTCHA" not in recovered.upper() and "CONFIRM" in recovered.upper():
                         break
                     time.sleep(0.5)
                 check("captcha recovery un-freezes the HUD on next quote (no permanent freeze)",
                       "CAPTCHA" not in recovered.upper(), f"status now: {recovered[:70]}")
-                check("decision cards render again after captcha recovery",
-                      recovered_cards >= 3, f"cards={recovered_cards}")
+                check("recovery asks for a confirmation instead of priced cards",
+                      "CONFIRM" in recovered.upper() and recovered_cards == 0,
+                      f"status={recovered[:70]} cards={recovered_cards}")
 
                 # ---------------------------------------------------- side panel
                 print("\n[5] Side panel renders without fabricated numbers")
@@ -433,19 +513,18 @@ def main() -> int:
                             timeline: document.querySelectorAll('.timeline-turn').length,
                         })"""
                     )
-                    if (live.get("target") != "--" and live.get("risk") != "--"
-                            and "—" not in live.get("round", "—")):
+                    if live.get("target") not in ("--", "", None):
                         break
                     time.sleep(0.4)
                 print("    live panel: " + json.dumps(live, ensure_ascii=False))
-                check("panel shows the live target price", live.get("target") not in ("--", ""),
+                check("panel shows the desk target, not the scraped quote",
+                      "12" in str(live.get("target") or "") and "14.80" not in str(live.get("target") or ""),
                       f"target={live.get('target')!r}")
-                check("panel shows a live breakdown risk (copilot has turn=null)",
-                      live.get("risk") not in ("--", ""),
-                      f"risk={live.get('risk')!r} (read from action_object.breakdown_risk)")
-                check("panel shows a round counter, not a placeholder",
-                      "—" not in str(live.get("round", "—")), f"round={live.get('round')!r}")
-                check("panel rendered the turn timeline", int(live.get("timeline") or 0) > 0,
+                check("panel does not invent a round from a scraped price",
+                      "404" not in str(live.get("status") or ""),
+                      f"round={live.get('round')!r} status={live.get('status')!r}")
+                check("panel does not invent a turn timeline from /round",
+                      int(live.get("timeline") or 0) == 0,
                       f"rows={live.get('timeline')}")
                 check("panel has no runtime errors while rendering live data",
                       not any("PAGEERROR" in c for c in sp_console),
@@ -472,16 +551,16 @@ def main() -> int:
                 check("sandbox tab is labelled Simulator",
                       gate.get("badge") == "Simulator",
                       f"badge={gate.get('badge')!r} url={gate.get('url')!r}")
-                check("approval gate is Pending while the buyer has not decided",
-                      gate.get("state") == "Pending", f"state={gate.get('state')!r}")
-                check("approval action comes from the engine payload",
-                      bool(gate.get("action")) and gate.get("action") != "--",
+                check("approval gate stays empty until a desk counter exists",
+                      gate.get("state") in ("--", "", None), f"state={gate.get('state')!r}")
+                check("approval action is not invented from a scraped price",
+                      gate.get("action") in ("--", "", None),
                       f"action={gate.get('action')!r}")
-                check("approval price is an engine figure",
-                      "¥" in str(gate.get("price")) and gate.get("price") != "--",
+                check("approval price is not invented from a scraped price",
+                      gate.get("price") in ("--", "", None),
                       f"price={gate.get('price')!r}")
-                check("approval evidence is present",
-                      bool(gate.get("evidence")) and gate.get("evidence") != "--",
+                check("approval evidence is not invented from a scraped price",
+                      gate.get("evidence") in ("--", "", None),
                       f"evidence={str(gate.get('evidence'))[:80]!r}")
                 check("gate says the buyer pastes and sends",
                       "you paste and send; TradeFlow never sends" in str(gate.get("note")))
@@ -492,18 +571,29 @@ def main() -> int:
                 states = sp.evaluate(
                     """() => {
                         const live = lastRoundPayload;
-                        if (!live) return { error: 'no payload' };
-                        const saved = JSON.parse(JSON.stringify(live));
-                        const price = document.getElementById('approval-price').innerText.trim();
-                        const out = { price };
+                        const saved = live ? JSON.parse(JSON.stringify(live)) : null;
+                        const fixture = {
+                          pending_human_approval: true,
+                          awaiting_human_approval: true,
+                          autopilot_state: 'AWAITING_HUMAN_DECISION',
+                          recommended_offer_price: 12.4,
+                          session: { state: 'AWAITING_HUMAN_DECISION', history: [] },
+                          action_object: { authorized_price: 12.4, source_round_id: 'round-a' },
+                        };
+                        const out = {};
                         const paint = (extra) => {
-                          const copy = JSON.parse(JSON.stringify(saved));
+                          const copy = JSON.parse(JSON.stringify(fixture));
                           Object.assign(copy, extra);
                           if (!copy.session) copy.session = {};
                           if (extra.state) copy.session.state = extra.state;
+                          if (extra.source_round_id) {
+                            copy.action_object.source_round_id = extra.source_round_id;
+                          }
                           renderEngineData(copy);
                           return document.getElementById('approval-state').innerText.trim();
                         };
+                        paint({ source_round_id: 'round-a' });
+                        out.price = document.getElementById('approval-price').innerText.trim();
                         out.approved = paint({
                           pending_human_approval: false,
                           awaiting_human_approval: false,
@@ -517,18 +607,21 @@ def main() -> int:
                           autopilot_state: 'WALK_AWAY',
                           state: 'WALK_AWAY',
                         });
-                        renderEngineData(saved);
-                        const next = JSON.parse(JSON.stringify(saved));
-                        next.pending_human_approval = false;
-                        next.awaiting_human_approval = false;
-                        next.autopilot_state = 'COPILOT_MONITORING';
-                        if (!next.session) next.session = {};
-                        next.session.state = 'COPILOT_MONITORING';
-                        if (!next.action_object) next.action_object = {};
-                        next.action_object.source_round_id = String(next.action_object.source_round_id || 'round') + '-later';
-                        renderEngineData(next);
+                        paint({
+                          pending_human_approval: true,
+                          source_round_id: 'round-a',
+                          autopilot_state: 'AWAITING_HUMAN_DECISION',
+                          state: 'AWAITING_HUMAN_DECISION',
+                        });
+                        paint({
+                          pending_human_approval: false,
+                          awaiting_human_approval: false,
+                          source_round_id: 'round-b',
+                          autopilot_state: 'COPILOT_MONITORING',
+                          state: 'COPILOT_MONITORING',
+                        });
                         out.superseded = document.getElementById('approval-state').innerText.trim();
-                        renderEngineData(saved);
+                        if (saved) renderEngineData(saved);
                         out.restored = document.getElementById('approval-state').innerText.trim();
                         out.restoredPrice = document.getElementById('approval-price').innerText.trim();
                         return out;
@@ -545,8 +638,9 @@ def main() -> int:
                 check("approval card can show Superseded",
                       states.get("superseded") == "Superseded", f"got={states.get('superseded')!r}")
                 check("live gate is restored after the state check",
-                      states.get("restored") == "Pending" and states.get("restoredPrice") == states.get("price"),
-                      f"state={states.get('restored')!r}")
+                      states.get("restored") in ("--", "", None)
+                      and states.get("restoredPrice") in ("--", "", None),
+                      f"state={states.get('restored')!r} price={states.get('restoredPrice')!r}")
 
                 badges = sp.evaluate(
                     """() => {
@@ -682,14 +776,12 @@ def main() -> int:
                 sp.emulate_media(color_scheme="light")
 
                 # ------------------------------------------------ mobile command
-                print("\n[6] Tactical command path (2 = hold firm)")
-                sp.click("#btn-hold")
-                sp.wait_for_timeout(3000)
-                fb = sp.locator("body").inner_text()
-                print(f"    panel text after command: {fb[:120].replace(chr(10), ' ')}")
-                check("side panel reports a command outcome (no silent no-op)",
-                      ("Hold" in fb or "command" in fb.lower() or "dispatched" in fb.lower()
-                       or "not applied" in fb.lower() or "OK" in fb))
+                print("\n[6] Tactical command stays locked without a desk counter")
+                reason = sp.locator("#gate-reason").inner_text()
+                check("a scraped price does not enable hold",
+                      sp.locator("#btn-hold").is_disabled()
+                      and "not computed" in reason.lower(),
+                      f"reason={reason!r}")
 
                 # ------------------------------------------------- error + empty
                 print("\n[6b] Error banner, teaching empty, overflow")
@@ -714,15 +806,15 @@ def main() -> int:
                 check("failed load labels the source Unreachable",
                       badge_down == "Unreachable", f"badge={badge_down!r}")
                 sp.click("#btn-retry")
-                recovered_price = "--"
+                recovered_price = "pending"
                 for _ in range(40):
                     if not sp.locator("#error-banner").is_visible():
                         recovered_price = sp.locator("#approval-price").inner_text().strip()
-                        if recovered_price and recovered_price != "--":
-                            break
+                        break
                     time.sleep(0.25)
-                check("Retry clears the error and restores the engine price",
-                      not sp.locator("#error-banner").is_visible() and recovered_price not in ("", "--"),
+                check("Retry clears the error and does not invent a counter",
+                      not sp.locator("#error-banner").is_visible()
+                      and recovered_price in ("", "--"),
                       f"price={recovered_price!r}")
 
                 def overflow_at(width):
@@ -808,6 +900,88 @@ def main() -> int:
                 check("no uncaught page errors on the sandbox page",
                       not any("PAGEERROR" in c for c in console),
                       "; ".join(c for c in console if "PAGEERROR" in c)[:200])
+
+                if backend is not None:
+                    print("\n[8] Desk import uses the key typed into the panel")
+                    import urllib.request
+                    try:
+                        backend.terminate()
+                        backend.wait(timeout=10)
+                    except Exception:
+                        try:
+                            backend.kill()
+                        except Exception:
+                            pass
+                    if backend_log is not None:
+                        try:
+                            backend_log.close()
+                        except Exception:
+                            pass
+                    deadline = time.time() + 15
+                    while time.time() < deadline and port_open(BACKEND_PORT):
+                        time.sleep(0.2)
+                    previous_tmp = backend_tmp
+                    desk_key = "desk-extension-e2e-key"
+                    backend, backend_tmp, backend_log = start_backend(api_key=desk_key)
+                    if previous_tmp:
+                        shutil.rmtree(previous_tmp, ignore_errors=True)
+                    came_up = wait_for_port(BACKEND_PORT)
+                    check("keyed desk backend came up", came_up, "port 8000")
+                    deal_id = ""
+                    if came_up:
+                        payload = json.dumps({
+                            "product": "umbrella",
+                            "quantity": 1000,
+                            "target_price": 12,
+                            "ceiling_price": 20,
+                            "risk_tolerance": 0.5,
+                            "suppliers": [
+                                {"name": "浙江頂尖雨具製造實業有限公司", "address": "ningbo@example.test"},
+                                {"name": "Wenzhou", "address": "wenzhou@example.test"},
+                                {"name": "Yiwu", "address": "yiwu@example.test"},
+                                {"name": "Foshan", "address": "foshan@example.test"},
+                            ],
+                        }).encode()
+                        request = urllib.request.Request(
+                            f"http://127.0.0.1:{BACKEND_PORT}/api/v1/desk/deals",
+                            data=payload,
+                            headers={"Content-Type": "application/json", "X-API-Key": desk_key},
+                        )
+                        with urllib.request.urlopen(request, timeout=60) as response:
+                            created = json.loads(response.read().decode())
+                        deal_id = created["deal"]["id"]
+                        sp.locator("#tab-desk").click()
+                        sp.locator("#desk-api-key").fill(desk_key)
+                        sp.locator("#desk-deal-id").fill(deal_id)
+                        page.bring_to_front()
+                        page.locator("#btn-sim-quote").click()
+                        sp.evaluate(
+                            "() => { document.getElementById('desk-import-status').textContent = ''; }"
+                        )
+                        sp.evaluate("() => document.getElementById('btn-desk-import').click()")
+                        status = ""
+                        for _wait in range(40):
+                            status = sp.locator("#desk-import-status").inner_text()
+                            if "simulated" in status.lower() or "review" in status.lower():
+                                break
+                            time.sleep(0.25)
+                        check(
+                            "typed API key imports the visible simulated message",
+                            "simulated" in status.lower(),
+                            status,
+                        )
+                        quoted = urllib.request.Request(
+                            f"http://127.0.0.1:{BACKEND_PORT}/api/v1/desk/deals/{deal_id}",
+                            headers={"X-API-Key": desk_key},
+                        )
+                        with urllib.request.urlopen(quoted, timeout=30) as response:
+                            snapshot = json.loads(response.read().decode())
+                        review = snapshot.get("review") or []
+                        check(
+                            "imported message stays in review",
+                            any((item.get("provenance") or {}).get("simulated") for item in review),
+                            f"review={len(review)}",
+                        )
 
             finally:
                 ctx.close()

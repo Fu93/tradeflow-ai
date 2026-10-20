@@ -1,0 +1,19 @@
+-r requirements.txt
+
+# Test runner and coverage. Not imported by the service.
+pytest>=8.0
+pytest-cov>=5.0
+
+# Workflow YAML guard in tests/test_ci_workflow_validity.py.
+PyYAML>=6.0
+
+# Extension end-to-end job. The browsers still need
+# `python -m playwright install --with-deps chromium`.
+playwright>=1.40
+
+# Phase-1 lint and type check. CI runs these before pytest.
+ruff>=0.6
+mypy>=1.11
+
+# Weekly-style dependency audit. CI runs it on the runtime lock.
+pip-audit>=2.7

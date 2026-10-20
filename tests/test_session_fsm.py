@@ -33,6 +33,7 @@ class TestSessionFSM(unittest.TestCase):
             target_price=12.0,
             ceiling_price=16.2,
             moq=500,
+            expected_markup=0.0,
         )
         session = self.manager.create_session(spec)
 
@@ -59,6 +60,7 @@ class TestSessionFSM(unittest.TestCase):
             product_name="auto umbrella",
             target_price=12.0,
             ceiling_price=16.2,
+            expected_markup=0.0,
         )
         self.manager.create_session(spec)
 
@@ -96,6 +98,7 @@ class TestSessionFSM(unittest.TestCase):
             product_name="test product",
             target_price=10.0,
             ceiling_price=13.5,
+            expected_markup=0.0,
         )
         self.manager.create_session(spec)
 
@@ -130,6 +133,7 @@ class TestSessionFSM(unittest.TestCase):
             product_name="guard test",
             target_price=10.0,
             ceiling_price=13.5,
+            expected_markup=0.0,
         )
         self.manager.create_session(spec)
 
@@ -146,8 +150,12 @@ class TestSessionFSM(unittest.TestCase):
             self.manager.transition_state("sess_004", AutopilotState.AUTOPILOT_CRUISING)
 
     def test_list_sessions(self):
-        spec1 = SessionSpec(session_id="s_a", product_name="A", target_price=10.0, ceiling_price=13.0)
-        spec2 = SessionSpec(session_id="s_b", product_name="B", target_price=20.0, ceiling_price=26.0)
+        spec1 = SessionSpec(session_id="s_a", product_name="A", target_price=10.0, ceiling_price=13.0,
+            expected_markup=0.0,
+        )
+        spec2 = SessionSpec(session_id="s_b", product_name="B", target_price=20.0, ceiling_price=26.0,
+            expected_markup=0.0,
+        )
         self.manager.create_session(spec1)
         self.manager.create_session(spec2)
 
