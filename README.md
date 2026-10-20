@@ -27,6 +27,12 @@ Each desk step has a guard, a test, and a chain record. A failed check withholds
 | T9 Send | human approval; `_guard_send` re-derives the counter from the stored record | `tests/steps/test_t9_send.py` | `send_approved`, `send_result` |
 | T10 Audit | HMAC-SHA256 chain keyed by `TRADEFLOW_CHAIN_KEY`; append-only; verify endpoint reports `anchor not configured` when no anchor is set | `tests/steps/test_t10_audit.py` | `GET /api/v1/desk/deals/{id}/audit/verify` |
 | T11 Release | ruff, mypy, 90% phase-1 coverage, hash-pinned locks, pip-audit | `.github/workflows/ci.yml` | CI log |
+| P2a unit basis | a Chinese measure word or a pack is a unit basis, recorded on the quote; review reason is `unit mismatch` and the candidate stays prefilled; a stated pack count normalises only when `UNIT_BASIS_FROM_MESSAGE` is 1 | `tests/steps/test_phase2a_cny.py` | `quote_ingested` `unit_basis` |
+| P2a implicit RMB | a bare number with a Chinese price cue on a CNY deal is a CNY candidate, evidence `implicit currency from deal + language`, prefilled for confirm; implicit currency alone does not accept unless `IMPLICIT_CNY_AUTO_ACCEPT` is 1 | `tests/steps/test_phase2a_cny.py` | `quote_ingested` `currency_evidence` |
+| P2a fees | `元/小时`, `元/天`, `元/次`, 运费, 打样费, 开模费, 服务费, and 手续费 are fee lines and never the unit price | `tests/steps/test_phase2a_cny.py` | `quote_ingested` provenance `fee_lines` |
+| P2a speaker | buyer text, a rival or market reference, and 不到/低于/高于/大概/左右/最多/至少/比…便宜 are labelled references, not a confirmable supplier price | `tests/steps/test_phase2a_cny.py` | `quote_ingested` provenance `labelled_references` |
+| P2a agreement | the shadow gate validates the extractor's verbatim span (unit, currency, speaker, polarity, unit basis, band); a MOQ and a price in one span split by role; `applied` stays false | `tests/steps/test_phase2a_cny.py` | shadow fields on the quote provenance |
+| P2a extractor ops | NVIDIA HTTP 404 `Function not found for account` disables that hop and `/health` says so; a burst import starts each message's budget when its call starts; a message longer than `EXTRACTOR_SUPER_DIRECT_CHARS` skips Ultra and calls Super | `tests/steps/test_phase2a_cny.py` | `/health` `nvidia` and `extractor_import`; `extractor_result` attempts |
 
 | Evidence tier | What it covers |
 |---|---|

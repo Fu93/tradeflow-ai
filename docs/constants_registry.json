@@ -878,6 +878,21 @@
       "category": "d",
       "justification": "ISO code for the yuan. A deal stores its own currency. This is the parser's yuan code and the labelled default when the caller omits one."
     },
+    "IMPLICIT_CNY_AUTO_ACCEPT": {
+      "value": 0,
+      "category": "d",
+      "justification": "Labelled policy. A bare number in a Chinese message on a CNY deal is a review candidate. It is accepted only when this value is 1. The default leaves it for a person."
+    },
+    "UNIT_BASIS_FROM_MESSAGE": {
+      "value": 0,
+      "category": "d",
+      "justification": "Labelled policy. A pack count written beside a bundle price converts into the deal unit only when this value is 1. The default does not divide it."
+    },
+    "EXTRACTOR_SUPER_DIRECT_CHARS": {
+      "value": 24000,
+      "category": "d",
+      "justification": "Character length above which the extractor skips the Ultra hop and calls Super. A longer supplier message was timing out on Ultra."
+    },
     "DEAL_CURRENCIES": {
       "value": ["CNY", "USD", "EUR"],
       "category": "d",

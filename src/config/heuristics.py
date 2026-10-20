@@ -592,6 +592,20 @@ SMALL_GAP_KNOT = 0.10
 # and the labelled default when a caller omits the deal currency.
 DEAL_CURRENCY = "CNY"
 
+# Rationale: labelled policy for a bare number in a Chinese supplier message
+# on a CNY deal. The number is a review candidate either way. It is accepted
+# only when this value is 1. The default 0 leaves that confirm to a person.
+IMPLICIT_CNY_AUTO_ACCEPT = 0
+
+# Rationale: labelled policy for a pack count the supplier wrote beside a
+# bundle price. That count converts into the deal unit only when this value
+# is 1. The default 0 records the bundle and does not divide it.
+UNIT_BASIS_FROM_MESSAGE = 0
+
+# Rationale: supplier-message length, in characters, above which the extractor
+# skips the Ultra hop and calls Super. A longer message was timing out on Ultra.
+EXTRACTOR_SUPER_DIRECT_CHARS = 24000
+
 # Rationale: currencies a deal may store. The decision reads the deal row.
 # It does not pick one of these itself.
 DEAL_CURRENCIES = ["CNY", "USD", "EUR"]

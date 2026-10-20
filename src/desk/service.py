@@ -102,6 +102,8 @@ _EXTRACTOR_THREADS: dict[str, _ExtractorJob] = {}
 _EXTRACTOR_THREADS_GUARD = threading.Lock()
 _EXTRACTOR_POOL: concurrent.futures.ThreadPoolExecutor | None = None
 _EXTRACTOR_POOL_GUARD = threading.Lock()
+_IMPORT_GUARD = threading.Lock()
+_IMPORT_STATUS = {"queued": 0, "running": 0, "finished": 0}
 
 
 def deal_lock(deal_id: str) -> threading.Lock:
@@ -384,7 +386,11 @@ def _quantity_token(raw_text: str, token: str) -> bool:
         tail = raw_text[match.end():match.end() + 8]
         if re.search(r"(?i)(?:moq|起订量|起訂量|起订|起訂|最少|数量|數量)\s*$", head):
             return True
-        if re.match(r"(?i)\s*(?:个|件|只|pcs|pc|pieces|k)(?:\b|(?=[\u4e00-\u9fff])|$)", tail):
+        if re.match(
+            r"(?i)\s*(?:个|個|件|只|隻|条|條|双|雙|套|台|臺|箱|斤|公斤|千克|米|包|盒|打|立方|pcs|pc|pieces|k)"
+            r"(?:\b|(?=[\u4e00-\u9fff])|$)",
+            tail,
+        ):
             return True
     return False
 
@@ -488,6 +494,9 @@ def _ingest_locked(
                 "supplier_id": event.get("supplier_id"),
                 "message_id": message_id_or_blank(provenance.get("message_id")),
                 "references": references_or_blank(provenance.get("references")),
+                "unit_basis": list(provenance.get("unit_basis") or []),
+                "currency_evidence": str(provenance.get("currency_evidence") or ""),
+                "review_reason": str(provenance.get("review_reason") or ""),
             },
         )
         store.append_chain(
@@ -506,6 +515,26 @@ def _ingest_locked(
     snapshot = publish(store, deal_id)
     _maybe_gmail_drafts(store, deal_id, snapshot)
     return {"duplicate": False, "event": event, "snapshot": store.get_snapshot(deal_id)}
+
+
+def import_status() -> dict[str, Any]:
+    """Queue depth for a burst import. The per-message budget starts when the call starts."""
+    with _IMPORT_GUARD:
+        snap = {key: int(value) for key, value in _IMPORT_STATUS.items()}
+    snap["concurrency"] = int(EXTRACTOR_MAX_IN_FLIGHT)
+    return snap
+
+
+def reset_import_status() -> None:
+    with _IMPORT_GUARD:
+        _IMPORT_STATUS["queued"] = 0
+        _IMPORT_STATUS["running"] = 0
+        _IMPORT_STATUS["finished"] = 0
+
+
+def _import_move(field: str, delta: int) -> None:
+    with _IMPORT_GUARD:
+        _IMPORT_STATUS[field] = int(_IMPORT_STATUS.get(field) or 0) + delta
 
 
 def _extractor_pool() -> concurrent.futures.ThreadPoolExecutor:
@@ -653,17 +682,20 @@ def _schedule_extractor(
     high = float(prepared.get("high") or 0.0)
     from src.desk.extract import EXTRACTOR_TIMEOUT_BUDGET_SECONDS, _hop_timeout
 
-    queued = time.monotonic()
     budget = _hop_timeout(
         "TRADEFLOW_EXTRACTOR_TIMEOUT_BUDGET", float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS)
     )
     job = _ExtractorJob()
+    _import_move("queued", 1)
 
     def _run() -> None:
+        _import_move("queued", -1)
+        _import_move("running", 1)
         try:
             from src.desk.shadow import shadow_from_message
 
-            remaining = time_left(budget, queued)
+            # Queue wait is not part of this message's budget. The clock starts here.
+            remaining = time_left(budget, time.monotonic())
             if remaining <= 0:
                 finished = _failed_shadow()
                 finished["error"] = "extractor_unreachable"
@@ -685,6 +717,8 @@ def _schedule_extractor(
         except Exception as exc:
             logger.warning("desk extractor result was not stored: %s", type(exc).__name__)
         finally:
+            _import_move("running", -1)
+            _import_move("finished", 1)
             job.finish()
             with _EXTRACTOR_THREADS_GUARD:
                 if _EXTRACTOR_THREADS.get(event_id) is job:
@@ -758,6 +792,11 @@ def accept_review(
             raise DeskRejected("Accept confirms only the amount shown from the message.")
         if _quantity_token(event["raw_text"], chosen_token):
             raise DeskRejected("That amount is a quantity, not a unit price.")
+        from src.desk.parse import token_issue
+
+        issue = token_issue(event["raw_text"], chosen_token, deal_currency=currency)
+        if issue:
+            raise DeskRejected(issue)
         price = price_from_token(event["raw_text"], chosen_token, deal_currency=currency)
         if price is None:
             raise DeskRejected("That amount is not a unit price in the deal currency.")
@@ -2085,6 +2124,7 @@ def ingest_mailbox_items(
                         _seen_key(mailbox_key, target),
                         f"uid:{validity}:{uid_key}",
                     )
+    counts["extractor_import"] = import_status()
     return counts
 
 
