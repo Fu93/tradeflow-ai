@@ -379,21 +379,54 @@ def _for_rules(clause: str) -> str:
 
 _USD = re.compile(r"(?i)(?:usd|us\s+dollars?|u\.s\.\s+dollars?|美元|美金|\$|\bdollars?\b)")
 _EUR = re.compile(r"(?i)(?:eur|euros?|欧元|歐元|€)")
+_CONVERSION_PAREN = re.compile(r"（[^）]{0,80}）|\([^)]{0,96}\)")
+_CONVERSION_CUE = re.compile(
+    r"(?i)(?:\b(?:about|approx(?:imately)?|around|roughly|circa)\b|大约|大約|约合|約合|折合|约|約|≈)"
+)
+
+
+def _is_conversion_paren(text: str) -> bool:
+    """A parenthetical FX aside, not a second price."""
+    if not _CONVERSION_CUE.search(text):
+        return False
+    named = _USD.search(text) or _EUR.search(text) or _CNY.search(text) or _FOREIGN.search(text)
+    return bool(named and _TOKEN.search(text))
+
+
+def _conversion_spans(text: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    for match in _CONVERSION_PAREN.finditer(text or ""):
+        if _is_conversion_paren(match.group(0)):
+            spans.append((match.start(), match.end()))
+    return spans
+
+
+def _clause_without_conversions(clause: str) -> str:
+    chars = list(clause)
+    for start, end in _conversion_spans(clause):
+        for index in range(start, min(end, len(chars))):
+            chars[index] = " "
+    return "".join(chars)
 
 
 def _kind_for(pre: str, post: str, clause: str) -> str | None:
-    """Currency of this amount. Two currency families on the clause stay unconfirmed."""
+    """Currency of this amount. Two currency families on the clause stay unconfirmed.
+
+    A parenthetical conversion ('about USD x' beside a CNY price) is not a
+    second family, so the primary amount stays confirmable.
+    """
     kind = _currency_of(pre, post)
+    counted = _clause_without_conversions(clause)
     families = 0
-    if _USD.search(clause):
+    if _USD.search(counted):
         families += 1
-    if _EUR.search(clause):
+    if _EUR.search(counted):
         families += 1
-    if _CNY.search(clause):
+    if _CNY.search(counted):
         families += 1
     if families > 1:
         return "foreign"
-    if kind is None and _USD.search(clause):
+    if kind is None and _USD.search(counted):
         return "USD"
     return kind
 
@@ -580,6 +613,7 @@ def _collect(
     competing: list[dict[str, Any]] = []
     review_tokens: list[dict[str, Any]] = []
     ranges = _range_spans(text)
+    conversions = _conversion_spans(text)
     for match in _AMOUNT.finditer(text):
         token = match.group("num")
         pre = match.group("pre") or ""
@@ -588,7 +622,7 @@ def _collect(
         if value is None or token not in text or _glued_amount(text, match):
             continue
         span = (match.start(), match.end())
-        if _inside(span, ranges):
+        if _inside(span, ranges) or _inside(span, conversions):
             continue
         left, _right = _clause_span(text, match.start("num"))
         clause = text[left:_right]
@@ -874,11 +908,14 @@ def price_from_token(raw_text: str, token: str, deal_currency: str | None = None
     visible = _visible_text(raw_text)
     if token not in visible:
         return None
+    conversions = _conversion_spans(visible)
     matched = None
     bare_value = None
     other = False
     for match in _AMOUNT.finditer(visible):
         if match.group("num") != token or _glued_amount(visible, match):
+            continue
+        if _inside((match.start(), match.end()), conversions):
             continue
         left, right = _clause_span(visible, match.start("num"))
         kind = _kind_for(match.group("pre") or "", match.group("post") or "", visible[left:right])

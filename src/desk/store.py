@@ -615,6 +615,7 @@ class DeskStore:
         reply_to: str | None = None,
         references_header: str | None = None,
         decision_id: str | None = None,
+        require_new: bool = False,
     ) -> dict[str, Any]:
         """Freeze the previous draft when the text changes.
 
@@ -631,6 +632,8 @@ class DeskStore:
                 (deal_id, supplier_id),
             ).fetchall()
             for existing in rows:
+                if require_new:
+                    break
                 if existing["body"] == body and existing["status"] in {
                     "draft",
                     "sent",
@@ -755,6 +758,10 @@ class DeskStore:
     def verify_links(self, deal_id: str) -> dict[str, Any]:
         with self._lock:
             return audit_chain.verify_links(self.conn, deal_id)
+
+    def anchor_is_pending(self, deal_id: str) -> bool:
+        with self._lock:
+            return audit_chain._pending_anchor(self.conn, deal_id)
 
     def append_decision(self, record: dict[str, Any], record_sha256: str) -> str:
         with self._lock:

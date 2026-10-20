@@ -53,6 +53,12 @@ def chained_supplier(entries: list[dict[str, Any]], supplier_id: str) -> dict[st
                 "name": str(payload.get("name") or ""),
                 "address": str(payload.get("address") or ""),
             }
+        elif entry.get("type") == "supplier_kept" and payload.get("confirmed_by") == "human":
+            found = {
+                "id": str(supplier_id),
+                "name": str(payload.get("name") or (found or {}).get("name") or ""),
+                "address": str(payload.get("address") or (found or {}).get("address") or ""),
+            }
         elif entry.get("type") == "supplier_address" and payload.get("confirmed_by") == "human":
             found = {
                 "id": str(supplier_id),

@@ -24,7 +24,7 @@ from src.config.heuristics import (
     UNIT_SANITY_MULTIPLE,
 )
 from src.desk import mailbox, recompute
-from src.desk.audit_chain import chain_key_configured
+from src.desk.audit_chain import chain_key_configured, reanchor_refusal
 from src.desk.extract import time_left
 from src.desk.input_checks import message_id_or_blank, references_or_blank, require_address, require_plain
 from src.desk.names import supplier_name_key
@@ -898,8 +898,20 @@ def confirm_policy(
     if risk < float(RISK_TOLERANCE_FLOOR) or risk > float(RISK_TOLERANCE_MAX):
         raise DeskRejected("Risk tolerance is outside the configured range.")
     with deal_lock(deal_id):
-        if store.get_deal(deal_id) is None:
+        deal = store.get_deal(deal_id)
+        if deal is None:
             raise KeyError(deal_id)
+        opened = _deal_opened(list(store.verify_links(deal_id).get("entries") or []))
+        if not opened.get("migrated"):
+            raise DeskRejected("Policy confirmation is for a migrated deal.")
+        previous = {
+            "product": str(deal.get("product") or ""),
+            "quantity": int(deal.get("quantity") or 0),
+            "target_price": float(deal.get("target_price") or 0.0),
+            "ceiling": float(deal.get("ceiling_price") or 0.0),
+            "risk_tolerance": float(deal.get("risk_tolerance") or 0.0),
+            "currency": str(deal.get("currency") or ""),
+        }
         store.update_limits(
             deal_id,
             product=product.strip(),
@@ -920,6 +932,7 @@ def confirm_policy(
                 "ceiling": float(ceiling_price),
                 "risk_tolerance": risk,
                 "currency": code,
+                "previous": previous,
             },
         )
         return publish(store, deal_id)
@@ -946,6 +959,9 @@ def reanchor_deal(store: DeskStore, deal_id: str, *, human_confirmed: bool) -> d
         links = store.verify_links(deal_id)
         if not links["ok"]:
             raise DeskRejected("The audit chain does not verify. Re-anchor will not sign a broken chain.")
+        refusal = reanchor_refusal(deal_id, list(links.get("entries") or []))
+        if refusal:
+            raise DeskRejected(refusal)
         written = store.append_chain(
             deal_id,
             "reanchor",
@@ -1015,6 +1031,33 @@ def reopen_supplier(
             deal_id,
             "reopen_supplier",
             {"supplier_id": supplier_id, "confirmed_by": "human"},
+        )
+        return publish(store, deal_id)
+
+
+def confirm_keep_supplier(
+    store: DeskStore,
+    deal_id: str,
+    supplier_id: str,
+    *,
+    human_confirmed: bool,
+) -> dict[str, Any]:
+    """A supplier row that appeared after migration stays out until a person keeps it."""
+    if human_confirmed is not True:
+        raise DeskRejected("A person has to keep this supplier.")
+    with deal_lock(deal_id):
+        supplier = store.supplier(deal_id, supplier_id)
+        if supplier is None:
+            raise KeyError(supplier_id)
+        store.append_chain(
+            deal_id,
+            "supplier_kept",
+            {
+                "supplier_id": supplier_id,
+                "name": str(supplier.get("name") or ""),
+                "address": str(supplier.get("address") or ""),
+                "confirmed_by": "human",
+            },
         )
         return publish(store, deal_id)
 
@@ -1363,6 +1406,22 @@ def _lists_close(left: Any, right: Any) -> bool:
     return all(_close_amount(item, other) for item, other in zip(first, second, strict=True))
 
 
+def _constants_only_drift(record: dict[str, Any], recomputed: dict[str, Any]) -> bool:
+    """The counter still matches. Only the deployed constants hash moved."""
+    counter = record.get("counter")
+    fresh = recomputed.get("counter")
+    ceiling = record.get("ceiling")
+    chained_ceiling = recomputed.get("ceiling")
+    if counter is None or fresh is None or ceiling is None or chained_ceiling is None:
+        return False
+    same_counter = _close_amount(float(counter), float(fresh))
+    same_ceiling = _close_amount(float(ceiling), float(chained_ceiling))
+    same_unconfirmed = int(record.get("unconfirmed") or 0) == int(recomputed.get("unconfirmed") or 0)
+    same_rivals = _lists_close(record.get("rival_asks"), recomputed.get("rival_asks"))
+    same_constants = (record.get("constants") or {}) == (recomputed.get("constants") or {})
+    return same_counter and same_ceiling and same_unconfirmed and same_rivals and not same_constants
+
+
 def _chain_decision_equal(record: dict[str, Any], recomputed: dict[str, Any]) -> bool:
     counter = record.get("counter")
     fresh = recomputed.get("counter")
@@ -1501,19 +1560,35 @@ def _recompute_from_chain(
 
 
 def _send_is_new(entries: list[dict[str, Any]], draft_id: str, digest: str) -> bool:
-    """One approval per draft body. A failed transmission may be tried again."""
+    """One approval per draft body. A failed transmission may be tried again.
+
+    An approval whose anchor write failed has no send result. A later re-anchor
+    that did not shorten the chain opens exactly one retry of that same body.
+    """
     approved = False
+    unfinished = False
+    reanchored_after = False
     for entry in entries:
         payload = entry.get("payload") or {}
+        if entry.get("type") == "reanchor" and unfinished:
+            reanchored_after = True
         if str(payload.get("draft_id") or "") != str(draft_id):
             continue
         if entry.get("type") == "send_approved" and str(payload.get("body_sha256") or "") == digest:
             approved = True
+            unfinished = True
+            reanchored_after = False
         failed = entry.get("type") == "send_result" and payload.get("status") == "failed"
+        finished = entry.get("type") == "send_result" and payload.get("status") in {"approved", "sent"}
         same_body = str(payload.get("body_sha256") or "") == digest
         legacy_draft = not payload.get("body_sha256") and str(payload.get("draft_id") or "") == str(draft_id)
         if failed and (same_body or legacy_draft):
             approved = False
+            unfinished = False
+        if finished and (same_body or legacy_draft):
+            unfinished = False
+    if approved and unfinished and reanchored_after:
+        return True
     return not approved
 
 
@@ -1640,6 +1715,8 @@ def _guard_send(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any]) -
         raise SendRefused("Re-confirm the quote. migrated, pre-chain inputs unverified.")
     if _migrated_limits_unconfirmed(list(chain.get("entries") or []), opened_for_migration):
         raise SendRefused("Confirm each supplier address and the policy limits on the chain before sending.")
+    if recompute.supplier_needs_keep(list(chain.get("entries") or []), str(draft.get("supplier_id") or "")):
+        raise SendRefused("Confirm this supplier was added after migration before sending.")
     supplier_rows = _supplier_decisions(list(chain.get("entries") or []), str(record.get("supplier_id") or ""))
     if not supplier_rows:
         raise SendRefused("The audit chain has no decision entry for this draft.")
@@ -1693,7 +1770,11 @@ def _guard_send(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any]) -
     ingested_hash = "" if review is None else _first_ingest_hash(entries, str(review.get("event_id") or ""))
     if review is None or not _review_binds_ok(raw_text, review, float(ask), ingested_hash):
         raise SendRefused("The confirmed price is not the chained review.")
-    if not _chain_decision_equal(record, _recompute_from_chain(store, draft, entries, record)):
+    issued = _recompute_from_chain(store, draft, entries, record)
+    if not _chain_decision_equal(record, issued):
+        if _constants_only_drift(record, issued):
+            publish(store, str(draft["deal_id"]))
+            raise DraftStale("Policy constants changed. Read the new draft and approve it again.")
         raise SendRefused("The stored counter is not the decision chained confirmations issue.")
     if not _body_is_rendered(str(draft.get("body") or ""), rendered):
         raise SendRefused("The draft text is not the rendered counter.")
@@ -1760,6 +1841,7 @@ async def send_draft(
             },
         )
         if approved.get("anchor_ok") is False:
+            publish(store, draft["deal_id"])
             raise SendRefused("The anchor did not record this send.")
         message_id = f"<desk.{draft_id}.v{int(draft.get('version') or 1)}@tradeflow.local>"
         recipient = envelope["to"]

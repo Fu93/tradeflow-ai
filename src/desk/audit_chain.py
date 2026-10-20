@@ -23,6 +23,12 @@ the deal pending and verification fails closed. A missing anchor file or a
 missing deal line is also a failure when an anchor is configured. Without an
 anchor, verify reports ``anchor not configured`` and a truncated tail still
 verifies.
+
+A head that the anchor recorded and the chain no longer contains is
+``anchor missing because the chain was cut``. An anchor that cannot be read
+is ``anchor missing because the anchor store was down``. Re-anchor appends
+only when every recorded anchor head is still in the chain and the links
+after it verify.
 """
 from __future__ import annotations
 
@@ -234,12 +240,12 @@ def _anchor_is_required() -> bool:
     return bool(_anchor_target())
 
 
-def _export_anchor(deal_id: str, seq: int, mac: str) -> None:
+def _export_anchor(deal_id: str, seq: int, mac: str, type_: str = "") -> None:
     """Write the head after the database row exists. A failure leaves the row and marks it pending."""
     target = _anchor_target()
     if not target:
         return
-    record = {"deal_id": deal_id, "seq": seq, "entry_hash": mac}
+    record = {"deal_id": deal_id, "seq": seq, "entry_hash": mac, "type": type_}
     raw = json.dumps(record, sort_keys=True).encode("utf-8")
     if _is_url(target):
         request = urllib.request.Request(
@@ -381,6 +387,79 @@ def _read_anchor_url(target: str, deal_id: str) -> dict[str, Any] | None:
     return payload
 
 
+def _heads_from_log(path: Path, deal_id: str) -> list[dict[str, Any]]:
+    """Every valid anchor line for this deal, in log order."""
+    found: list[dict[str, Any]] = []
+    with path.open("rb") as handle:
+        for raw in handle:
+            if not raw.strip():
+                continue
+            try:
+                item = json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeError):
+                continue
+            if isinstance(item, dict) and str(item.get("deal_id") or "") == deal_id and _real_anchor_head(item):
+                found.append(item)
+    return found
+
+
+def _anchor_observation(deal_id: str) -> dict[str, Any]:
+    """The recorded heads, or why they could not be read.
+
+    ``status`` is ``unset``, ``absent``, ``down``, or ``head``. A missing file
+    is absent. An error talking to the store is down. Those two are not the
+    same event.
+    """
+    target = _anchor_target()
+    if not target:
+        return {"status": "unset", "heads": []}
+    try:
+        if _is_url(target):
+            item = _read_anchor_url(target, deal_id)
+            if not _real_anchor_head(item):
+                return {"status": "absent", "heads": []}
+            return {"status": "head", "heads": [item]}
+        path = Path(target)
+        if not path.is_file():
+            return {"status": "absent", "heads": []}
+        heads = _heads_from_log(path, deal_id)
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, TimeoutError, ValueError, UnicodeError):
+        return {"status": "down", "heads": []}
+    if not heads:
+        return {"status": "absent", "heads": []}
+    return {"status": "head", "heads": heads}
+
+
+def _recorded_heads_in_chain(entries: list[dict[str, Any]], heads: list[dict[str, Any]]) -> bool:
+    """Every anchored head is still this chain. A missing head is a cut."""
+    known = {(int(item["seq"]), str(item["entry_hash"])) for item in entries}
+    for head in heads:
+        if not _real_anchor_head(head):
+            continue
+        if (int(head["seq"]), str(head["entry_hash"])) not in known:
+            return False
+    return True
+
+
+def reanchor_refusal(deal_id: str, entries: list[dict[str, Any]]) -> str | None:
+    """Refuse a re-anchor that would sign a chain shorter than the anchor remembers.
+
+    A readable head must still be in this chain. No readable head, when an
+    anchor is configured, is the same refusal: the cut cannot be ruled out.
+    A store that errors is reported separately and is not signed over.
+    """
+    observed = _anchor_observation(deal_id)
+    if observed["status"] == "unset":
+        return None
+    if observed["status"] == "down":
+        return "Re-anchor refused. The anchor store was down."
+    if observed["status"] != "head":
+        return "Re-anchor refused. Possible truncation: the chain was cut."
+    if _recorded_heads_in_chain(entries, list(observed["heads"])):
+        return None
+    return "Re-anchor refused. Possible truncation: the chain was cut."
+
+
 def _read_anchor(deal_id: str) -> dict[str, Any] | None:
     target = _anchor_target()
     if not target:
@@ -497,7 +576,7 @@ def append(conn: sqlite3.Connection, deal_id: str, type_: str, ts: str, payload:
     )
     anchor_ok = True
     try:
-        _export_anchor(deal_id, seq, digest)
+        _export_anchor(deal_id, seq, digest, type_)
         _clear_anchor_pending(conn, deal_id)
     except Exception:
         _remember_anchor_pending(conn, deal_id, seq, digest)
@@ -587,9 +666,19 @@ def verify(conn: sqlite3.Connection, deal_id: str) -> dict[str, Any]:
     entries = list(result.get("entries") or [])
     head = str(result.get("head") or "")
     if _pending_anchor(conn, deal_id):
-        return _annotate(_broken(len(entries) or 1, len(entries), entries))
+        pending = _annotate(_broken(len(entries) or 1, len(entries), entries))
+        pending["anchor"] = "anchor missing because the anchor store was down"
+        return pending
+    observed = _anchor_observation(deal_id)
+    if observed["status"] == "down":
+        down = _annotate(_broken(len(entries) or 1, len(entries), entries))
+        down["anchor"] = "anchor missing because the anchor store was down"
+        return down
     anchored = _read_anchor(deal_id)
     if _anchor_is_required():
         if anchored is None or not _anchor_matches(anchored, len(entries), head if entries else ""):
-            return _annotate(_broken(len(entries) or 1, len(entries), entries))
+            broken = _annotate(_broken(len(entries) or 1, len(entries), entries))
+            if observed["status"] == "head" and not _recorded_heads_in_chain(entries, list(observed["heads"])):
+                broken["anchor"] = "anchor missing because the chain was cut"
+            return broken
     return _annotate(result)

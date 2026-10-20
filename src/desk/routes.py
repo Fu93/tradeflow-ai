@@ -31,6 +31,7 @@ from src.desk.service import (
     DraftStale,
     SendRefused,
     accept_review,
+    confirm_keep_supplier,
     confirm_policy,
     confirm_supplier_address,
     create_deal,
@@ -172,6 +173,11 @@ class ReanchorIn(BaseModel):
 
 
 class ReopenIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    human_confirmed: StrictBool
+
+
+class KeepIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     human_confirmed: StrictBool
 
@@ -383,6 +389,27 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 supplier_id,
                 address=body.address,
                 name=body.name,
+                human_confirmed=body.human_confirmed,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="No such deal") from exc
+        except DeskRejected as exc:
+            raise _rejected(exc) from exc
+
+    @api_v1.post("/desk/deals/{deal_id}/suppliers/{supplier_id}/keep")
+    def post_keep(
+        deal_id: str,
+        supplier_id: str,
+        body: KeepIn,
+        _: str = Depends(require_desk_mutation),
+    ):
+        _ident(deal_id)
+        _ident(supplier_id)
+        try:
+            return confirm_keep_supplier(
+                get_store(),
+                deal_id,
+                supplier_id,
                 human_confirmed=body.human_confirmed,
             )
         except KeyError as exc:

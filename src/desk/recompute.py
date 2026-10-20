@@ -231,6 +231,22 @@ def _headline(
     )
 
 
+def _outcomes_since_reopen(outcomes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A chained reopen clears walk-away rejections that came before it."""
+    last = -1
+    for index, item in enumerate(outcomes):
+        if str(item.get("outcome") or "") == "reopen_supplier":
+            last = index
+    if last < 0:
+        return list(outcomes)
+    kept: list[dict[str, Any]] = []
+    for index, item in enumerate(outcomes):
+        if index <= last and str(item.get("outcome") or "") == "walk_away":
+            continue
+        kept.append(item)
+    return kept
+
+
 def _reserve_state(
     prices: list[float],
     outcomes: list[dict[str, Any]],
@@ -250,7 +266,7 @@ def _reserve_state(
         return None
     for later in prices[1:]:
         state = state.tighten(float(later) / first)
-    for outcome in outcomes:
+    for outcome in _outcomes_since_reopen(outcomes):
         kind = outcome.get("outcome")
         if kind == "agreed" and outcome.get("agreed_price") is not None:
             state = state.tighten(float(outcome["agreed_price"]) / first)
@@ -312,6 +328,37 @@ def counter_of(choice: Any, ceiling: float, ask: float) -> float | None:
     return min(float(choice.default_counter), float(ceiling), float(ask))
 
 
+def supplier_needs_keep(entries: list[dict[str, Any]], supplier_id: str) -> bool:
+    """A row added after migration stays out until a person keeps it on the chain.
+
+    An address confirmation is not that action. The opened supplier list and a
+    chained ``supplier_added`` or human ``supplier_kept`` are.
+    """
+    opened_ids: set[str] = set()
+    migrated = False
+    for entry in entries:
+        payload = entry.get("payload") or {}
+        if entry.get("type") != "deal_opened" or not payload.get("migrated"):
+            continue
+        migrated = True
+        for item in payload.get("suppliers") or []:
+            if item.get("id"):
+                opened_ids.add(str(item["id"]))
+    if not migrated:
+        return False
+    if str(supplier_id) in opened_ids:
+        return False
+    for entry in entries:
+        payload = entry.get("payload") or {}
+        if str(payload.get("supplier_id") or "") != str(supplier_id):
+            continue
+        if entry.get("type") == "supplier_added":
+            return False
+        if entry.get("type") == "supplier_kept" and payload.get("confirmed_by") == "human":
+            return False
+    return True
+
+
 def quoting_supplier_ids(
     supplier_ids: list[str],
     outcomes_by_supplier: dict[str, list[dict[str, Any]]],
@@ -366,6 +413,14 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     _kept, unconfirmed = confirmed_prices(consumed)
     outcomes_by = {row["id"]: store.outcomes(deal_id, row["id"]) for row in suppliers}
     quoting = set(quoting_supplier_ids([row["id"] for row in suppliers], outcomes_by))
+    links = store.verify_links(deal_id)
+    chain_entries = list(links.get("entries") or []) if links.get("ok") else []
+    needs_keep = {
+        row["id"]
+        for row in suppliers
+        if supplier_needs_keep(chain_entries, row["id"])
+    }
+    quoting -= needs_keep
     beliefs_state: dict[str, dict[str, Any]] = {}
     for row in suppliers:
         history = decision_events(row["id"])
@@ -381,9 +436,11 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             prior_mean=user_prior,
             prior_std=user_std,
         )
-        if state is None or not state.consistent() or row["id"] not in quoting:
+        if row["id"] in needs_keep or state is None or not state.consistent() or row["id"] not in quoting:
             note = "No accepted quote yet."
-            if state is not None and not state.consistent():
+            if row["id"] in needs_keep:
+                note = "This supplier was not on the chain before migration."
+            elif state is not None and not state.consistent():
                 note = "The rejection lower bound meets or passes the upper bound, so no price is issued."
             elif row["id"] not in quoting:
                 note = "This supplier walked away, so no new counter is issued."
@@ -420,7 +477,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     if unconfirmed == 0:
         active = [
             row for row in suppliers
-            if beliefs_state[row["id"]]["state"] is not None and decision_events(row["id"])
+            if row["id"] in quoting and decision_events(row["id"])
         ]
     # Reported for the desk, and not an input to the counter.
     samples, grid = solver_budget()
@@ -536,6 +593,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             ],
             "quote_confirmed": bool(usable),
             "counter_held": False,
+            "needs_keep_confirmation": row["id"] in needs_keep,
         }
         display = usable[-1] if usable else latest_any
         if display is not None and display.get("parsed", {}).get("unit_price") is not None:
@@ -643,6 +701,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
 
     public_events = [_public(event) for event in reversed(events[-100:])]
     review = [_public(event) for event in reversed(events) if event["status"] == "review"]
+    anchor_pending = store.anchor_is_pending(deal_id)
     draft_rows = []
     for draft in store.drafts(deal_id)[:20]:
         draft_rows.append(
@@ -663,6 +722,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
                 "send_error": draft.get("send_error"),
                 "reply_to": draft.get("reply_to"),
                 "message_id": draft.get("message_id"),
+                "anchor_pending": anchor_pending and draft.get("status") == "draft",
             }
         )
     fit = load_hazard_fit()

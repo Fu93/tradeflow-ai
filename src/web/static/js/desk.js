@@ -320,6 +320,9 @@
       const priorStrength = supplier.d_prior_strength == null ? "labelled policy" : String(supplier.d_prior_strength);
       line(card, "D prior (user policy): mean " + priorMean + ", strength " + priorStrength);
       line(card, "Reserve: " + (supplier.reserve_note || supplier.belief_label || "no data"));
+      if (supplier.needs_keep_confirmation) {
+        line(card, "This supplier was not on the chain before migration. Confirm to keep them.");
+      }
       const half = supplier.sensitivity_half == null ? "withheld" : money(supplier.sensitivity_half, "CNY");
       const doubled = supplier.sensitivity_double == null ? "withheld" : money(supplier.sensitivity_double, "CNY");
       const counter = supplier.counter == null ? "withheld" : money(supplier.counter, "CNY");
@@ -533,7 +536,7 @@
       copy.textContent = "Copy draft";
       copy.addEventListener("click", () => copyText(draft.body || ""));
       block.appendChild(copy);
-      if (draft.status === "draft" || draft.status === "failed") {
+      if ((draft.status === "draft" || draft.status === "failed") && !draft.anchor_pending) {
         const send = document.createElement("button");
         send.type = "button";
         send.textContent = "Approve and send";
@@ -545,6 +548,9 @@
   }
 
   function draftState(draft) {
+    if (draft.anchor_pending) {
+      return "anchor did not record this send; re-anchor, then approve this draft again";
+    }
     if (draft.status === "sending") return "sending";
     if (draft.status === "failed") return "send failed" + (draft.send_error ? ": " + draft.send_error : "");
     if (draft.status === "sent" && draft.transmitted) return "handed to the mail server";

@@ -128,7 +128,13 @@ def project_open_drafts(
             and str((entry.get("payload") or {}).get("supplier_id") or "") == str(card["id"])
         ]
         previous = (prior[-1].get("payload") or {}) if prior else {}
-        if str(previous.get("record_sha256") or "") == digest and previous.get("decision_id"):
+        previous_constants = None
+        if previous.get("decision_id"):
+            stored_decision = store.get_decision(str(previous["decision_id"]))
+            if stored_decision is not None:
+                previous_constants = (stored_decision.get("record") or {}).get("constants")
+        constants_moved = previous_constants is not None and previous_constants != record.constants
+        if str(previous.get("record_sha256") or "") == digest and previous.get("decision_id") and not constants_moved:
             decision_id = str(previous["decision_id"])
         else:
             decision_id = store.append_decision(record.as_dict(), digest)
@@ -154,6 +160,7 @@ def project_open_drafts(
             reply_to=reply_to or None,
             references_header=references or None,
             decision_id=decision_id,
+            require_new=constants_moved,
         )
         store.append_chain(
             deal["id"],

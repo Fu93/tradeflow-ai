@@ -15,9 +15,21 @@ services:
     dockerContext: .
     healthCheckPath: /health
     envVars:
-      # Sandbox is the auction demo. Desk reads and sends need the secrets below.
+      # Production fail-closed webhooks. Sandbox fail-open is not used on this service.
       - key: TRADEFLOW_ENV
-        value: sandbox
+        value: production
+      # "0" leaves /negotiate and src/legacy unmounted. "1" is the legacy switch.
+      - key: TRADEFLOW_LEGACY
+        value: "0"
+      # File path or http(s) URL. Unset or blank: verify reports "anchor not configured".
+      - key: TRADEFLOW_CHAIN_ANCHOR
+        sync: false
+      # SQLite path. Blank uses the default under the ephemeral disk.
+      - key: TRADEFLOW_DESK_DB
+        sync: false
+      # Retired chain keys, comma-separated id:secret. Blank until a rotation.
+      - key: TRADEFLOW_CHAIN_KEYS
+        sync: false
       - key: WEB_CONCURRENCY
         value: "1"
       - key: TRADEFLOW_SOLVER_BACKEND
