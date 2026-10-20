@@ -166,8 +166,11 @@ def _warmup_stage1() -> None:
     """
     try:
         from ..engine.bilingual import InboundIntentClassifier
+        from src.desk.parse import parse_quote
 
-        InboundIntentClassifier.classify_stage1_only("warmup: tradeflow stage-1 preload")
+        InboundIntentClassifier.classify_stage1_only("warmup: unit price 1 CNY")
+        InboundIntentClassifier.extract_quoted_price("unit price 1 CNY")
+        parse_quote("unit price 1 CNY per piece")
     except Exception:  # pragma: no cover - 預熱失敗不應阻斷啟動
         logger.warning("Stage-1 warmup failed; first request will pay lazy-load cost.", exc_info=True)
 

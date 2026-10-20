@@ -232,6 +232,41 @@ def _index_path(path: Path) -> Path:
     return Path(str(path) + ".index")
 
 
+def _url_history_path() -> Path:
+    """Local copy of heads a URL anchor accepted. The remote may keep only the latest."""
+    explicit = os.environ.get("TRADEFLOW_DESK_DB", "").strip()
+    if explicit:
+        return Path(explicit + ".anchor-history.jsonl")
+    store = os.environ.get("TRADEFLOW_STORE_DIR", "").strip()
+    base = Path(store) if store else Path("data")
+    return base / "desk.anchor-history.jsonl"
+
+
+def _remember_url_head(record: dict[str, Any]) -> None:
+    path = _url_history_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(record, sort_keys=True) + "\n"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _merge_heads(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    seen: set[tuple[int, str]] = set()
+    for group in groups:
+        for head in group:
+            if not isinstance(head, dict) or not _real_anchor_head(head):
+                continue
+            key = (int(head["seq"]), str(head["entry_hash"]))
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append(head)
+    return found
+
+
 def _anchor_absent() -> dict[str, Any]:
     return {"seq": -1, "entry_hash": ""}
 
@@ -240,12 +275,35 @@ def _anchor_is_required() -> bool:
     return bool(_anchor_target())
 
 
-def _export_anchor(deal_id: str, seq: int, mac: str, type_: str = "") -> None:
+def _anchor_record(
+    deal_id: str,
+    seq: int,
+    mac: str,
+    type_: str,
+    payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """The bytes the anchor stores. An approval keeps the envelope identity."""
+    record: dict[str, Any] = {"deal_id": deal_id, "seq": seq, "entry_hash": mac, "type": type_}
+    if isinstance(payload, dict):
+        for key in ("draft_id", "body_sha256", "transmission_sha256"):
+            value = payload.get(key)
+            if value:
+                record[key] = str(value)
+    return record
+
+
+def _export_anchor(
+    deal_id: str,
+    seq: int,
+    mac: str,
+    type_: str = "",
+    payload: dict[str, Any] | None = None,
+) -> None:
     """Write the head after the database row exists. A failure leaves the row and marks it pending."""
     target = _anchor_target()
     if not target:
         return
-    record = {"deal_id": deal_id, "seq": seq, "entry_hash": mac, "type": type_}
+    record = _anchor_record(deal_id, seq, mac, type_, payload)
     raw = json.dumps(record, sort_keys=True).encode("utf-8")
     if _is_url(target):
         request = urllib.request.Request(
@@ -256,6 +314,7 @@ def _export_anchor(deal_id: str, seq: int, mac: str, type_: str = "") -> None:
         )
         with urllib.request.urlopen(request, timeout=_anchor_timeout()) as response:
             response.read()
+        _remember_url_head(record)
         return
     path = Path(target)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -267,7 +326,26 @@ def _export_anchor(deal_id: str, seq: int, mac: str, type_: str = "") -> None:
         os.fsync(handle.fileno())
     index_path = _index_path(path)
     index = _load_index(index_path, path)
-    index[deal_id] = {"offset": offset, "seq": seq, "entry_hash": mac}
+    slot = index.get(deal_id)
+    if not isinstance(slot, dict):
+        slot = {}
+    heads = slot.get("heads")
+    if not isinstance(heads, list):
+        heads = []
+        if slot.get("entry_hash") and slot.get("offset") is not None:
+            heads.append(
+                {
+                    "offset": slot.get("offset"),
+                    "seq": slot.get("seq"),
+                    "entry_hash": slot.get("entry_hash"),
+                    "type": "",
+                }
+            )
+    remembered = dict(record)
+    remembered["offset"] = offset
+    heads.append(remembered)
+    index[deal_id] = {"offset": offset, "seq": seq, "entry_hash": mac, "heads": heads}
+    index["_end"] = path.stat().st_size
     _write_index(index_path, index)
 
 
@@ -288,7 +366,7 @@ def _write_index(index_path: Path, index: dict[str, Any]) -> None:
 
 
 def _index_from_log(log_path: Path) -> dict[str, Any]:
-    """Last valid line of each deal. A broken line is skipped."""
+    """Every valid line of each deal, plus the latest offset. A broken line is skipped."""
     found: dict[str, Any] = {}
     if not log_path.is_file():
         return found
@@ -306,11 +384,29 @@ def _index_from_log(log_path: Path) -> dict[str, Any]:
             deal_id = str(item.get("deal_id") or "")
             if not deal_id or "seq" not in item or "entry_hash" not in item:
                 continue
+            slot = found.get(deal_id)
+            if not isinstance(slot, dict):
+                slot = {"heads": []}
+            heads = slot.get("heads")
+            if not isinstance(heads, list):
+                heads = []
+            remembered = {
+                "offset": start,
+                "seq": item.get("seq"),
+                "entry_hash": item.get("entry_hash"),
+                "type": str(item.get("type") or ""),
+            }
+            for key in ("draft_id", "body_sha256", "transmission_sha256"):
+                if item.get(key):
+                    remembered[key] = str(item.get(key))
+            heads.append(remembered)
             found[deal_id] = {
                 "offset": start,
                 "seq": item.get("seq"),
                 "entry_hash": item.get("entry_hash"),
+                "heads": heads,
             }
+    found["_end"] = offset
     return found
 
 
@@ -387,6 +483,55 @@ def _read_anchor_url(target: str, deal_id: str) -> dict[str, Any] | None:
     return payload
 
 
+def _indexed_heads(path: Path, deal_id: str) -> list[dict[str, Any]] | None:
+    """Heads from a complete index. None means the index cannot be trusted.
+
+    A matching index is one seek of the latest line. The log is not read through.
+    """
+    index_path = _index_path(path)
+    if not index_path.is_file():
+        return None
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        size = path.stat().st_size
+    except (OSError, json.JSONDecodeError, UnicodeError):
+        return None
+    if not isinstance(index, dict) or index.get("_end") != size:
+        return None
+    slot = index.get(deal_id)
+    if not isinstance(slot, dict) or "offset" not in slot:
+        return []
+    item = _read_anchor_file(str(path), deal_id)
+    if not isinstance(item, dict) or not _real_anchor_head(item):
+        return None
+    try:
+        same = int(item.get("seq", -1)) == int(slot.get("seq", -2)) and str(item.get("entry_hash") or "") == str(
+            slot.get("entry_hash") or ""
+        )
+    except (TypeError, ValueError):
+        return None
+    if not same:
+        return None
+    heads = slot.get("heads")
+    if isinstance(heads, list) and heads:
+        return [head for head in heads if isinstance(head, dict)]
+    return [item]
+
+
+def _url_heads(item: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """A URL anchor may return its history. A single head is that history."""
+    if not isinstance(item, dict):
+        return []
+    raw = item.get("heads")
+    if isinstance(raw, list):
+        found = [head for head in raw if _real_anchor_head(head)]
+        if found:
+            return found
+    if _real_anchor_head(item):
+        return [item]
+    return []
+
+
 def _heads_from_log(path: Path, deal_id: str) -> list[dict[str, Any]]:
     """Every valid anchor line for this deal, in log order."""
     found: list[dict[str, Any]] = []
@@ -416,13 +561,19 @@ def _anchor_observation(deal_id: str) -> dict[str, Any]:
     try:
         if _is_url(target):
             item = _read_anchor_url(target, deal_id)
-            if not _real_anchor_head(item):
+            local: list[dict[str, Any]] = []
+            history = _url_history_path()
+            if history.is_file():
+                local = _heads_from_log(history, deal_id)
+            heads = _merge_heads(_url_heads(item), local)
+            if not heads:
                 return {"status": "absent", "heads": []}
-            return {"status": "head", "heads": [item]}
+            return {"status": "head", "heads": heads}
         path = Path(target)
         if not path.is_file():
             return {"status": "absent", "heads": []}
-        heads = _heads_from_log(path, deal_id)
+        indexed = _indexed_heads(path, deal_id)
+        heads = _heads_from_log(path, deal_id) if indexed is None else indexed
     except (OSError, urllib.error.URLError, json.JSONDecodeError, TimeoutError, ValueError, UnicodeError):
         return {"status": "down", "heads": []}
     if not heads:
@@ -458,6 +609,64 @@ def reanchor_refusal(deal_id: str, entries: list[dict[str, Any]]) -> str | None:
     if _recorded_heads_in_chain(entries, list(observed["heads"])):
         return None
     return "Re-anchor refused. Possible truncation: the chain was cut."
+
+
+def _head_is_approval(head: dict[str, Any], *, draft_id: str, body_sha256: str, transmission_sha256: str) -> bool:
+    """True when this anchor line is the approval of this envelope."""
+    if str(head.get("type") or "") != "send_approved":
+        return False
+    same_envelope = bool(transmission_sha256) and str(head.get("transmission_sha256") or "") == transmission_sha256
+    same_body = (
+        bool(draft_id)
+        and str(head.get("draft_id") or "") == str(draft_id)
+        and str(head.get("body_sha256") or "") == body_sha256
+    )
+    return same_envelope or same_body
+
+
+def approval_recorded(
+    deal_id: str,
+    entries: list[dict[str, Any]],
+    *,
+    draft_id: str,
+    body_sha256: str,
+    transmission_sha256: str,
+) -> bool:
+    """The anchor history already has this approval. A later copy is a duplicate.
+
+    The database rows after that approval are not what decides it. A head that
+    names the envelope, or a head whose sequence still matches the approval
+    row, is enough.
+    """
+    observed = _anchor_observation(deal_id)
+    known = {
+        (int(item["seq"]), str(item["entry_hash"])): item
+        for item in entries
+        if item.get("seq") is not None and item.get("entry_hash")
+    }
+    for head in list(observed.get("heads") or []):
+        if not isinstance(head, dict) or not _real_anchor_head(head):
+            continue
+        if _head_is_approval(
+            head,
+            draft_id=draft_id,
+            body_sha256=body_sha256,
+            transmission_sha256=transmission_sha256,
+        ):
+            return True
+        matched = known.get((int(head["seq"]), str(head["entry_hash"])))
+        if matched is None:
+            continue
+        payload = dict(matched.get("payload") or {})
+        payload["type"] = matched.get("type")
+        if _head_is_approval(
+            payload,
+            draft_id=draft_id,
+            body_sha256=body_sha256,
+            transmission_sha256=transmission_sha256,
+        ):
+            return True
+    return False
 
 
 def _read_anchor(deal_id: str) -> dict[str, Any] | None:
@@ -576,8 +785,9 @@ def append(conn: sqlite3.Connection, deal_id: str, type_: str, ts: str, payload:
     )
     anchor_ok = True
     try:
-        _export_anchor(deal_id, seq, digest, type_)
-        _clear_anchor_pending(conn, deal_id)
+        _export_anchor(deal_id, seq, digest, type_, stored)
+        if type_ == "reanchor" or not _pending_anchor(conn, deal_id):
+            _clear_anchor_pending(conn, deal_id)
     except Exception:
         _remember_anchor_pending(conn, deal_id, seq, digest)
         anchor_ok = False

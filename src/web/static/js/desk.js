@@ -158,7 +158,12 @@
       (deal.product || "Deal") + " · " + (deal.id || "");
     document.getElementById("basis-line").textContent =
       "Ranking basis: " + (snapshot.ranking_basis || "unit_price") + ". " + (snapshot.kappa_note || "");
-    document.getElementById("audit-line").textContent = snapshot.audit || "";
+    const auditLine = document.getElementById("audit-line");
+    auditLine.textContent = snapshot.audit || "";
+    if (snapshot.anchor_pending) {
+      const pending = "anchor did not record this send; re-anchor, then approve this draft again";
+      auditLine.textContent = auditLine.textContent ? auditLine.textContent + " " + pending : pending;
+    }
     const shadow = snapshot.shadow_gate || {};
     document.getElementById("shadow-line").textContent =
       "Shadow accepts later confirmed unchanged: "
@@ -322,6 +327,30 @@
       line(card, "Reserve: " + (supplier.reserve_note || supplier.belief_label || "no data"));
       if (supplier.needs_keep_confirmation) {
         line(card, "This supplier was not on the chain before migration. Confirm to keep them.");
+        const keptAddress = document.createElement("input");
+        keptAddress.type = "text";
+        keptAddress.placeholder = "Address to keep";
+        const keep = document.createElement("button");
+        keep.type = "button";
+        keep.textContent = "Keep supplier";
+        keep.addEventListener("click", async () => {
+          formError.textContent = "";
+          try {
+            const snapshot = await request(
+              "/api/v1/desk/deals/" + dealId + "/suppliers/" + supplier.id + "/keep",
+              {
+                method: "POST",
+                headers: headers(true),
+                body: JSON.stringify({ human_confirmed: true, address: keptAddress.value }),
+              }
+            );
+            show(snapshot);
+          } catch (err) {
+            formError.textContent = err.message;
+          }
+        });
+        card.appendChild(keptAddress);
+        card.appendChild(keep);
       }
       const half = supplier.sensitivity_half == null ? "withheld" : money(supplier.sensitivity_half, "CNY");
       const doubled = supplier.sensitivity_double == null ? "withheld" : money(supplier.sensitivity_double, "CNY");

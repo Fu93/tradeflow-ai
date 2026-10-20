@@ -385,18 +385,52 @@ _CONVERSION_CUE = re.compile(
 )
 
 
-def _is_conversion_paren(text: str) -> bool:
-    """A parenthetical FX aside, not a second price."""
-    if not _CONVERSION_CUE.search(text):
+def _currency_families(text: str) -> set[str]:
+    """Currency families named in text. The 元 inside 美元 is not a second currency."""
+    raw = text or ""
+    found: set[str] = set()
+    if _USD.search(raw):
+        found.add("USD")
+    if _EUR.search(raw):
+        found.add("EUR")
+    without_named = _EUR.sub(" ", _USD.sub(" ", raw))
+    if _CNY.search(without_named):
+        found.add("CNY")
+    if _FOREIGN.search(_CNY.sub(" ", without_named)):
+        found.add("OTHER")
+    return found
+
+
+def _is_fx_conversion(text: str, outside: str) -> bool:
+    """A parenthetical amount in another currency. A same-currency rebate is not one."""
+    if not _CONVERSION_CUE.search(text) or not _TOKEN.search(text):
         return False
-    named = _USD.search(text) or _EUR.search(text) or _CNY.search(text) or _FOREIGN.search(text)
-    return bool(named and _TOKEN.search(text))
+    inner = _currency_families(text)
+    outer = _currency_families(outside)
+    if not inner or not outer:
+        return False
+    return bool(inner - outer)
+
+
+def _same_currency_aside(text: str) -> bool:
+    """A parenthetical price in the same currency. The clause is not one clear price."""
+    for match in _CONVERSION_PAREN.finditer(text or ""):
+        inner = match.group(0)
+        outside = (text or "")[: match.start()] + " " + (text or "")[match.end() :]
+        if not (_CONVERSION_CUE.search(inner) and _TOKEN.search(inner)):
+            continue
+        inner_codes = _currency_families(inner)
+        outer_codes = _currency_families(outside)
+        if inner_codes and outer_codes and not (inner_codes - outer_codes):
+            return True
+    return False
 
 
 def _conversion_spans(text: str) -> list[tuple[int, int]]:
     spans: list[tuple[int, int]] = []
     for match in _CONVERSION_PAREN.finditer(text or ""):
-        if _is_conversion_paren(match.group(0)):
+        outside = (text or "")[: match.start()] + " " + (text or "")[match.end() :]
+        if _is_fx_conversion(match.group(0), outside):
             spans.append((match.start(), match.end()))
     return spans
 
@@ -907,6 +941,8 @@ def price_from_token(raw_text: str, token: str, deal_currency: str | None = None
         return None
     visible = _visible_text(raw_text)
     if token not in visible:
+        return None
+    if _same_currency_aside(visible):
         return None
     conversions = _conversion_spans(visible)
     matched = None

@@ -792,6 +792,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         "suppliers": cards,
         "events": public_events,
         "review": review,
+        "anchor_pending": anchor_pending,
         "drafts": draft_rows,
         "elapsed_ms": elapsed_ms,
         "n_samples": samples,

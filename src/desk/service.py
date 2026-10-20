@@ -24,7 +24,7 @@ from src.config.heuristics import (
     UNIT_SANITY_MULTIPLE,
 )
 from src.desk import mailbox, recompute
-from src.desk.audit_chain import chain_key_configured, reanchor_refusal
+from src.desk.audit_chain import approval_recorded, chain_key_configured, reanchor_refusal
 from src.desk.extract import time_left
 from src.desk.input_checks import message_id_or_blank, references_or_blank, require_address, require_plain
 from src.desk.names import supplier_name_key
@@ -1040,22 +1040,37 @@ def confirm_keep_supplier(
     deal_id: str,
     supplier_id: str,
     *,
+    address: str,
+    name: str | None = None,
     human_confirmed: bool,
 ) -> dict[str, Any]:
-    """A supplier row that appeared after migration stays out until a person keeps it."""
+    """A flagged supplier on a migrated deal stays out until a person keeps an address.
+
+    The address is the one in this request. The supplier row is not the source.
+    """
     if human_confirmed is not True:
         raise DeskRejected("A person has to keep this supplier.")
+    cleaned = require_address(address)
+    if not cleaned:
+        raise DeskRejected("Each supplier needs an address.")
     with deal_lock(deal_id):
         supplier = store.supplier(deal_id, supplier_id)
         if supplier is None:
             raise KeyError(supplier_id)
+        entries = list(store.verify_links(deal_id).get("entries") or [])
+        if not _deal_opened(entries).get("migrated"):
+            raise DeskRejected("Keeping a supplier is for a migrated deal.")
+        if not recompute.supplier_needs_keep(entries, supplier_id):
+            raise DeskRejected("This supplier is not waiting to be kept.")
+        given = (name or "").strip() or str(supplier.get("name") or "").strip()
+        store.update_supplier(supplier_id, name=given, address=cleaned)
         store.append_chain(
             deal_id,
             "supplier_kept",
             {
                 "supplier_id": supplier_id,
-                "name": str(supplier.get("name") or ""),
-                "address": str(supplier.get("address") or ""),
+                "name": given,
+                "address": cleaned,
                 "confirmed_by": "human",
             },
         )
@@ -1564,6 +1579,7 @@ def _send_is_new(entries: list[dict[str, Any]], draft_id: str, digest: str) -> b
 
     An approval whose anchor write failed has no send result. A later re-anchor
     that did not shorten the chain opens exactly one retry of that same body.
+    A retry is still refused when the anchor history already recorded the approval.
     """
     approved = False
     unfinished = False
@@ -1830,6 +1846,14 @@ async def send_draft(
             supplier,
             float(record["counter"]),
         )
+        if approval_recorded(
+            draft["deal_id"],
+            list(prior_chain.get("entries") or []),
+            draft_id=draft_id,
+            body_sha256=digest,
+            transmission_sha256=envelope["digest"],
+        ):
+            raise SendRefused("This draft was already approved.")
         approved = store.append_chain(
             draft["deal_id"],
             "send_approved",

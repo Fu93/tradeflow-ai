@@ -111,6 +111,9 @@ def sanitize_product_name(name: Optional[str]) -> str:
     return cleaned or "產品"
 
 
+_FULL_TEXT_PATTERNS: dict[tuple[str, int], Any] = {}
+
+
 def _safety_full_text_pattern(safe_pattern: SafeLinearPattern):
     """
     [H3] 取回**不做長度截斷**的底層編譯樣式，供安全閘門掃描完整原文。
@@ -122,9 +125,15 @@ def _safety_full_text_pattern(safe_pattern: SafeLinearPattern):
     安全樣式皆為 RE2/`regex` 可編譯**且**內建 `re` 也能安全處理的字面交替
     （多字元字面詞，無嵌套量詞），因此在此以內建 `re` 編譯同一 pattern 並掃描
     完整字串是安全的；同時保留 safe_regex 對 RE2 不相容樣式的降級警告。
+    The compiled pattern is kept so the first message does not pay compile again.
     """
+    key = (safe_pattern.raw_pattern, int(safe_pattern.flags or 0))
+    compiled = _FULL_TEXT_PATTERNS.get(key)
+    if compiled is not None:
+        return compiled
     import re as _re
     compiled = _re.compile(safe_pattern.raw_pattern, safe_pattern.flags or 0)
+    _FULL_TEXT_PATTERNS[key] = compiled
     return compiled
 
 

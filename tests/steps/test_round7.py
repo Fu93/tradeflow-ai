@@ -333,7 +333,9 @@ def test_policy_and_post_migration_suppliers_need_a_human(tmp_path, monkeypatch)
     assert still["needs_keep_confirmation"] is True
     script = Path(__file__).resolve().parents[2] / "src" / "web" / "static" / "js" / "desk.js"
     assert "Confirm to keep them" in script.read_text(encoding="utf-8")
-    kept = confirm_keep_supplier(store, deal_id, late_id, human_confirmed=True)
+    kept = confirm_keep_supplier(
+        store, deal_id, late_id, address="late@example.test", human_confirmed=True,
+    )
     late = next(row for row in kept["suppliers"] if row["id"] == late_id)
     assert late["needs_keep_confirmation"] is False
     assert late["counter"] is not None

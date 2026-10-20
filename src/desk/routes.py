@@ -179,7 +179,14 @@ class ReopenIn(BaseModel):
 
 class KeepIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    address: str = Field(min_length=1, max_length=320)
+    name: str | None = Field(default=None, max_length=200)
     human_confirmed: StrictBool
+
+    @field_validator("address")
+    @classmethod
+    def _address(cls, value: str) -> str:
+        return require_address(value)
 
 
 class OutcomeIn(BaseModel):
@@ -410,6 +417,8 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 get_store(),
                 deal_id,
                 supplier_id,
+                address=body.address,
+                name=body.name,
                 human_confirmed=body.human_confirmed,
             )
         except KeyError as exc:
