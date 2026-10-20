@@ -89,7 +89,7 @@ _DELTA = re.compile(
     r"\bcut\b.{0,24}\bby\b|减(?!税)|減(?!稅))"
 )
 _ADDON = re.compile(
-    r"(?i)(?:\badds?\b|\bmore\b|\bplus\b|\bupgrade\b|另加|另收|附加|加收|\+\s*\d)"
+    r"(?i)(?:\badds?\b|\bmore\b|\bplus\b|\bupgrade\b|另加|另收|附加|加收|加价|加價|差价|差價|\+\s*\d)"
 )
 _AT_TIER = re.compile(
     r"(?i)\bat\s+\d+(?:\.\d+)?\s*(?:k|pcs|pc|pieces|件|个|個|只)\b"
@@ -634,6 +634,11 @@ def _settled(token: str) -> float | None:
     return float(settled.cny_amount)
 
 
+def _duration_amount(text: str, start: int, token: str) -> bool:
+    """A lead time is not a unit price and not a unit-basis candidate."""
+    return bool(_DURATION.match(text[start + len(token):]))
+
+
 def _quantity_amount(text: str, start: int, token: str) -> bool:
     """MOQ and quantity units are not unit prices."""
     head = text[max(0, start - 12):start]
@@ -660,27 +665,65 @@ _HEDGE = re.compile(
     r"(?:不到|低于|低於|高于|高於|大概|左右|最多|至少|比.{0,16}便宜|市场价|市場價|行情)"
 )
 _BUYER = re.compile(r"目标价|目標價|采购价|採購價|我方预算|我方預算|买家|買家")
+_PAST = re.compile(r"之前|以前|上次|买过|買過|当时|當時")
+_HEARSAY = re.compile(r"听说|聽說|据说|據說|网上|網上")
+_HYPOTHETICAL = re.compile(r"如果|假如|估计|估計|预计|預計|应该|應該")
+_BUYER_ASK = re.compile(r"能不能|可不可以|可以吗|可以嗎|希望|给个|給個|最低多少")
+_TW_CUE = re.compile(r"(?i)NT\s*\$|新台幣|新臺幣|台幣|臺幣|新台币|台币")
+# Characters that simplified supplier text does not use. 元 beside these is not CNY.
+_TRADITIONAL_MARK = re.compile("[報價稅隻條雙點張碼噸錢樣運務買過應說聽據網與對經為臺幣]")
+_ATTACH_HEAD = re.compile(
+    r"(?i)(?:单价|單價|报价|報價|价格|價格|多少钱|多少錢|unit\s*price)\s*[:：]?\s*[?？]?\s*$"
+)
+_PERCENT_TAIL = re.compile(r"^\s*(?:%|％|个百分点|个点|百分点)")
+_COUNT_TAIL = re.compile(r"^\s*(?:万|萬|千)")
+_DATE_TAIL = re.compile(r"^\s*(?:年|月|日|号|號)")
+_THRESHOLD_HEAD = re.compile(r"(?:以上|以下|超过|超過|不低于|不低於)\s*$")
+_MODEL_HEAD = re.compile(
+    r"(?i)(?:型号|型號|货号|貨號|款号|款號|料号|料號|平台|sku|1688)\s*[:：]?\s*$"
+)
+_PHONE = re.compile(r"\d{8,}")
+_SUBUNIT = re.compile(r"^\s*(?P<u>分|毛|角|厘|釐)")
+_SURCHARGE_HEAD = re.compile(r"加价|加價|加收|另加|另收|差价|差價|\+\s*$")
 _LOT = re.compile(
     r"(?i)(?:\bfor\s+\d+\s*(?:pcs|pc|pieces|件|个|個)\b|一共|总计|總計|\blot\s+of\b)"
 )
-_BASIS = re.compile(
-    r"(?i)(?:"
-    r"每\s*(?P<m1>个|個|件|只|隻|条|條|双|雙|套|台|臺|箱|斤|公斤|千克|米|包|盒|打|立方)|"
-    r"一\s*(?P<m2>个|個|件|只|隻|条|條|双|雙|套|台|臺|箱|斤|公斤|千克|米|包|盒)|"
-    r"(?:元|块|塊|￥|¥)\s*/\s*(?P<m3>个|個|件|只|隻|条|條|双|雙|套|台|臺|箱|斤|公斤|千克|米|包|盒)|"
-    r"/\s*(?P<m4>个|個|件|只|隻|条|條|双|雙|套|台|臺|箱|斤|公斤|千克|米|包)|"
-    r"per\s+(?P<m5>piece|pc|pcs|unit|carton|box|case|pack|set|bundle|kg|kilo|meter|metre)|"
-    r"(?P<m6>/\s*pcs?\b|/\s*unit\b|\beach\b|\bapiece\b)"
-    r")"
+# Longer names come first so 公斤 is not read as 斤. A cue is 每/按/一, 元/unit,
+# 元一unit, or per/each. A bare measure word is a quantity, not a price basis.
+_BASIS_UNIT = (
+    "公斤|千克|立方|吨|噸|个|個|件|只|隻|条|條|双|雙|套|台|臺|箱|斤|米|包|盒|打|克|码|碼|张|張|片|点|點"
+)
+# 一点 is a hedge. 一件 at the end of a price is the deal unit.
+_BASIS_UNIT_FIRM = (
+    "公斤|千克|立方|吨|噸|个|個|件|只|隻|条|條|双|雙|套|台|臺|箱|斤|米|包|盒|打|克|码|碼|张|張|片"
+)
+_BASIS_EN = (
+    "piece|pcs|pc|unit|carton|box|case|pack|set|bundle|kg|kilo|kilogram|"
+    "meter|metre|dozen|ton|tonne|gram|yard|sheet"
+)
+_BASIS_CUE = re.compile(
+    rf"(?i)(?:每\s*(?P<u1>{_BASIS_UNIT})|"
+    rf"按\s*(?P<u2>{_BASIS_UNIT})\s*(?:报价|報價|算|计|計|计价|計價|计算|計算)|"
+    rf"一\s*(?P<u3>{_BASIS_UNIT})(?=\s*(?:\d|元|块|塊|￥|¥))|"
+    rf"一\s*(?P<u3b>{_BASIS_UNIT_FIRM})(?=\s*(?:[，,。；;]|$))|"
+    rf"(?:元|块|塊|￥|¥)\s*/\s*(?P<u4>{_BASIS_UNIT})|"
+    rf"(?:元|块|塊|￥|¥)\s*一\s*(?P<u5>{_BASIS_UNIT})|"
+    rf"/\s*(?P<u6>{_BASIS_UNIT})|"
+    rf"per\s+(?P<e1>{_BASIS_EN})|"
+    rf"/\s*(?P<e3>pcs?|unit)\b|"
+    rf"\b(?P<e2>each|apiece|dozen)\b)"
 )
 _BASIS_NAME = {
     "个": "per_piece", "個": "per_piece", "件": "per_piece", "只": "per_piece", "隻": "per_piece",
     "piece": "per_piece", "pc": "per_piece", "pcs": "per_piece", "unit": "per_piece",
+    "each": "per_piece", "apiece": "per_piece",
     "条": "条", "條": "条", "双": "双", "雙": "双", "套": "套", "台": "台", "臺": "台",
     "箱": "箱", "斤": "斤", "公斤": "公斤", "千克": "公斤", "米": "米", "包": "包",
-    "盒": "盒", "打": "打", "立方": "立方",
+    "盒": "盒", "打": "打", "立方": "立方", "吨": "吨", "噸": "吨", "克": "克",
+    "码": "码", "碼": "码", "张": "张", "張": "张", "片": "片", "点": "点", "點": "点",
     "carton": "箱", "box": "箱", "case": "箱", "pack": "包", "bundle": "套", "set": "套",
-    "kg": "公斤", "kilo": "公斤", "meter": "米", "metre": "米",
+    "kg": "公斤", "kilo": "公斤", "kilogram": "公斤", "meter": "米", "metre": "米",
+    "dozen": "打", "ton": "吨", "tonne": "吨", "gram": "克", "yard": "码", "sheet": "张",
 }
 _PACK_COUNT = re.compile(
     r"(?:一\s*(?:箱|包|套|盒|打)\s*(?P<n>\d+(?:\.\d+)?)\s*(?:个|個|件|只|隻)|"
@@ -691,25 +734,181 @@ _PACK_COUNT = re.compile(
 def _basis_word(match: re.Match[str]) -> str:
     for group in match.groups():
         if group:
-            token = group.strip().lower()
-            token = token.replace("/", "").replace(" ", "")
-            if token in {"each", "apiece", "pc", "pcs", "unit"}:
+            token = group.strip().lower().replace("/", "").replace(" ", "")
+            if token in {"each", "apiece", "pc", "pcs", "unit", "piece"}:
                 return "per_piece"
-            return _BASIS_NAME.get(group.strip(), _BASIS_NAME.get(group.strip().lower(), ""))
+            return _BASIS_NAME.get(group.strip(), _BASIS_NAME.get(token, ""))
     return ""
 
 
-def _basis_of(clause: str) -> str | None:
-    """Deal-unit marker, or the measure word this clause actually prices."""
+def _basis_names(text: str) -> list[str]:
+    """Basis cues in ``text``. A non-piece cue is not removed by a piece cue."""
     found: list[str] = []
-    for match in _BASIS.finditer(clause or ""):
+    for match in _BASIS_CUE.finditer(text or ""):
         name = _basis_word(match)
         if name and name not in found:
             found.append(name)
+    return found
+
+
+def non_piece_basis(text: str) -> bool:
+    """True when ``text`` names a measure that is not the deal unit."""
+    return any(name != "per_piece" for name in _basis_names(text))
+
+
+def _basis_in(text: str) -> str | None:
+    """The deal unit, a non-piece basis, or None when the text states no basis."""
+    found = _basis_names(text)
     others = [name for name in found if name != "per_piece"]
     if others:
         return others[0]
     if found:
+        return "per_piece"
+    return None
+
+
+def _attach_head(clause: str, amount_at: int) -> str:
+    return clause[:amount_at]
+
+
+def _price_attached(clause: str, amount_at: int, token: str, pre: str, post: str) -> bool:
+    """The number itself carries a price cue. A cue elsewhere in the sentence does not."""
+    if (pre or "").strip() or (post or "").strip():
+        return True
+    head = _attach_head(clause, amount_at)
+    tail = clause[amount_at + len(token):]
+    if _ATTACH_HEAD.search(head):
+        return True
+    if re.search(rf"每\s*(?:{_BASIS_UNIT})\s*$", head):
+        return True
+    if re.search(r"(?i)per\s+(?:piece|pc|pcs|unit)\s*$", head):
+        return True
+    if re.match(rf"^\s*一\s*(?:{_BASIS_UNIT})", tail):
+        return True
+    if re.match(r"(?i)^\s*per\s+(?:piece|pc|pcs|unit)\b", tail):
+        return True
+    if re.match(r"(?i)^\s*(?:each|apiece)\b", tail):
+        return True
+    if _SUBUNIT.match(tail):
+        return True
+    return False
+
+
+def _excluded_number(text: str, start: int, token: str, clause: str, amount_at: int) -> bool:
+    """Counts, quantities, models, thresholds, percents, dates, and phone numbers."""
+    tail = text[start + len(token):]
+    head = clause[:amount_at]
+    if _PERCENT_TAIL.match(tail) or _COUNT_TAIL.match(tail) or _DATE_TAIL.match(tail):
+        return True
+    if _THRESHOLD_HEAD.search(head) or _MODEL_HEAD.search(head) or _SURCHARGE_HEAD.search(head):
+        return True
+    if _PHONE.fullmatch(token):
+        return True
+    end = start + len(token)
+    for match in _DATE.finditer(text):
+        if not (end <= match.start() or start >= match.end()):
+            return True
+    return False
+
+
+def _subunit_factor(tail: str) -> float | None:
+    """分, 毛/角, and 厘 as yuan. The formulas are the registered subunit factors."""
+    from src.config.heuristics import FEN_IN_YUAN, JIAO_IN_YUAN, LI_IN_YUAN
+
+    found = _SUBUNIT.match(tail or "")
+    if found is None:
+        return None
+    unit = found.group("u")
+    if unit == "分":
+        return float(FEN_IN_YUAN)
+    if unit in {"毛", "角"}:
+        return float(JIAO_IN_YUAN)
+    return float(LI_IN_YUAN)
+
+
+def _taiwan_unknown(text: str, pre: str, post: str) -> bool:
+    """Traditional script or a Taiwan dollar cue is not implicit CNY."""
+    if _TW_CUE.search(text or ""):
+        return True
+    marker = f"{pre} {post}"
+    if not re.search(r"元|块|塊", marker):
+        return False
+    if re.search(r"(?i)cny|rmb|yuan|￥|¥|人民币|人民幣", text or ""):
+        return False
+    return _TRADITIONAL_MARK.search(text or "") is not None
+
+
+def _offer_speech(clause: str) -> bool:
+    """A question, a refusal, a delta, or an instruction is not a goods candidate."""
+    window = _for_rules(clause)
+    if _QUESTION.search(window) or _NEGATION.search(window) or _INSTRUCTION.search(window):
+        return False
+    if _DELTA.search(window) or _ADDON.search(window):
+        return False
+    return True
+
+
+def _amount_spans(text: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    for match in _AMOUNT.finditer(text or ""):
+        spans.append((match.start("num"), match.end("num")))
+    return spans
+
+
+def _sentence_span(text: str, start: int) -> tuple[int, int]:
+    """Sentence bounds. A comma stays inside. A dot inside a number does too."""
+    left = 0
+    right = len(text)
+    for index, char in enumerate(text):
+        if char in "\n。！？!?":
+            boundary = True
+        elif char == ".":
+            before = text[index - 1] if index else ""
+            after = text[index + 1] if index + 1 < len(text) else ""
+            boundary = not (before.isdigit() and after.isdigit())
+        else:
+            boundary = False
+        if not boundary:
+            continue
+        if index < start:
+            left = index + 1
+        elif index > start and index < right:
+            right = index
+    return left, right
+
+
+def _basis_for_number(text: str, start: int, end: int) -> str | None:
+    """Basis cues that belong to this number, not to a neighbouring quantity.
+
+    The window runs from the previous amount to the next one. A cue on the
+    other side of another amount is that other amount's basis.
+    """
+    sentence_left, sentence_right = _sentence_span(text, start)
+    amounts = [
+        span for span in _amount_spans(text)
+        if sentence_left <= span[0] < sentence_right
+    ]
+    window_left = sentence_left
+    window_right = sentence_right
+    for amount_start, amount_end in amounts:
+        if amount_end <= start:
+            window_left = max(window_left, amount_end)
+        elif amount_start >= end:
+            window_right = min(window_right, amount_start)
+    names: list[str] = []
+    sentence = text[sentence_left:sentence_right]
+    for match in _BASIS_CUE.finditer(sentence):
+        cue_at = sentence_left + match.start()
+        cue_end = sentence_left + match.end()
+        if cue_end <= window_left or cue_at >= window_right:
+            continue
+        name = _basis_word(match)
+        if name and name not in names:
+            names.append(name)
+    others = [name for name in names if name != "per_piece"]
+    if others:
+        return others[0]
+    if names:
         return "per_piece"
     return None
 
@@ -749,6 +948,10 @@ def _reference_clause(clause: str) -> bool:
     window = "".join(chars)
     if _HEDGE.search(window) or _BUYER.search(window):
         return True
+    if _PAST.search(window) or _HEARSAY.search(window) or _HYPOTHETICAL.search(window):
+        return True
+    if _BUYER_ASK.search(window):
+        return True
     return _other_speaker(window)
 
 
@@ -786,6 +989,7 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
     review_tokens: list[dict[str, Any]] = []
     fees: list[dict[str, Any]] = []
     labelled_references: list[dict[str, Any]] = []
+    unknown_currency = False
     ranges = _range_spans(text)
     conversions = _conversion_spans(text)
     chinese = bool(_CJK.search(text))
@@ -802,13 +1006,20 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
         left, _right = _clause_span(text, match.start("num"))
         clause = text[left:_right]
         kind = _kind_for(pre, post, clause)
-        if _quantity_amount(text, match.start("num"), token):
+        if _quantity_amount(text, match.start("num"), token) or _duration_amount(text, match.start("num"), token):
             continue
         amount_at = match.start("num") - left
-        basis = _basis_of(clause)
-        per_piece = basis == "per_piece" or bool(_PER_PIECE.search(clause) or _UNIT_LABEL.search(clause))
-        if basis is None and per_piece:
-            basis = "per_piece"
+        if _excluded_number(text, match.start("num"), token, clause, amount_at):
+            continue
+        tail = text[match.end("num"):]
+        factor = _subunit_factor(tail)
+        if factor is not None and value is not None:
+            value = float(value) * factor
+            if kind is None:
+                kind = deal_currency
+        sentence = _sentence_of(text, match.start("num"))
+        basis = _basis_for_number(text, match.start("num"), match.end("num"))
+        per_piece = basis == "per_piece"
         fee = _fee_of(clause, amount_at, token)
         key = round(float(value), 4)
         unit_name = "per_piece" if per_piece and basis in {None, "per_piece"} else (basis or "unknown")
@@ -831,13 +1042,29 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
             item["label"] = "reference"
             labelled_references.append(item)
             continue
+        if _taiwan_unknown(sentence, pre, post):
+            unknown_currency = True
+            continue
         if kind == "foreign" or (kind is not None and kind != deal_currency):
             competing.append(item)
             continue
-        if basis not in {None, "per_piece"}:
+        if not _price_attached(clause, amount_at, token, pre, post):
+            continue
+        if basis != "per_piece":
+            if not _offer_speech(clause):
+                continue
+            if (
+                basis is None
+                and chinese
+                and deal_currency == DEAL_CURRENCY
+                and not pre
+                and not post
+                and factor is None
+            ):
+                item["evidence"] = _IMPLICIT_EVIDENCE
             item["issue"] = "unit_mismatch"
-            item["basis"] = basis
-            item["unit"] = basis
+            item["basis"] = basis or "unknown"
+            item["unit"] = basis or "unknown"
             review_tokens.append(item)
             continue
         if _LOT.search(clause) and not _PER_PIECE.search(clause) and not _UNIT_LABEL.search(clause):
@@ -893,6 +1120,7 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
         "ranges": bool(ranges),
         "fees": fees,
         "labelled_references": labelled_references,
+        "unknown_currency": unknown_currency,
     }
 
 
@@ -1033,6 +1261,7 @@ def parse_quote(
     saw_range = collected["ranges"]
     fees = collected["fees"]
     labelled_references = collected["labelled_references"]
+    unknown_currency = bool(collected.get("unknown_currency"))
     tokens = numeric_tokens(text)
     distinct = _distinct([value for _, value in tokens])
     reason = None
@@ -1058,6 +1287,8 @@ def parse_quote(
         reason = "fee, not a unit price"
     elif labelled_references and not units and not review_tokens and not competing:
         reason = "reference, not this supplier's price"
+    elif unknown_currency and not units and not review_tokens and not competing:
+        reason = "unknown currency"
     elif competing and not units:
         reason = "not the deal currency" if foreign else "no usable amount in the deal currency"
     elif competing:
@@ -1070,32 +1301,28 @@ def parse_quote(
         settled = _settled(chosen["token"])
         if settled is not None and chosen["token"] in text:
             accepted = True
-            unit_price = settled
+            unit_price = float(chosen["value"])
             reason = None
         else:
             chosen = None
             reason = reason or "no usable amount in the deal currency"
-    goods = [item["token"] for item in units if item.get("token")]
-    suggested = None
-    if chosen is not None:
-        suggested = chosen["token"]
-    elif goods:
-        suggested = goods[0]
     candidate_tokens: list[str] = []
+    shown_values: dict[str, float] = {}
     for item in units + review_tokens:
         if item["token"] not in candidate_tokens:
             candidate_tokens.append(item["token"])
-    implicit = [item for item in review_tokens if item.get("evidence") == _IMPLICIT_EVIDENCE]
-    if chosen is None and not goods and implicit:
-        suggested = implicit[0]["token"]
-    elif chosen is None and not goods and mismatches:
-        suggested = mismatches[0]["token"]
-    if suggested and suggested not in candidate_tokens:
-        candidate_tokens.insert(0, suggested)
+        shown_values.setdefault(str(item["token"]), float(item["value"]))
+    # One attached price can be the one-click prefill. Two prices, and neither is.
+    if chosen is not None:
+        suggested = chosen["token"]
+    elif len(candidate_tokens) == 1:
+        suggested = candidate_tokens[0]
+    else:
+        suggested = None
     bases: list[str] = []
     for item in units + review_tokens:
         label = str(item.get("basis") or "")
-        if label and label != "unknown" and label not in bases:
+        if label and label not in bases:
             bases.append(label)
     evidence = None
     if any(item.get("evidence") == _IMPLICIT_EVIDENCE for item in units + review_tokens):
@@ -1133,10 +1360,7 @@ def parse_quote(
         "tokens": [token for token, _value in tokens],
         "candidates": candidate_tokens,
         "suggested_token": suggested,
-        "confirm_value": (
-            None if suggested is None
-            else (chosen["value"] if chosen is not None and chosen.get("token") == suggested else _settled(suggested))
-        ),
+        "confirm_value": None if suggested is None else shown_values.get(str(suggested)),
         "confirm_span": None if not suggested else _confirm_span(stage_text, suggested),
         "confirm_spans": {
             token: _confirm_span(stage_text, token) for token in candidate_tokens if token
@@ -1188,17 +1412,41 @@ def token_issue(raw_text: str, token: str, deal_currency: str | None = None) -> 
     return None
 
 
+def confirm_amount(
+    raw_text: str, token: str, deal_currency: str | None = None
+) -> tuple[float, str] | None:
+    """Goods-candidate value and basis. A fee or a reference is not one."""
+    from src.config.heuristics import DEAL_CURRENCY
+
+    currency = deal_currency or DEAL_CURRENCY
+    visible = _visible_text(raw_text or "")
+    if not token or token not in visible:
+        return None
+    collected = _collect(visible, currency)
+    for item in collected["units"] + collected["review_tokens"]:
+        if item.get("token") != token:
+            continue
+        if item.get("issue") not in (None, "unit_mismatch"):
+            continue
+        return float(item["value"]), str(item.get("basis") or "unknown")
+    return None
+
+
 def price_from_token(raw_text: str, token: str, deal_currency: str | None = None) -> float | None:
     """A human may confirm a token when that digit string is in the text and is not a foreign amount.
 
     The grammar may have left the message in review. The confirmation is the
     missing evidence. A token anchored to another currency stays None.
-    A fee, a hedge, or a different unit basis stays None as well.
+    A fee, a hedge, or a basis other than the deal unit stays None as well.
+    Unknown is not the deal unit: this path does not choose a basis.
     """
     from src.config.heuristics import DEAL_CURRENCY
 
     currency = deal_currency or DEAL_CURRENCY
     if token_issue(raw_text, token, deal_currency=currency):
+        return None
+    found = confirm_amount(raw_text, token, deal_currency=currency)
+    if found is None or found[1] != "per_piece":
         return None
     if not token or token not in (raw_text or ""):
         return None
@@ -1229,9 +1477,16 @@ def price_from_token(raw_text: str, token: str, deal_currency: str | None = None
             bare_value = value
         else:
             other = True
+    factor = _subunit_factor(visible[visible.find(token) + len(token):]) if token in visible else None
+
+    def _scaled(amount: float) -> float:
+        if factor is None:
+            return float(amount)
+        return float(amount) * float(factor)
+
     if matched is not None:
-        return matched
+        return _scaled(matched)
     # An unmarked number is confirmable only for the yuan default.
     if currency == DEAL_CURRENCY and bare_value is not None and not other:
-        return bare_value
+        return _scaled(bare_value)
     return None

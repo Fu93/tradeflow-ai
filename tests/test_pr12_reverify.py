@@ -21,10 +21,11 @@ from src.engine.one_step import one_step_counter
 MUST_ACCEPT = [
     ("Price incl. tax: 32 RMB per piece.", 32.0),
     ("31 RMB per piece with extra-thick carton packaging.", 31.0),
-    ("Unit price ¥33.10, lead time 30 days.", 33.10),
     ("New price is 29 yuan per piece, MOQ 800.", 29.0),
     ("报价：每件 32.4 元（不含运费）", 32.4),
 ]
+# "Unit price" names a price. It does not name the deal unit.
+BARE_UNIT_PRICE = "Unit price ¥33.10, lead time 30 days."
 
 # Fresh wording. Not copied from the attached re-verification corpus.
 OWN_HELDOUT = [
@@ -35,7 +36,7 @@ OWN_HELDOUT = [
     ("Price 25.75 yuan/pc, ready to produce.", 25.75),
     ("含税单价：31.25元/只。", 31.25),
     ("Quote update: 22.40 RMB per piece, carton is extra-thick.", 22.40),
-    ("Unit price ¥19.90, production 21 days.", 19.90),
+    ("Unit price ¥19.90, production 21 days.", None),
     ("OK，成交价 23.3 元一件。", 23.3),
     ("每件 24.6 元（不含运费）可以做。", 24.6),
     ("Final figure 18.70 CNY now.", None),
@@ -85,12 +86,17 @@ def test_known_real_quotes_stay_accepted():
     for text, expect in MUST_ACCEPT:
         price = _accepted_price(text)
         assert price == pytest.approx(expect), text
+    bare = parse_quote(BARE_UNIT_PRICE)
+    assert bare["status"] == "review"
+    assert bare["parsed"]["unit_price"] is None
+    assert bare["provenance"]["review_reason"] == "unit mismatch"
+    assert "33.10" in bare["provenance"]["candidates"]
 
 
 # Fresh wording for the positive-evidence grammar. Not the verifier corpus.
 POSITIVE_HELDOUT = [
-    ("Our factory offers 31 RMB", 31.0),
-    ("Dear purchasing agent, the unit price is 29.80 CNY", 29.80),
+    ("Our factory offers 31 RMB", None),
+    ("Dear purchasing agent, the unit price is 29.80 CNY", None),
     ("Boss, 含税单价 27.40 元/件, EXW factory.", 27.40),
     ("亲，这款专票单价 ¥26.15/个。", 26.15),
     ("We quote 24.90 RMB each for the grey one.", 24.90),
@@ -98,7 +104,7 @@ POSITIVE_HELDOUT = [
     ("Unit price 22.10 yuan per piece, carton included.", 22.10),
     ("最新报价：每件 21.55 元。", 21.55),
     ("The workshop can offer RMB 20.40 per pc.", 20.40),
-    ("单价 19.25 元，包邮，专票。", 19.25),
+    ("单价 19.25 元，包邮，专票。", None),
 ]
 
 ADVERSARIAL = [
@@ -167,7 +173,8 @@ def test_positive_held_out_and_adversarial_precision_is_one():
         assert tp > 0 or name == "adversarial"
     held = _score(POSITIVE_HELDOUT)
     adv = _score(ADVERSARIAL)
-    assert held[0] == 1.0 and held[2] == len(POSITIVE_HELDOUT)
+    stated = sum(1 for _text, expect in POSITIVE_HELDOUT if expect is not None)
+    assert held[0] == 1.0 and held[2] == stated
     assert adv[2] == 0 and adv[3] == 0 and adv[5] == len(ADVERSARIAL)
 
 
@@ -175,14 +182,19 @@ def test_tier_uses_the_deal_quantity_and_otherwise_reviews():
     text = "1000个 31元/个，5000个 29元/个"
     open_row = parse_quote(text)
     assert open_row["status"] == "review"
-    assert open_row["provenance"]["suggested_token"] == "31"
+    assert open_row["provenance"]["suggested_token"] is None
+    assert "31" in open_row["provenance"]["candidates"]
+    assert "29" in open_row["provenance"]["candidates"]
     assert parse_quote(text, quantity=1000)["parsed"]["unit_price"] == pytest.approx(31)
     assert parse_quote(text, quantity=5000)["parsed"]["unit_price"] == pytest.approx(29)
     assert parse_quote(text, quantity=3000)["parsed"]["unit_price"] == pytest.approx(31)
     assert parse_quote(text, quantity=800)["parsed"]["unit_price"] == pytest.approx(31)
     ladder = "Price tiers: 33.50 CNY at 5000 pcs, 32.10 CNY at 10000 pcs."
-    assert parse_quote(ladder)["status"] == "review"
-    assert parse_quote(ladder, quantity=10000)["parsed"]["unit_price"] == pytest.approx(32.10)
+    held = parse_quote(ladder, quantity=10000)
+    assert held["status"] == "review"
+    assert held["parsed"]["unit_price"] is None
+    assert held["provenance"]["review_reason"] == "unit mismatch"
+    assert "32.10" in held["provenance"]["candidates"]
 
 
 def test_question_mark_stays_inside_the_clause():
@@ -195,8 +207,9 @@ def test_human_can_confirm_a_reviewed_cny_token():
     from src.desk.parse import price_from_token
 
     assert price_from_token("Unit price: 4.60 USD per piece.", "4.60") is None
-    assert price_from_token("26 RMB is below our cost", "26") == pytest.approx(26)
-    assert price_from_token("Dear purchasing agent, unit price 29.80", "29.80") == pytest.approx(29.80)
+    assert price_from_token("26 RMB is below our cost", "26") is None
+    assert price_from_token("Dear purchasing agent, unit price 29.80", "29.80") is None
+    assert price_from_token("26 RMB per piece is below our cost", "26") == pytest.approx(26)
 
 
 def test_plausibility_band_is_three_and_blocks_the_loose_cases(tmp_path, monkeypatch):
@@ -241,13 +254,18 @@ def test_plausibility_band_is_three_and_blocks_the_loose_cases(tmp_path, monkeyp
     for text in (
         "Unit price 1.60 RMB.",
         "Unit price 3.6 RMB.",
-        "Unit price 33.10 RMB per piece.",
     ):
         event = _event(small, text)
         assert event["status"] == "review"
         assert event["parsed"]["unit_price"] is None
         assert event["provenance"]["auto_accept"] is False
-        assert event["provenance"]["rule_would_accept"] is True
+        assert event["provenance"]["rule_would_accept"] is False
+        assert event["provenance"]["review_reason"] == "unit mismatch"
+    piece = _event(small, "Unit price 33.10 RMB per piece.")
+    assert piece["status"] == "review"
+    assert piece["parsed"]["unit_price"] is None
+    assert piece["provenance"]["auto_accept"] is False
+    assert piece["provenance"]["rule_would_accept"] is True
 
     wide = _deal(28, 36.5)
     for text in (

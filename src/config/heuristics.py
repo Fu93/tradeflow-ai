@@ -602,6 +602,19 @@ IMPLICIT_CNY_AUTO_ACCEPT = 0
 # is 1. The default 0 records the bundle and does not divide it.
 UNIT_BASIS_FROM_MESSAGE = 0
 
+# Rationale: one fen is one hundredth of a yuan. A supplier who writes 分
+# is naming that subunit. The price in yuan is the count times this factor.
+FEN_IN_YUAN = 0.01
+
+# Rationale: one jiao, also called 毛, is one tenth of a yuan. A supplier
+# who writes 角 or 毛 is naming that subunit, and the yuan price is the count
+# times this factor.
+JIAO_IN_YUAN = 0.1
+
+# Rationale: one li is one thousandth of a yuan. A supplier who writes 厘
+# is naming that subunit. The price in yuan is the count times this factor.
+LI_IN_YUAN = 0.001
+
 # Rationale: supplier-message length, in characters, above which the extractor
 # skips the Ultra hop and calls Super. A longer message was timing out on Ultra.
 EXTRACTOR_SUPER_DIRECT_CHARS = 24000

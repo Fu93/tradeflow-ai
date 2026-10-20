@@ -28,10 +28,6 @@ _NOT_UNIT_GOODS = re.compile(
     r"打样费|打樣費|开模费|開模費|服务费|服務費|手续费|手續費|"
     r"元\s*/\s*(?:小时|小時|天|次))"
 )
-_OTHER_UNIT = re.compile(
-    r"(?:条|條|双|雙|套|台|臺|箱|斤|公斤|千克|米|包|盒|打|立方|"
-    r"per\s+(?:carton|box|case|pack|set|bundle))"
-)
 _PIECE_UNIT = re.compile(r"(?i)(?:件|个|個|只|隻|per\s*piece|/\s*pcs?\b|每件|每个|每個|每只|每隻)")
 _REFERENCE_TEXT = re.compile(
     r"(?i)(?:不到|低于|低於|高于|高於|大概|左右|最多|至少|比.{0,12}便宜|"
@@ -97,9 +93,11 @@ def _implicit_cny(message: str, span: str, nearby: str, currency: str) -> bool:
 
 def _basis_ok(span: str, nearby: str) -> bool:
     """The span's measure word has to be the deal unit. A pack is not a piece."""
-    if _PIECE_UNIT.search(span) and not _OTHER_UNIT.search(span):
+    from src.desk.parse import non_piece_basis
+
+    if _PIECE_UNIT.search(span) and not non_piece_basis(span):
         return True
-    if _OTHER_UNIT.search(span) or _OTHER_UNIT.search(nearby):
+    if non_piece_basis(span) or non_piece_basis(nearby):
         return False
     return True
 
@@ -151,9 +149,41 @@ def _mention_agrees(
     amount = _priced_amount(span)
     if amount is None:
         return None
+    if not _rule_agrees(span, amount, str(mention.get("unit") or ""), currency):
+        return None
     if amount < float(low) or amount > float(high):
         return None
     return amount
+
+
+def _rule_agrees(span: str, amount: float, unit: str, currency: str) -> bool:
+    """The rule parser reads the span on its own. A regex hit is not agreement."""
+    import math
+
+    from src.desk.parse import parse_quote
+
+    reading = parse_quote(span, deal_currency=currency)
+    if reading.get("status") != "accepted":
+        return False
+    price = (reading.get("parsed") or {}).get("unit_price")
+    if price is None or not math.isclose(float(price), float(amount)):
+        return False
+    bases = list((reading.get("provenance") or {}).get("unit_basis") or [])
+    if "per_piece" not in bases:
+        return False
+    if per_piece_marked(span) and unit != "per_piece":
+        return False
+    parsed_currency = str((reading.get("parsed") or {}).get("currency") or "")
+    return parsed_currency == str(currency)
+
+
+def _price_list(message: str, currency: str) -> bool:
+    """Several goods prices in one message are a list. The gate does not pick one."""
+    from src.desk.parse import parse_quote
+
+    reading = parse_quote(message, deal_currency=currency)
+    candidates = list((reading.get("provenance") or {}).get("candidates") or [])
+    return len(candidates) > 1
 
 
 def evaluate_shadow(
@@ -175,7 +205,7 @@ def evaluate_shadow(
         for mention in mentions:
             if mention.get("class") == "instruction":
                 instructed.add(str(mention.get("evidence_span") or ""))
-    if extractor_configured and mentions:
+    if extractor_configured and mentions and not _price_list(message, currency):
         for mention in mentions:
             span = str(mention.get("evidence_span") or "")
             if mention.get("class") == "instruction" or span in instructed:
@@ -207,6 +237,13 @@ def shadow_from_message(
     budget_seconds: float | None = None,
 ) -> dict[str, Any]:
     extracted = extract_mentions(message, transport=transport, budget_seconds=budget_seconds)
+    unstable = False
+    if extracted.get("configured") and extracted.get("mentions") and not extracted.get("error"):
+        second = extract_mentions(message, transport=transport, budget_seconds=budget_seconds)
+        if second.get("error") or _mention_signature(second.get("mentions")) != _mention_signature(
+            extracted.get("mentions")
+        ):
+            unstable = True
     decision = evaluate_shadow(
         message,
         reading,
@@ -225,7 +262,25 @@ def shadow_from_message(
     decision["attempts"] = list(extracted.get("attempts") or [])
     if extracted.get("error"):
         decision["error"] = extracted["error"]
+    if unstable:
+        decision["would_accept"] = False
+        decision["unstable"] = True
     return decision
+
+
+def _mention_signature(mentions: list[dict[str, Any]] | None) -> tuple:
+    rows = []
+    for mention in mentions or []:
+        rows.append(
+            (
+                str(mention.get("class") or ""),
+                str(mention.get("evidence_span") or ""),
+                str(mention.get("currency") or ""),
+                str(mention.get("unit") or ""),
+                str(mention.get("speaker") or ""),
+            )
+        )
+    return tuple(sorted(rows))
 
 
 def progress(rows: list[dict[str, Any]]) -> dict[str, Any]:

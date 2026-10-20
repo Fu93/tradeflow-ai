@@ -127,6 +127,8 @@ class ReviewIn(BaseModel):
     supplier_id: str | None = None
     action: str = "accept"
     chosen_token: str | None = Field(default=None, max_length=80)
+    unit_basis: str | None = None
+    pieces_per_basis: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
 
 class SendIn(BaseModel):
@@ -311,6 +313,8 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 body.supplier_id,
                 chosen_token=body.chosen_token,
                 reject=body.action == "reject",
+                unit_basis=body.unit_basis,
+                pieces_per_basis=body.pieces_per_basis,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="No such review item") from exc

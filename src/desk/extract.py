@@ -11,6 +11,7 @@ import http.client
 import json
 import logging
 import os
+import re
 import socket
 import threading
 import time
@@ -44,7 +45,8 @@ from src.config.heuristics import (
 )
 
 logger = logging.getLogger("tradeflow.desk.extract")
-_NVIDIA_MISSING = "Function not found for account"
+# NVIDIA's 404 names the function id between "Function" and this phrase.
+_NVIDIA_MISSING = re.compile(r"not found for account", re.IGNORECASE)
 _nvidia_disabled = False
 _nvidia_guard = threading.Lock()
 
@@ -366,7 +368,7 @@ def _exception_status(exc: BaseException, *, nvidia: bool = False) -> tuple[str,
         return "malformed", exc.digest
     if isinstance(exc, urllib.error.HTTPError):
         raw = _read_http(exc)
-        missing = _NVIDIA_MISSING.encode("utf-8") in raw
+        missing = _NVIDIA_MISSING.search(raw.decode("utf-8", errors="replace")) is not None
         if nvidia and int(exc.code) == int(HTTP_NOT_FOUND) and missing:
             return "config", _sha(raw)
         return _http_status(int(exc.code)), _sha(raw)

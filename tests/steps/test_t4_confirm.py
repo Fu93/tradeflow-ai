@@ -32,7 +32,7 @@ def test_reaccept_is_refused(tmp_path, monkeypatch):
     deal_id = snapshot["deal"]["id"]
     supplier = snapshot["suppliers"][0]["id"]
     opened = ingest_message(store, deal_id, source="paste", raw_text="单价 15.60 元", supplier_id=supplier)
-    accept_review(store, deal_id, opened["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(store, deal_id, opened["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     with pytest.raises(DeskRejected):
-        accept_review(store, deal_id, opened["event"]["id"], supplier, chosen_token="15.60")
+        accept_review(store, deal_id, opened["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     store.close()

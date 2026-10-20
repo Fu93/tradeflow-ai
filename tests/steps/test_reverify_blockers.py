@@ -74,8 +74,8 @@ def test_landed_cost_uses_the_deal_currency(tmp_path, monkeypatch):
         raw_text="unit price 4.40 USD per piece",
         freight=0.20, duty_rate=0.0, fees=0.0,
     )
-    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="4.50")
-    fresh = accept_review(store, deal_id, second["event"]["id"], south, chosen_token="4.40")
+    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="4.50", unit_basis="per_piece")
+    fresh = accept_review(store, deal_id, second["event"]["id"], south, chosen_token="4.40", unit_basis="per_piece")
     by_id = {row["id"]: row for row in fresh["suppliers"]}
     assert by_id[north]["landed_cost"] == pytest.approx(4.80)
     assert by_id[south]["landed_cost"] == pytest.approx(4.60)
@@ -144,7 +144,7 @@ def test_outcome_and_assumption_changes_are_on_the_chain(tmp_path, monkeypatch):
     opened = ingest_message(
         store, deal_id, source="paste", supplier_id=supplier, raw_text="unit price 15.60 CNY per piece",
     )
-    accept_review(store, deal_id, opened["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(store, deal_id, opened["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     record_outcome(store, deal_id, supplier, outcome="continue", quote=15.60, offer=15.60)
     set_assumptions(store, deal_id, {"risk_tolerance": 0.2})
     chain = store.verify_chain(deal_id)
@@ -165,7 +165,7 @@ def test_send_refuses_a_rewritten_counter_whose_row_hash_matches(tmp_path, monke
     opened = ingest_message(
         store, deal_id, source="paste", supplier_id=supplier, raw_text="unit price 15.60 CNY per piece",
     )
-    accept_review(store, deal_id, opened["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(store, deal_id, opened["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     draft = next(item for item in store.drafts(deal_id) if item["status"] == "draft")
     decision_id = draft["decision_id"]
     belief = ReserveState.policy()
@@ -237,7 +237,7 @@ def test_send_refuses_when_the_recomputed_counter_differs(tmp_path, monkeypatch)
     opened = ingest_message(
         store, deal["id"], source="paste", supplier_id=supplier, raw_text="unit price 20.00 CNY per piece",
     )
-    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="20.00")
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="20.00", unit_basis="per_piece")
     belief = ReserveState.policy()
     record = build_record(
         deal_id=deal["id"], supplier_id=supplier, currency="CNY",
@@ -305,7 +305,7 @@ def test_send_refuses_another_suppliers_decision(tmp_path, monkeypatch):
         opened = ingest_message(
             store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 15.60 元",
         )
-        accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60")
+        accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     drafts = {item["supplier_id"]: item for item in store.drafts(deal["id"]) if item["status"] == "draft"}
     stolen = dict(drafts[north], decision_id=drafts[south]["decision_id"], body=drafts[south]["body"])
     with pytest.raises(SendRefused, match="does not belong"):
@@ -321,7 +321,7 @@ def test_send_refuses_an_older_decision(tmp_path, monkeypatch):
     opened = ingest_message(
         store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 15.60 元",
     )
-    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     draft = next(item for item in store.drafts(deal["id"]) if item["status"] == "draft")
     _issued(store, deal, supplier)
     with pytest.raises(SendRefused, match="latest decision"):
@@ -338,7 +338,7 @@ def test_send_refuses_an_ask_the_confirmed_quote_does_not_have(tmp_path, monkeyp
     opened = ingest_message(
         store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 15.60 元",
     )
-    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     decision_id, _record = _issued(store, deal, supplier, ask=20.0, offer=20.0, counter=20.0, reference_ask=20.0)
     body = draft_body("valve", 20.0, 100, "zh", "CNY")
     draft = next(item for item in store.drafts(deal["id"]) if item["supplier_id"] == supplier)
@@ -356,7 +356,7 @@ def test_send_refuses_a_held_counter_the_chain_did_not_issue(tmp_path, monkeypat
     opened = ingest_message(
         store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 15.60 元",
     )
-    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     decision_id, _record = _issued(
         store, deal, supplier, offer=12.0, counter=12.0, held_previous_counter=12.0,
     )
@@ -375,7 +375,7 @@ def test_send_refuses_a_draft_that_adds_a_second_price(tmp_path, monkeypatch):
     opened = ingest_message(
         store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 15.60 元",
     )
-    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     draft = next(item for item in store.drafts(deal["id"]) if item["status"] == "draft")
     tainted = dict(draft, body=draft["body"] + "\nfinal offer 20.00")
     with pytest.raises(SendRefused, match="rendered counter"):
@@ -396,8 +396,8 @@ def test_landed_rank_does_not_cut_to_a_lower_unit_price(tmp_path, monkeypatch):
         store, deal_id, source="paste", supplier_id=south,
         raw_text="单价 4.40 元", freight=0.90, duty_rate=0.0, fees=0.0,
     )
-    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="5.00")
-    fresh = accept_review(store, deal_id, second["event"]["id"], south, chosen_token="4.40")
+    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="5.00", unit_basis="per_piece")
+    fresh = accept_review(store, deal_id, second["event"]["id"], south, chosen_token="4.40", unit_basis="per_piece")
     by_id = {row["id"]: row for row in fresh["suppliers"]}
     assert by_id[north]["landed_cost"] == pytest.approx(5.10)
     assert by_id[south]["landed_cost"] == pytest.approx(5.30)
@@ -509,7 +509,7 @@ def test_send_refuses_a_decision_in_another_currency(tmp_path, monkeypatch):
     opened = ingest_message(
         store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 31.00 元",
     )
-    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="31.00")
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="31.00", unit_basis="per_piece")
     draft = next(item for item in store.drafts(deal["id"]) if item["status"] == "draft")
     decision_id = _reissue(store, draft, currency="USD")
     with pytest.raises(SendRefused, match="chained deal currency"):
@@ -520,8 +520,8 @@ def test_send_refuses_an_edited_confirmed_price(tmp_path, monkeypatch):
     from src.desk.project import draft_body
     from src.desk.service import SendRefused, _guard_send, _price_in_message, accept_review, ingest_message
 
-    assert _price_in_message("单价 20.00 元", {"token": "31.00"}, "CNY") == pytest.approx(20.0)
-    assert _price_in_message("单价 31.00 元", {"token": "31.00"}, "CNY") == pytest.approx(31.0)
+    assert _price_in_message("单价 20.00 元", {"token": "31.00"}, "CNY") is None
+    assert _price_in_message("单价 31.00 元", {"token": "31.00"}, "CNY") is None
     store, snapshot = _deal(tmp_path, monkeypatch, ceiling=40.0)
     deal = snapshot["deal"]
     supplier = snapshot["suppliers"][0]["id"]
@@ -529,7 +529,7 @@ def test_send_refuses_an_edited_confirmed_price(tmp_path, monkeypatch):
         store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 31.00 元",
     )
     event_id = opened["event"]["id"]
-    accept_review(store, deal["id"], event_id, supplier, chosen_token="31.00")
+    accept_review(store, deal["id"], event_id, supplier, chosen_token="31.00", unit_basis="per_piece")
     parsed = dict(store.event(deal["id"], event_id)["parsed"])
     parsed["unit_price"] = 20.0
     parsed["currency"] = "CNY"
@@ -557,7 +557,7 @@ def test_send_refuses_a_decision_with_forged_rivals(tmp_path, monkeypatch):
     opened = ingest_message(
         store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 31.00 元",
     )
-    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="31.00")
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="31.00", unit_basis="per_piece")
     draft = next(item for item in store.drafts(deal["id"]) if item["status"] == "draft")
     decision_id = _reissue(
         store, draft, rival_asks=[10.0], counter=10.0, offer=10.0,
@@ -576,7 +576,7 @@ def test_resetting_an_approved_draft_does_not_send_again(tmp_path, monkeypatch):
     opened = ingest_message(
         store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 31.00 元",
     )
-    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="31.00")
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="31.00", unit_basis="per_piece")
     draft = next(item for item in store.drafts(deal["id"]) if item["status"] == "draft")
     digest = draft_digest(draft["body"])
     approved = asyncio.run(send_draft(store, draft["id"], human_approved=True, body_sha256=digest))
@@ -595,7 +595,8 @@ def test_a_non_suggested_token_shows_its_line():
 
     parsed = parse_quote("We can do 14.80 CNY per piece.\nFinal offer 12.50 CNY per piece.")
     spans = parsed["provenance"]["confirm_spans"]
-    assert parsed["provenance"]["suggested_token"] == "14.80"
+    assert parsed["provenance"]["suggested_token"] is None
+    assert "14.80" in spans
     assert "Final offer" in spans["12.50"]
     assert spans["12.50"] != "12.50"
     panel = _tree_text("src/web/static/js/desk.js")
@@ -644,8 +645,8 @@ def test_send_after_a_rival_walks_away(tmp_path, monkeypatch):
     second = ingest_message(
         store, deal_id, source="paste", supplier_id=south, raw_text="unit price 14.00 CNY per piece",
     )
-    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="15.60")
-    accept_review(store, deal_id, second["event"]["id"], south, chosen_token="14.00")
+    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="15.60", unit_basis="per_piece")
+    accept_review(store, deal_id, second["event"]["id"], south, chosen_token="14.00", unit_basis="per_piece")
     fresh = record_outcome(store, deal_id, south, outcome="walk_away", quote=14.0, offer=14.0)
     card = next(row for row in fresh["suppliers"] if row["id"] == north)
     stored = store.get_decision(card["decision_id"])
@@ -702,7 +703,7 @@ def test_legacy_deal_needs_a_fresh_confirmation(tmp_path, monkeypatch):
     ingested = ingest_message(
         store, deal_id, source="paste", supplier_id=supplier, raw_text="unit price 15.60 CNY per piece",
     )
-    accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     store.close()
     reopened = DeskStore(path)
     untouched = reopened.verify_chain(deal_id)
@@ -727,7 +728,7 @@ def test_legacy_deal_needs_a_fresh_confirmation(tmp_path, monkeypatch):
     fresh = ingest_message(
         reopened, deal_id, source="paste", supplier_id=supplier, raw_text="unit price 15.60 CNY per piece",
     )
-    accept_review(reopened, deal_id, fresh["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(reopened, deal_id, fresh["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     draft = next(item for item in reopened.drafts(deal_id) if item["supplier_id"] == supplier and item["status"] == "draft")
     with pytest.raises(SendRefused, match="policy limits"):
         asyncio.run(
@@ -832,7 +833,7 @@ def test_rehashed_chain_and_forged_failure_do_not_verify(tmp_path, monkeypatch):
     ingested = ingest_message(
         store, deal_id, source="paste", supplier_id=supplier, raw_text="unit price 15.60 CNY per piece",
     )
-    accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     draft = next(item for item in store.drafts(deal_id) if item["status"] == "draft")
     digest = draft_digest(draft["body"])
     assert key.encode() not in Path(store.path).read_bytes()
@@ -1056,7 +1057,7 @@ def test_pre_key_chain_is_archived_and_reconfirmed(tmp_path, monkeypatch):
     ingested = ingest_message(
         store, deal_id, source="paste", supplier_id=supplier, raw_text="unit price 15.60 CNY per piece",
     )
-    accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     store.conn.execute("DROP TRIGGER IF EXISTS desk_chain_no_update")
     store.conn.execute("DROP TRIGGER IF EXISTS desk_chain_no_delete")
     rows = store.conn.execute(
@@ -1102,7 +1103,7 @@ def test_pre_key_chain_is_archived_and_reconfirmed(tmp_path, monkeypatch):
         asyncio.run(
             send_draft(reopened, draft["id"], human_approved=True, body_sha256=draft_digest(draft["body"]))
         )
-    accept_review(reopened, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(reopened, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60", unit_basis="per_piece")
     draft = next(item for item in reopened.drafts(deal_id) if item["supplier_id"] == supplier and item["status"] == "draft")
     with pytest.raises(SendRefused, match="policy limits"):
         asyncio.run(
@@ -1151,8 +1152,8 @@ def test_send_refuses_a_rewritten_address_subject_or_reply_header(tmp_path, monk
     second = ingest_message(
         store, deal_id, source="paste", supplier_id=south, raw_text="unit price 14.00 CNY per piece",
     )
-    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="15.60")
-    accept_review(store, deal_id, second["event"]["id"], south, chosen_token="14.00")
+    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="15.60", unit_basis="per_piece")
+    accept_review(store, deal_id, second["event"]["id"], south, chosen_token="14.00", unit_basis="per_piece")
     captured: list[dict] = []
 
     async def _grab(recipient, body, product, **kwargs):
@@ -1213,13 +1214,13 @@ def test_a_walked_supplier_returns_only_after_reopen(tmp_path, monkeypatch):
     second = ingest_message(
         store, deal_id, source="paste", supplier_id=south, raw_text="unit price 14.00 CNY per piece",
     )
-    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="15.60")
-    accept_review(store, deal_id, second["event"]["id"], south, chosen_token="14.00")
+    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="15.60", unit_basis="per_piece")
+    accept_review(store, deal_id, second["event"]["id"], south, chosen_token="14.00", unit_basis="per_piece")
     record_outcome(store, deal_id, south, outcome="walk_away", quote=14.0, offer=10.0)
     again = ingest_message(
         store, deal_id, source="paste", supplier_id=south, raw_text="unit price 13.00 CNY per piece",
     )
-    fresh = accept_review(store, deal_id, again["event"]["id"], south, chosen_token="13.00")
+    fresh = accept_review(store, deal_id, again["event"]["id"], south, chosen_token="13.00", unit_basis="per_piece")
     south_card = next(row for row in fresh["suppliers"] if row["id"] == south)
     assert "walked away" in str(south_card.get("reserve_note") or "")
     north_card = next(row for row in fresh["suppliers"] if row["id"] == north)

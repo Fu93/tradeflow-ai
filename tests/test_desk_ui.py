@@ -121,7 +121,7 @@ def test_desk_page_updates_when_mail_arrives():
             assert page.locator("#sanity-multiple").count() == 1
             page.locator("#events").get_by_text("email").first.wait_for(timeout=5000)
             page.locator("#paste-supplier").select_option(index=1)
-            page.fill("#paste-text", "单价 14.80 元")
+            page.fill("#paste-text", "单价 14.80 元/件")
             page.locator("#paste-form button[type=submit]").click()
             confirm = page.locator("[data-confirm-value='14.80']")
             confirm.wait_for(timeout=15000)

@@ -66,6 +66,18 @@ def test_shadow_never_applies_and_wilson_fails_closed():
         extractor_configured=True,
     )
     assert lot_decision["would_accept"] is False
+    unmarked = dict(mention)
+    unmarked["unit"] = "lot"
+    unmarked["evidence_span"] = "18.40 CNY per unit"
+    unmarked_decision = evaluate_shadow(
+        "18.40 CNY per unit",
+        reading,
+        low=1,
+        high=100,
+        mentions=[unmarked],
+        extractor_configured=True,
+    )
+    assert unmarked_decision["would_accept"] is False
     from src.desk.shadow import _neighborhood
 
     assert _neighborhood("hello", "missing") == ""

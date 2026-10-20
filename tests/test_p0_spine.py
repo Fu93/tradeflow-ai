@@ -83,7 +83,7 @@ def test_reaccept_is_blocked_and_unconfirmed_withholds_the_counter(tmp_path):
     supplier = opened["suppliers"][0]["id"]
     ingested = ingest_message(store, deal_id, source="paste", raw_text="单价 14.80 元", supplier_id=supplier)
     assert ingested["event"]["raw_sha256"] == hashlib.sha256("单价 14.80 元".encode()).hexdigest()
-    accepted = accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="14.80")
+    accepted = accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="14.80", unit_basis="per_piece")
     card = next(row for row in accepted["suppliers"] if row["id"] == supplier)
     assert card["counter"] is not None
     assert card.get("decision_id")
@@ -94,7 +94,7 @@ def test_reaccept_is_blocked_and_unconfirmed_withholds_the_counter(tmp_path):
     assert "decision" in kinds
     assert "draft_created" in kinds
     with pytest.raises(DeskRejected):
-        accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="14.80")
+        accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="14.80", unit_basis="per_piece")
     forged = dict(ingested["event"])
     forged["status"] = "accepted"
     forged["provenance"] = {"unconfirmed": True, "price_source": "raw_text"}
@@ -117,7 +117,7 @@ def test_send_guard_refuses_a_broken_chain(tmp_path):
     deal_id = opened["deal"]["id"]
     supplier = opened["suppliers"][0]["id"]
     ingested = ingest_message(store, deal_id, source="paste", raw_text="单价 14.80 元", supplier_id=supplier)
-    accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="14.80")
+    accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="14.80", unit_basis="per_piece")
     draft = next(item for item in store.drafts(deal_id) if item["status"] == "draft")
     store.conn.execute("DROP TRIGGER desk_chain_no_update")
     store.conn.execute(

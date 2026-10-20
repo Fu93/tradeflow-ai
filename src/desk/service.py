@@ -28,7 +28,7 @@ from src.desk.audit_chain import approval_recorded, chain_key_configured, export
 from src.desk.extract import time_left
 from src.desk.input_checks import message_id_or_blank, references_or_blank, require_address, require_plain
 from src.desk.names import supplier_name_key
-from src.desk.parse import _confirm_span, _visible_text, parse_quote, price_from_token
+from src.desk.parse import _confirm_span, _visible_text, confirm_amount, parse_quote, price_from_token
 from src.desk.store import DeskRejected, DeskStore, DeskUnavailable, get_store
 from src.desk.transmission import (
     chained_supplier,
@@ -729,6 +729,32 @@ def _schedule_extractor(
     _extractor_pool().submit(_run)
 
 
+def _piece_confirmation(
+    amount: float,
+    basis: str,
+    unit_basis: str | None,
+    pieces_per_basis: float | None,
+) -> tuple[float, str, float | None] | None:
+    """Deal-unit price, the basis the human confirmed, and a stated conversion.
+
+    A positive piece basis needs no extra choice. Anything else stays out of
+    the decision until the confirm request names the deal unit or a conversion.
+    """
+    choice = str(unit_basis or "").strip()
+    if basis == "per_piece" and pieces_per_basis is None and choice in {"", "per_piece"}:
+        return float(amount), "per_piece", None
+    if basis == "per_piece":
+        return None
+    if pieces_per_basis is not None:
+        count = float(pieces_per_basis)
+        if count <= 0:
+            return None
+        return float(amount) / count, "per_piece", count
+    if choice == "per_piece":
+        return float(amount), "per_piece", None
+    return None
+
+
 def accept_review(
     store: DeskStore,
     deal_id: str,
@@ -737,6 +763,8 @@ def accept_review(
     *,
     chosen_token: str | None = None,
     reject: bool = False,
+    unit_basis: str | None = None,
+    pieces_per_basis: float | None = None,
 ) -> dict[str, Any]:
     with deal_lock(deal_id):
         event = store.event(deal_id, event_id)
@@ -792,14 +820,26 @@ def accept_review(
             raise DeskRejected("Accept confirms only the amount shown from the message.")
         if _quantity_token(event["raw_text"], chosen_token):
             raise DeskRejected("That amount is a quantity, not a unit price.")
-        from src.desk.parse import token_issue
+        from src.desk.parse import confirm_amount, token_issue
 
         issue = token_issue(event["raw_text"], chosen_token, deal_currency=currency)
-        if issue:
+        if issue and issue != "unit mismatch":
             raise DeskRejected(issue)
-        price = price_from_token(event["raw_text"], chosen_token, deal_currency=currency)
-        if price is None:
+        found = confirm_amount(event["raw_text"], chosen_token, deal_currency=currency)
+        if found is None:
             raise DeskRejected("That amount is not a unit price in the deal currency.")
+        amount, basis = found
+        if issue is None and basis != "per_piece":
+            issue = "unit mismatch"
+        resolved = _piece_confirmation(amount, basis, unit_basis, pieces_per_basis)
+        if resolved is None:
+            raise DeskRejected("unit mismatch")
+        price, confirmed_basis, pieces = resolved
+        if issue is None:
+            checked = price_from_token(event["raw_text"], chosen_token, deal_currency=currency)
+            if checked is None:
+                raise DeskRejected("That amount is not a unit price in the deal currency.")
+            price = checked
         parsed["unit_price"] = price
         parsed["currency"] = currency
         if price is None or _outside_sanity(float(price), deal):
@@ -811,6 +851,9 @@ def accept_review(
         rule_shadow = provenance.get("span_value")
         if chosen_token:
             provenance["chosen_token"] = chosen_token
+        provenance["stated_basis"] = basis
+        provenance["confirmed_basis"] = confirmed_basis
+        provenance["pieces_per_basis"] = pieces
         provenance["shadow_matched"] = bool(
             provenance.get("shadow_would_accept")
             and rule_shadow is not None
@@ -840,6 +883,9 @@ def accept_review(
                 "value": float(price),
                 "currency": currency,
                 "unit": "per_piece",
+                "stated_basis": basis,
+                "confirmed_basis": confirmed_basis,
+                "pieces_per_basis": pieces,
                 "span": _confirm_span(_visible_text(raw_text), str(chosen_token)),
                 "raw_sha256": hashlib.sha256(raw_text.encode("utf-8")).hexdigest(),
                 "freight": parsed.get("freight"),
@@ -1454,13 +1500,40 @@ def _migrated_unconfirmed(opened: dict[str, Any], review_seq: int | None) -> boo
     return int(review_seq) <= marker
 
 
+def _chained_piece_amount(raw_text: str, review: dict[str, Any], currency: str) -> float | None:
+    """Re-read the confirmed deal-unit price from the message and the chain.
+
+    A piece basis re-reads directly. An unknown or non-piece basis re-reads
+    only when the chain recorded the human's basis choice or conversion.
+    """
+    token = str(review.get("token") or "")
+    derived = price_from_token(raw_text, token, deal_currency=currency or None)
+    if derived is not None:
+        return float(derived)
+    if str(review.get("confirmed_basis") or "") != "per_piece":
+        return None
+    found = confirm_amount(raw_text, token, deal_currency=currency or None)
+    if found is None:
+        return None
+    amount, basis = found
+    if str(review.get("stated_basis") or "") != str(basis):
+        return None
+    pieces = review.get("pieces_per_basis")
+    if pieces is not None:
+        count = float(pieces)
+        if count <= 0:
+            return None
+        return float(amount) / count
+    return float(amount)
+
+
 def _review_binds_ok(raw_text: str, review: dict[str, Any], ask: float, ingested_hash: str) -> bool:
     """The raw message, the re-derived price, and the chained review are one confirmation."""
     digest = hashlib.sha256((raw_text or "").encode("utf-8")).hexdigest()
     chained_raw = str(review.get("raw_sha256") or "")
     token = str(review.get("token") or "")
     currency = str(review.get("currency") or "")
-    derived = price_from_token(raw_text, token, deal_currency=currency or None)
+    derived = _chained_piece_amount(raw_text, review, currency)
     span = _confirm_span(_visible_text(raw_text), token)
     chained_value = review.get("value")
     tolerance = float(OPT_TOL) * max(1.0, abs(float(chained_value or 0.0)), abs(float(ask)))
@@ -1529,8 +1602,7 @@ def _price_in_message(raw_text: str, review: dict[str, Any], currency: str) -> f
     that token, so the amount now on the line is what a bypassed bind would
     price. The bind itself is what requires the amount to equal the chain.
     """
-    token = str(review.get("token") or "")
-    derived = price_from_token(raw_text, token, deal_currency=currency or None)
+    derived = _chained_piece_amount(raw_text, review, currency)
     if derived is not None:
         return float(derived)
     reading = parse_quote(raw_text, deal_currency=currency or None)

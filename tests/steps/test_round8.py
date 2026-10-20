@@ -271,8 +271,12 @@ def test_same_currency_parenthetical_stays_unconfirmed():
     assert price_from_token(english, "15.60", deal_currency="CNY") is None
     converted = "Unit price 33元（约4.6美元）."
     kept = parse_quote(converted)
-    assert kept["status"] == "accepted"
-    assert kept["parsed"]["unit_price"] == pytest.approx(33)
+    assert kept["status"] == "review"
+    assert kept["parsed"]["unit_price"] is None
+    assert kept["provenance"]["review_reason"] == "unit mismatch"
+    assert "33" in kept["provenance"]["candidates"]
+    assert price_from_token(converted, "33", deal_currency="CNY") is None
+    assert price_from_token(converted, "4.6", deal_currency="CNY") is None
 
 
 def test_parser_warmup_keeps_the_deadline_fail_closed(monkeypatch):

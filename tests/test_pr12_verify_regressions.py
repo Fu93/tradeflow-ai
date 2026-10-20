@@ -55,12 +55,21 @@ def test_non_unit_amounts_stay_in_review(text):
 
 
 def test_unit_price_with_a_later_fee_clause_is_accepted():
-    assert _accepted("Unit price 32.5 CNY, sample fee waived.") == pytest.approx(32.5)
+    text = "Unit price 32.5 CNY, sample fee waived."
+    reading = parse_quote(text)
+    assert reading["status"] == "review"
+    assert reading["parsed"]["unit_price"] is None
+    assert reading["provenance"]["review_reason"] == "unit mismatch"
+    assert "32.5" in reading["provenance"]["candidates"]
 
 
 def test_named_discount_in_another_clause_keeps_the_new_unit_price():
     text = "A small reduction was already applied, fresh unit price 31.70 CNY."
-    assert _accepted(text) == pytest.approx(31.70)
+    reading = parse_quote(text)
+    assert reading["status"] == "review"
+    assert reading["parsed"]["unit_price"] is None
+    assert reading["provenance"]["review_reason"] == "unit mismatch"
+    assert "31.70" in reading["provenance"]["candidates"]
 
 
 def test_student_t_cdf_and_quantile_match_the_reference():
@@ -211,7 +220,7 @@ def test_plausibility_band_sends_a_wild_unit_price_to_review(tmp_path, monkeypat
         store,
         deal["deal"]["id"],
         source="paste",
-        raw_text="单价 5254.60 元",
+        raw_text="单价 5254.60 元/件",
         supplier_id=supplier,
     )
     assert result["event"]["status"] == "review"

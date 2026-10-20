@@ -17,8 +17,11 @@ def test_registry_covers_decision_literals():
 
 def test_european_thousands_stay_one_amount():
     reading = parse_quote("单价 5.254,60元")
-    assert reading["status"] == "accepted"
-    assert reading["parsed"]["unit_price"] == pytest.approx(5254.60)
+    assert reading["status"] == "review"
+    assert reading["parsed"]["unit_price"] is None
+    assert reading["provenance"]["review_reason"] == "unit mismatch"
+    assert reading["provenance"]["candidates"] == ["5.254,60"]
+    assert reading["parsed"]["quoted_amount"] == pytest.approx(5254.60)
 
 
 def test_currency_less_unit_price_is_review():
@@ -136,7 +139,7 @@ def test_fixture_and_simulated_are_server_side(tmp_path, monkeypatch):
     )
     assert simulated["event"]["status"] == "review"
     assert simulated["event"]["provenance"]["simulated"] is True
-    accepted = accept_review(store, deal_id, simulated["event"]["id"], simulated_id, chosen_token="16.00")
+    accepted = accept_review(store, deal_id, simulated["event"]["id"], simulated_id, chosen_token="16.00", unit_basis="per_piece")
     card = next(row for row in accepted["suppliers"] if row["id"] == simulated_id)
     assert card["origin"] == "simulated"
     assert card["excluded_from_decision"] is True
