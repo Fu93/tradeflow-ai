@@ -398,6 +398,8 @@ def test_send_guard_and_smtp_outcomes(tmp_path, monkeypatch):
     from src.engine.reserve import ReserveState
 
     draft = next(item for item in store.drafts(deal["id"]) if item["status"] == "draft")
+    original_decision = draft["decision_id"]
+    original_sha = store.get_decision(original_decision)["record_sha256"]
     belief = ReserveState.policy()
     record = build_record(
         deal_id=deal["id"],
@@ -435,7 +437,10 @@ def test_send_guard_and_smtp_outcomes(tmp_path, monkeypatch):
         "decision",
         {"decision_id": decision_id, "record_sha256": record.sha256(), "supplier_id": supplier},
     )
-    guarded = dict(draft, decision_id=decision_id, body="we can do 14.00")
+    from src.desk.project import draft_body
+
+    rendered = draft_body("valve", 14.0, 10, "zh", "CNY")
+    guarded = dict(draft, decision_id=decision_id, body=rendered)
     assert _guard_send(store, guarded, deal)["counter"] == 14.0
     with pytest.raises(SendRefused):
         _guard_send(store, dict(guarded, decision_id=None), deal)
@@ -524,6 +529,11 @@ def test_send_guard_and_smtp_outcomes(tmp_path, monkeypatch):
     assert smtp_enabled() is True
     assert asyncio.run(transmit("a@example.test", "body", "valve")) is False
 
+    store.append_chain(
+        deal["id"],
+        "decision",
+        {"decision_id": original_decision, "record_sha256": original_sha, "supplier_id": supplier},
+    )
     digest = draft_digest(draft["body"])
 
     async def ok_sender(*_args, **_kwargs):

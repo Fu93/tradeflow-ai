@@ -136,6 +136,31 @@ def _origin(event: dict[str, Any] | None) -> str:
     return "live"
 
 
+def _landed_consistent_rivals(
+    supplier_id: str,
+    asks: dict[str, float],
+    landed_by_id: dict[str, dict[str, Any]],
+    basis: str,
+) -> list[float]:
+    """Rival caps in this supplier's unit price.
+
+    When every quote has a landed cost, the cap is the unit price that lands
+    at the rival's landed cost. Ranking and the counter then use one basis:
+    a supplier already first on landed cost is not cut to a lower unit price.
+    """
+    if basis != "landed_cost":
+        return [price for other, price in asks.items() if other != supplier_id]
+    own_unit = float(asks[supplier_id])
+    own_landed = float(landed_by_id[supplier_id]["landed_cost"])
+    adder = own_landed - own_unit
+    rivals: list[float] = []
+    for other, parts in landed_by_id.items():
+        if other == supplier_id:
+            continue
+        rivals.append(float(parts["landed_cost"]) - adder)
+    return rivals
+
+
 def _hold_previous(row: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any]:
     if not previous:
         return row
@@ -345,10 +370,13 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         quote_gap = _optional(deal, "hazard_quote_gap")
         decision_intercept = None if intercept is None else float(intercept)
         decision_gap = None if quote_gap is None else float(quote_gap)
+        landed_by_id: dict[str, dict[str, Any]] = {}
         for row in active:
             latest = decision_events(row["id"])[-1]
             asks[row["id"]] = float(latest["parsed"]["unit_price"])
-            landed_rows.append(_components(latest["parsed"], deal))
+            parts = _components(latest["parsed"], deal)
+            landed_rows.append(parts)
+            landed_by_id[row["id"]] = parts
             outcomes = store.outcomes(deal_id, row["id"])
             store.set_hazard_counts(
                 row["id"],
@@ -357,7 +385,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             )
         basis = ranking_basis(landed_rows)
         for row in active:
-            rivals = [price for other, price in asks.items() if other != row["id"]]
+            rivals = _landed_consistent_rivals(row["id"], asks, landed_by_id, basis)
             slot = beliefs_state[row["id"]]
             state = slot["state"].with_reference(float(slot["reference_ask"]))
             choices[row["id"]] = decide_supplier(

@@ -62,24 +62,28 @@ def _keys(monkeypatch, *, nvidia: str | None = None) -> None:
         monkeypatch.setenv("NVIDIA_API_KEY", nvidia)
 
 
-def test_request_sends_the_output_cap_and_ignores_an_env_model(monkeypatch):
-    from src.desk.extract import extract_mentions
+def test_request_honours_the_model_override_and_grows_the_token_cap(monkeypatch):
+    from src.config.heuristics import EXTRACTOR_CHARS_PER_TOKEN, EXTRACTOR_OUTPUT_TOKEN_CAP
+    from src.desk.extract import extract_mentions, output_token_limit
 
-    monkeypatch.setenv("TRADEFLOW_LLM_MODEL", "not-the-measured-chain")
+    monkeypatch.setenv("TRADEFLOW_LLM_MODEL", "caller-override-model")
     seen: list[dict] = []
 
     def _transport(body):
         seen.append(body)
         return _empty_chat()
 
-    message = "packing list " * 300
-    assert len(message) >= 3200
+    message = "packing list " * 800
     result = extract_mentions(message, transport=_transport)
     assert len(seen) == 1
     body = seen[0]
-    assert body["model"] == EXTRACTOR_MODEL
+    assert body["model"] == "caller-override-model"
     assert body["temperature"] == 0
-    assert body["max_tokens"] == EXTRACTOR_MAX_OUTPUT_TOKENS
+    cap = output_token_limit(message)
+    assert cap > EXTRACTOR_MAX_OUTPUT_TOKENS
+    assert cap <= EXTRACTOR_OUTPUT_TOKEN_CAP
+    assert cap == len(message) // int(EXTRACTOR_CHARS_PER_TOKEN) + EXTRACTOR_REASONING_BUDGET
+    assert body["max_tokens"] == cap
     assert body["reasoning_budget"] == EXTRACTOR_REASONING_BUDGET
     assert body["stream"] is False
     assert message in body["messages"][1]["content"]
@@ -284,8 +288,24 @@ def test_nvidia_key_alone_does_not_call(monkeypatch):
     assert quiet["mentions"] == []
 
 
-def test_client_error_still_reaches_nvidia_when_nebius_fails(monkeypatch):
+def test_client_error_does_not_open_nvidia(monkeypatch):
     from src.desk.extract import extract_mentions
+
+    _keys(monkeypatch, nvidia="nvidia-key")
+    calls: list[str] = []
+
+    def _transport(body):
+        calls.append(body["model"])
+        raise _http(400, b"no")
+
+    result = extract_mentions("unit price 18.40 USD", transport=_transport)
+    assert calls == [EXTRACTOR_MODEL, EXTRACTOR_FALLBACK_MODEL]
+    assert [item["status"] for item in result["attempts"]] == ["http_400", "http_400"]
+    assert all(item["provider"] != "nvidia" for item in result["attempts"])
+
+
+def test_malformed_body_opens_nvidia(monkeypatch):
+    from src.desk.extract import _UnreadableBody, extract_mentions
 
     _keys(monkeypatch, nvidia="nvidia-key")
     calls: list[str] = []
@@ -294,13 +314,61 @@ def test_client_error_still_reaches_nvidia_when_nebius_fails(monkeypatch):
         calls.append(body["model"])
         if len(calls) == 3:
             return _empty_chat()
-        raise _http(400, b"")
+        raise _UnreadableBody("abc")
 
     result = extract_mentions("unit price 18.40 USD", transport=_transport)
     assert calls == [EXTRACTOR_MODEL, EXTRACTOR_FALLBACK_MODEL, EXTRACTOR_NVIDIA_MODEL]
-    assert [item["status"] for item in result["attempts"]] == ["http_400", "http_400", "ok"]
-    assert result["attempts"][0]["response_sha256"] == ""
+    assert [item["status"] for item in result["attempts"]] == ["malformed", "malformed", "ok"]
     assert result.get("error") is None
+
+
+def test_timeout_env_overrides_the_registry(monkeypatch):
+    from src.desk.extract import extract_mentions
+
+    _keys(monkeypatch, nvidia="nvidia-key")
+    monkeypatch.setenv("TRADEFLOW_EXTRACTOR_TIMEOUT_ULTRA", "3")
+    seen: list[float] = []
+
+    def _urlopen(request, timeout=0):
+        seen.append(timeout)
+        class _Ok:
+            def read(self):
+                return json.dumps(_empty_chat()).encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        return _Ok()
+
+    monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
+    extract_mentions("unit price 18.40 USD")
+    assert seen == [3.0]
+
+
+def test_hop_timeout_is_a_total_deadline(monkeypatch):
+    import time
+
+    from src.desk.extract import extract_mentions
+
+    _keys(monkeypatch)
+    monkeypatch.setenv("TRADEFLOW_EXTRACTOR_TIMEOUT_ULTRA", "0.15")
+    monkeypatch.setenv("TRADEFLOW_EXTRACTOR_TIMEOUT_SUPER", "0.15")
+    monkeypatch.setenv("TRADEFLOW_EXTRACTOR_TIMEOUT_BUDGET", "0.4")
+
+    def _urlopen(request, timeout=0):
+        time.sleep(30)
+        raise AssertionError("past the deadline")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
+    started = time.monotonic()
+    result = extract_mentions("unit price 18.40 USD")
+    elapsed = time.monotonic() - started
+    assert elapsed < 2
+    assert [item["status"] for item in result["attempts"]] == ["timeout", "timeout"]
+    assert result["error"] == "extractor_unreachable"
 
 
 def _deal(tmp_path):
@@ -489,4 +557,62 @@ def test_without_a_key_the_extractor_stays_inline(tmp_path, monkeypatch):
     assert "extractor_pending" not in ingested["event"]["provenance"]
     settle_extractor(ingested["event"]["id"])
     assert ingested["event"]["id"] not in _EXTRACTOR_THREADS
+    store.close()
+
+
+def test_accept_returns_while_the_extractor_is_still_running(tmp_path, monkeypatch):
+    from src.desk.service import accept_review, ingest_message, settle_extractor
+
+    monkeypatch.setattr("src.desk.extract.configured", lambda: True)
+    release = threading.Event()
+    started = threading.Event()
+
+    def _fake(_message, *, transport=None):
+        started.set()
+        release.wait(5)
+        return {
+            "mentions": [],
+            "configured": True,
+            "numeric_field_discarded": False,
+            "rejected_rows": 0,
+            "model": EXTRACTOR_MODEL,
+            "prompt_sha256": "p",
+            "response_sha256": "abc",
+            "error": "extractor_unreachable",
+            "attempts": [],
+        }
+
+    monkeypatch.setattr("src.desk.shadow.extract_mentions", _fake)
+    store, deal_id, supplier = _deal(tmp_path)
+    ingested = ingest_message(
+        store,
+        deal_id,
+        source="paste",
+        raw_text="单价 18.40 元/件",
+        supplier_id=supplier,
+    )
+    assert started.wait(5)
+    done = threading.Event()
+    box: dict = {}
+
+    def _accept() -> None:
+        try:
+            box["snapshot"] = accept_review(
+                store, deal_id, ingested["event"]["id"], supplier, chosen_token="18.40",
+            )
+        except Exception as exc:
+            box["error"] = exc
+        done.set()
+
+    threading.Thread(target=_accept).start()
+    assert done.wait(1), "confirm waited on the extractor"
+    assert "error" not in box
+    card = next(row for row in box["snapshot"]["suppliers"] if row["id"] == supplier)
+    assert abs(float(card["latest_quote"]) - 18.4) < 0.001
+    release.set()
+    settle_extractor(ingested["event"]["id"])
+    fresh = store.event(deal_id, ingested["event"]["id"])
+    assert fresh is not None
+    assert fresh["status"] == "accepted"
+    assert abs(float(fresh["parsed"]["unit_price"]) - 18.4) < 0.001
     store.close()

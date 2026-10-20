@@ -853,10 +853,11 @@ class TestNoInternalLeakInErrors(_IsolatedCase):
             })
         finally:
             api_main.one_step_counter = original
-        self.assertEqual(r.status_code, 500)
+        self.assertEqual(r.status_code, 422)
         body = r.text
         self.assertNotIn("SHOULDNOTLEAK", body)
         self.assertNotIn(r"C:\secret\path", body)
+        self.assertIn("unconfirmed numbers used in decisions: 1", body)
 
 
 # ---------------------------------------------------------------------------

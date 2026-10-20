@@ -186,7 +186,7 @@ def test_better_rival_does_not_raise_other_counters(tmp_path):
             raw_text=text,
             supplier_id=ids[name],
         )
-        current = accept_review(store, deal_id, ingested["event"]["id"], ids[name])
+        current = accept_review(store, deal_id, ingested["event"]["id"], ids[name], chosen_token=text.split()[1])
     before = _by_name(current)
     assert any(row["counter"] is not None for row in before.values())
     tightened = ingest_message(
@@ -196,7 +196,7 @@ def test_better_rival_does_not_raise_other_counters(tmp_path):
         raw_text="单价 13.40 元",
         supplier_id=ids["Ningbo"],
     )
-    after = accept_review(store, deal_id, tightened["event"]["id"], ids["Ningbo"])
+    after = accept_review(store, deal_id, tightened["event"]["id"], ids["Ningbo"], chosen_token="13.40")
     later = _by_name(after)
     assert later["Ningbo"]["latest_quote"] == 13.40
     assert later["Ningbo"]["rank"] == 1
@@ -239,7 +239,7 @@ def test_missing_landed_components_are_not_zero(tmp_path):
             supplier_id=ids[name],
             **kwargs,
         )
-        current = accept_review(store, deal_id, ingested["event"]["id"], ids[name])
+        current = accept_review(store, deal_id, ingested["event"]["id"], ids[name], chosen_token=text.split()[1])
     assert current["ranking_basis"] == "unit_price"
     assert "not treated as zero" in current["kappa_note"]
     rows = _by_name(current)
@@ -340,7 +340,9 @@ def test_nothing_is_sent_without_approval(tmp_path, monkeypatch):
         sender="ningbo@example.test",
         external_id="<gate-a@example.test>",
     )
-    accept_review(store, deal_id, ingested["event"]["id"], ingested["event"]["supplier_id"])
+    accept_review(
+        store, deal_id, ingested["event"]["id"], ingested["event"]["supplier_id"], chosen_token="15.60"
+    )
     draft = store.drafts(deal_id)[0]
     digest = draft_digest(draft["body"])
     with pytest.raises(SendRefused):
@@ -364,7 +366,7 @@ def test_nothing_is_sent_without_approval(tmp_path, monkeypatch):
         raw_text="单价 14.20 元",
         supplier_id=wenzhou,
     )
-    accept_review(store, deal_id, follow["event"]["id"], wenzhou)
+    accept_review(store, deal_id, follow["event"]["id"], wenzhou, chosen_token="14.20")
     pending = [
         item for item in store.drafts(deal_id)
         if item["status"] == "draft" and item["supplier_id"] == wenzhou

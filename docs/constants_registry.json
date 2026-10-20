@@ -813,6 +813,16 @@
       "category": "d",
       "justification": "Maximum reasoning tokens sent on every extractor hop so the JSON answer still fits inside the output cap."
     },
+    "EXTRACTOR_CHARS_PER_TOKEN": {
+      "value": 4,
+      "category": "n",
+      "justification": "Characters of supplier text counted as one output token when the completion cap grows for a long message."
+    },
+    "EXTRACTOR_OUTPUT_TOKEN_CAP": {
+      "value": 32768,
+      "category": "d",
+      "justification": "Ceiling on extractor completion tokens. A long message may exceed the floor, and a truncated completion still fails closed."
+    },
     "EXTRACTOR_HTTP_TOO_MANY": {
       "value": 429,
       "category": "n",

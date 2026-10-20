@@ -123,8 +123,19 @@ def test_desk_page_updates_when_mail_arrives():
             page.locator("#paste-supplier").select_option(index=1)
             page.fill("#paste-text", "单价 14.80 元")
             page.locator("#paste-form button[type=submit]").click()
-            page.locator("#review").get_by_role("button", name="Accept").first.click()
-            page.get_by_text("14.80 CNY").first.wait_for(timeout=15000)
+            confirm = page.locator("[data-confirm-value='14.80']")
+            confirm.wait_for(timeout=15000)
+            assert "14.80" in (confirm.get_attribute("data-confirm-span") or "")
+            page.locator(".desk-event", has=confirm).get_by_role("button", name="Accept").click()
+            previous = page.locator("#board").get_attribute("data-desk-seq")
+            page.wait_for_function(
+                """(seq) => {
+                  const board = document.getElementById('board');
+                  return Boolean(board && board.dataset.deskSeq !== seq
+                    && document.body.innerText.includes('14.80 CNY'));
+                }""",
+                arg=previous,
+            )
             page.get_by_text("cheapest confirmed quote").first.wait_for(timeout=10000)
             page.get_by_text("labelled policy").first.wait_for(timeout=10000)
             page.get_by_text("unconfirmed numbers used in decisions: 0").first.wait_for(timeout=10000)
@@ -151,7 +162,11 @@ def test_desk_page_updates_when_mail_arrives():
             review.select_option(index=1)
             chosen = review.input_value()
             assert chosen
-            page.wait_for_timeout(2500)
+            previous = page.locator("#board").get_attribute("data-desk-seq")
+            page.wait_for_function(
+                "(seq) => document.getElementById('board').dataset.deskSeq !== seq",
+                arg=previous,
+            )
             assert page.locator("#review select").last.input_value() == chosen
             for width in (360, 320):
                 page.set_viewport_size({"width": width, "height": 800})

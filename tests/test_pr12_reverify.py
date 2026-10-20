@@ -323,10 +323,9 @@ def test_lambda_break_and_hazard_knobs_change_the_negotiate_path():
         "hazard_quote_gap": 0.0,
     }
     res = client.post("/negotiate", json=body)
-    assert res.status_code == 200, res.text
-    payload = res.json()
-    assert payload["breakdown_prob"] == pytest.approx(0.0)
-    assert payload["opening_offer_price"] is not None
+    assert res.status_code == 422, res.text
+    assert "unconfirmed numbers used in decisions: 1" in res.text
+    assert "opening_offer_price" not in res.text
 
 
 def test_auction_accepts_hazard_coefficients():

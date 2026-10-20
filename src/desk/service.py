@@ -426,7 +426,7 @@ def _ingest_locked(
 
 
 def settle_extractor(event_id: str) -> None:
-    """Wait for an in-flight extractor. The wait is outside the deal lock."""
+    """Wait for an in-flight extractor. Confirm does not call this."""
     from src.desk.extract import EXTRACTOR_TIMEOUT_BUDGET_SECONDS
 
     with _EXTRACTOR_THREADS_GUARD:
@@ -465,6 +465,36 @@ def _apply_extractor_result(
         return
     provenance = dict(event.get("provenance") or {})
     if not provenance.get("extractor_pending"):
+        return
+    if event.get("status") != "review":
+        provenance["extractor_pending"] = False
+        if shadow.get("response_sha256"):
+            provenance["response_sha256"] = shadow["response_sha256"]
+        if shadow.get("error"):
+            provenance["extractor_error"] = shadow["error"]
+        provenance["extractor_attempts"] = list(shadow.get("attempts") or [])
+        store.set_event_status(
+            event_id,
+            status=str(event.get("status") or "review"),
+            supplier_id=event.get("supplier_id"),
+            parsed=dict(event.get("parsed") or {}),
+            confidence=str(event.get("confidence") or "low"),
+            provenance=provenance,
+        )
+        store.append_chain(
+            deal_id,
+            "extractor_result",
+            {
+                "model": shadow.get("model") or "",
+                "prompt_sha256": shadow.get("prompt_sha256") or "",
+                "response_sha256": shadow.get("response_sha256") or "",
+                "rejected_rows": int(shadow.get("rejected_rows") or 0),
+                "numeric_field_discarded": bool(shadow.get("numeric_field_discarded")),
+                "attempts": list(shadow.get("attempts") or []),
+                "pending": False,
+            },
+        )
+        publish(store, deal_id)
         return
     provenance["extractor_pending"] = False
     provenance["shadow_would_accept"] = bool(shadow.get("would_accept"))
@@ -564,7 +594,6 @@ def accept_review(
     chosen_token: str | None = None,
     reject: bool = False,
 ) -> dict[str, Any]:
-    settle_extractor(event_id)
     with deal_lock(deal_id):
         event = store.event(deal_id, event_id)
         if event is None:
@@ -615,17 +644,15 @@ def accept_review(
         for key in ("freight", "duty_rate", "fees"):
             if previous.get(key) is not None:
                 parsed[key] = previous[key]
-        price = parsed.get("unit_price")
-        if chosen_token:
-            if _quantity_token(event["raw_text"], chosen_token):
-                raise DeskRejected("That amount is a quantity, not a unit price.")
-            price = price_from_token(event["raw_text"], chosen_token, deal_currency=currency)
-            if price is None:
-                raise DeskRejected("That amount is not a unit price in the deal currency.")
-            parsed["unit_price"] = price
-            parsed["currency"] = currency
-        elif price is None:
-            raise DeskRejected("Pick one amount from the raw text before accepting.")
+        if not chosen_token:
+            raise DeskRejected("Accept confirms only the amount shown from the message.")
+        if _quantity_token(event["raw_text"], chosen_token):
+            raise DeskRejected("That amount is a quantity, not a unit price.")
+        price = price_from_token(event["raw_text"], chosen_token, deal_currency=currency)
+        if price is None:
+            raise DeskRejected("That amount is not a unit price in the deal currency.")
+        parsed["unit_price"] = price
+        parsed["currency"] = currency
         if price is None or _outside_sanity(float(price), deal):
             raise DeskRejected("That amount is outside the plausible unit-price band. It was not accepted.")
         provenance = dict(event["provenance"])
@@ -836,6 +863,87 @@ def draft_digest(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
+def _decision_belongs(record: dict[str, Any], draft: dict[str, Any]) -> bool:
+    same_supplier = str(record.get("supplier_id") or "") == str(draft.get("supplier_id") or "")
+    same_deal = str(record.get("deal_id") or "") == str(draft.get("deal_id") or "")
+    return same_supplier and same_deal
+
+
+def _is_latest_decision(latest_id: str, decision_id: str) -> bool:
+    return str(latest_id) == str(decision_id)
+
+
+def _ask_matches_confirmed(stored: float, confirmed: float | None) -> bool:
+    if confirmed is None:
+        return False
+    tolerance = float(OPT_TOL) * max(1.0, abs(float(stored)))
+    return abs(float(stored) - float(confirmed)) <= tolerance
+
+
+def _chain_held_ok(held: Any, previous_counter: float | None) -> bool:
+    if held is None:
+        return True
+    if previous_counter is None:
+        return False
+    tolerance = float(OPT_TOL) * max(1.0, abs(float(previous_counter)))
+    return abs(float(held) - float(previous_counter)) <= tolerance
+
+
+def _body_is_rendered(body: str, rendered: str) -> bool:
+    return draft_digest(body) == draft_digest(rendered)
+
+
+def _confirmed_unit_ask(store: DeskStore, deal_id: str, supplier_id: str) -> float | None:
+    from src.desk.headline import human_confirmed
+
+    prices: list[float] = []
+    for event in store.events(deal_id):
+        if str(event.get("supplier_id") or "") != str(supplier_id):
+            continue
+        if not human_confirmed(event):
+            continue
+        provenance = event.get("provenance") or {}
+        if provenance.get("origin") == "simulated" or provenance.get("simulated"):
+            continue
+        price = (event.get("parsed") or {}).get("unit_price")
+        if price is None:
+            continue
+        prices.append(float(price))
+    if not prices:
+        return None
+    return prices[-1]
+
+
+def _supplier_decisions(entries: list[dict[str, Any]], supplier_id: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for entry in entries:
+        if entry.get("type") != "decision":
+            continue
+        payload = entry.get("payload") or {}
+        if str(payload.get("supplier_id") or "") != str(supplier_id):
+            continue
+        rows.append(entry)
+    return rows
+
+
+def _rendered_draft(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any], counter: float) -> str:
+    from src.desk.project import draft_body
+    from src.desk.project import _language
+
+    texts = [
+        str(event.get("raw_text") or "")
+        for event in store.events(draft["deal_id"])
+        if str(event.get("supplier_id") or "") == str(draft.get("supplier_id") or "")
+    ]
+    return draft_body(
+        str(deal.get("product") or ""),
+        float(counter),
+        int(deal.get("quantity") or 0),
+        _language(texts),
+        str(deal.get("currency") or DEAL_CURRENCY),
+    )
+
+
 def _fresh_counter(record: dict[str, Any]) -> float:
     """The counter ``decide_supplier`` issues from the inputs stored on the record."""
     from src.desk.decide import decide_supplier
@@ -889,14 +997,19 @@ def _guard_send(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any]) -
     chain = store.verify_chain(draft["deal_id"])
     if not chain["ok"]:
         raise SendRefused("The audit chain does not verify.")
-    linked = [
-        entry for entry in (chain.get("entries") or [])
-        if entry.get("type") == "decision"
-        and str((entry.get("payload") or {}).get("decision_id") or "") == str(decision_id)
-    ]
-    if not linked:
+    if not _decision_belongs(record, draft):
+        raise SendRefused("The decision does not belong to this draft.")
+    supplier_rows = _supplier_decisions(list(chain.get("entries") or []), str(record.get("supplier_id") or ""))
+    if not supplier_rows:
         raise SendRefused("The audit chain has no decision entry for this draft.")
-    chain_digest = str((linked[0].get("payload") or {}).get("record_sha256") or "")
+    latest_payload = supplier_rows[-1].get("payload") or {}
+    if not _is_latest_decision(str(latest_payload.get("decision_id") or ""), str(decision_id)):
+        raise SendRefused("The draft is not this supplier's latest decision.")
+    pinned = [
+        entry for entry in supplier_rows
+        if str((entry.get("payload") or {}).get("decision_id") or "") == str(decision_id)
+    ]
+    chain_digest = str((pinned[0].get("payload") or {}).get("record_sha256") or "")
     if chain_digest != loaded_digest:
         raise SendRefused("The decision record does not match the audit chain.")
     if int(record.get("unconfirmed") or 0) > 0:
@@ -908,13 +1021,28 @@ def _guard_send(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any]) -
     counter = record.get("counter")
     if ask is None or counter is None or ceiling is None:
         raise SendRefused("The stored decision has no counter to re-derive.")
+    confirmed_ask = _confirmed_unit_ask(store, str(draft["deal_id"]), str(draft.get("supplier_id") or ""))
+    if not _ask_matches_confirmed(float(ask), confirmed_ask):
+        raise SendRefused("The stored ask does not match the confirmed quote.")
+    previous_counter = None
+    if len(supplier_rows) >= 2:
+        prev_payload = supplier_rows[-2].get("payload") or {}
+        prev_stored = store.get_decision(str(prev_payload.get("decision_id") or ""))
+        prev_digest = str(prev_payload.get("record_sha256") or "")
+        if prev_stored is None or str(prev_stored.get("record_sha256") or "") != prev_digest:
+            raise SendRefused("The held counter is not the previous chained decision.")
+        prev_counter = (prev_stored.get("record") or {}).get("counter")
+        if prev_counter is not None:
+            previous_counter = float(prev_counter)
+    if not _chain_held_ok(record.get("held_previous_counter"), previous_counter):
+        raise SendRefused("The held counter is not the previous chained decision.")
     recomputed = _fresh_counter(record)
     tolerance = float(OPT_TOL) * max(1.0, abs(float(counter)))
     if abs(float(counter) - recomputed) > tolerance:
         raise SendRefused("The stored counter does not match a fresh decision.")
-    rendered = f"{float(counter):.2f}"
-    if rendered not in str(draft.get("body") or ""):
-        raise SendRefused("The draft text does not contain the stored counter.")
+    rendered = _rendered_draft(store, draft, deal, float(counter))
+    if not _body_is_rendered(str(draft.get("body") or ""), rendered):
+        raise SendRefused("The draft text is not the rendered counter.")
     if float(counter) - float(ceiling) > tolerance:
         raise SendRefused("The counter is above the current ceiling.")
     return record

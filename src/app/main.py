@@ -447,6 +447,21 @@ def negotiate(spec: Spec):
             status_code=422,
             detail="Set prior_reserve_std together with prior_reserve_mean.",
         )
+    from src.desk.headline import audit_line, confirmed_prices
+
+    posted_price = {
+        "status": "review",
+        "parsed": {"unit_price": float(spec.observed_offer)},
+        "provenance": {"price_source": "explicit_field", "unconfirmed": True},
+    }
+    _kept_prices, unconfirmed_prices = confirmed_prices([posted_price])
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "A posted price is not a confirmation. Confirm the supplier unit price "
+            "on the desk. " + audit_line(unconfirmed_prices)
+        ),
+    )
     currency_ask = float(spec.observed_offer) * float(spec.target_price)
     if currency_ask > float(spec.ceiling_price):
         return {

@@ -121,7 +121,9 @@ def test_counter_is_invariant_to_the_sample_and_grid_budget(tmp_path, monkeypatc
             raw_text="单价 15.60 元",
             supplier_id=snapshot["suppliers"][0]["id"],
         )
-        accept_review(store, deal_id, opened["event"]["id"], snapshot["suppliers"][0]["id"])
+        accept_review(
+            store, deal_id, opened["event"]["id"], snapshot["suppliers"][0]["id"], chosen_token="15.60"
+        )
         fresh = store.get_snapshot(deal_id)
         card = fresh["suppliers"][0]
         counters.append(card["counter"])

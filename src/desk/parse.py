@@ -234,6 +234,16 @@ def _soften_marks(text: str) -> str:
     return re.sub(r"[?？]+", " ", text)
 
 
+def _confirm_span(visible: str, token: str) -> str:
+    """The line that contains the amount a person is about to accept."""
+    for line in (visible or "").splitlines():
+        if token and token in line and line.strip():
+            return line.strip()
+    if token and token in (visible or ""):
+        return token
+    return ""
+
+
 def _visible_text(raw_text: str) -> str:
     """Drop forwarded history and the signature.
 
@@ -747,7 +757,12 @@ def parse_quote(
         "distinct_amounts": distinct,
         "tokens": [token for token, _value in tokens],
         "candidates": candidate_tokens,
-        "suggested_token": None if accepted else suggested,
+        "suggested_token": suggested,
+        "confirm_value": (
+            None if suggested is None
+            else (chosen["value"] if chosen is not None and chosen.get("token") == suggested else _settled(suggested))
+        ),
+        "confirm_span": None if not suggested else _confirm_span(stage_text, suggested),
         "review_reason": None if accepted else reason,
     }
     return {

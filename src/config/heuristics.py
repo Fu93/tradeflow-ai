@@ -535,6 +535,14 @@ EXTRACTOR_MAX_OUTPUT_TOKENS = 4096
 # leaves room for the JSON answer inside the output limit above.
 EXTRACTOR_REASONING_BUDGET = 2048
 
+# Rationale: characters of supplier text counted as one output token when the
+# completion cap grows for a long message. A short message stays at the floor.
+EXTRACTOR_CHARS_PER_TOKEN = 4
+
+# Rationale: ceiling on extractor completion tokens. A long message may use
+# more than the floor, and a truncated completion still fails closed.
+EXTRACTOR_OUTPUT_TOKEN_CAP = 32768
+
 # Rationale: HTTP status that means the extractor was rate limited. That
 # status retries the next hop. It is not a price and not a quote amount.
 EXTRACTOR_HTTP_TOO_MANY = 429

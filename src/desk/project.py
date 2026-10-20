@@ -122,13 +122,23 @@ def project_open_drafts(
             card["counter_relation"] = "withheld"
             store.supersede_open_drafts(deal["id"], card["id"])
             continue
-        payload = record.as_dict()
-        decision_id = store.append_decision(payload, record.sha256())
-        store.append_chain(
-            deal["id"],
-            "decision",
-            {"decision_id": decision_id, "record_sha256": record.sha256(), "supplier_id": card["id"]},
-        )
+        digest = record.sha256()
+        chain = store.verify_chain(deal["id"])
+        prior = [
+            entry for entry in (chain.get("entries") or [])
+            if entry.get("type") == "decision"
+            and str((entry.get("payload") or {}).get("supplier_id") or "") == str(card["id"])
+        ]
+        previous = (prior[-1].get("payload") or {}) if prior else {}
+        if str(previous.get("record_sha256") or "") == digest and previous.get("decision_id"):
+            decision_id = str(previous["decision_id"])
+        else:
+            decision_id = store.append_decision(record.as_dict(), digest)
+            store.append_chain(
+                deal["id"],
+                "decision",
+                {"decision_id": decision_id, "record_sha256": digest, "supplier_id": card["id"]},
+            )
         card["decision_id"] = decision_id
         body = draft_body(
             str(deal["product"]),

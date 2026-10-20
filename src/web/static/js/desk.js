@@ -191,6 +191,7 @@
     renderEvents(snapshot.events || []);
     renderDrafts(snapshot.drafts || [], snapshot.suppliers || []);
     renderPasteSuppliers(snapshot.suppliers || []);
+    board.dataset.deskSeq = String(Number(board.dataset.deskSeq || "0") + 1);
   }
 
   function rateText(value) {
@@ -373,10 +374,31 @@
         ? provenance.candidates
         : (provenance.tokens || []);
       const suggested = provenance.suggested_token || "";
+      const currency = provenance.currency || "CNY";
       let chosen = saved.token || suggested || "";
+      if (chosen && tokens.indexOf(chosen) < 0) chosen = "";
       if (chosen && !saved.token) {
         reviewChoice.set(item.id, { supplierId: item.supplier_id || saved.supplierId || "", token: chosen });
       }
+      const note = document.createElement("p");
+      function showConfirm(token) {
+        if (!token) {
+          note.hidden = true;
+          note.textContent = "";
+          delete note.dataset.confirmValue;
+          delete note.dataset.confirmSpan;
+          return;
+        }
+        const span = token === suggested && provenance.confirm_span
+          ? provenance.confirm_span
+          : token;
+        note.hidden = false;
+        note.dataset.confirmValue = token;
+        note.dataset.confirmSpan = span;
+        note.textContent = "Confirming " + token + " " + currency + " from \u201c" + span + "\u201d.";
+      }
+      showConfirm(chosen);
+      block.appendChild(note);
       if (tokens.length) {
         const picks = document.createElement("div");
         picks.className = "desk-actions";
@@ -388,6 +410,8 @@
           pick.addEventListener("click", () => {
             chosen = token;
             reviewChoice.set(item.id, { supplierId: select.value, token: token });
+            showConfirm(chosen);
+            button.disabled = !chosen;
             Array.prototype.forEach.call(picks.children, (node) => {
               node.disabled = node === pick;
             });
@@ -418,7 +442,11 @@
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = "Accept";
-      button.addEventListener("click", () => accept(item.id, select.value, chosen, false, block));
+      button.disabled = !chosen;
+      button.addEventListener("click", () => {
+        if (!chosen || !note.dataset.confirmValue) return;
+        accept(item.id, select.value, note.dataset.confirmValue, false, block);
+      });
       const reject = document.createElement("button");
       reject.type = "button";
       reject.textContent = "Reject";

@@ -465,6 +465,11 @@ class DeskStore:
                     "sending",
                     "failed",
                 }:
+                    if decision_id:
+                        self.conn.execute(
+                            "UPDATE drafts SET decision_id = ? WHERE id = ?",
+                            (decision_id, existing["id"]),
+                        )
                     self.conn.execute(
                         """
                         UPDATE drafts SET status = 'superseded'

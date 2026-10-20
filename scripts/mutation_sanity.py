@@ -72,6 +72,36 @@ MUTANTS = [
         "best = max(float(item) for item in first_landed)",
         "tests/steps/test_reverify_blockers.py::test_headline_saving_uses_the_lower_landed_price",
     ),
+    (
+        "src/desk/service.py",
+        "return same_supplier and same_deal",
+        "return same_supplier or same_deal",
+        "tests/steps/test_reverify_blockers.py::test_send_refuses_another_suppliers_decision",
+    ),
+    (
+        "src/desk/service.py",
+        "return str(latest_id) == str(decision_id)",
+        "return True",
+        "tests/steps/test_reverify_blockers.py::test_send_refuses_an_older_decision",
+    ),
+    (
+        "src/desk/service.py",
+        "return abs(float(stored) - float(confirmed)) <= tolerance",
+        "return True",
+        "tests/steps/test_reverify_blockers.py::test_send_refuses_an_ask_the_confirmed_quote_does_not_have",
+    ),
+    (
+        "src/desk/service.py",
+        "return abs(float(held) - float(previous_counter)) <= tolerance",
+        "return True",
+        "tests/steps/test_reverify_blockers.py::test_send_refuses_a_held_counter_the_chain_did_not_issue",
+    ),
+    (
+        "src/desk/service.py",
+        "return draft_digest(body) == draft_digest(rendered)",
+        "return rendered in body",
+        "tests/steps/test_reverify_blockers.py::test_send_refuses_a_draft_that_adds_a_second_price",
+    ),
 ]
 
 

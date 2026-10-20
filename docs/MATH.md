@@ -69,7 +69,7 @@ A tighter rival can only lower `W`. It cannot raise a counter.
 
 Student-t utilities remain in `src/engine/bayesian_v2.py` for intervals and for older callers. They do not set this offer. The Weitzman index orders suppliers with a normal approximation to `ask × D`. It does not set the offer. Monte Carlo fills the reported tail. It does not pick the price. CVaR is a report.
 
-`/negotiate` delegates to this engine when the legacy flag is on. `/webhook/evolus` is mounted only with that flag, and extractor numbers stay unconfirmed: the handler counts them and does not return a counter. The reserve is the labelled Beta prior, not a markup subtracted from the ask. A posted `/round` price is not a confirmation and does not become the offer. Raw text alone is HTTP 422 and is not a decision input. A quote above the ceiling still circuit-trips and does not issue a counter. A missing target or ceiling is HTTP 422.
+`/negotiate` is mounted only with the legacy flag, and a posted price is not a confirmation: the handler counts it and does not return a counter. `/webhook/evolus` is mounted only with that flag, and extractor numbers stay unconfirmed: the handler counts them and does not return a counter. The reserve is the labelled Beta prior, not a markup subtracted from the ask. A posted `/round` price is not a confirmation and does not become the offer. Raw text alone is HTTP 422 and is not a decision input. A quote above the ceiling still circuit-trips and does not issue a counter. A missing target or ceiling is HTTP 422.
 
 ## Walk-away hazard
 

@@ -224,14 +224,19 @@ def test_send_refuses_a_rewritten_counter_whose_row_hash_matches(tmp_path, monke
 
 def test_send_refuses_when_the_recomputed_counter_differs(tmp_path, monkeypatch):
     from src.desk.record import build_record
-    from src.desk.service import SendRefused, _guard_send
+    from src.desk.service import SendRefused, _guard_send, accept_review, ingest_message
     from src.engine.reserve import ReserveState
 
     store, snapshot = _deal(tmp_path, monkeypatch, ceiling=30.0)
     deal = snapshot["deal"]
+    supplier = snapshot["suppliers"][0]["id"]
+    opened = ingest_message(
+        store, deal["id"], source="paste", supplier_id=supplier, raw_text="unit price 20.00 CNY per piece",
+    )
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="20.00")
     belief = ReserveState.policy()
     record = build_record(
-        deal_id=deal["id"], supplier_id=snapshot["suppliers"][0]["id"], currency="CNY",
+        deal_id=deal["id"], supplier_id=supplier, currency="CNY",
         events=[], ask=20.0, ceiling=30.0, offer=20.0, counter=20.0,
         push_counter=20.0, half=20.0, double=20.0,
         prior_alpha=belief.alpha, prior_beta=belief.beta, prior_n=0,
@@ -243,14 +248,199 @@ def test_send_refuses_when_the_recomputed_counter_differs(tmp_path, monkeypatch)
     decision_id = store.append_decision(record.as_dict(), record.sha256())
     store.append_chain(
         deal["id"], "decision",
-        {"decision_id": decision_id, "record_sha256": record.sha256()},
+        {
+            "decision_id": decision_id,
+            "record_sha256": record.sha256(),
+            "supplier_id": supplier,
+        },
     )
     with pytest.raises(SendRefused, match="fresh decision"):
         _guard_send(
             store,
-            {"decision_id": decision_id, "deal_id": deal["id"], "body": "offer 20.00"},
+            {
+                "decision_id": decision_id,
+                "deal_id": deal["id"],
+                "supplier_id": supplier,
+                "body": "offer 20.00",
+            },
             deal,
         )
+
+
+def _issued(store, deal, supplier, **overrides):
+    from src.desk.record import build_record
+    from src.engine.reserve import ReserveState
+
+    belief = ReserveState.policy()
+    fields = dict(
+        deal_id=deal["id"], supplier_id=supplier, currency="CNY", events=[],
+        ask=15.60, ceiling=float(deal["ceiling_price"]), offer=15.60, counter=15.60,
+        push_counter=15.60, half=15.60, double=15.60,
+        prior_alpha=belief.alpha, prior_beta=belief.beta, prior_n=0,
+        prior_source="labelled_policy", unconfirmed=0, hazard_within_cap=True,
+        rival_asks=(), risk_cap=0.5, reserve_upper=belief.upper, reject_ratios=(),
+        reference_ask=15.60, inputs_stored=True,
+    )
+    fields.update(overrides)
+    record = build_record(**fields)
+    decision_id = store.append_decision(record.as_dict(), record.sha256())
+    store.append_chain(
+        deal["id"], "decision",
+        {"decision_id": decision_id, "record_sha256": record.sha256(), "supplier_id": supplier},
+    )
+    return decision_id, record
+
+
+def test_send_refuses_another_suppliers_decision(tmp_path, monkeypatch):
+    from src.desk.service import SendRefused, _guard_send, accept_review, ingest_message
+
+    store, snapshot = _deal(tmp_path, monkeypatch)
+    deal = snapshot["deal"]
+    north, south = snapshot["suppliers"][0]["id"], snapshot["suppliers"][1]["id"]
+    for supplier in (north, south):
+        opened = ingest_message(
+            store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 15.60 元",
+        )
+        accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60")
+    drafts = {item["supplier_id"]: item for item in store.drafts(deal["id"]) if item["status"] == "draft"}
+    stolen = dict(drafts[north], decision_id=drafts[south]["decision_id"], body=drafts[south]["body"])
+    with pytest.raises(SendRefused, match="does not belong"):
+        _guard_send(store, stolen, deal)
+
+
+def test_send_refuses_an_older_decision(tmp_path, monkeypatch):
+    from src.desk.service import SendRefused, _guard_send, accept_review, ingest_message
+
+    store, snapshot = _deal(tmp_path, monkeypatch)
+    deal = snapshot["deal"]
+    supplier = snapshot["suppliers"][0]["id"]
+    opened = ingest_message(
+        store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 15.60 元",
+    )
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60")
+    draft = next(item for item in store.drafts(deal["id"]) if item["status"] == "draft")
+    _issued(store, deal, supplier)
+    with pytest.raises(SendRefused, match="latest decision"):
+        _guard_send(store, draft, deal)
+
+
+def test_send_refuses_an_ask_the_confirmed_quote_does_not_have(tmp_path, monkeypatch):
+    from src.desk.project import draft_body
+    from src.desk.service import SendRefused, _guard_send, accept_review, ingest_message
+
+    store, snapshot = _deal(tmp_path, monkeypatch)
+    deal = snapshot["deal"]
+    supplier = snapshot["suppliers"][0]["id"]
+    opened = ingest_message(
+        store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 15.60 元",
+    )
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60")
+    decision_id, _record = _issued(store, deal, supplier, ask=20.0, offer=20.0, counter=20.0, reference_ask=20.0)
+    body = draft_body("valve", 20.0, 100, "zh", "CNY")
+    draft = next(item for item in store.drafts(deal["id"]) if item["supplier_id"] == supplier)
+    with pytest.raises(SendRefused, match="confirmed quote"):
+        _guard_send(store, dict(draft, decision_id=decision_id, body=body), deal)
+
+
+def test_send_refuses_a_held_counter_the_chain_did_not_issue(tmp_path, monkeypatch):
+    from src.desk.project import draft_body
+    from src.desk.service import SendRefused, _guard_send, accept_review, ingest_message
+
+    store, snapshot = _deal(tmp_path, monkeypatch)
+    deal = snapshot["deal"]
+    supplier = snapshot["suppliers"][0]["id"]
+    opened = ingest_message(
+        store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 15.60 元",
+    )
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60")
+    decision_id, _record = _issued(
+        store, deal, supplier, offer=12.0, counter=12.0, held_previous_counter=12.0,
+    )
+    body = draft_body("valve", 12.0, 100, "zh", "CNY")
+    draft = next(item for item in store.drafts(deal["id"]) if item["supplier_id"] == supplier)
+    with pytest.raises(SendRefused, match="held counter"):
+        _guard_send(store, dict(draft, decision_id=decision_id, body=body), deal)
+
+
+def test_send_refuses_a_draft_that_adds_a_second_price(tmp_path, monkeypatch):
+    from src.desk.service import SendRefused, _guard_send, accept_review, ingest_message
+
+    store, snapshot = _deal(tmp_path, monkeypatch)
+    deal = snapshot["deal"]
+    supplier = snapshot["suppliers"][0]["id"]
+    opened = ingest_message(
+        store, deal["id"], source="paste", supplier_id=supplier, raw_text="单价 15.60 元",
+    )
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60")
+    draft = next(item for item in store.drafts(deal["id"]) if item["status"] == "draft")
+    tainted = dict(draft, body=draft["body"] + "\nfinal offer 20.00")
+    with pytest.raises(SendRefused, match="rendered counter"):
+        _guard_send(store, tainted, deal)
+
+
+def test_landed_rank_does_not_cut_to_a_lower_unit_price(tmp_path, monkeypatch):
+    from src.desk.service import accept_review, ingest_message
+
+    store, snapshot = _deal(tmp_path, monkeypatch, ceiling=20.0)
+    deal_id = snapshot["deal"]["id"]
+    north, south = snapshot["suppliers"][0]["id"], snapshot["suppliers"][1]["id"]
+    first = ingest_message(
+        store, deal_id, source="paste", supplier_id=north,
+        raw_text="单价 5.00 元", freight=0.10, duty_rate=0.0, fees=0.0,
+    )
+    second = ingest_message(
+        store, deal_id, source="paste", supplier_id=south,
+        raw_text="单价 4.40 元", freight=0.90, duty_rate=0.0, fees=0.0,
+    )
+    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="5.00")
+    fresh = accept_review(store, deal_id, second["event"]["id"], south, chosen_token="4.40")
+    by_id = {row["id"]: row for row in fresh["suppliers"]}
+    assert by_id[north]["landed_cost"] == pytest.approx(5.10)
+    assert by_id[south]["landed_cost"] == pytest.approx(5.30)
+    assert by_id[north]["rank"] == 1
+    assert by_id[north]["counter"] == pytest.approx(5.00)
+    assert by_id[north]["counter_relation"] == "at_ask"
+    assert by_id[south]["counter"] == pytest.approx(4.20)
+
+
+def test_accept_confirms_only_the_visible_token(tmp_path, monkeypatch):
+    from src.desk.parse import parse_quote
+    from src.desk.service import DeskRejected, accept_review, ingest_message
+
+    shown = parse_quote("单价 14.80 元")
+    assert shown["provenance"]["suggested_token"] == "14.80"
+    assert "14.80" in shown["provenance"]["confirm_span"]
+    assert shown["provenance"]["confirm_value"] == pytest.approx(14.80)
+    store, snapshot = _deal(tmp_path, monkeypatch)
+    deal_id = snapshot["deal"]["id"]
+    supplier = snapshot["suppliers"][0]["id"]
+    opened = ingest_message(
+        store, deal_id, source="paste", supplier_id=supplier, raw_text="单价 14.80 元",
+    )
+    with pytest.raises(DeskRejected, match="shown"):
+        accept_review(store, deal_id, opened["event"]["id"], supplier)
+    panel = Path("src/web/static/js/desk.js").read_text(encoding="utf-8")
+    assert "confirmValue" in panel
+    assert "deskSeq" in panel
+    source = Path("tests/test_desk_ui.py").read_text(encoding="utf-8")
+    assert "wait_for_timeout" not in source
+    assert "data-desk-seq" in source or "deskSeq" in source
+
+
+def test_negotiate_rejects_a_posted_price(monkeypatch):
+    monkeypatch.delenv("TRADEFLOW_API_KEY", raising=False)
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    client = TestClient(app)
+    response = client.post("/negotiate", json={
+        "target_price": 12.0,
+        "ceiling_price": 16.2,
+        "observed_offer": 1.25,
+    })
+    assert response.status_code == 422
+    assert "unconfirmed numbers used in decisions: 1" in response.text
+    assert "opening_offer_price" not in response.text
 
 
 def test_extension_copilot_uses_the_desk_confirm_flow():

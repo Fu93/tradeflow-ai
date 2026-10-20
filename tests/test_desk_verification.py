@@ -175,7 +175,7 @@ def test_drafts_follow_the_supplier_language_and_thread(desk_env):
         external_id="<ningbo-1@example.test>",
         provenance_extra={"message_id": "<ningbo-1@example.test>", "references": "<root@example.test>"},
     )
-    accept_review(store, deal_id, ningbo_in["event"]["id"], ningbo)
+    accept_review(store, deal_id, ningbo_in["event"]["id"], ningbo, chosen_token="15.60")
     chinese = next(item for item in store.drafts(deal_id) if item["supplier_id"] == ningbo)
     assert "您好" in chinese["body"]
     assert "engine" not in chinese["body"].lower()
@@ -190,7 +190,7 @@ def test_drafts_follow_the_supplier_language_and_thread(desk_env):
         raw_text="Unit price: 16.20 CNY.",
         supplier_id=foshan,
     )
-    accept_review(store, deal_id, foshan_in["event"]["id"], foshan)
+    accept_review(store, deal_id, foshan_in["event"]["id"], foshan, chosen_token="16.20")
     english = next(item for item in store.drafts(deal_id) if item["supplier_id"] == foshan and item["status"] == "draft")
     assert english["body"].startswith("Hello,")
     assert "withheld" not in english["body"].lower()
@@ -225,7 +225,7 @@ def test_failed_smtp_is_not_stored_as_sent(desk_env, monkeypatch):
         raw_text="单价 15.60 元",
         supplier_id=snapshot["suppliers"][0]["id"],
     )
-    accept_review(store, deal_id, opened["event"]["id"], snapshot["suppliers"][0]["id"])
+    accept_review(store, deal_id, opened["event"]["id"], snapshot["suppliers"][0]["id"], chosen_token="15.60")
     draft = next(item for item in store.drafts(deal_id) if item["status"] == "draft")
 
     async def fail(*_args, **_kwargs):
@@ -289,7 +289,11 @@ def test_desk_mutations_require_a_real_key_and_a_boolean(desk_env, monkeypatch):
     assert quoted.status_code == 200, quoted.text
     confirmed = client.post(
         f"/api/v1/desk/deals/{deal_id}/review/{quoted.json()['event']['id']}",
-        json={"action": "accept", "supplier_id": created.json()["suppliers"][0]["id"]},
+        json={
+            "action": "accept",
+            "supplier_id": created.json()["suppliers"][0]["id"],
+            "chosen_token": "15.60",
+        },
         headers={"X-API-Key": KEY},
     )
     assert confirmed.status_code == 200, confirmed.text
@@ -354,7 +358,8 @@ def test_concurrent_quotes_all_land_on_the_snapshot(desk_env):
                     supplier_id=supplier_id,
                     external_id="%s-%s" % (name, step),
                 )
-                accept_review(store, deal_id, ingested["event"]["id"], supplier_id)
+                token = "%d.%02d" % (cents // 100, cents % 100)
+                accept_review(store, deal_id, ingested["event"]["id"], supplier_id, chosen_token=token)
         except Exception as exc:  # noqa: BLE001 - the assertion reports it
             errors.append(repr(exc))
 

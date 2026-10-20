@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -22,10 +23,12 @@ from src.config.heuristics import (
     EXTRACTOR_HTTP_SERVER,
     EXTRACTOR_HTTP_TOO_MANY,
     EXTRACTOR_MAX_BYTES,
+    EXTRACTOR_CHARS_PER_TOKEN,
     EXTRACTOR_MAX_OUTPUT_TOKENS,
     EXTRACTOR_MODEL,
     EXTRACTOR_NVIDIA_BASE_URL,
     EXTRACTOR_NVIDIA_MODEL,
+    EXTRACTOR_OUTPUT_TOKEN_CAP,
     EXTRACTOR_REASONING_BUDGET,
     EXTRACTOR_TIMEOUT_BUDGET_SECONDS,
     EXTRACTOR_TIMEOUT_NVIDIA_SECONDS,
@@ -117,23 +120,54 @@ class _UnreadableBody(Exception):
         self.digest = digest
 
 
+def _hop_timeout(name: str, fallback: float) -> float:
+    """Registry limit, replaced when the named environment variable is set."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return float(fallback)
+    try:
+        parsed = float(raw)
+    except ValueError:
+        return float(fallback)
+    if parsed <= 0:
+        return float(fallback)
+    return parsed
+
+
+def output_token_limit(message: str) -> int:
+    """Floor for a short message. A longer message gets room up to the cap.
+
+    Truncation still fails closed. The cap is the registry ceiling, not a price.
+    """
+    floor = int(EXTRACTOR_MAX_OUTPUT_TOKENS)
+    ceiling = int(EXTRACTOR_OUTPUT_TOKEN_CAP)
+    per = int(EXTRACTOR_CHARS_PER_TOKEN)
+    estimated = len(str(message or "")) // per + int(EXTRACTOR_REASONING_BUDGET)
+    sized = floor
+    if estimated > floor:
+        sized = estimated
+    if sized > ceiling:
+        sized = ceiling
+    return sized
+
+
 def _nebius_hops() -> list[dict[str, Any]]:
-    """Ultra, then Super, on the Nebius host. The env model does not replace them."""
+    """Ultra, then Super, on the Nebius host. TRADEFLOW_LLM_MODEL overrides Ultra."""
     base = endpoint()
     keys = ("TRADEFLOW_LLM_API_KEY", "OPENAI_API_KEY")
     return [
         {
             "provider": "nebius",
-            "model": EXTRACTOR_MODEL,
+            "model": model_name(),
             "base": base,
-            "timeout": float(EXTRACTOR_TIMEOUT_ULTRA_SECONDS),
+            "timeout": _hop_timeout("TRADEFLOW_EXTRACTOR_TIMEOUT_ULTRA", float(EXTRACTOR_TIMEOUT_ULTRA_SECONDS)),
             "keys": keys,
         },
         {
             "provider": "nebius",
             "model": EXTRACTOR_FALLBACK_MODEL,
             "base": base,
-            "timeout": float(EXTRACTOR_TIMEOUT_SUPER_SECONDS),
+            "timeout": _hop_timeout("TRADEFLOW_EXTRACTOR_TIMEOUT_SUPER", float(EXTRACTOR_TIMEOUT_SUPER_SECONDS)),
             "keys": keys,
         },
     ]
@@ -144,7 +178,7 @@ def _nvidia_hop() -> dict[str, Any]:
         "provider": "nvidia",
         "model": EXTRACTOR_NVIDIA_MODEL,
         "base": EXTRACTOR_NVIDIA_BASE_URL,
-        "timeout": float(EXTRACTOR_TIMEOUT_NVIDIA_SECONDS),
+        "timeout": _hop_timeout("TRADEFLOW_EXTRACTOR_TIMEOUT_NVIDIA", float(EXTRACTOR_TIMEOUT_NVIDIA_SECONDS)),
         "keys": ("NVIDIA_API_KEY",),
     }
 
@@ -241,7 +275,7 @@ def _request_body(message: str, model: str) -> dict[str, Any]:
     return {
         "model": model,
         "temperature": 0,
-        "max_tokens": int(EXTRACTOR_MAX_OUTPUT_TOKENS),
+        "max_tokens": output_token_limit(message),
         "reasoning_budget": int(EXTRACTOR_REASONING_BUDGET),
         "stream": False,
         "messages": [
@@ -332,10 +366,11 @@ def _result_status(result: dict[str, Any]) -> str:
 
 
 def _arms_nvidia(status: str) -> bool:
-    """A Nebius transport failure opens the NVIDIA hop. A bad body does not."""
-    if status in {"timeout", "unreachable", "failed"}:
-        return True
-    return status.startswith("http_")
+    """5xx, 429, timeout, connection loss, or a malformed body opens NVIDIA.
+
+    Any other 4xx stays on Nebius. A truncated body fails closed and does not hop.
+    """
+    return status in {"timeout", "unreachable", "malformed", "http_429", "http_5xx"}
 
 
 def _interpret(decoded: Any, model: str) -> dict[str, Any]:
@@ -352,18 +387,36 @@ def _interpret(decoded: Any, model: str) -> dict[str, Any]:
 
 
 def _post(base: str, body: dict[str, Any], timeout: float, keys: tuple[str, ...]) -> Any:
+    """One HTTP call. ``timeout`` is the total deadline, not a per-read socket timer."""
     raw = json.dumps(body).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     key = _env(*keys)
     if key:
         headers["Authorization"] = "Bearer " + key
     request = urllib.request.Request(_chat_url(base), data=raw, headers=headers, method="POST")
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        payload = response.read()
+    if timeout <= 0:
+        raise TimeoutError("extractor deadline")
+    box: dict[str, Any] = {}
+
+    def _run() -> None:
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                box["payload"] = response.read()
+        except BaseException as exc:
+            box["error"] = exc
+
+    worker = threading.Thread(target=_run, name="desk-extractor-http", daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        raise TimeoutError("extractor deadline")
+    if "error" in box:
+        raise box["error"]
+    payload = box.get("payload") or b""
     try:
         return json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise _UnreadableBody(_sha(payload)) from exc
+        raise _UnreadableBody(_sha(payload if isinstance(payload, bytes) else b"")) from exc
 
 
 def _execute_hop(
@@ -403,16 +456,18 @@ def _stop_for_budget(hop: dict[str, Any], attempts: list[dict[str, Any]]) -> dic
 def extract_mentions(message: str, *, transport=None) -> dict[str, Any]:
     """Call the measured chain when a Nebius key is set. ``transport`` is for tests.
 
-    Nebius Ultra, then Nebius Super. NVIDIA Super runs only after Nebius itself
-    fails (timeout, connection, 429, or 5xx) and only when ``NVIDIA_API_KEY``
-    is set. A body that is not a mentions object fails that hop and is tried
-    on the next Nebius model. It does not by itself open the NVIDIA hop.
-    The whole chain stops at the budget. Every hop is recorded.
+    Nebius Ultra, then Nebius Super. ``TRADEFLOW_LLM_MODEL`` overrides the Ultra
+    model. NVIDIA Super runs only after Nebius itself fails with a timeout, a
+    connection error, HTTP 429, HTTP 5xx, or a malformed body, and only when
+    ``NVIDIA_API_KEY`` is set. Any other 4xx does not open NVIDIA. The whole
+    chain stops at the budget. Every hop is recorded.
     """
     if not configured() and transport is None:
         return {"mentions": [], "numeric_field_discarded": False, "configured": False}
     attempts: list[dict[str, Any]] = []
-    deadline = time.perf_counter() + float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS)
+    deadline = time.perf_counter() + _hop_timeout(
+        "TRADEFLOW_EXTRACTOR_TIMEOUT_BUDGET", float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS)
+    )
     last = _empty("extractor_failed")
     provider_failed = False
     stopped = False
