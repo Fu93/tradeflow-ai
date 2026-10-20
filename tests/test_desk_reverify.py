@@ -252,7 +252,7 @@ def test_withheld_counter_and_sent_draft_are_not_sent_again(tmp_path, monkeypatc
         provenance_extra={"message_id": "<a1@ningbo.test>", "references": "<rfq-1@example.test> <rfq-2@example.test>"},
     )
     accept_review(
-        store, deal_id, held_in["event"]["id"], ningbo, chosen_token="15.60", unit_basis="per_piece"
+        store, deal_id, held_in["event"]["id"], ningbo, chosen_token="15.60", human_confirmed=True
     )
     draft = next(item for item in store.drafts(deal_id) if item["status"] == "draft")
     header = draft["references_header"] or ""
@@ -367,7 +367,7 @@ def test_failed_send_can_be_retried(tmp_path, monkeypatch):
         opened["event"]["id"],
         snapshot["suppliers"][0]["id"],
         chosen_token="15.60",
-        unit_basis="per_piece",
+        human_confirmed=True,
     )
     draft = next(item for item in store.drafts(deal_id) if item["status"] == "draft")
     digest = draft_digest(draft["body"])

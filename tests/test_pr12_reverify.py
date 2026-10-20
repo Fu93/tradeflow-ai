@@ -183,12 +183,14 @@ def test_tier_uses_the_deal_quantity_and_otherwise_reviews():
     open_row = parse_quote(text)
     assert open_row["status"] == "review"
     assert open_row["provenance"]["suggested_token"] is None
+    assert open_row["parsed"]["unit_price"] is None
     assert "31" in open_row["provenance"]["candidates"]
     assert "29" in open_row["provenance"]["candidates"]
-    assert parse_quote(text, quantity=1000)["parsed"]["unit_price"] == pytest.approx(31)
-    assert parse_quote(text, quantity=5000)["parsed"]["unit_price"] == pytest.approx(29)
-    assert parse_quote(text, quantity=3000)["parsed"]["unit_price"] == pytest.approx(31)
-    assert parse_quote(text, quantity=800)["parsed"]["unit_price"] == pytest.approx(31)
+    for quantity, highlighted in ((1000, "31"), (5000, "29"), (3000, "31"), (800, "31")):
+        row = parse_quote(text, quantity=quantity)
+        assert row["parsed"]["unit_price"] is None
+        assert row["provenance"]["suggested_token"] is None
+        assert row["provenance"]["highlighted_token"] == highlighted
     ladder = "Price tiers: 33.50 CNY at 5000 pcs, 32.10 CNY at 10000 pcs."
     held = parse_quote(ladder, quantity=10000)
     assert held["status"] == "review"

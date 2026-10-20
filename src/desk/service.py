@@ -6,6 +6,7 @@ import concurrent.futures
 import hashlib
 import json
 import logging
+import math
 import os
 import queue
 import threading
@@ -28,7 +29,14 @@ from src.desk.audit_chain import approval_recorded, chain_key_configured, export
 from src.desk.extract import time_left
 from src.desk.input_checks import message_id_or_blank, references_or_blank, require_address, require_plain
 from src.desk.names import supplier_name_key
-from src.desk.parse import _confirm_span, _visible_text, confirm_amount, parse_quote, price_from_token
+from src.desk.parse import (
+    _confirm_span,
+    _visible_text,
+    confirm_amount,
+    conversion_pieces,
+    parse_quote,
+    price_from_token,
+)
 from src.desk.store import DeskRejected, DeskStore, DeskUnavailable, get_store
 from src.desk.transmission import (
     chained_supplier,
@@ -734,25 +742,40 @@ def _piece_confirmation(
     basis: str,
     unit_basis: str | None,
     pieces_per_basis: float | None,
+    *,
+    human_confirmed: bool,
+    raw_text: str,
 ) -> tuple[float, str, float | None] | None:
-    """Deal-unit price, the basis the human confirmed, and a stated conversion.
+    """Deal-unit price, the confirmed basis, and the pack count the message allows.
 
-    A positive piece basis needs no extra choice. Anything else stays out of
-    the decision until the confirm request names the deal unit or a conversion.
+    A stated piece basis needs no extra choice. An unknown basis becomes the
+    deal unit only when the human confirm proof is true. A stated non-piece
+    basis converts only at the pack count the message states, or at the
+    registered dozen, and only with that same proof.
     """
     choice = str(unit_basis or "").strip()
-    if basis == "per_piece" and pieces_per_basis is None and choice in {"", "per_piece"}:
-        return float(amount), "per_piece", None
     if basis == "per_piece":
-        return None
-    if pieces_per_basis is not None:
-        count = float(pieces_per_basis)
-        if count <= 0:
+        if pieces_per_basis is not None or choice not in {"", "per_piece"}:
             return None
-        return float(amount) / count, "per_piece", count
-    if choice == "per_piece":
         return float(amount), "per_piece", None
-    return None
+    if basis in {None, "", "unknown"}:
+        if pieces_per_basis is not None or choice not in {"", "per_piece"}:
+            return None
+        if human_confirmed is not True:
+            return None
+        return float(amount), "per_piece", None
+    if choice == "per_piece" or (choice and choice != basis):
+        return None
+    allowed = conversion_pieces(raw_text, basis)
+    if (
+        pieces_per_basis is None
+        or allowed is None
+        or not math.isclose(float(pieces_per_basis), float(allowed))
+    ):
+        return None
+    if human_confirmed is not True:
+        return None
+    return float(amount) / float(allowed), "per_piece", float(allowed)
 
 
 def accept_review(
@@ -765,6 +788,7 @@ def accept_review(
     reject: bool = False,
     unit_basis: str | None = None,
     pieces_per_basis: float | None = None,
+    human_confirmed: bool = False,
 ) -> dict[str, Any]:
     with deal_lock(deal_id):
         event = store.event(deal_id, event_id)
@@ -831,7 +855,14 @@ def accept_review(
         amount, basis = found
         if issue is None and basis != "per_piece":
             issue = "unit mismatch"
-        resolved = _piece_confirmation(amount, basis, unit_basis, pieces_per_basis)
+        resolved = _piece_confirmation(
+            amount,
+            basis,
+            unit_basis,
+            pieces_per_basis,
+            human_confirmed=human_confirmed,
+            raw_text=str(event.get("raw_text") or ""),
+        )
         if resolved is None:
             raise DeskRejected("unit mismatch")
         price, confirmed_basis, pieces = resolved
@@ -886,6 +917,7 @@ def accept_review(
                 "stated_basis": basis,
                 "confirmed_basis": confirmed_basis,
                 "pieces_per_basis": pieces,
+                "human_confirmed": human_confirmed is True,
                 "span": _confirm_span(_visible_text(raw_text), str(chosen_token)),
                 "raw_sha256": hashlib.sha256(raw_text.encode("utf-8")).hexdigest(),
                 "freight": parsed.get("freight"),
@@ -1519,11 +1551,13 @@ def _chained_piece_amount(raw_text: str, review: dict[str, Any], currency: str) 
     if str(review.get("stated_basis") or "") != str(basis):
         return None
     pieces = review.get("pieces_per_basis")
-    if pieces is not None:
-        count = float(pieces)
-        if count <= 0:
+    if basis not in {None, "", "unknown", "per_piece"}:
+        allowed = conversion_pieces(raw_text, basis)
+        if pieces is None or allowed is None or not math.isclose(float(pieces), float(allowed)):
             return None
-        return float(amount) / count
+        return float(amount) / float(allowed)
+    if pieces is not None:
+        return None
     return float(amount)
 
 

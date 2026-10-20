@@ -139,7 +139,7 @@ def test_review_can_accept_a_token_or_reject(desk_env):
         supplier_id=wenzhou,
     )["event"]
     assert ambiguous["status"] == "review"
-    corrected = accept_review(store, deal_id, ambiguous["id"], wenzhou, chosen_token="16.00", unit_basis="per_piece")
+    corrected = accept_review(store, deal_id, ambiguous["id"], wenzhou, chosen_token="16.00", human_confirmed=True)
     row = next(item for item in corrected["suppliers"] if item["name"] == "Wenzhou")
     assert row["latest_quote"] == 16.00
     store.close()
@@ -175,7 +175,7 @@ def test_drafts_follow_the_supplier_language_and_thread(desk_env):
         external_id="<ningbo-1@example.test>",
         provenance_extra={"message_id": "<ningbo-1@example.test>", "references": "<root@example.test>"},
     )
-    accept_review(store, deal_id, ningbo_in["event"]["id"], ningbo, chosen_token="15.60", unit_basis="per_piece")
+    accept_review(store, deal_id, ningbo_in["event"]["id"], ningbo, chosen_token="15.60", human_confirmed=True)
     chinese = next(item for item in store.drafts(deal_id) if item["supplier_id"] == ningbo)
     assert "您好" in chinese["body"]
     assert "engine" not in chinese["body"].lower()
@@ -190,7 +190,7 @@ def test_drafts_follow_the_supplier_language_and_thread(desk_env):
         raw_text="Unit price: 16.20 CNY.",
         supplier_id=foshan,
     )
-    accept_review(store, deal_id, foshan_in["event"]["id"], foshan, chosen_token="16.20", unit_basis="per_piece")
+    accept_review(store, deal_id, foshan_in["event"]["id"], foshan, chosen_token="16.20", human_confirmed=True)
     english = next(item for item in store.drafts(deal_id) if item["supplier_id"] == foshan and item["status"] == "draft")
     assert english["body"].startswith("Hello,")
     assert "withheld" not in english["body"].lower()
@@ -225,7 +225,7 @@ def test_failed_smtp_is_not_stored_as_sent(desk_env, monkeypatch):
         raw_text="单价 15.60 元",
         supplier_id=snapshot["suppliers"][0]["id"],
     )
-    accept_review(store, deal_id, opened["event"]["id"], snapshot["suppliers"][0]["id"], chosen_token="15.60", unit_basis="per_piece")
+    accept_review(store, deal_id, opened["event"]["id"], snapshot["suppliers"][0]["id"], chosen_token="15.60", human_confirmed=True)
     draft = next(item for item in store.drafts(deal_id) if item["status"] == "draft")
 
     async def fail(*_args, **_kwargs):
@@ -287,12 +287,25 @@ def test_desk_mutations_require_a_real_key_and_a_boolean(desk_env, monkeypatch):
         headers={"X-API-Key": KEY},
     )
     assert quoted.status_code == 200, quoted.text
+    silent = client.post(
+        f"/api/v1/desk/deals/{deal_id}/review/{quoted.json()['event']['id']}",
+        json={
+            "action": "accept",
+            "supplier_id": created.json()["suppliers"][0]["id"],
+            "chosen_token": "15.60",
+            "unit_basis": "per_piece",
+        },
+        headers={"X-API-Key": KEY},
+    )
+    assert silent.status_code == 422
+    assert silent.json()["detail"] == "unit mismatch"
     confirmed = client.post(
         f"/api/v1/desk/deals/{deal_id}/review/{quoted.json()['event']['id']}",
         json={
             "action": "accept",
             "supplier_id": created.json()["suppliers"][0]["id"],
             "chosen_token": "15.60",
+            "human_confirmed": True,
             "unit_basis": "per_piece",
         },
         headers={"X-API-Key": KEY},
@@ -360,7 +373,7 @@ def test_concurrent_quotes_all_land_on_the_snapshot(desk_env):
                     external_id="%s-%s" % (name, step),
                 )
                 token = "%d.%02d" % (cents // 100, cents % 100)
-                accept_review(store, deal_id, ingested["event"]["id"], supplier_id, chosen_token=token, unit_basis="per_piece")
+                accept_review(store, deal_id, ingested["event"]["id"], supplier_id, chosen_token=token, human_confirmed=True)
         except Exception as exc:  # noqa: BLE001 - the assertion reports it
             errors.append(repr(exc))
 

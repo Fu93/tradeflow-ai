@@ -268,7 +268,13 @@ def test_confirm_uses_the_accurate_reason(tmp_path, monkeypatch):
     with pytest.raises(DeskRejected, match="unit mismatch"):
         accept_review(store, deal_id, implicit, supplier, chosen_token="28")
     accepted = accept_review(
-        store, deal_id, implicit, supplier, chosen_token="28", unit_basis="per_piece"
+        store,
+        deal_id,
+        implicit,
+        supplier,
+        chosen_token="28",
+        human_confirmed=True,
+        unit_basis="per_piece",
     )
     kept = [row for row in accepted["events"] if row["id"] == implicit][0]
     assert kept["parsed"]["unit_price"] == pytest.approx(28)
@@ -284,6 +290,7 @@ def test_confirm_uses_the_accurate_reason(tmp_path, monkeypatch):
     assert confirmed[-1]["stated_basis"] == "unknown"
     assert confirmed[-1]["confirmed_basis"] == "per_piece"
     assert confirmed[-1]["pieces_per_basis"] is None
+    assert confirmed[-1]["human_confirmed"] is True
     store.close()
     reset_stores()
 
@@ -373,11 +380,44 @@ def test_other_word_orders_stay_out_of_the_counter(tmp_path, monkeypatch):
     )
     assert refused.status_code == 422
     assert refused.json()["detail"] == "unit mismatch"
-    chosen = accept_review(
-        store, deal_id, event_id, supplier, chosen_token="48", unit_basis="per_piece"
+    override = client.post(
+        f"/api/v1/desk/deals/{deal_id}/review/{event_id}",
+        headers={"X-API-Key": "phase2a-desk-key"},
+        json={
+            "supplier_id": supplier,
+            "action": "accept",
+            "chosen_token": "48",
+            "unit_basis": "per_piece",
+            "human_confirmed": True,
+        },
     )
-    card = next(row for row in chosen["suppliers"] if row["id"] == supplier)
-    assert card["reference_ask"] == pytest.approx(48)
+    assert override.status_code == 422
+    assert override.json()["detail"] == "unit mismatch"
+    silent_dozen = client.post(
+        f"/api/v1/desk/deals/{deal_id}/review/{event_id}",
+        headers={"X-API-Key": "phase2a-desk-key"},
+        json={
+            "supplier_id": supplier,
+            "action": "accept",
+            "chosen_token": "48",
+            "pieces_per_basis": 12,
+        },
+    )
+    assert silent_dozen.status_code == 422
+    chosen = client.post(
+        f"/api/v1/desk/deals/{deal_id}/review/{event_id}",
+        headers={"X-API-Key": "phase2a-desk-key"},
+        json={
+            "supplier_id": supplier,
+            "action": "accept",
+            "chosen_token": "48",
+            "pieces_per_basis": 12,
+            "human_confirmed": True,
+        },
+    )
+    assert chosen.status_code == 200, chosen.text
+    card = next(row for row in chosen.json()["suppliers"] if row["id"] == supplier)
+    assert card["reference_ask"] == pytest.approx(4)
     assert card["counter"] is not None
     rows = store.conn.execute(
         "SELECT type, payload_json FROM desk_chain WHERE deal_id = ?",
@@ -390,26 +430,45 @@ def test_other_word_orders_stay_out_of_the_counter(tmp_path, monkeypatch):
     ]
     assert review[-1]["stated_basis"] == "打"
     assert review[-1]["confirmed_basis"] == "per_piece"
-    assert review[-1]["pieces_per_basis"] is None
+    assert review[-1]["pieces_per_basis"] == pytest.approx(12)
+    assert review[-1]["human_confirmed"] is True
+    assert review[-1]["value"] == pytest.approx(4)
 
     converted_open = ingest_message(
-        store, deal_id, source="paste", raw_text="一箱 480 元", supplier_id=supplier
+        store, deal_id, source="paste", raw_text="每箱 480 元，一箱 20 件", supplier_id=supplier
     )
     blocked = store.get_snapshot(deal_id)
     blocked_card = next(row for row in blocked["suppliers"] if row["id"] == supplier)
-    assert blocked_card["latest_quote"] == pytest.approx(48)
-    assert blocked_card["reference_ask"] == pytest.approx(48)
-    converted = accept_review(
-        store,
-        deal_id,
-        converted_open["event"]["id"],
-        supplier,
-        chosen_token="480",
-        unit_basis="箱",
-        pieces_per_basis=20,
+    assert blocked_card["latest_quote"] == pytest.approx(4)
+    assert blocked_card["reference_ask"] == pytest.approx(4)
+    carton_id = converted_open["event"]["id"]
+    for body in (
+        {"unit_basis": "per_piece", "human_confirmed": True},
+        {"pieces_per_basis": 1, "human_confirmed": True},
+        {"pieces_per_basis": 20},
+    ):
+        blocked_post = client.post(
+            f"/api/v1/desk/deals/{deal_id}/review/{carton_id}",
+            headers={"X-API-Key": "phase2a-desk-key"},
+            json={"supplier_id": supplier, "action": "accept", "chosen_token": "480", **body},
+        )
+        assert blocked_post.status_code == 422
+        assert blocked_post.json()["detail"] == "unit mismatch"
+    converted = client.post(
+        f"/api/v1/desk/deals/{deal_id}/review/{carton_id}",
+        headers={"X-API-Key": "phase2a-desk-key"},
+        json={
+            "supplier_id": supplier,
+            "action": "accept",
+            "chosen_token": "480",
+            "pieces_per_basis": 20,
+            "human_confirmed": True,
+        },
     )
-    after = next(row for row in converted["suppliers"] if row["id"] == supplier)
+    assert converted.status_code == 200, converted.text
+    after = next(row for row in converted.json()["suppliers"] if row["id"] == supplier)
     assert after["latest_quote"] == pytest.approx(24)
+    assert after["reference_ask"] == pytest.approx(4)
     assert after["counter"] is not None
     rows = store.conn.execute(
         "SELECT type, payload_json FROM desk_chain WHERE deal_id = ?",
@@ -423,6 +482,180 @@ def test_other_word_orders_stay_out_of_the_counter(tmp_path, monkeypatch):
     assert review[-1]["stated_basis"] == "箱"
     assert review[-1]["pieces_per_basis"] == pytest.approx(20)
     assert review[-1]["value"] == pytest.approx(24)
+    assert review[-1]["human_confirmed"] is True
+    store.close()
+    reset_stores()
+
+
+def test_ui_payload_settles_unknown_basis_and_refuses_a_contradiction(tmp_path, monkeypatch):
+    """The desk and extension post this JSON. A script field alone does not."""
+    monkeypatch.setenv("TRADEFLOW_DESK_DB", str(tmp_path / "desk.db"))
+    monkeypatch.setenv("TRADEFLOW_ENV", "sandbox")
+    monkeypatch.setenv("TRADEFLOW_CHAIN_KEY", "phase2a-key")
+    monkeypatch.setenv("TRADEFLOW_API_KEY", "phase2a-desk-key")
+    from fastapi.testclient import TestClient
+
+    from src.app.main import app
+    from src.desk.parse import conversion_pieces, parse_quote, price_from_token
+    from src.desk.service import _chained_piece_amount, create_deal, ingest_message
+    from src.desk.shadow import evaluate_shadow
+    from src.desk.store import DeskStore, reset_stores
+
+    reset_stores()
+    store = DeskStore(str(tmp_path / "desk.db"))
+    snapshot = create_deal(
+        store,
+        product="valve",
+        quantity=2000,
+        target_price=8,
+        ceiling_price=40,
+        risk_tolerance=0.5,
+        seed=6,
+        suppliers=SUPPLIERS,
+    )
+    deal_id = snapshot["deal"]["id"]
+    supplier = snapshot["suppliers"][0]["id"]
+    client = TestClient(app)
+    headers = {"X-API-Key": "phase2a-desk-key"}
+
+    def post_quote(text: str) -> dict:
+        opened = ingest_message(store, deal_id, source="paste", raw_text=text, supplier_id=supplier)
+        return opened["event"]
+
+    def review(event_id: str, token: str, **extra: object):
+        body = {"supplier_id": supplier, "action": "accept", "chosen_token": token}
+        body.update(extra)
+        return client.post(
+            f"/api/v1/desk/deals/{deal_id}/review/{event_id}",
+            headers=headers,
+            json=body,
+        )
+
+    for text, token in (
+        ("单价 3.2 元", "3.2"),
+        ("报价 12.5", "12.5"),
+        ("含税单价 6.80 元", "6.80"),
+    ):
+        event = post_quote(text)
+        assert event["status"] == "review"
+        assert event["parsed"]["unit_price"] is None
+        plain = review(event["id"], token)
+        assert plain.status_code == 422
+        assert plain.json()["detail"] == "unit mismatch"
+        silent = review(event["id"], token, unit_basis="per_piece")
+        assert silent.status_code == 422
+        clicked = review(event["id"], token, human_confirmed=True, unit_basis="per_piece")
+        assert clicked.status_code == 200, clicked.text
+        reading = parse_quote(text)
+        assert reading["provenance"]["basis_prompts"][token]["label"] == "per piece (deal unit)"
+        assert reading["provenance"]["basis_prompts"][token]["kind"] == "per_piece"
+
+    moq_text = "单价 15.60 元，起订量 1000 件"
+    moq = post_quote(moq_text)
+    assert moq["status"] == "review"
+    assert moq["parsed"]["unit_price"] is None
+    assert moq["provenance"]["auto_accept"] is False
+    assert price_from_token(moq_text, "15.60") == pytest.approx(15.60)
+    moq_ok = review(moq["id"], "15.60")
+    assert moq_ok.status_code == 200, moq_ok.text
+
+    dozen = parse_quote("36元/打")
+    assert dozen["provenance"]["basis_prompts"]["36"]["pieces_per_basis"] == pytest.approx(12)
+    assert dozen["provenance"]["basis_prompts"]["36"]["label"] == "12 pieces per 打"
+    dozen_event = post_quote("36元/打")
+    assert review(dozen_event["id"], "36", unit_basis="per_piece", human_confirmed=True).status_code == 422
+    assert review(dozen_event["id"], "36", pieces_per_basis=1, human_confirmed=True).status_code == 422
+    dozen_ok = review(dozen_event["id"], "36", pieces_per_basis=12, human_confirmed=True)
+    assert dozen_ok.status_code == 200, dozen_ok.text
+    dozen_card = next(row for row in dozen_ok.json()["suppliers"] if row["id"] == supplier)
+    assert dozen_card["latest_quote"] == pytest.approx(3)
+    chained = [
+        json.loads(row["payload_json"])
+        for row in store.conn.execute(
+            "SELECT type, payload_json FROM desk_chain WHERE deal_id = ?",
+            (deal_id,),
+        ).fetchall()
+        if row["type"] == "review" and json.loads(row["payload_json"]).get("token") == "36"
+    ]
+    assert _chained_piece_amount("36元/打", chained[-1], "CNY") == pytest.approx(3)
+    contradicted = dict(chained[-1])
+    contradicted["pieces_per_basis"] = 1
+    assert _chained_piece_amount("36元/打", contradicted, "CNY") is None
+    mixed = "每箱 480 元，一箱 20 件。另 36元/打"
+    assert conversion_pieces(mixed, "箱") == pytest.approx(20)
+    assert conversion_pieces(mixed, "打") == pytest.approx(12)
+    half = parse_quote("480元/箱，一箱 20.5 件")
+    assert half["provenance"]["basis_prompts"]["480"]["label"] == "20.5 pieces per 箱"
+    stated = parse_quote("48元/打，一打 10 件")
+    assert stated["provenance"]["basis_prompts"]["48"]["pieces_per_basis"] == pytest.approx(10)
+
+    kilo = post_quote("按公斤算 18 元")
+    assert "18" not in (parse_quote("按公斤算 18 元")["provenance"]["basis_prompts"])
+    assert review(kilo["id"], "18", unit_basis="per_piece", human_confirmed=True).status_code == 422
+    assert review(kilo["id"], "18", pieces_per_basis=1, human_confirmed=True).status_code == 422
+
+    compound = parse_quote("1块2毛")
+    assert compound["provenance"]["candidates"] == ["1"]
+    assert compound["provenance"]["confirm_value"] == pytest.approx(1.2)
+    assert compound["status"] != "accepted"
+    assert parse_quote("1元2角")["provenance"]["confirm_value"] == pytest.approx(1.2)
+    assert "2" not in parse_quote("1元2角")["provenance"]["candidates"]
+
+    pair = parse_quote("含税单价 12.80 元/件，不含税 11.30")
+    assert pair["status"] != "accepted"
+    assert pair["parsed"]["unit_price"] is None
+    assert pair["provenance"]["suggested_token"] is None
+    assert pair["provenance"]["quoted_amount"] is None
+    assert "12.80" in pair["provenance"]["candidates"]
+    assert "11.30" in pair["provenance"]["candidates"]
+    one_side = parse_quote("含税33元/件，不含税另计")
+    assert one_side["parsed"]["unit_price"] is None
+    assert one_side["provenance"]["suggested_token"] is None
+    single = parse_quote("报价28，含税")
+    assert single["provenance"]["candidates"] == ["28"]
+    assert single["provenance"]["suggested_token"] == "28"
+
+    ladder = "单价 15 元/件；1000件以上 14 元/件"
+    high = parse_quote(ladder, quantity=2000)
+    low = parse_quote(ladder, quantity=100)
+    assert high["status"] != "accepted"
+    assert high["parsed"]["unit_price"] is None
+    assert high["provenance"]["suggested_token"] is None
+    assert high["provenance"]["candidates"] == ["15", "14"]
+    thresholds = {row["token"]: row["threshold"] for row in high["provenance"]["tiers"]}
+    assert thresholds["15"] is None
+    assert thresholds["14"] == pytest.approx(1000)
+    assert high["provenance"]["highlighted_token"] == "14"
+    assert low["provenance"]["highlighted_token"] == "15"
+    assert low["provenance"]["suggested_token"] is None
+    shadow = evaluate_shadow(
+        ladder,
+        high,
+        low=1,
+        high=100,
+        mentions=[
+            {
+                "class": "own_unit_offer",
+                "speaker": "supplier",
+                "polarity": "affirmative",
+                "is_question": False,
+                "evidence_span": "单价 15 元/件",
+                "currency": "CNY",
+                "unit": "per_piece",
+            }
+        ],
+        extractor_configured=True,
+    )
+    assert shadow["would_accept"] is False
+    assert shadow["applied"] is False
+
+    panel = Path("src/web/static/js/desk.js").read_text(encoding="utf-8")
+    background = Path("extension/background.js").read_text(encoding="utf-8")
+    hud = Path("extension/content.js").read_text(encoding="utf-8")
+    assert "human_confirmed" in panel
+    assert "per piece (deal unit)" in panel
+    assert "human_confirmed" in background
+    assert "per piece (deal unit)" in hud
     store.close()
     reset_stores()
 

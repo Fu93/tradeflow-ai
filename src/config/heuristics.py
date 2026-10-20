@@ -615,6 +615,10 @@ JIAO_IN_YUAN = 0.1
 # is naming that subunit. The price in yuan is the count times this factor.
 LI_IN_YUAN = 0.001
 
+# Rationale: a dozen is twelve pieces. A price stated per 打 converts to the
+# deal unit by this count when the message does not state a different pack count.
+DOZEN_PIECES = 12
+
 # Rationale: supplier-message length, in characters, above which the extractor
 # skips the Ultra hop and calls Super. A longer message was timing out on Ultra.
 EXTRACTOR_SUPER_DIRECT_CHARS = 24000

@@ -139,7 +139,7 @@ def test_fixture_and_simulated_are_server_side(tmp_path, monkeypatch):
     )
     assert simulated["event"]["status"] == "review"
     assert simulated["event"]["provenance"]["simulated"] is True
-    accepted = accept_review(store, deal_id, simulated["event"]["id"], simulated_id, chosen_token="16.00", unit_basis="per_piece")
+    accepted = accept_review(store, deal_id, simulated["event"]["id"], simulated_id, chosen_token="16.00", human_confirmed=True)
     card = next(row for row in accepted["suppliers"] if row["id"] == simulated_id)
     assert card["origin"] == "simulated"
     assert card["excluded_from_decision"] is True

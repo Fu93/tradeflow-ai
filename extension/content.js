@@ -679,11 +679,12 @@
       deck.innerHTML = "";
     }
 
-    renderConfirm(candidates, onPick) {
+    renderConfirm(candidates, onPick, prompts, highlighted) {
       const deck = this.shadowRoot.getElementById("tf-deck");
       if (!deck) return;
       const doc = deck.ownerDocument;
       const tokens = Array.isArray(candidates) ? candidates : [];
+      const basisPrompts = prompts || {};
       deck.replaceChildren();
       deck.style.display = "block";
 
@@ -706,9 +707,25 @@
           const btn = doc.createElement("button");
           btn.type = "button";
           btn.className = "tf-btn tf-confirm-btn";
-          btn.textContent = String(token);
+          const label = String(token);
+          btn.textContent = label === highlighted ? label + " (matches quantity)" : label;
           btn.addEventListener("click", () => {
-            if (token && onPick) onPick(String(token));
+            if (!token || !onPick) return;
+            const prompt = basisPrompts[String(token)];
+            if (!prompt) {
+              onPick(String(token));
+              return;
+            }
+            let basisBtn = row.querySelector("[data-basis-choice]");
+            if (!basisBtn) {
+              basisBtn = doc.createElement("button");
+              basisBtn.type = "button";
+              basisBtn.dataset.basisChoice = "1";
+              basisBtn.className = "tf-btn tf-confirm-btn";
+              row.appendChild(basisBtn);
+            }
+            basisBtn.textContent = prompt.kind === "per_piece" ? "per piece (deal unit)" : (prompt.label || "");
+            basisBtn.onclick = () => onPick(String(token), prompt);
           });
           row.appendChild(btn);
         });
@@ -1201,14 +1218,22 @@
           "#f59e0b",
           "Pick the supplier unit price from the message. Nothing is countered until you confirm."
         );
-        overlayEl.renderConfirm(data.candidates || [], (token) => {
-          portClient.send("CONFIRM_DESK_PRICE", {
+        overlayEl.renderConfirm(data.candidates || [], (token, prompt) => {
+          const payload = {
             dealId: data.deal_id,
             eventId: data.event_id,
             supplierId: data.supplier_id,
             token: token,
-          });
-        });
+          };
+          if (prompt) {
+            payload.humanConfirmed = true;
+            if (prompt.kind === "per_piece") payload.unitBasis = "per_piece";
+            if (prompt.kind === "convert" && prompt.pieces_per_basis != null) {
+              payload.piecesPerBasis = prompt.pieces_per_basis;
+            }
+          }
+          portClient.send("CONFIRM_DESK_PRICE", payload);
+        }, data.basis_prompts || {}, data.highlighted_token || "");
         return;
       }
 

@@ -110,7 +110,7 @@ _INSTRUCTION = re.compile(
     r"update\s+your\s+records|agreed\s+price\s+is)"
 )
 _TIER_QTY = re.compile(
-    r"(?i)(\d+(?:\.\d+)?)\s*(k|万|萬|pcs|pc|pieces|件|个|個|只)\b"
+    r"(?i)(\d+(?:\.\d+)?)\s*(k|万|萬|pcs|pc|pieces|件|个|個|只)(?:\b|(?=[\u4e00-\u9fff])|$)"
 )
 _THOUSAND = 1000
 _WAN = 10000
@@ -673,12 +673,14 @@ _TW_CUE = re.compile(r"(?i)NT\s*\$|新台幣|新臺幣|台幣|臺幣|新台币|�
 # Characters that simplified supplier text does not use. 元 beside these is not CNY.
 _TRADITIONAL_MARK = re.compile("[報價稅隻條雙點張碼噸錢樣運務買過應說聽據網與對經為臺幣]")
 _ATTACH_HEAD = re.compile(
-    r"(?i)(?:单价|單價|报价|報價|价格|價格|多少钱|多少錢|unit\s*price)\s*[:：]?\s*[?？]?\s*$"
+    r"(?i)(?:单价|單價|报价|報價|价格|價格|多少钱|多少錢|不含税|不含稅|含税|含稅|unit\s*price)"
+    r"\s*[:：]?\s*[?？]?\s*$"
 )
 _PERCENT_TAIL = re.compile(r"^\s*(?:%|％|个百分点|个点|百分点)")
 _COUNT_TAIL = re.compile(r"^\s*(?:万|萬|千)")
 _DATE_TAIL = re.compile(r"^\s*(?:年|月|日|号|號)")
-_THRESHOLD_HEAD = re.compile(r"(?:以上|以下|超过|超過|不低于|不低於)\s*$")
+_THRESHOLD_HEAD = re.compile(r"(?:超过|超過|不低于|不低於)\s*$")
+_THRESHOLD_TAIL = re.compile(r"^\s*(?:以上|以下)")
 _MODEL_HEAD = re.compile(
     r"(?i)(?:型号|型號|货号|貨號|款号|款號|料号|料號|平台|sku|1688)\s*[:：]?\s*$"
 )
@@ -726,9 +728,15 @@ _BASIS_NAME = {
     "dozen": "打", "ton": "吨", "tonne": "吨", "gram": "克", "yard": "码", "sheet": "张",
 }
 _PACK_COUNT = re.compile(
-    r"(?:一\s*(?:箱|包|套|盒|打)\s*(?P<n>\d+(?:\.\d+)?)\s*(?:个|個|件|只|隻)|"
-    r"(?P<n2>\d+(?:\.\d+)?)\s*(?:个|個|件|只|隻)\s*/\s*(?:箱|包|套|盒))"
+    r"(?:一\s*(?P<pack>箱|包|套|盒|打)\s*(?P<n>\d+(?:\.\d+)?)\s*(?:个|個|件|只|隻)|"
+    r"(?P<n2>\d+(?:\.\d+)?)\s*(?:个|個|件|只|隻)\s*/\s*(?P<pack2>箱|包|套|盒|打))"
 )
+_COMPOUND_JIAO = re.compile(r"^\s*(?:元|块|塊)\s*(?P<n>\d+)\s*(?P<u>毛|角)")
+_MOQ_PIECE = re.compile(
+    r"(?i)(?:moq|起订量|起訂量|起订|起訂)\s*[:：]?\s*\d+(?:[.,]\d+)?\s*(?:件|个|個|只|隻|pcs|pc|pieces)\b"
+)
+_TAX_INCLUDED = re.compile(r"(?<!不)(?:含税|含稅)")
+_TAX_EXCLUDED = re.compile(r"不含税|不含稅")
 
 
 def _basis_word(match: re.Match[str]) -> str:
@@ -798,7 +806,12 @@ def _excluded_number(text: str, start: int, token: str, clause: str, amount_at: 
     """Counts, quantities, models, thresholds, percents, dates, and phone numbers."""
     tail = text[start + len(token):]
     head = clause[:amount_at]
-    if _PERCENT_TAIL.match(tail) or _COUNT_TAIL.match(tail) or _DATE_TAIL.match(tail):
+    if (
+        _PERCENT_TAIL.match(tail)
+        or _COUNT_TAIL.match(tail)
+        or _DATE_TAIL.match(tail)
+        or _THRESHOLD_TAIL.match(tail)
+    ):
         return True
     if _THRESHOLD_HEAD.search(head) or _MODEL_HEAD.search(head) or _SURCHARGE_HEAD.search(head):
         return True
@@ -967,6 +980,110 @@ def _stated_conversion_enabled() -> bool:
     return int(UNIT_BASIS_FROM_MESSAGE) == 1
 
 
+def conversion_pieces(text: str, basis: str | None) -> float | None:
+    """Pieces in one stated pack. An unstated dozen uses the registered count."""
+    if not basis or basis in {"per_piece", "unknown"}:
+        return None
+    for found in _PACK_COUNT.finditer(text or ""):
+        pack = found.group("pack") or found.group("pack2") or ""
+        if pack != basis:
+            continue
+        count = _number(found.group("n") or found.group("n2") or "")
+        if count is None or count == 0:
+            continue
+        return float(count)
+    if basis == "打":
+        from src.config.heuristics import DOZEN_PIECES
+
+        return float(DOZEN_PIECES)
+    return None
+
+
+def _moq_piece_evidence(text: str, clause: str, basis: str | None) -> bool:
+    """单价 plus an MOQ in 件 is the deal unit. It is confirmable, not accepted."""
+    if basis is not None:
+        return False
+    if not _UNIT_LABEL.search(clause or ""):
+        return False
+    if non_piece_basis(text):
+        return False
+    return bool(_MOQ_PIECE.search(text or ""))
+
+
+def _tax_pair(text: str) -> bool:
+    """A 含税 amount and a 不含税 amount are two prices."""
+    body = text or ""
+    return bool(_TAX_INCLUDED.search(body) and _TAX_EXCLUDED.search(body))
+
+
+def _pieces_label(count: float) -> str:
+    whole = int(count)
+    if float(whole) == float(count):
+        return str(whole)
+    return str(count)
+
+
+def _basis_prompt(text: str, item: dict[str, Any]) -> dict[str, Any] | None:
+    """The one human choice that can settle this number. None when no choice is legal."""
+    basis = str(item.get("basis") or "unknown")
+    if basis == "per_piece":
+        return None
+    if basis in {"", "unknown"}:
+        return {"kind": "per_piece", "label": "per piece (deal unit)"}
+    allowed = conversion_pieces(text, basis)
+    if allowed is None:
+        return None
+    return {
+        "kind": "convert",
+        "pieces_per_basis": float(allowed),
+        "stated_basis": basis,
+        "label": f"{_pieces_label(float(allowed))} pieces per {basis}",
+    }
+
+
+def _tier_rows(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in items:
+        token = str(item.get("token") or "")
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        point = item.get("breakpoint")
+        rows.append(
+            {
+                "token": token,
+                "value": float(item["value"]),
+                "threshold": None if point is None else float(point),
+            }
+        )
+    return rows
+
+
+def _highlighted_token(items: list[dict[str, Any]], quantity: float | None) -> str | None:
+    """The tier at the deal quantity. It is a highlight, never the prefilled price."""
+    if len(items) < 2:
+        return None
+    picked = _pick_tier(items, quantity)
+    if all(item.get("breakpoint") is not None for item in items):
+        return None if picked is None else str(picked["token"])
+    if quantity is None:
+        return None
+    qty = float(quantity)
+
+    def floor(item: dict[str, Any]) -> float:
+        point = item.get("breakpoint")
+        return 0.0 if point is None else float(point)
+
+    eligible = [item for item in items if floor(item) <= qty]
+    pool = eligible if eligible else items
+    best = max(floor(item) for item in pool) if eligible else min(floor(item) for item in pool)
+    chosen = [item for item in pool if floor(item) == best]
+    if len(chosen) != 1:
+        return None
+    return str(chosen[0]["token"])
+
+
 def _normalised_piece(text: str, mismatches: list[dict[str, Any]]) -> float | None:
     """A stated pack count converts a bundle only when that policy is on."""
     if not _stated_conversion_enabled() or len(mismatches) != 1:
@@ -982,7 +1099,7 @@ def _normalised_piece(text: str, mismatches: list[dict[str, Any]]) -> float | No
 
 def _collect(text: str, deal_currency: str) -> dict[str, Any]:
     """Unit rows, other money, fees, and labelled references. A measure word is not a currency."""
-    from src.config.heuristics import DEAL_CURRENCY
+    from src.config.heuristics import DEAL_CURRENCY, JIAO_IN_YUAN
 
     units: list[dict[str, Any]] = []
     competing: list[dict[str, Any]] = []
@@ -993,6 +1110,7 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
     ranges = _range_spans(text)
     conversions = _conversion_spans(text)
     chinese = bool(_CJK.search(text))
+    consumed: list[tuple[int, int]] = []
     for match in _AMOUNT.finditer(text):
         token = match.group("num")
         pre = match.group("pre") or ""
@@ -1001,6 +1119,8 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
         if value is None or token not in text or _glued_amount(text, match):
             continue
         span = (match.start(), match.end())
+        if _inside((match.start("num"), match.end("num")), consumed):
+            continue
         if _inside(span, ranges) or _inside(span, conversions):
             continue
         left, _right = _clause_span(text, match.start("num"))
@@ -1012,11 +1132,24 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
         if _excluded_number(text, match.start("num"), token, clause, amount_at):
             continue
         tail = text[match.end("num"):]
-        factor = _subunit_factor(tail)
-        if factor is not None and value is not None:
-            value = float(value) * factor
-            if kind is None:
-                kind = deal_currency
+        compound = _COMPOUND_JIAO.match(tail)
+        factor = None
+        if compound is not None:
+            minor = _number(compound.group("n"))
+            if minor is not None and value is not None:
+                value = float(value) + float(minor) * float(JIAO_IN_YUAN)
+                consumed.append(
+                    (
+                        match.end("num") + compound.start("n"),
+                        match.end("num") + compound.end("n"),
+                    )
+                )
+        else:
+            factor = _subunit_factor(tail)
+            if factor is not None and value is not None:
+                value = float(value) * factor
+                if kind is None:
+                    kind = deal_currency
         sentence = _sentence_of(text, match.start("num"))
         basis = _basis_for_number(text, match.start("num"), match.end("num"))
         per_piece = basis == "per_piece"
@@ -1052,6 +1185,11 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
             continue
         if basis != "per_piece":
             if not _offer_speech(clause):
+                continue
+            if _moq_piece_evidence(text, clause, basis):
+                item["basis"] = "per_piece"
+                item["unit"] = "per_piece"
+                review_tokens.append(item)
                 continue
             if (
                 basis is None
@@ -1275,12 +1413,12 @@ def parse_quote(
     ]
     if saw_range:
         reason = "price range"
+    elif _tax_pair(visible) and (units or review_tokens):
+        reason = "more than one price"
     elif len(units) == 1 and not competing:
         chosen = units[0]
     elif len(units) > 1 and not competing:
-        chosen = _pick_tier(units, quantity)
-        if chosen is None:
-            reason = "more than one price"
+        reason = "more than one price"
     elif mismatches and not units:
         reason = "unit mismatch"
     elif fees and not units and not review_tokens:
@@ -1315,9 +1453,11 @@ def parse_quote(
     # One attached price can be the one-click prefill. Two prices, and neither is.
     if chosen is not None:
         suggested = chosen["token"]
-    elif len(candidate_tokens) == 1:
+    elif len(candidate_tokens) == 1 and not _tax_pair(visible):
         suggested = candidate_tokens[0]
     else:
+        suggested = None
+    if len(candidate_tokens) > 1 or _tax_pair(visible):
         suggested = None
     bases: list[str] = []
     for item in units + review_tokens:
@@ -1328,12 +1468,34 @@ def parse_quote(
     if any(item.get("evidence") == _IMPLICIT_EVIDENCE for item in units + review_tokens):
         evidence = _IMPLICIT_EVIDENCE
     quoted_amount = None
-    if accepted and chosen is not None:
+    if len(candidate_tokens) > 1 or _tax_pair(visible):
+        quoted_amount = None
+    elif accepted and chosen is not None:
         quoted_amount = float(chosen["value"])
     elif review_tokens:
         quoted_amount = float(review_tokens[0]["value"])
     elif units:
         quoted_amount = float(units[0]["value"])
+    goods: list[dict[str, Any]] = []
+    seen_goods: set[str] = set()
+    for item in units + review_tokens:
+        if item.get("issue") not in (None, "unit_mismatch"):
+            continue
+        token = str(item.get("token") or "")
+        if not token or token in seen_goods:
+            continue
+        seen_goods.add(token)
+        goods.append(item)
+    tier_list = _tier_rows(goods) if len(goods) > 1 else []
+    highlighted = _highlighted_token(goods, quantity) if len(goods) > 1 else None
+    prompts: dict[str, dict[str, Any]] = {}
+    for item in units + review_tokens:
+        token = str(item.get("token") or "")
+        if not token or token in prompts:
+            continue
+        prompt = _basis_prompt(visible, item)
+        if prompt is not None:
+            prompts[token] = prompt
     stage_text = visible if visible.strip() else text
     from src.engine.quote_fields import extract_stage1
 
@@ -1377,6 +1539,9 @@ def parse_quote(
             for item in labelled_references
         ],
         "normalised_unit_price": _normalised_piece(visible, mismatches),
+        "tiers": tier_list,
+        "highlighted_token": highlighted,
+        "basis_prompts": prompts,
     }
     return {
         "parsed": parsed,

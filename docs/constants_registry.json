@@ -903,6 +903,11 @@
       "category": "c",
       "justification": "One li is one thousandth of a yuan. A count written in 厘 converts to yuan by this factor."
     },
+    "DOZEN_PIECES": {
+      "value": 12,
+      "category": "c",
+      "justification": "A dozen is twelve pieces. A price per 打 converts by this count when the message states no other pack count."
+    },
     "EXTRACTOR_SUPER_DIRECT_CHARS": {
       "value": 24000,
       "category": "d",
