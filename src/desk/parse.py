@@ -308,6 +308,58 @@ def _clause_of(text: str, start: int) -> str:
     return text[left:right]
 
 
+def _sentence_of(text: str, start: int) -> str:
+    """The sentence around ``start``. A comma stays inside it."""
+    breaks: list[int] = []
+    for index, char in enumerate(text):
+        if char in "\n。！？!?":
+            breaks.append(index)
+            continue
+        if char != ".":
+            continue
+        before = text[index - 1] if index else ""
+        after = text[index + 1] if index + 1 < len(text) else ""
+        if before.isdigit() and after.isdigit():
+            continue
+        breaks.append(index)
+    left = max((index for index in breaks if index < start), default=-1)
+    right_candidates = [index for index in breaks if index > start]
+    right = min(right_candidates) if right_candidates else len(text)
+    return text[left + 1:right]
+
+
+def _mentions_other_currency(text: str, deal_currency: str) -> bool:
+    from src.config.heuristics import DEAL_CURRENCY
+
+    if not text:
+        return False
+    usd = bool(_USD.search(text))
+    eur = bool(_EUR.search(text))
+    yuan = bool(_CNY.search(text))
+    other = bool(_FOREIGN.search(text)) and not (usd or eur)
+    named: set[str] = set()
+    if yuan:
+        named.add(str(DEAL_CURRENCY))
+    if usd:
+        named.add("USD")
+    if eur:
+        named.add("EUR")
+    if other:
+        named.add("OTHER")
+    return any(code != deal_currency for code in named)
+
+
+def _bare_blocked_by_other_currency(visible: str, start: int, token: str, deal_currency: str) -> bool:
+    line = ""
+    for row in (visible or "").splitlines():
+        if token and token in row:
+            line = row
+            break
+    sentence = _sentence_of(visible or "", start)
+    blocked = _mentions_other_currency(line, deal_currency) or _mentions_other_currency(sentence, deal_currency)
+    return blocked
+
+
 def _for_rules(clause: str) -> str:
     return _EXCLUSION.sub(" ", clause)
 
@@ -537,6 +589,8 @@ def _collect(
                 continue
             near = clause[max(0, amount_at - 16):amount_at + len(token) + 16]
             if _UNIT_LABEL.search(near) or _QUOTE_LABEL.search(near) or _PER_PIECE.search(near):
+                if _bare_blocked_by_other_currency(text, match.start("num"), token, deal_currency):
+                    continue
                 review_tokens.append(item)
             continue
         window = _for_rules(clause)
@@ -803,6 +857,8 @@ def price_from_token(raw_text: str, token: str, deal_currency: str | None = None
         if kind == currency:
             matched = value
         elif kind is None:
+            if _bare_blocked_by_other_currency(visible, match.start("num"), token, currency):
+                continue
             bare_value = value
         else:
             other = True

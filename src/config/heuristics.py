@@ -548,6 +548,10 @@ EXTRACTOR_OUTPUT_TOKEN_CAP = 32768
 # slot instead of starting another socket.
 EXTRACTOR_MAX_IN_FLIGHT = 4
 
+# Rationale: seconds allowed for one read or write of the external chain
+# anchor. It bounds that network call. It is not a price and not a quote.
+CHAIN_ANCHOR_TIMEOUT_SECONDS = 5
+
 # Rationale: HTTP status that means the extractor was rate limited. That
 # status retries the next hop. It is not a price and not a quote amount.
 EXTRACTOR_HTTP_TOO_MANY = 429

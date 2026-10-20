@@ -7,8 +7,10 @@ message. Supplier text is sent as data. A missing endpoint returns no mentions.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
+import socket
 import threading
 import time
 import urllib.error
@@ -402,20 +404,94 @@ def _leave_http(slot: threading.BoundedSemaphore) -> None:
         return
 
 
+def _release_http(slot: threading.BoundedSemaphore, box: dict[str, Any]) -> None:
+    with _http_lock:
+        if box.get("released"):
+            return
+        box["released"] = True
+        _leave_http(slot)
+
+
+def _release_abandoned_slot(slot: threading.BoundedSemaphore, box: dict[str, Any]) -> None:
+    _release_http(slot, box)  # abandoned hop
+
+
+def _wait_for_slot(slot: threading.BoundedSemaphore, timeout: float) -> bool:
+    return bool(slot.acquire(timeout=timeout))
+
+
 def _cancel_http(response: Any) -> None:
     if response is not None:
         response.close()
 
 
+def _connection_factory(box: dict[str, Any], kind: type) -> Any:
+    def factory(host: str, **kwargs: Any) -> Any:
+        conn = kind(host, **kwargs)
+        connect = conn.connect
+
+        def wrapped() -> None:
+            connect()
+            box["sock"] = getattr(conn, "sock", None)
+
+        conn.connect = wrapped
+        return conn
+
+    return factory
+
+
+class _CapturingHTTP(urllib.request.HTTPHandler):
+    def __init__(self, box: dict[str, Any]) -> None:
+        super().__init__()
+        self._box = box
+
+    def http_open(self, req: urllib.request.Request) -> Any:
+        return self.do_open(_connection_factory(self._box, http.client.HTTPConnection), req)
+
+
+class _CapturingHTTPS(urllib.request.HTTPSHandler):
+    def __init__(self, box: dict[str, Any]) -> None:
+        super().__init__()
+        self._box = box
+
+    def https_open(self, req: urllib.request.Request) -> Any:
+        return self.do_open(_connection_factory(self._box, http.client.HTTPSConnection), req)
+
+
+def _open_http(request: urllib.request.Request, timeout: float, box: dict[str, Any]) -> Any:
+    """Tests replace ``urlopen``. A live call uses an opener that records the socket."""
+    if urllib.request.urlopen.__module__ != "urllib.request":
+        return urllib.request.urlopen(request, timeout=timeout)
+    opener = urllib.request.build_opener(_CapturingHTTP(box), _CapturingHTTPS(box))
+    return opener.open(request, timeout=timeout)
+
+
+def _abandon_http(box: dict[str, Any]) -> None:
+    """Stop a drip without waiting on a close that the body read still holds."""
+    sock = box.get("sock")
+    if sock is not None:
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+    threading.Thread(
+        target=_cancel_http,
+        args=(box.get("response"),),
+        name="desk-extractor-abandon",
+        daemon=True,
+    ).start()
+
+
 def _read_body(request: urllib.request.Request, timeout: float, box: dict[str, Any]) -> bytes:
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with _open_http(request, timeout, box) as response:
         box["response"] = response
         return response.read()
 
 
 def _post(base: str, body: dict[str, Any], timeout: float, keys: tuple[str, ...]) -> Any:
-    """One HTTP call. ``timeout`` is the total deadline, not a per-read socket timer.
+    """One HTTP call. ``timeout`` is the wall-clock deadline for connect, headers, and body.
 
+    A full slot waits up to that same deadline instead of failing immediately.
     The worker is closed when the deadline passes, and only
     ``EXTRACTOR_MAX_IN_FLIGHT`` calls run at once.
     """
@@ -428,7 +504,7 @@ def _post(base: str, body: dict[str, Any], timeout: float, keys: tuple[str, ...]
     if timeout <= 0:
         raise TimeoutError("extractor deadline")
     slot = _http_semaphore()
-    if not slot.acquire(blocking=False):
+    if not _wait_for_slot(slot, timeout):
         raise TimeoutError("extractor deadline")
     box: dict[str, Any] = {}
 
@@ -438,14 +514,14 @@ def _post(base: str, body: dict[str, Any], timeout: float, keys: tuple[str, ...]
         except BaseException as exc:
             box["error"] = exc
         finally:
-            with _http_lock:
-                _leave_http(slot)
+            _release_http(slot, box)
 
     worker = threading.Thread(target=_run, name="desk-extractor-http", daemon=True)
     worker.start()
     worker.join(timeout)
     if worker.is_alive():
-        _cancel_http(box.get("response"))
+        _abandon_http(box)
+        _release_abandoned_slot(slot, box)
         raise TimeoutError("extractor deadline")
     if "error" in box:
         raise box["error"]

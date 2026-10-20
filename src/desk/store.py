@@ -166,6 +166,7 @@ class DeskStore:
             BEGIN SELECT RAISE(ABORT, 'decisions is append-only'); END;
             """
         )
+        self._migrate_legacy_chains()
         self.conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS hazard_outcomes (
@@ -186,6 +187,43 @@ class DeskStore:
         found = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
         if column not in found:
             self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+    def _migrate_legacy_chains(self) -> None:
+        """Deals opened before the chain recorded currency get one migrated head.
+
+        Accepted quotes on that deal return to review. A send waits until a
+        person confirms them again. The note says the pre-chain inputs were
+        not verified.
+        """
+        if not audit_chain.chain_key_configured():
+            return
+        deals = self.conn.execute("SELECT * FROM deals").fetchall()
+        for deal in deals:
+            opened = self.conn.execute(
+                "SELECT seq FROM desk_chain WHERE deal_id = ? AND type = 'deal_opened' ORDER BY seq ASC LIMIT 1",
+                (deal["id"],),
+            ).fetchone()
+            if opened is not None:
+                continue
+            self.conn.execute(
+                "UPDATE quote_events SET status = 'review' WHERE deal_id = ? AND status = 'accepted'",
+                (deal["id"],),
+            )
+            self.conn.commit()
+            self.append_chain(
+                deal["id"],
+                "deal_opened",
+                {
+                    "currency": str(deal["currency"] or DEAL_CURRENCY),
+                    "ceiling": float(deal["ceiling_price"]),
+                    "target_price": float(deal["target_price"]),
+                    "quantity": int(deal["quantity"]),
+                    "product": str(deal["product"]),
+                    "risk_tolerance": float(deal["risk_tolerance"]),
+                    "migrated": True,
+                    "note": "migrated, pre-chain inputs unverified",
+                },
+            )
 
     def create_deal(
         self,

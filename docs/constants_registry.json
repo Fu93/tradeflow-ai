@@ -828,6 +828,11 @@
       "category": "n",
       "justification": "How many extractor HTTP calls may run at once. A hop that misses its deadline is abandoned, and a further call waits for a free slot."
     },
+    "CHAIN_ANCHOR_TIMEOUT_SECONDS": {
+      "value": 5,
+      "category": "n",
+      "justification": "Seconds allowed for one read or write of the external chain anchor. It bounds that network call. It is not a price and not a quote."
+    },
     "EXTRACTOR_HTTP_TOO_MANY": {
       "value": 429,
       "category": "n",

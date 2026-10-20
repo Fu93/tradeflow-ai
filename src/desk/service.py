@@ -21,6 +21,7 @@ from src.config.heuristics import (
     UNIT_SANITY_MULTIPLE,
 )
 from src.desk import mailbox, recompute
+from src.desk.audit_chain import chain_key_configured
 from src.desk.names import supplier_name_key
 from src.desk.parse import _confirm_span, _visible_text, parse_quote, price_from_token
 from src.desk.store import DeskRejected, DeskStore, get_store
@@ -977,7 +978,9 @@ def _rendered_draft(
 def _deal_opened(entries: list[dict[str, Any]]) -> dict[str, Any]:
     for entry in entries:
         if entry.get("type") == "deal_opened":
-            return dict(entry.get("payload") or {})
+            payload = dict(entry.get("payload") or {})
+            payload["seq"] = int(entry.get("seq") or 0)
+            return payload
     return {}
 
 
@@ -1016,7 +1019,31 @@ def _latest_review(entries: list[dict[str, Any]], supplier_id: str) -> dict[str,
         if str(payload.get("supplier_id") or "") != str(supplier_id):
             continue
         chosen = dict(payload)
+        chosen["seq"] = int(entry.get("seq") or 0)
     return chosen
+
+
+def _outcomes_from_chain(entries: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for entry in entries:
+        if entry.get("type") != "outcome":
+            continue
+        payload = dict(entry.get("payload") or {})
+        supplier_id = str(payload.get("supplier_id") or "")
+        if not supplier_id:
+            continue
+        grouped.setdefault(supplier_id, []).append(payload)
+    return grouped
+
+
+def _migrated_unconfirmed(opened: dict[str, Any], review_seq: int | None) -> bool:
+    """A legacy deal stays unsendable until a confirmation lands after the migration mark."""
+    if not opened.get("migrated"):
+        return False
+    marker = int(opened.get("seq") or 0)
+    if review_seq is None:
+        return True
+    return int(review_seq) <= marker
 
 
 def _review_binds_ok(raw_text: str, review: dict[str, Any], ask: float, ingested_hash: str) -> bool:
@@ -1107,7 +1134,7 @@ def _recompute_from_chain(
     """The counter the chained confirmations and the chained ceiling issue."""
     from src.desk.decide import decide_supplier
     from src.desk.record import constants_snapshot
-    from src.desk.recompute import _landed_consistent_rivals
+    from src.desk.recompute import _landed_consistent_rivals, quoting_supplier_ids
     from src.engine.landed import landed_unit_cost, ranking_basis
     from src.engine.reserve import ReserveState
 
@@ -1151,6 +1178,10 @@ def _recompute_from_chain(
             currency=currency or None,
             base_currency=currency or None,
         )
+    outcomes_for = _outcomes_from_chain(entries)
+    live_ids = quoting_supplier_ids(list(asks), outcomes_for)
+    asks = {key: asks[key] for key in live_ids}
+    landed_by_id = {key: landed_by_id[key] for key in live_ids if key in landed_by_id}
     supplier_id = str(record.get("supplier_id") or "")
     basis = ranking_basis([landed_by_id[key] for key in asks if key in landed_by_id])
     rivals = (
@@ -1259,6 +1290,11 @@ def _guard_send(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any]) -
         raise SendRefused("The audit chain does not verify.")
     if not _decision_belongs(record, draft):
         raise SendRefused("The decision does not belong to this draft.")
+    opened_for_migration = _deal_opened(list(chain.get("entries") or []))
+    prior_review = _latest_review(list(chain.get("entries") or []), str(draft.get("supplier_id") or ""))
+    prior_seq = None if prior_review is None else int(prior_review.get("seq") or 0)
+    if _migrated_unconfirmed(opened_for_migration, prior_seq):
+        raise SendRefused("Re-confirm the quote. migrated, pre-chain inputs unverified.")
     supplier_rows = _supplier_decisions(list(chain.get("entries") or []), str(record.get("supplier_id") or ""))
     if not supplier_rows:
         raise SendRefused("The audit chain has no decision entry for this draft.")
@@ -1348,8 +1384,12 @@ async def send_draft(
             raise DraftStale("This draft changed. Read the new text and approve it again.")
         if draft["status"] not in {"draft", "failed", "approved"}:
             raise DraftStale("This draft changed. Read the new text and approve it again.")
+        if not chain_key_configured():
+            raise SendRefused("Desk sends require TRADEFLOW_CHAIN_KEY.")
         prior_chain = store.verify_chain(draft["deal_id"])
-        if not prior_chain["ok"] or not _send_is_new(list(prior_chain.get("entries") or []), draft_id, digest):
+        if not prior_chain["ok"]:
+            raise SendRefused("audit chain broken")
+        if not _send_is_new(list(prior_chain.get("entries") or []), draft_id, digest):
             raise SendRefused("This draft was already approved.")
         deal = store.get_deal(draft["deal_id"])
         supplier = store.supplier(draft["deal_id"], draft["supplier_id"])

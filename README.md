@@ -25,7 +25,7 @@ Each desk step has a guard, a test, and a chain record. A failed check withholds
 | T7 Optimiser | desk calls `decision.choose_offer` only; sample and grid budgets are not inputs | `tests/steps/test_t7_optimiser.py` | optimiser name on the decision record |
 | T8 Draft | pure decide, then `project_open_drafts`; body contains the issued counter | `tests/steps/test_t8_draft.py` | `decision`, then `draft_created` |
 | T9 Send | human approval; `_guard_send` re-derives the counter from the stored record | `tests/steps/test_t9_send.py` | `send_approved`, `send_result` |
-| T10 Audit | SHA-256 chain; append-only; verify endpoint | `tests/steps/test_t10_audit.py` | `GET /api/v1/desk/deals/{id}/audit/verify` |
+| T10 Audit | HMAC-SHA256 chain keyed by `TRADEFLOW_CHAIN_KEY`; append-only; verify endpoint | `tests/steps/test_t10_audit.py` | `GET /api/v1/desk/deals/{id}/audit/verify` |
 | T11 Release | ruff, mypy, 90% phase-1 coverage, hash-pinned locks, pip-audit | `.github/workflows/ci.yml` | CI log |
 
 | Evidence tier | What it covers |
@@ -41,7 +41,9 @@ Internal notes, filming guides, and older audits are indexed in [docs/internal/R
 
 Desk environment variables (unset means the feature stays off, except the database path and the poll interval):
 
-`TRADEFLOW_API_KEY` `TRADEFLOW_LEGACY` `TRADEFLOW_DESK_DB` `TRADEFLOW_STORE_DIR` `DESK_N_SAMPLES` `DESK_N_GRID` `DESK_SMTP_SEND` `SMTP_HOST` `EMAIL_USERNAME` `EMAIL_PASSWORD` `IMAP_HOST` `IMAP_PORT` `IMAP_SSL` `IMAP_USERNAME` `IMAP_PASSWORD` `IMAP_LOOKBACK_DAYS` `IMAP_POLL_SECONDS` `GMAIL_DRAFTS` `GMAIL_CLIENT_ID` `GMAIL_CLIENT_SECRET` `GMAIL_REFRESH_TOKEN` `TRADEFLOW_LLM_BASE_URL` `OPENAI_BASE_URL` `TRADEFLOW_LLM_MODEL` `OPENAI_MODEL` `TRADEFLOW_LLM_API_KEY` `OPENAI_API_KEY` `NVIDIA_API_KEY` `TRADEFLOW_EXTRACTOR_TIMEOUT_ULTRA` `TRADEFLOW_EXTRACTOR_TIMEOUT_SUPER` `TRADEFLOW_EXTRACTOR_TIMEOUT_NVIDIA` `TRADEFLOW_EXTRACTOR_TIMEOUT_BUDGET`
+`TRADEFLOW_API_KEY` `TRADEFLOW_LEGACY` `TRADEFLOW_DESK_DB` `TRADEFLOW_STORE_DIR` `DESK_N_SAMPLES` `DESK_N_GRID` `DESK_SMTP_SEND` `SMTP_HOST` `EMAIL_USERNAME` `EMAIL_PASSWORD` `IMAP_HOST` `IMAP_PORT` `IMAP_SSL` `IMAP_USERNAME` `IMAP_PASSWORD` `IMAP_LOOKBACK_DAYS` `IMAP_POLL_SECONDS` `GMAIL_DRAFTS` `GMAIL_CLIENT_ID` `GMAIL_CLIENT_SECRET` `GMAIL_REFRESH_TOKEN` `TRADEFLOW_LLM_BASE_URL` `OPENAI_BASE_URL` `TRADEFLOW_LLM_MODEL` `OPENAI_MODEL` `TRADEFLOW_LLM_API_KEY` `OPENAI_API_KEY` `NVIDIA_API_KEY` `TRADEFLOW_EXTRACTOR_TIMEOUT_ULTRA` `TRADEFLOW_EXTRACTOR_TIMEOUT_SUPER` `TRADEFLOW_EXTRACTOR_TIMEOUT_NVIDIA` `TRADEFLOW_EXTRACTOR_TIMEOUT_BUDGET` `TRADEFLOW_CHAIN_KEY` `TRADEFLOW_CHAIN_ANCHOR`
+
+The audit chain is HMAC-SHA256 with `TRADEFLOW_CHAIN_KEY`. The key is not stored in the database. Desk sends refuse to start when that variable is unset. When `TRADEFLOW_CHAIN_ANCHOR` is a file path or an http(s) URL, each new head (sequence and MAC), including each approval and each transmission result, is written there. If `TRADEFLOW_CHAIN_ANCHOR` is unset, tail truncation is detectable only with an anchor.
 
 ## Quick start (Docker)
 

@@ -630,3 +630,273 @@ def test_mutation_runner_leaves_the_worktree_untouched(tmp_path):
     finally:
         live.write_bytes(original)
         shutil.rmtree(stage, ignore_errors=True)
+
+
+def test_send_after_a_rival_walks_away(tmp_path, monkeypatch):
+    from src.desk.service import accept_review, draft_digest, ingest_message, record_outcome, send_draft
+
+    store, snapshot = _deal(tmp_path, monkeypatch, ceiling=20.0)
+    deal_id = snapshot["deal"]["id"]
+    north, south = snapshot["suppliers"][0]["id"], snapshot["suppliers"][1]["id"]
+    first = ingest_message(
+        store, deal_id, source="paste", supplier_id=north, raw_text="unit price 15.60 CNY per piece",
+    )
+    second = ingest_message(
+        store, deal_id, source="paste", supplier_id=south, raw_text="unit price 14.00 CNY per piece",
+    )
+    accept_review(store, deal_id, first["event"]["id"], north, chosen_token="15.60")
+    accept_review(store, deal_id, second["event"]["id"], south, chosen_token="14.00")
+    fresh = record_outcome(store, deal_id, south, outcome="walk_away", quote=14.0, offer=14.0)
+    card = next(row for row in fresh["suppliers"] if row["id"] == north)
+    stored = store.get_decision(card["decision_id"])
+    rivals = [float(item) for item in (stored["record"].get("rival_asks") or ())]
+    assert all(abs(item - 14.0) > 0.01 for item in rivals)
+    draft = next(item for item in store.drafts(deal_id) if item["supplier_id"] == north and item["status"] == "draft")
+    sent = asyncio.run(
+        send_draft(store, draft["id"], human_approved=True, body_sha256=draft_digest(draft["body"]))
+    )
+    assert sent["status"] == "approved"
+    store.close()
+
+
+def test_another_currency_in_the_sentence_blocks_a_bare_number():
+    from src.desk.parse import parse_quote, price_from_token
+
+    text = "31.00 per piece, payment in USD"
+    reading = parse_quote(text, deal_currency="CNY")
+    assert reading["provenance"].get("suggested_token") != "31.00"
+    assert "31.00" not in (reading["provenance"].get("candidates") or [])
+    assert price_from_token(text, "31.00", deal_currency="CNY") is None
+    assert price_from_token("31.00 per piece, payment in GBP", "31.00", deal_currency="CNY") is None
+    assert price_from_token("31.00 per piece", "31.00", deal_currency="CNY") == pytest.approx(31.0)
+    assert price_from_token("31.00 per piece, payment in CNY", "31.00", deal_currency="CNY") == pytest.approx(31.0)
+
+
+def test_legacy_deal_needs_a_fresh_confirmation(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRADEFLOW_DESK_DB", str(tmp_path / "desk.db"))
+    monkeypatch.setenv("TRADEFLOW_ENV", "sandbox")
+    monkeypatch.setenv("TRADEFLOW_CHAIN_KEY", "legacy-chain-key")
+    from src.desk.service import SendRefused, accept_review, draft_digest, ingest_message, send_draft
+    from src.desk.store import DeskStore, reset_stores
+
+    reset_stores()
+    path = tmp_path / "desk.db"
+    store = DeskStore(path)
+    deal = store.create_deal(
+        product="valve",
+        quantity=100,
+        target_price=4.0,
+        ceiling_price=20.0,
+        risk_tolerance=0.5,
+        seed=1,
+        currency="CNY",
+        suppliers=[
+            {"name": "North", "address": "north@example.test"},
+            {"name": "South", "address": "south@example.test"},
+            {"name": "East", "address": "east@example.test"},
+            {"name": "West", "address": "west@example.test"},
+        ],
+    )
+    deal_id = deal["id"]
+    supplier = deal["supplier_ids"][0]
+    ingested = ingest_message(
+        store, deal_id, source="paste", supplier_id=supplier, raw_text="unit price 15.60 CNY per piece",
+    )
+    accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60")
+    store.close()
+    reopened = DeskStore(path)
+    chain = reopened.verify_chain(deal_id)
+    opened = next(entry for entry in chain["entries"] if entry["type"] == "deal_opened")
+    assert opened["payload"]["migrated"] is True
+    assert opened["payload"]["note"] == "migrated, pre-chain inputs unverified"
+    assert reopened.event(deal_id, ingested["event"]["id"])["status"] == "review"
+    draft = next(item for item in reopened.drafts(deal_id) if item["status"] == "draft")
+    with pytest.raises(SendRefused, match="pre-chain inputs unverified"):
+        asyncio.run(
+            send_draft(reopened, draft["id"], human_approved=True, body_sha256=draft_digest(draft["body"]))
+        )
+    accept_review(reopened, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60")
+    draft = next(item for item in reopened.drafts(deal_id) if item["supplier_id"] == supplier and item["status"] == "draft")
+    sent = asyncio.run(
+        send_draft(reopened, draft["id"], human_approved=True, body_sha256=draft_digest(draft["body"]))
+    )
+    assert sent["status"] == "approved"
+    reopened.close()
+
+
+def _sha256_rewrite(store, deal_id: str, extra: dict | None = None) -> None:
+    from src.desk.audit_chain import GENESIS, canonical
+
+    store.conn.execute("DROP TRIGGER IF EXISTS desk_chain_no_update")
+    store.conn.execute("DROP TRIGGER IF EXISTS desk_chain_no_delete")
+    rows = store.conn.execute(
+        "SELECT * FROM desk_chain WHERE deal_id = ? ORDER BY seq ASC",
+        (deal_id,),
+    ).fetchall()
+    prev = GENESIS
+    for row in rows:
+        payload = json.loads(row["payload_json"])
+        body = {
+            "deal_id": row["deal_id"],
+            "seq": int(row["seq"]),
+            "type": row["type"],
+            "ts": row["ts"],
+            "payload": payload,
+            "prev_hash": prev,
+        }
+        digest = hashlib.sha256(canonical(body)).hexdigest()
+        store.conn.execute(
+            "UPDATE desk_chain SET prev_hash = ?, entry_hash = ? WHERE id = ?",
+            (prev, digest, row["id"]),
+        )
+        prev = digest
+    if extra is not None:
+        seq = int(rows[-1]["seq"]) + 1
+        payload = extra
+        body = {
+            "deal_id": deal_id,
+            "seq": seq,
+            "type": "send_result",
+            "ts": "2026-01-01T00:00:00.000+00:00",
+            "payload": payload,
+            "prev_hash": prev,
+        }
+        digest = hashlib.sha256(canonical(body)).hexdigest()
+        store.conn.execute(
+            """
+            INSERT INTO desk_chain (deal_id, seq, type, ts, payload_json, prev_hash, entry_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                deal_id,
+                seq,
+                "send_result",
+                body["ts"],
+                json.dumps(payload, sort_keys=True),
+                prev,
+                digest,
+            ),
+        )
+    store.conn.commit()
+
+
+def test_rehashed_chain_and_forged_failure_do_not_verify(tmp_path, monkeypatch):
+    key = "chain-key-not-in-the-database-08c5"
+    monkeypatch.setenv("TRADEFLOW_CHAIN_KEY", key)
+    from src.desk.audit_chain import ChainKeyMissing
+    from src.desk.service import SendRefused, accept_review, draft_digest, ingest_message, send_draft
+
+    store, snapshot = _deal(tmp_path, monkeypatch, ceiling=20.0)
+    deal_id = snapshot["deal"]["id"]
+    supplier = snapshot["suppliers"][0]["id"]
+    ingested = ingest_message(
+        store, deal_id, source="paste", supplier_id=supplier, raw_text="unit price 15.60 CNY per piece",
+    )
+    accept_review(store, deal_id, ingested["event"]["id"], supplier, chosen_token="15.60")
+    draft = next(item for item in store.drafts(deal_id) if item["status"] == "draft")
+    digest = draft_digest(draft["body"])
+    assert key.encode() not in Path(store.path).read_bytes()
+    approved = asyncio.run(send_draft(store, draft["id"], human_approved=True, body_sha256=digest))
+    assert approved["status"] == "approved"
+    monkeypatch.delenv("TRADEFLOW_CHAIN_KEY", raising=False)
+    with pytest.raises(SendRefused, match="TRADEFLOW_CHAIN_KEY"):
+        asyncio.run(send_draft(store, draft["id"], human_approved=True, body_sha256=digest))
+    assert store.verify_chain(deal_id)["ok"] is False
+    with pytest.raises(ChainKeyMissing):
+        store.append_chain(deal_id, "note", {"text": "no key"})
+    monkeypatch.setenv("TRADEFLOW_CHAIN_KEY", key)
+    _sha256_rewrite(
+        store,
+        deal_id,
+        {"draft_id": draft["id"], "status": "failed", "body_sha256": digest, "transmitted": False},
+    )
+    assert store.verify_chain(deal_id)["ok"] is False
+    with pytest.raises(SendRefused, match="audit chain broken"):
+        asyncio.run(send_draft(store, draft["id"], human_approved=True, body_sha256=digest))
+    store.close()
+
+
+def test_anchor_detects_a_truncated_tail(tmp_path, monkeypatch):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from src.desk.service import create_deal
+    from src.desk.store import DeskStore, reset_stores
+
+    readme = Path(__file__).resolve().parents[2].joinpath("README.md").read_text(encoding="utf-8")
+    assert "tail truncation is detectable only with an anchor" in readme
+
+    class _Anchor(BaseHTTPRequestHandler):
+        heads: dict[str, dict] = {}
+
+        def do_POST(self):
+            count = int(self.headers.get("Content-Length") or 0)
+            item = json.loads(self.rfile.read(count))
+            _Anchor.heads[item["deal_id"]] = item
+            self.send_response(204)
+            self.end_headers()
+
+        def do_GET(self):
+            from urllib.parse import parse_qs, urlparse
+
+            deal = parse_qs(urlparse(self.path).query).get("deal_id", [""])[0]
+            raw = json.dumps(_Anchor.heads[deal]).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def log_message(self, *_args):
+            return
+
+    _Anchor.heads = {}
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Anchor)
+    port = server.server_address[1]
+    threading_started = __import__("threading").Thread(target=server.serve_forever, daemon=True)
+    threading_started.start()
+    monkeypatch.setenv("TRADEFLOW_DESK_DB", str(tmp_path / "desk.db"))
+    monkeypatch.setenv("TRADEFLOW_ENV", "sandbox")
+    monkeypatch.setenv("TRADEFLOW_CHAIN_ANCHOR", f"http://127.0.0.1:{port}/anchor")
+    reset_stores()
+    try:
+        store = DeskStore(tmp_path / "desk.db")
+        snapshot = create_deal(
+            store,
+            product="valve",
+            quantity=100,
+            target_price=4.0,
+            ceiling_price=20.0,
+            risk_tolerance=0.5,
+            seed=1,
+            currency="CNY",
+            suppliers=[
+                {"name": "North", "address": "north@example.test"},
+                {"name": "South", "address": "south@example.test"},
+                {"name": "East", "address": "east@example.test"},
+                {"name": "West", "address": "west@example.test"},
+            ],
+        )
+        deal_id = snapshot["deal"]["id"]
+        remote = store.verify_chain(deal_id)
+        assert remote["ok"] is True
+        assert _Anchor.heads[deal_id]["seq"] == remote["count"]
+        assert _Anchor.heads[deal_id]["entry_hash"] == remote["head"]
+        anchor = tmp_path / "chain-anchor.jsonl"
+        monkeypatch.setenv("TRADEFLOW_CHAIN_ANCHOR", str(anchor))
+        store.append_chain(deal_id, "note", {"text": "tail"})
+        anchored = store.verify_chain(deal_id)
+        assert anchored["ok"] is True
+        store.conn.execute("DROP TRIGGER IF EXISTS desk_chain_no_delete")
+        store.conn.execute(
+            "DELETE FROM desk_chain WHERE deal_id = ? AND seq = (SELECT MAX(seq) FROM desk_chain WHERE deal_id = ?)",
+            (deal_id, deal_id),
+        )
+        store.conn.commit()
+        truncated = store.verify_chain(deal_id)
+        assert truncated["ok"] is False
+        monkeypatch.delenv("TRADEFLOW_CHAIN_ANCHOR", raising=False)
+        assert store.verify_chain(deal_id)["ok"] is True
+        store.close()
+    finally:
+        server.shutdown()
+        server.server_close()

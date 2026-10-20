@@ -29,6 +29,8 @@ import pytest
 os.environ.setdefault("TRADEFLOW_MARKET_OFFLINE", "1")
 # The suite still exercises v1. A production process leaves this unset.
 os.environ.setdefault("TRADEFLOW_LEGACY", "1")
+# The desk chain is HMAC-SHA256. Tests use a fixed key; production reads TRADEFLOW_CHAIN_KEY.
+os.environ.setdefault("TRADEFLOW_CHAIN_KEY", "test-chain-key")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

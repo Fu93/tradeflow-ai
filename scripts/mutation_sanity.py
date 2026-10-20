@@ -146,6 +146,66 @@ MUTANTS = [
         "live.write_text(mutated, encoding=\"utf-8\")",
         "tests/steps/test_reverify_blockers.py::test_mutation_runner_leaves_the_worktree_untouched",
     ),
+    (
+        "src/desk/service.py",
+        "live_ids = quoting_supplier_ids(list(asks), outcomes_for)",
+        "live_ids = list(asks)",
+        "tests/steps/test_reverify_blockers.py::test_send_after_a_rival_walks_away",
+    ),
+    (
+        "src/desk/extract.py",
+        "worker.join(timeout)",
+        "worker.join()",
+        "tests/steps/test_extractor_failover.py::test_slow_drip_stays_inside_the_deadline",
+    ),
+    (
+        "src/desk/audit_chain.py",
+        "return hmac.new(chain_key(), canonical(body), hashlib.sha256).hexdigest()",
+        "return hashlib.sha256(canonical(body)).hexdigest()",
+        "tests/steps/test_reverify_blockers.py::test_rehashed_chain_and_forged_failure_do_not_verify",
+    ),
+    (
+        "src/desk/service.py",
+        "raise SendRefused(\"audit chain broken\")",
+        "raise SendRefused(\"This draft was already approved.\")",
+        "tests/steps/test_reverify_blockers.py::test_rehashed_chain_and_forged_failure_do_not_verify",
+    ),
+    (
+        "src/desk/service.py",
+        "if not chain_key_configured():",
+        "if False:",
+        "tests/steps/test_reverify_blockers.py::test_rehashed_chain_and_forged_failure_do_not_verify",
+    ),
+    (
+        "src/desk/audit_chain.py",
+        "return int(anchored[\"seq\"]) == head_seq and str(anchored[\"entry_hash\"]) == head_mac",
+        "return True",
+        "tests/steps/test_reverify_blockers.py::test_anchor_detects_a_truncated_tail",
+    ),
+    (
+        "src/desk/extract.py",
+        "return bool(slot.acquire(timeout=timeout))",
+        "return bool(slot.acquire(blocking=False))",
+        "tests/steps/test_extractor_failover.py::test_extractions_queue_and_release_a_slow_header",
+    ),
+    (
+        "src/desk/extract.py",
+        "_release_http(slot, box)  # abandoned hop",
+        "return  # abandoned hop",
+        "tests/steps/test_extractor_failover.py::test_extractions_queue_and_release_a_slow_header",
+    ),
+    (
+        "src/desk/service.py",
+        "if _migrated_unconfirmed(opened_for_migration, prior_seq):",
+        "if False and _migrated_unconfirmed(opened_for_migration, prior_seq):",
+        "tests/steps/test_reverify_blockers.py::test_legacy_deal_needs_a_fresh_confirmation",
+    ),
+    (
+        "src/desk/parse.py",
+        "blocked = _mentions_other_currency(line, deal_currency) or _mentions_other_currency(sentence, deal_currency)",
+        "blocked = False",
+        "tests/steps/test_reverify_blockers.py::test_another_currency_in_the_sentence_blocks_a_bare_number",
+    ),
 ]
 
 

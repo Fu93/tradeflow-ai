@@ -71,6 +71,7 @@ def start_backend(api_key=None):
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONPATH"] = REPO
+    env.setdefault("TRADEFLOW_CHAIN_KEY", "test-chain-key")
     env["TRADEFLOW_DB_PATH"] = os.path.join(tmp, "sessions.db")
     env["TRADEFLOW_STORE_DIR"] = os.path.join(tmp, "sessions_json")
     env.pop("TRADEFLOW_WEBHOOK_TOKEN", None)

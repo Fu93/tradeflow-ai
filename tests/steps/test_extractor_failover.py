@@ -407,7 +407,7 @@ def test_abandoned_hop_stops_and_concurrency_is_bounded(monkeypatch):
         try:
             began = time.monotonic()
             with pytest.raises(TimeoutError):
-                extract._post("https://example.test", {"model": "x"}, 5, ("TRADEFLOW_LLM_API_KEY",))
+                extract._post("https://example.test", {"model": "x"}, 0.2, ("TRADEFLOW_LLM_API_KEY",))
             assert time.monotonic() - began < 0.5
         finally:
             extract._http_slots = original
@@ -685,3 +685,124 @@ def test_accept_returns_while_the_extractor_is_still_running(tmp_path, monkeypat
     assert fresh["status"] == "accepted"
     assert abs(float(fresh["parsed"]["unit_price"]) - 18.4) < 0.001
     store.close()
+
+
+def test_slow_drip_stays_inside_the_deadline(monkeypatch):
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from src.desk.extract import _post, extract_mentions
+
+    class _Drip(BaseHTTPRequestHandler):
+        def do_POST(self):
+            count = int(self.headers.get("Content-Length") or 0)
+            if count:
+                self.rfile.read(count)
+            payload = b"x" * 36
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            for index in range(0, len(payload), 4):
+                if index:
+                    time.sleep(0.4)
+                try:
+                    self.wfile.write(payload[index:index + 4])
+                    self.wfile.flush()
+                except Exception:
+                    return
+
+        def log_message(self, *_args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Drip)
+    port = server.server_address[1]
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    base = f"http://127.0.0.1:{port}/v1"
+    try:
+        started = time.monotonic()
+        with pytest.raises(TimeoutError):
+            _post(base, {"model": "x"}, 0.5, ("TRADEFLOW_LLM_API_KEY",))
+        assert time.monotonic() - started < 1.2
+        _keys(monkeypatch)
+        monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+        monkeypatch.setenv("TRADEFLOW_LLM_BASE_URL", base)
+        monkeypatch.setenv("TRADEFLOW_EXTRACTOR_TIMEOUT_ULTRA", "0.3")
+        monkeypatch.setenv("TRADEFLOW_EXTRACTOR_TIMEOUT_SUPER", "0.3")
+        monkeypatch.setenv("TRADEFLOW_EXTRACTOR_TIMEOUT_BUDGET", "0.8")
+        began = time.monotonic()
+        result = extract_mentions("unit price 18.40 USD")
+        assert time.monotonic() - began < 1.5
+        assert [item["status"] for item in result["attempts"]] == ["timeout", "timeout"]
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_extractions_queue_and_release_a_slow_header(monkeypatch):
+    import time
+
+    import src.desk.extract as extract
+
+    class _Body:
+        def __init__(self, raw: bytes) -> None:
+            self.raw = raw
+
+        def read(self, *_args, **_kwargs):
+            return self.raw
+
+        def close(self):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    phase = {"name": "fast"}
+
+    def _urlopen(request, timeout=0):
+        del request, timeout
+        if phase["name"] == "slow":
+            time.sleep(3)
+        return _Body(b'{"ok": 1}')
+
+    monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
+    original = extract._http_slots
+    try:
+        held = threading.BoundedSemaphore(1)
+        assert held.acquire(blocking=False)
+        extract._http_slots = held
+        box: dict = {}
+        done = threading.Event()
+
+        def _call() -> None:
+            try:
+                box["result"] = extract._post("https://example.test", {"model": "x"}, 2, ("TRADEFLOW_LLM_API_KEY",))
+            except BaseException as exc:
+                box["error"] = exc
+            finally:
+                done.set()
+
+        threading.Thread(target=_call, daemon=True).start()
+        time.sleep(0.25)
+        assert not done.is_set()
+        held.release()
+        assert done.wait(2)
+        assert "error" not in box
+        assert box["result"] == {"ok": 1}
+
+        phase["name"] = "slow"
+        single = threading.BoundedSemaphore(1)
+        extract._http_slots = single
+        began = time.monotonic()
+        with pytest.raises(TimeoutError):
+            extract._post("https://example.test", {"model": "x"}, 0.2, ("TRADEFLOW_LLM_API_KEY",))
+        assert time.monotonic() - began < 1
+        phase["name"] = "fast"
+        second = extract._post("https://example.test", {"model": "x"}, 1, ("TRADEFLOW_LLM_API_KEY",))
+        assert second == {"ok": 1}
+    finally:
+        extract._http_slots = original

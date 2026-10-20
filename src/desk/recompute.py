@@ -265,6 +265,20 @@ def _walked_away(outcomes: list[dict[str, Any]]) -> bool:
     return any(item.get("outcome") == "walk_away" for item in outcomes)
 
 
+def quoting_supplier_ids(
+    supplier_ids: list[str],
+    outcomes_by_supplier: dict[str, list[dict[str, Any]]],
+) -> list[str]:
+    """Suppliers still in the quote. A walk-away is not a rival and gets no counter."""
+    still: list[str] = []
+    for supplier_id in supplier_ids:
+        rows = list(outcomes_by_supplier.get(supplier_id) or [])
+        if _walked_away(rows):
+            continue
+        still.append(supplier_id)
+    return still
+
+
 def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     started = time.perf_counter()
     deal = store.get_deal(deal_id)
@@ -303,10 +317,12 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     for row in suppliers:
         consumed.extend(decision_events(row["id"]))
     _kept, unconfirmed = confirmed_prices(consumed)
+    outcomes_by = {row["id"]: store.outcomes(deal_id, row["id"]) for row in suppliers}
+    quoting = set(quoting_supplier_ids([row["id"] for row in suppliers], outcomes_by))
     beliefs_state: dict[str, dict[str, Any]] = {}
     for row in suppliers:
         history = decision_events(row["id"])
-        outcomes = store.outcomes(deal_id, row["id"])
+        outcomes = outcomes_by.get(row["id"]) or []
         prices = [
             float(event["parsed"]["unit_price"])
             for event in history
@@ -318,11 +334,11 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             prior_mean=user_prior,
             prior_std=user_std,
         )
-        if state is None or not state.consistent() or _walked_away(outcomes):
+        if state is None or not state.consistent() or row["id"] not in quoting:
             note = "No accepted quote yet."
             if state is not None and not state.consistent():
                 note = "The rejection lower bound meets or passes the upper bound, so no price is issued."
-            elif _walked_away(outcomes):
+            elif row["id"] not in quoting:
                 note = "This supplier walked away, so no new counter is issued."
             beliefs_state[row["id"]] = {
                 "mean": None,
@@ -377,7 +393,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             parts = _components(latest["parsed"], deal)
             landed_rows.append(parts)
             landed_by_id[row["id"]] = parts
-            outcomes = store.outcomes(deal_id, row["id"])
+            outcomes = outcomes_by.get(row["id"]) or []
             store.set_hazard_counts(
                 row["id"],
                 len(outcomes),
