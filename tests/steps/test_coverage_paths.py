@@ -413,18 +413,18 @@ def test_send_guard_and_smtp_outcomes(tmp_path, monkeypatch):
         }],
         ask=15.60,
         ceiling=20.0,
-        offer=14.0,
-        counter=14.0,
-        push_counter=14.0,
-        half=14.0,
-        double=14.0,
+        offer=15.60,
+        counter=15.60,
+        push_counter=15.60,
+        half=15.60,
+        double=15.60,
         prior_alpha=belief.alpha,
         prior_beta=belief.beta,
         prior_n=0,
         prior_source="labelled_policy",
         unconfirmed=0,
         hazard_within_cap=True,
-        rival_asks=(14.0,),
+        rival_asks=(),
         risk_cap=0.5,
         reserve_upper=belief.upper,
         reject_ratios=(),
@@ -439,9 +439,9 @@ def test_send_guard_and_smtp_outcomes(tmp_path, monkeypatch):
     )
     from src.desk.project import draft_body
 
-    rendered = draft_body("valve", 14.0, 10, "zh", "CNY")
+    rendered = draft_body("valve", 15.60, 10, "zh", "CNY")
     guarded = dict(draft, decision_id=decision_id, body=rendered)
-    assert _guard_send(store, guarded, deal)["counter"] == 14.0
+    assert _guard_send(store, guarded, deal)["counter"] == 15.60
     with pytest.raises(SendRefused):
         _guard_send(store, dict(guarded, decision_id=None), deal)
     with pytest.raises(SendRefused):
@@ -536,68 +536,69 @@ def test_send_guard_and_smtp_outcomes(tmp_path, monkeypatch):
     )
     digest = draft_digest(draft["body"])
 
-    async def ok_sender(*_args, **_kwargs):
-        return True
-
-    sent = asyncio.run(
-        send_draft(store, draft["id"], human_approved=True, body_sha256=digest, sender=ok_sender)
-    )
-    assert sent["status"] == "sent"
-    again = asyncio.run(
-        send_draft(store, draft["id"], human_approved=True, body_sha256=digest, sender=ok_sender)
-    )
-    assert again["transmitted"] in {0, 1, True}
-
-    second = next(item for item in store.drafts(deal["id"]) if item["id"] != draft["id"] and item["status"] == "draft") if any(
-        item["id"] != draft["id"] and item["status"] == "draft" for item in store.drafts(deal["id"])
-    ) else None
-    if second is None:
-        store.conn.execute(
-            "UPDATE drafts SET status = 'approved', transmitted = 0 WHERE id = ?",
-            (draft["id"],),
-        )
-        store.conn.commit()
-        target = draft["id"]
-        target_digest = digest
-    else:
-        target = second["id"]
-        target_digest = draft_digest(second["body"])
-
     async def down(*_args, **_kwargs):
         return False
 
     failed = asyncio.run(
-        send_draft(store, target, human_approved=True, body_sha256=target_digest, sender=down)
+        send_draft(store, draft["id"], human_approved=True, body_sha256=digest, sender=down)
     )
     assert failed["status"] == "failed"
-
-    store.conn.execute("UPDATE drafts SET status = 'approved' WHERE id = ?", (target,))
-    store.conn.commit()
-
-    async def explode(*_args, **_kwargs):
-        raise RuntimeError("smtp")
-
-    with pytest.raises(RuntimeError):
-        asyncio.run(send_draft(store, target, human_approved=True, body_sha256=target_digest, sender=explode))
-
-    store.conn.execute("UPDATE drafts SET status = 'approved' WHERE id = ?", (target,))
-    store.conn.commit()
 
     async def narrow(recipient, body, product):
         assert recipient and body and product
         return True
 
+    store.conn.execute("UPDATE drafts SET status = 'approved' WHERE id = ?", (draft["id"],))
+    store.conn.commit()
     narrowed = asyncio.run(
-        send_draft(store, target, human_approved=True, body_sha256=target_digest, sender=narrow)
+        send_draft(store, draft["id"], human_approved=True, body_sha256=digest, sender=narrow)
     )
     assert narrowed["status"] == "sent"
+    again = asyncio.run(
+        send_draft(store, draft["id"], human_approved=True, body_sha256=digest, sender=narrow)
+    )
+    assert again["transmitted"] in {0, 1}
+    store.conn.execute(
+        "UPDATE drafts SET status = 'approved', transmitted = 0 WHERE id = ?",
+        (draft["id"],),
+    )
+    store.conn.commit()
+    with pytest.raises(SendRefused, match="already approved"):
+        asyncio.run(send_draft(store, draft["id"], human_approved=True, body_sha256=digest, sender=down))
+
+    other = snapshot["suppliers"][1]["id"]
+    opened_other = ingest_message(
+        store, deal["id"], source="paste", raw_text="单价 12.40 元", supplier_id=other,
+    )
+    accept_review(store, deal["id"], opened_other["event"]["id"], other, chosen_token="12.40")
+    other_draft = next(
+        item for item in store.drafts(deal["id"])
+        if item["supplier_id"] == other and item["status"] == "draft"
+    )
+    other_digest = draft_digest(other_draft["body"])
+
+    async def explode(*_args, **_kwargs):
+        raise RuntimeError("smtp")
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(
+            send_draft(store, other_draft["id"], human_approved=True, body_sha256=other_digest, sender=explode)
+        )
+    store.conn.execute("UPDATE drafts SET status = 'approved' WHERE id = ?", (other_draft["id"],))
+    store.conn.commit()
+    with pytest.raises(SendRefused, match="already approved"):
+        asyncio.run(
+            send_draft(store, other_draft["id"], human_approved=True, body_sha256=other_digest, sender=narrow)
+        )
 
     with pytest.raises(KeyError):
-        asyncio.run(send_draft(store, "ab" * 16, human_approved=True, body_sha256="0" * 64, sender=ok_sender))
-    store.conn.execute("UPDATE drafts SET status = 'superseded' WHERE id = ?", (target,))
+        asyncio.run(send_draft(store, "ab" * 16, human_approved=True, body_sha256="0" * 64, sender=narrow))
+    store.conn.execute("UPDATE drafts SET status = 'superseded' WHERE id = ?", (other_draft["id"],))
     store.conn.commit()
     with pytest.raises(DraftStale):
-        asyncio.run(send_draft(store, target, human_approved=True, body_sha256=target_digest, sender=ok_sender))
+        asyncio.run(
+            send_draft(store, other_draft["id"], human_approved=True, body_sha256=other_digest, sender=narrow)
+        )
     with pytest.raises(KeyError):
         set_assumptions(store, "ab" * 16, {"include_unverified": 1})
 

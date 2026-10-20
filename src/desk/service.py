@@ -1196,7 +1196,10 @@ def _send_is_new(entries: list[dict[str, Any]], draft_id: str, digest: str) -> b
             continue
         if entry.get("type") == "send_approved" and str(payload.get("body_sha256") or "") == digest:
             approved = True
-        if entry.get("type") == "send_result" and payload.get("status") == "failed":
+        failed = entry.get("type") == "send_result" and payload.get("status") == "failed"
+        same_body = str(payload.get("body_sha256") or "") == digest
+        legacy_draft = not payload.get("body_sha256") and str(payload.get("draft_id") or "") == str(draft_id)
+        if failed and (same_body or legacy_draft):
             approved = False
     return not approved
 
@@ -1376,7 +1379,12 @@ async def send_draft(
             store.append_chain(
                 deal_id,
                 "send_result",
-                {"draft_id": draft_id, "status": "approved", "transmitted": False},
+                {
+                    "draft_id": draft_id,
+                    "status": "approved",
+                    "transmitted": False,
+                    "body_sha256": digest,
+                },
             )
             publish(store, deal_id)
             updated = store.get_draft(draft_id)
@@ -1409,7 +1417,12 @@ async def send_draft(
         store.append_chain(
             deal_id,
             "send_result",
-            {"draft_id": draft_id, "status": "send_outcome_unknown", "transmitted": False},
+            {
+                "draft_id": draft_id,
+                "status": "send_outcome_unknown",
+                "transmitted": False,
+                "body_sha256": digest,
+            },
         )
         publish(store, deal_id)
         raise
@@ -1436,6 +1449,7 @@ async def send_draft(
             "draft_id": draft_id,
             "status": "sent" if transmitted else "failed",
             "transmitted": bool(transmitted),
+            "body_sha256": digest,
         },
     )
     publish(store, deal_id)
