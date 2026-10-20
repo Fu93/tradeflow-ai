@@ -682,12 +682,13 @@
       deck.innerHTML = "";
     }
 
-    renderConfirm(candidates, onPick, prompts, highlighted) {
+    renderConfirm(candidates, onPick, prompts, highlighted, reviewReason) {
       const deck = this.shadowRoot.getElementById("tf-deck");
       if (!deck) return;
       const doc = deck.ownerDocument;
       const tokens = Array.isArray(candidates) ? candidates : [];
       const basisPrompts = prompts || {};
+      const manualTerm = String(reviewReason || "").indexOf("unrecognised term:") === 0;
       deck.replaceChildren();
       deck.style.display = "block";
 
@@ -715,8 +716,51 @@
           btn.addEventListener("click", (event) => {
             if (!event.isTrusted || !token || !onPick) return;
             const prompt = basisPrompts[String(token)];
-            if (!prompt) {
+            if (!prompt && !manualTerm) {
               onPick(String(token));
+              return;
+            }
+            if (manualTerm && !prompt) {
+              let basisSelect = row.querySelector("[data-manual-basis]");
+              let currencySelect = row.querySelector("[data-manual-currency]");
+              let manualBtn = row.querySelector("[data-manual-confirm]");
+              if (!basisSelect) {
+                basisSelect = doc.createElement("select");
+                basisSelect.dataset.manualBasis = "1";
+                const basisBlank = doc.createElement("option");
+                basisBlank.value = "";
+                basisBlank.textContent = "Choose basis";
+                basisSelect.appendChild(basisBlank);
+                const piece = doc.createElement("option");
+                piece.value = "per_piece";
+                piece.textContent = "per piece";
+                basisSelect.appendChild(piece);
+                currencySelect = doc.createElement("select");
+                currencySelect.dataset.manualCurrency = "1";
+                const currencyBlank = doc.createElement("option");
+                currencyBlank.value = "";
+                currencyBlank.textContent = "Choose currency";
+                currencySelect.appendChild(currencyBlank);
+                ["CNY", "USD", "EUR"].forEach((code) => {
+                  const option = doc.createElement("option");
+                  option.value = code;
+                  option.textContent = code;
+                  currencySelect.appendChild(option);
+                });
+                manualBtn = doc.createElement("button");
+                manualBtn.type = "button";
+                manualBtn.dataset.manualConfirm = "1";
+                manualBtn.className = "tf-btn tf-confirm-btn";
+                manualBtn.textContent = "Confirm entered basis and currency";
+                row.append(basisSelect, currencySelect, manualBtn);
+              }
+              manualBtn.onclick = (manualEvent) => {
+                if (!manualEvent.isTrusted) return;
+                const enteredBasis = basisSelect.value;
+                const enteredCurrency = currencySelect.value;
+                if (!enteredBasis || !enteredCurrency) return;
+                onPick(String(token), { kind: enteredBasis, entered_currency: enteredCurrency });
+              };
               return;
             }
             let basisBtn = row.querySelector("[data-basis-choice]");
@@ -1234,12 +1278,13 @@
           if (prompt) {
             payload.humanConfirmed = true;
             if (prompt.kind === "per_piece") payload.unitBasis = "per_piece";
+            if (prompt.entered_currency) payload.enteredCurrency = prompt.entered_currency;
             if (prompt.kind === "convert" && prompt.pieces_per_basis != null) {
               payload.piecesPerBasis = prompt.pieces_per_basis;
             }
           }
           portClient.send("CONFIRM_DESK_PRICE", payload);
-        }, data.basis_prompts || {}, data.highlighted_token || "");
+        }, data.basis_prompts || {}, data.highlighted_token || "", data.review_reason || "");
         return;
       }
 

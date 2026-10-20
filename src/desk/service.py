@@ -791,6 +791,7 @@ def accept_review(
     unit_basis: str | None = None,
     pieces_per_basis: float | None = None,
     human_confirmed: bool = False,
+    entered_currency: str | None = None,
 ) -> dict[str, Any]:
     with deal_lock(deal_id):
         event = store.event(deal_id, event_id)
@@ -849,13 +850,36 @@ def accept_review(
         from src.desk.parse import confirm_amount, token_currency_ok, token_issues
 
         reasons = token_issues(event["raw_text"], chosen_token, deal_currency=currency)
-        blocking = [reason for reason in reasons if reason != "unit mismatch"]
+        named_currency = str(entered_currency or "").strip().upper()
+        human_entry = (
+            human_confirmed is True
+            and bool(str(unit_basis or "").strip())
+            and bool(named_currency)
+        )
+        # A detected foreign currency stays foreign. Naming the deal currency
+        # does not rewrite it. An unrecognised term has no shortcut: the person
+        # has to enter both the basis and the currency, and nothing is inferred.
+        # Fee, reference, and currency stay ahead of that term.
+        if any(reason == "not the deal currency" for reason in reasons):
+            raise DeskRejected("not the deal currency", reasons=reasons)
+        if human_entry and named_currency != currency:
+            raise DeskRejected("not the deal currency", reasons=reasons)
+        blocking = []
+        for reason in reasons:
+            if reason == "unit mismatch":
+                continue
+            if human_entry and str(reason).startswith("unrecognised term:"):
+                continue
+            blocking.append(reason)
         if blocking:
             raise DeskRejected(blocking[0], reasons=reasons)
         found = confirm_amount(event["raw_text"], chosen_token, deal_currency=currency)
         if found is None:
             raise DeskRejected("That amount is not a unit price in the deal currency.")
         amount, basis = found
+        currency_ok = token_currency_ok(event["raw_text"], chosen_token, deal_currency=currency)
+        if human_entry and named_currency == currency:
+            currency_ok = True
         resolved = _piece_confirmation(
             amount,
             basis,
@@ -863,7 +887,7 @@ def accept_review(
             pieces_per_basis,
             human_confirmed=human_confirmed,
             raw_text=str(event.get("raw_text") or ""),
-            currency_ok=token_currency_ok(event["raw_text"], chosen_token, deal_currency=currency),
+            currency_ok=currency_ok,
         )
         if resolved is None:
             raise DeskRejected("unit mismatch", reasons=reasons or ["unit mismatch"])
@@ -888,6 +912,9 @@ def accept_review(
         provenance["stated_basis"] = basis
         provenance["confirmed_basis"] = confirmed_basis
         provenance["pieces_per_basis"] = pieces
+        if human_entry:
+            provenance["human_entered_basis"] = str(unit_basis or "").strip()
+            provenance["human_entered_currency"] = named_currency
         provenance["shadow_matched"] = bool(
             provenance.get("shadow_would_accept")
             and rule_shadow is not None
@@ -921,6 +948,8 @@ def accept_review(
                 "confirmed_basis": confirmed_basis,
                 "pieces_per_basis": pieces,
                 "human_confirmed": human_confirmed is True,
+                "human_entered_basis": str(unit_basis or "").strip() if human_entry else None,
+                "human_entered_currency": named_currency if human_entry else None,
                 "span": _confirm_span(_visible_text(raw_text), str(chosen_token)),
                 "raw_sha256": hashlib.sha256(raw_text.encode("utf-8")).hexdigest(),
                 "freight": parsed.get("freight"),

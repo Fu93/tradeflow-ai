@@ -89,7 +89,7 @@ def test_known_real_quotes_stay_accepted():
     bare = parse_quote(BARE_UNIT_PRICE)
     assert bare["status"] == "review"
     assert bare["parsed"]["unit_price"] is None
-    assert bare["provenance"]["review_reason"] == "unrecognised term: price"
+    assert bare["provenance"]["review_reason"] == "unrecognised term: lead"
     assert "33.10" in bare["provenance"]["candidates"]
 
 
@@ -262,7 +262,7 @@ def test_plausibility_band_is_three_and_blocks_the_loose_cases(tmp_path, monkeyp
         assert event["parsed"]["unit_price"] is None
         assert event["provenance"]["auto_accept"] is False
         assert event["provenance"]["rule_would_accept"] is False
-        assert event["provenance"]["review_reason"] == "unrecognised term: price"
+        assert event["provenance"]["review_reason"] == "unit mismatch"
     piece = _event(small, "Unit price 33.10 RMB per piece.")
     assert piece["status"] == "review"
     assert piece["parsed"]["unit_price"] is None

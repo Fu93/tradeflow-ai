@@ -412,6 +412,9 @@
       const highlighted = provenance.highlighted_token || "";
       const prompts = provenance.basis_prompts || {};
       const currency = provenance.currency || "CNY";
+      const manualTerm = String(reason).indexOf("unrecognised term:") === 0;
+      let manualBasis = "";
+      let manualCurrency = "";
       let chosen = saved.token || suggested || "";
       if (chosen && tokens.indexOf(chosen) < 0) chosen = "";
       let basisArmed = false;
@@ -420,6 +423,7 @@
         return prompts[token] || null;
       }
       function basisReady(token) {
+        if (manualTerm) return Boolean(manualBasis) && Boolean(manualCurrency);
         const prompt = promptFor(token);
         if (!prompt) return true;
         return basisArmed && basisPayload && basisPayload.token === token;
@@ -522,9 +526,46 @@
         });
         actions.insertBefore(choice, button);
       }
+      function blankOption(label) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = label;
+        return option;
+      }
+      if (manualTerm) {
+        const basisSelect = document.createElement("select");
+        basisSelect.appendChild(blankOption("Choose basis"));
+        const piece = document.createElement("option");
+        piece.value = "per_piece";
+        piece.textContent = "per piece";
+        basisSelect.appendChild(piece);
+        basisSelect.addEventListener("change", () => {
+          manualBasis = basisSelect.value;
+          basisPayload = null;
+          button.disabled = !chosen || !basisReady(chosen);
+        });
+        const currencySelect = document.createElement("select");
+        currencySelect.appendChild(blankOption("Choose currency"));
+        ["CNY", "USD", "EUR"].forEach((code) => {
+          const option = document.createElement("option");
+          option.value = code;
+          option.textContent = code;
+          currencySelect.appendChild(option);
+        });
+        currencySelect.addEventListener("change", () => {
+          manualCurrency = currencySelect.value;
+          basisPayload = null;
+          button.disabled = !chosen || !basisReady(chosen);
+        });
+        actions.appendChild(basisSelect);
+        actions.appendChild(currencySelect);
+      }
       button.addEventListener("click", () => {
         if (!chosen || !note.dataset.confirmValue || !basisReady(chosen)) return;
-        accept(item.id, select.value, note.dataset.confirmValue, false, block, basisPayload);
+        const posted = manualTerm
+          ? { token: chosen, kind: manualBasis, entered_currency: manualCurrency }
+          : basisPayload;
+        accept(item.id, select.value, note.dataset.confirmValue, false, block, posted);
       });
       const reject = document.createElement("button");
       reject.type = "button";
@@ -547,6 +588,7 @@
     if (!reject && basis && basis.token === chosenToken) {
       payload.human_confirmed = true;
       if (basis.kind === "per_piece") payload.unit_basis = "per_piece";
+      if (basis.entered_currency) payload.entered_currency = basis.entered_currency;
       if (basis.kind === "convert" && basis.pieces_per_basis != null) {
         payload.pieces_per_basis = basis.pieces_per_basis;
       }

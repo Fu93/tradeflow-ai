@@ -258,7 +258,7 @@ def test_parenthetical_conversion_keeps_the_primary_currency():
     reading = parse_quote(text)
     assert reading["status"] != "accepted"
     assert reading["parsed"]["unit_price"] is None
-    assert reading["provenance"]["review_reason"] == "unrecognised term: price"
+    assert reading["provenance"]["review_reason"] == "unrecognised term: 约"
     assert "33" in reading["provenance"]["candidates"]
     assert price_from_token(text, "33", deal_currency="CNY") is None
     assert price_from_token(text, "4.6", deal_currency="CNY") is None

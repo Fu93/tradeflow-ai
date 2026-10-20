@@ -40,10 +40,14 @@ _CNY = re.compile(
     r"(?i)(?:人民币|人民幣|(?<![A-Za-z])(?:cny|rmb|yuan)(?![A-Za-z])|"
     r"(?<![\u4e00-\u9fff])[元块塊](?![\u4e00-\u9fff])|¥)"
 )
+# A dollar sign is USD only when it is bare or the prefix is exactly US. HK$, MX$,
+# and any other letter glued to $ are a different currency.
 _USD = re.compile(
     r"(?i)(?:us\s*\$|u\.s\.\s+dollars?|us\s+dollars?|(?<![A-Za-z])usd(?![A-Za-z])|"
-    r"(?<![A-Za-z])dollars?(?![A-Za-z])|美元|美金|美刀|(?<![\u4e00-\u9fff])刀(?![\u4e00-\u9fff])|\$)"
+    r"(?<![A-Za-z])dollars?(?![A-Za-z])|美元|美金|美刀|(?<![\u4e00-\u9fff])刀(?![\u4e00-\u9fff])|"
+    r"(?<![A-Za-z])\$)"
 )
+_PREFIXED_DOLLAR = re.compile(r"(?i)(?<![A-Za-z])(?!us\$)[A-Za-z]+\$")
 _EUR = re.compile(
     r"(?i)(?:(?<![A-Za-z])eur(?![A-Za-z])|(?<![A-Za-z])euros?(?![A-Za-z])|"
     r"欧元|歐元|(?<![\u4e00-\u9fff])[欧歐](?![\u4e00-\u9fff])|€)"
@@ -78,7 +82,8 @@ _AMOUNT = re.compile(
 _UNIT_LABEL = re.compile(r"(?i)(?:unit\s*price|單價|单价|報價單價|报价单价)")
 _QUOTE_LABEL = re.compile(r"報價|报价")
 _PER_PIECE = re.compile(
-    r"(?i)(?:per\s+(?:piece|pc|pcs|unit)|/\s*pcs?\b|/\s*unit\b|\beach\b|\bapiece\b|"
+    r"(?i)(?:per\s+(?:pieces|piece|pc|pcs|units|unit)|/\s*pcs?\b|/\s*units?\b|\beach\b|\bapiece\b|"
+    r"pro\s+stück|stück|"
     r"每件|每只|每隻|每个|每個|每隻|元\s*/\s*件|元\s*/\s*个|元\s*/\s*個|元\s*/\s*只|"
     r"一件|一个|一個|一只|一隻|单\s*pcs|單\s*pcs)"
 )
@@ -418,9 +423,17 @@ def _currency_families(text: str) -> set[str]:
     """Currency families named in text. 元 inside 美元 or 港元 is not a second CNY."""
     raw = _fold(text or "")
     found: set[str] = set()
-    if _TWD.search(raw) or _ISO_OTHER.search(raw) or _OTHER_SYMBOL.search(raw):
+    if (
+        _TWD.search(raw)
+        or _ISO_OTHER.search(raw)
+        or _OTHER_SYMBOL.search(raw)
+        or _PREFIXED_DOLLAR.search(raw)
+    ):
         found.add("OTHER")
-    body = _blank_match(_OTHER_SYMBOL, _blank_match(_ISO_OTHER, _blank_match(_TWD, raw)))
+    body = _blank_match(
+        _PREFIXED_DOLLAR,
+        _blank_match(_OTHER_SYMBOL, _blank_match(_ISO_OTHER, _blank_match(_TWD, raw))),
+    )
     if _USD.search(body):
         found.add("USD")
     if _EUR.search(body):
@@ -705,7 +718,7 @@ _MODEL_HEAD = re.compile(
     r"(?i)(?:型号|型號|货号|貨號|款号|款號|料号|料號|平台|sku|1688)\s*[:：]?\s*$"
 )
 _PHONE = re.compile(r"\d{8,}")
-_SUBUNIT = re.compile(r"^\s*(?P<u>分|毛|角|厘|釐)")
+_SUBUNIT = re.compile(r"^\s*(?P<u>分(?!钟)|毛|角|厘|釐)")
 _SURCHARGE_HEAD = re.compile(r"加价|加價|加收|另加|另收|差价|差價|\+\s*$")
 _LOT = re.compile(
     r"(?i)(?:\bfor\s+\d+\s*(?:pcs|pc|pieces|件|个|個)\b|一共|总计|總計|\blot\s+of\b)"
@@ -737,6 +750,7 @@ UNIT_LEXICON: tuple[tuple[str, str], ...] = (
     ("码", "码"), ("碼", "码"), ("yard", "码"),
     ("张", "张"), ("張", "张"), ("sheet", "张"),
     ("片", "片"), ("点", "点"), ("點", "点"),
+    ("pieces", "per_piece"), ("units", "per_piece"), ("stück", "per_piece"),
 )
 
 
@@ -767,6 +781,7 @@ _BASIS_CUE = re.compile(
     rf"一\s*(?P<u8>{_FIRM_ALT})(?=\s*(?:[，,。；;]|$))|"
     rf"/\s*(?P<u9>{_UNIT_ALT})|"
     rf"per\s+(?P<u10>{_UNIT_ALT})|"
+    rf"pro\s+(?P<u12>stück)|"
     rf"\b(?P<u11>each|apiece)\b)"
 )
 _BASIS_NAME = {surface.lower(): canon for surface, canon in UNIT_LEXICON}
@@ -787,16 +802,22 @@ _PACK_COUNT = re.compile(
     r"(?:一\s*(?P<pack>箱|包|套|盒|打)\s*(?P<n>\d+(?:\.\d+)?)\s*(?:个|個|件|只|隻)|"
     r"(?P<n2>\d+(?:\.\d+)?)\s*(?:个|個|件|只|隻)\s*/\s*(?P<pack2>箱|包|套|盒|打))"
 )
-# Yuan, then jiao, then fen. A bare digit is jiao. A leading-zero pair is jiao then fen.
-# A digit after 毛 or 角 is fen. Two digits without that zero, such as 1块20, stay a
-# separate number.
+# Yuan, then jiao, then fen. Two digits are one jiao and one fen, so 3块99 is 3.99
+# and 1块20一个 is 1.20. A single digit before 个/件/只 is a piece count. 角 or 毛
+# written with more than one digit is not a sum, and 分 inside 分钟 is not fen.
 _COMPOUND = re.compile(
     r"^\s*(?:元|块|塊)\s*(?:"
-    r"(?P<jiao>\d+)\s*(?:毛|角)\s*(?:(?P<fen>\d+)\s*分|(?P<fenbare>\d)(?!\d))?"
-    r"|(?P<fenword>\d+)\s*分"
-    r"|(?P<pair>0\d)(?!\d)"
+    r"(?P<count>\d)(?!\d)\s*(?:个|件|只|個|隻)(?![\u4e00-\u9fff])"
+    r"|(?P<jiao>\d+)\s*(?:毛|角)\s*(?:(?P<fen>\d+)\s*分(?!钟)|(?P<fenbare>\d)(?!\d))?"
+    r"|(?P<fenword>\d+)\s*分(?!钟)"
+    r"|(?P<pair>\d{2})(?!\d)"
     r"|(?P<bare>\d)(?!\d)"
     r")"
+)
+_DECIMAL_SUBUNIT = re.compile(r"^\s*(?:元|块|塊)\s*(?P<minor>\d+)\s*(?:毛|角|分(?!钟))")
+_PACK_EQUATION = re.compile(
+    r"(?i)(?:每|一)?(?:个|件|只|pcs|pc|piece|unit|each)\s*[=＝]\s*\d+(?:[.,]\d+)?"
+    r"|\d+(?:[.,]\d+)?\s*(?:个|件|只|pcs|pc|piece)\s*[=＝]\s*\d+(?:[.,]\d+)?"
 )
 _MOQ_PIECE = re.compile(
     r"(?i)(?:moq|起订量|起訂量|起订|起訂)\s*[:：]?\s*\d+(?:[.,]\d+)?\s*(?:件|个|個|只|隻|pcs|pc|pieces)\b"
@@ -962,20 +983,31 @@ def _amount_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _compound_minor(tail: str) -> tuple[float, list[tuple[int, int]]] | None:
-    """Minor yuan after 元 or 块, and the digit spans that are not their own prices."""
+def _compound_minor(tail: str) -> tuple[float, list[tuple[int, int]], bool] | None:
+    """Minor yuan, the digit spans that are not their own prices, and whether the sum is real.
+
+    A piece count adds nothing. More than one digit of 角 or 毛 is not a sum.
+    """
     from src.config.heuristics import FEN_IN_YUAN, JIAO_IN_YUAN
 
     match = _COMPOUND.match(tail or "")
     if match is None:
         return None
     spans: list[tuple[int, int]] = []
+    if match.group("count") is not None:
+        spans.append((match.start("count"), match.end("count")))
+        return 0.0, spans, True
     jiao: float | None = None
     fen: float | None = None
+    plausible = True
     if match.group("jiao") is not None:
-        parsed = _number(match.group("jiao") or "")
+        jiao_text = match.group("jiao") or ""
+        parsed = _number(jiao_text)
         if parsed is None:
             return None
+        # One digit is 0 through 9. A longer run, such as 15毛 or 10角, is not a sum.
+        if len(jiao_text) != 1:
+            plausible = False
         jiao = float(parsed)
         spans.append((match.start("jiao"), match.end("jiao")))
         fen_text = match.group("fen") if match.group("fen") is not None else match.group("fenbare")
@@ -1004,11 +1036,11 @@ def _compound_minor(tail: str) -> tuple[float, list[tuple[int, int]]] | None:
         jiao = float(parsed)
         spans.append((match.start("bare"), match.end("bare")))
     minor = 0.0
-    if jiao is not None:
+    if plausible and jiao is not None:
         minor += jiao * float(JIAO_IN_YUAN)
-    if fen is not None:
+    if plausible and fen is not None:
         minor += fen * float(FEN_IN_YUAN)
-    return minor, spans
+    return minor, spans, plausible
 
 
 def _compound_minor_spans(text: str) -> list[tuple[int, int]]:
@@ -1019,7 +1051,7 @@ def _compound_minor_spans(text: str) -> list[tuple[int, int]]:
         found = _compound_minor(body[match.end("num"):])
         if found is None:
             continue
-        _minor, parts = found
+        _minor, parts, _plausible = found
         base = match.end("num")
         for start, end in parts:
             spans.append((base + start, base + end))
@@ -1208,24 +1240,34 @@ def _pieces_label(count: float) -> str:
     return str(count)
 
 
-# The per-piece shortcut and implicit CNY read a closed list. Anything else in the
-# clause is an unrecognised term: the number stays in review, with no one-click
-# deal unit and no implicit currency. The lexicon above still converts a stated pack.
+# The per-piece shortcut and implicit CNY read a closed list, applied to the whole
+# message. Anything else is an unrecognised term: no one-click deal unit and no
+# implicit currency. The lexicon above still converts a stated pack. It does not
+# decide whether the shortcut is offered.
+#
+# Neutral words cannot change the unit or the currency. They are the commercial
+# phrasing from the E4 review (包邮, 元整, 专票/普票/开票, 现货, 运费另计, 可以做,
+# 的价格, 这个, 块钱, Unit price, per piece(s), /unit(s), Stück / pro Stück) plus
+# 也可以, the connective between two CNY unit prices in the desk review fixture.
 _PRICE_CUES: tuple[str, ...] = (
     "不含税", "出厂价", "批发价", "单价", "报价", "价格", "价钱",
     "含税", "税后", "每个", "一个", "每件", "一件", "每只", "一只",
 )
 _DEAL_UNIT_WORDS: tuple[str, ...] = (
-    "per piece", "piece", "pcs", "each", "unit", "pc", "个", "件", "只",
+    "per pieces", "per piece", "pro stück", "pieces", "piece", "stück",
+    "units", "pcs", "each", "unit", "pc", "个", "件", "只",
+)
+_NEUTRAL_WORDS: tuple[str, ...] = (
+    "unit price", "运费另计", "可以做", "也可以", "的价格", "块钱", "元整",
+    "包邮", "专票", "普票", "开票", "现货", "这个",
 )
 _CNY_MARKERS: tuple[str, ...] = ("人民币", "人民幣", "rmb", "cny", "yuan", "元", "块", "塊", "¥")
 _USD_MARKERS: tuple[str, ...] = ("美刀", "美元", "美金", "us$", "usd", "$", "刀")
 _EUR_MARKERS: tuple[str, ...] = ("欧元", "歐元", "eur", "€", "欧", "歐")
 _SUBUNIT_WORDS: tuple[str, ...] = ("毛", "角", "分", "厘", "釐")
-_CJK_CHAR = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
 _MOQ_PHRASE = re.compile(
     r"(?i)(?:起订量|起订|起批|moq)\s*[:：]?\s*\d+(?:[.,]\d+)?\s*"
-    r"(?:个|件|只|pcs|pc|piece|each|unit)(?![\u4e00-\u9fffA-Za-z])"
+    r"(?:个|件|只|pcs|pc|pieces|piece|units|unit|each)(?![\u4e00-\u9fffA-Za-z])"
 )
 
 
@@ -1238,27 +1280,61 @@ def _marker_phrases(deal_currency: str) -> tuple[str, ...]:
     return _CNY_MARKERS
 
 
-def _is_cjk_char(char: str) -> bool:
-    return bool(_CJK_CHAR.match(char or ""))
-
-
-def _clause_word(char: str) -> bool:
-    return _is_cjk_char(char) or (char.isascii() and char.isalpha())
+def _is_letter(char: str) -> bool:
+    if len(char or "") != 1:
+        return False
+    return unicodedata.category(char).startswith("L")
 
 
 def _skipped_symbol(char: str) -> bool:
+    """Only punctuation and whitespace may be ignored. Letters, numbers, and symbols may not."""
     if char.isspace():
         return True
-    return unicodedata.category(char).startswith(("P", "Z"))
+    category = unicodedata.category(char or "")
+    return category.startswith("P") or category.startswith("Z")
+
+
+def _word_char(char: str) -> bool:
+    category = unicodedata.category(char or "")
+    return category[:1] in {"L", "N", "S", "M"}
+
+
+def _pack_redefinition(text: str) -> str | None:
+    """A deal-unit word equated to a count is a pack, not the deal piece."""
+    folded = _fold(text or "")
+    found = _PACK_EQUATION.search(folded)
+    if found is None:
+        return None
+    end = found.end()
+    while end < len(folded) and _word_char(folded[end]):
+        end += 1
+    return folded[found.start():end]
+
+
+def _score_or_minute(text: str, start: int, token: str) -> bool:
+    """分钟 and 评分 use 分 as a word, not as a fen amount."""
+    tail = (text or "")[start + len(token):]
+    if re.match(r"^\s*分钟", tail) or re.match(r"^\s*分\s*评分", tail):
+        return True
+    head = (text or "")[:start]
+    if head.endswith("评分"):
+        return True
+    return head.endswith("评") and bool(re.match(r"^\s*分", tail))
 
 
 def _first_unrecognised(clause: str, deal_currency: str) -> str | None:
-    """The first letter or CJK token in the clause that is outside the allowlist."""
+    """The first letter, number, symbol, or CJK token outside the allowlist.
+
+    The scan is NFKC, format characters are already gone, and a character is
+    skipped only when it is punctuation or whitespace. An MOQ phrase counts
+    only when its unit is a deal-unit word.
+    """
     text = _fold(clause)
     phrases = sorted(
         {
             *_PRICE_CUES,
             *_DEAL_UNIT_WORDS,
+            *_NEUTRAL_WORDS,
             *_marker_phrases(deal_currency),
             *_SUBUNIT_WORDS,
         },
@@ -1280,31 +1356,24 @@ def _first_unrecognised(clause: str, deal_currency: str) -> str | None:
         if moq:
             index = moq.end()
             continue
-        lowered = text[index:].lower()
+        lowered = text[index:].casefold()
         taken = 0
         for phrase in phrases:
-            if not lowered.startswith(phrase.lower()):
+            if not lowered.startswith(phrase.casefold()):
                 continue
             end = index + len(phrase)
             nxt = text[end] if end < length else ""
-            if phrase[:1].isascii() and phrase[:1].isalpha() and nxt.isascii() and nxt.isalpha():
+            if phrase[:1].isascii() and phrase[:1].isalpha() and _is_letter(nxt):
                 continue
             taken = len(phrase)
             break
         if taken:
             index += taken
             continue
-        if _clause_word(char):
-            end = index + 1
-            cjk = _is_cjk_char(char)
-            while end < length and _clause_word(text[end]) and _is_cjk_char(text[end]) == cjk:
-                if not cjk and not (text[end].isascii() and text[end].isalpha()):
-                    break
-                end += 1
-            return text[index:end]
-        if _OTHER_SYMBOL.match(char):
-            return char
-        index += 1
+        end = index + 1
+        while end < length and _word_char(text[end]) and not text[end].isdigit():
+            end += 1
+        return text[index:end]
     return None
 
 
@@ -1432,6 +1501,8 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
     conversions = _conversion_spans(text)
     chinese = bool(_CJK.search(text))
     consumed: list[tuple[int, int]] = []
+    message_offender = _first_unrecognised(text, deal_currency)
+    pack_token = _pack_redefinition(text)
 
     def _keep(bucket: list[dict[str, Any]], row: dict[str, Any]) -> None:
         _note_currency(row, deal_currency)
@@ -1460,13 +1531,23 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
         tail = text[match.end("num"):]
         compound = _compound_minor(tail)
         factor = None
-        if compound is not None:
-            minor, parts = compound
-            if value is not None:
+        bad_sum = None
+        decimal_hit = _DECIMAL_SUBUNIT.match(tail) if ("." in token or "," in token) else None
+        if decimal_hit is not None:
+            bad_sum = tail[decimal_hit.start("minor"):decimal_hit.end()].strip()
+            consumed.append(
+                (match.end("num") + decimal_hit.start("minor"), match.end("num") + decimal_hit.end("minor"))
+            )
+        elif compound is not None:
+            minor, parts, plausible = compound
+            for part_start, part_end in parts:
+                consumed.append((match.end("num") + part_start, match.end("num") + part_end))
+            if plausible and value is not None:
                 value = float(value) + minor
-                for part_start, part_end in parts:
-                    consumed.append((match.end("num") + part_start, match.end("num") + part_end))
-        else:
+            elif not plausible:
+                shown = _COMPOUND.match(tail)
+                bad_sum = shown.group(0).strip() if shown is not None else tail.strip()
+        elif not _score_or_minute(text, match.start("num"), token):
             factor = _subunit_factor(tail)
             if factor is not None and value is not None:
                 value = float(value) * factor
@@ -1474,7 +1555,9 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
                     kind = deal_currency
         sentence = _sentence_of(text, match.start("num"))
         basis = _basis_for_number(text, match.start("num"), match.end("num"))
-        offender = _first_unrecognised(clause, deal_currency)
+        if bad_sum or (pack_token and basis == "per_piece"):
+            basis = None
+        offender = bad_sum or ((message_offender or pack_token) if basis is None else None)
         per_piece = basis == "per_piece"
         fee = _fee_of(clause, amount_at, token)
         key = round(float(value), 4)

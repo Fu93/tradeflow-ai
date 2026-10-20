@@ -135,7 +135,7 @@ def test_review_can_accept_a_token_or_reject(desk_env):
         store,
         deal_id,
         source="paste",
-        raw_text="单价 15.00 元，单价 16.00 元",
+        raw_text="单价 15.00 元，也可以单价 16.00 元",
         supplier_id=wenzhou,
     )["event"]
     assert ambiguous["status"] == "review"
@@ -187,7 +187,7 @@ def test_drafts_follow_the_supplier_language_and_thread(desk_env):
         store,
         deal_id,
         source="paste",
-        raw_text="Unit price: 16.20 CNY per piece.",
+        raw_text="Unit price: 16.20 CNY.",
         supplier_id=foshan,
     )
     accept_review(store, deal_id, foshan_in["event"]["id"], foshan, chosen_token="16.20", human_confirmed=True)

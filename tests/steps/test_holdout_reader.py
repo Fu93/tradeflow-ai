@@ -120,12 +120,12 @@ def test_invoice_rows_inherit_the_header_currency():
     got = parse_quote(table, deal_currency="USD")
     assert got["status"] == "review"
     assert got["parsed"]["unit_price"] is None
-    assert got["provenance"]["review_reason"] == "unrecognised term: price"
+    assert got["provenance"]["review_reason"] == "unrecognised term: Proforma"
     assert "18.40" in got["provenance"]["candidates"]
     yuan = "\n".join(["币种：元", "品名 | 数量 | 单价", "支架 | 100 | 32.60"])
     cny = parse_quote(yuan, deal_currency="CNY")
     assert cny["parsed"]["unit_price"] is None
-    assert cny["provenance"]["review_reason"] == "unrecognised term: price"
+    assert cny["provenance"]["review_reason"] == "unrecognised term: 币种"
     assert "32.60" in cny["provenance"]["candidates"]
     total = "\n".join(
         [

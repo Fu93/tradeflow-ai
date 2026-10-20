@@ -59,7 +59,7 @@ def test_unit_price_with_a_later_fee_clause_is_accepted():
     reading = parse_quote(text)
     assert reading["status"] == "review"
     assert reading["parsed"]["unit_price"] is None
-    assert reading["provenance"]["review_reason"] == "unrecognised term: price"
+    assert reading["provenance"]["review_reason"] == "unrecognised term: sample"
     assert "32.5" in reading["provenance"]["candidates"]
 
 
@@ -68,7 +68,7 @@ def test_named_discount_in_another_clause_keeps_the_new_unit_price():
     reading = parse_quote(text)
     assert reading["status"] == "review"
     assert reading["parsed"]["unit_price"] is None
-    assert reading["provenance"]["review_reason"] == "unrecognised term: fresh"
+    assert reading["provenance"]["review_reason"] == "unrecognised term: A"
     assert "31.70" in reading["provenance"]["candidates"]
 
 
