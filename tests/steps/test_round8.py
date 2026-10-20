@@ -273,7 +273,7 @@ def test_same_currency_parenthetical_stays_unconfirmed():
     kept = parse_quote(converted)
     assert kept["status"] == "review"
     assert kept["parsed"]["unit_price"] is None
-    assert kept["provenance"]["review_reason"] == "unit mismatch"
+    assert kept["provenance"]["review_reason"] == "unrecognised term: price"
     assert "33" in kept["provenance"]["candidates"]
     assert price_from_token(converted, "33", deal_currency="CNY") is None
     assert price_from_token(converted, "4.6", deal_currency="CNY") is None

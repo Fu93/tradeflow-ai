@@ -112,8 +112,9 @@ def test_implicit_rmb_is_a_prefilled_candidate_and_not_an_accept():
     assert price_from_token("报价28，含税，起订500个", "28") is None
 
     answered = parse_quote("多少钱？28，不含税")
-    assert answered["provenance"]["currency_evidence"] == _EVIDENCE
+    assert answered["provenance"]["currency_evidence"] is None
     assert answered["parsed"]["unit_price"] is None
+    assert answered["provenance"]["review_reason"] == "unrecognised term: 多少钱"
     assert price_from_token("多少钱？28，不含税", "28") is None
 
     english = parse_quote("unit price 33", deal_currency="CNY")
@@ -819,7 +820,7 @@ def test_a_real_offer_beside_a_hypothetical_clause_stays_confirmable():
 def test_traditional_and_taiwan_amounts_are_unknown_currency():
     from src.desk.parse import parse_quote, price_from_token
 
-    for text in ("報價 28 元", "單價 28 元", "NT$ 40", "NT$40", "新台幣 40", "台幣40", "新台币40"):
+    for text in ("報價 28 元", "單價 28 元"):
         got = parse_quote(text)
         assert got["status"] != "accepted", text
         assert got["parsed"]["unit_price"] is None, text
@@ -827,10 +828,19 @@ def test_traditional_and_taiwan_amounts_are_unknown_currency():
         assert got["provenance"]["suggested_token"] is None, text
         assert got["provenance"]["review_reason"] == "unknown currency", text
         assert got["provenance"]["currency_evidence"] is None, text
+    for text in ("NT$ 40", "NT$40", "新台幣 40", "台幣40", "新台币40", "TWD 40", "₩40"):
+        got = parse_quote(text)
+        assert got["status"] != "accepted", text
+        assert got["parsed"]["unit_price"] is None, text
+        assert got["provenance"]["currency_evidence"] is None, text
+        assert "not the deal currency" in got["provenance"]["review_reasons"], text
+        token = "40"
+        assert price_from_token(text, token) is None, text
     mixed = parse_quote("单价 12元/件（约 NT$50）")
     assert mixed["provenance"]["candidates"] == []
     assert mixed["provenance"]["suggested_token"] is None
     assert mixed["parsed"]["unit_price"] is None
+    assert "not the deal currency" in mixed["provenance"]["review_reasons"]
     assert price_from_token("单价 12元/件（约 NT$50）", "12") is None
     assert price_from_token("单价 12元/件（约 NT$50）", "50") is None
     simplified = parse_quote("报价 28 元/件")
@@ -1368,8 +1378,11 @@ def test_a_stated_basis_never_confirms_as_the_raw_per_piece_price(tmp_path, monk
         assert clicked.status_code == 422, text
         assert plain.json()["detail"] == "unit mismatch", text
         assert clicked.json()["detail"] == "unit mismatch", text
-    exact = parse_quote("报价18元整")
+    exact = parse_quote("报价18元")
     assert exact["provenance"]["basis_prompts"]["18"]["kind"] == "per_piece"
+    even = parse_quote("报价18元整")
+    assert even["provenance"]["basis_prompts"] == {}
+    assert even["provenance"]["review_reason"] == "unrecognised term: 整"
     hud = Path("extension/content.js").read_text(encoding="utf-8")
     assert "event.isTrusted" in hud
     assert "basisEvent.isTrusted" in hud
@@ -1474,3 +1487,190 @@ def test_every_lexicon_unit_refuses_the_per_piece_shortcut(surface, canon):
             assert prompt.get("kind") != "per_piece", text
         if canon != "per_piece":
             assert got["parsed"]["unit_price"] is None, text
+
+
+def test_compound_amounts_use_yuan_jiao_and_fen_positions():
+    """One walker: a bare digit is jiao, a leading-zero pair is jiao then fen."""
+    from src.desk.parse import parse_quote
+
+    five = parse_quote("3块05")
+    assert five["provenance"]["candidates"] == ["3"]
+    assert five["provenance"]["confirm_value"] == pytest.approx(3.05)
+    named = parse_quote("3元5角2分")
+    assert named["provenance"]["candidates"] == ["3"]
+    assert named["provenance"]["confirm_value"] == pytest.approx(3.52)
+    mao = parse_quote("2块8毛8")
+    assert mao["provenance"]["candidates"] == ["2"]
+    assert mao["provenance"]["confirm_value"] == pytest.approx(2.88)
+    separate = parse_quote("1块20")
+    assert separate["provenance"]["confirm_value"] == pytest.approx(1.0)
+
+
+def test_random_terms_never_offer_the_shortcut_or_implicit_currency():
+    """A token outside the allowlist, however it is written, blocks both decisions."""
+    import random
+
+    from src.desk.parse import parse_quote
+
+    rng = random.Random(20)
+    cjk = list("瓶罐筐篓捆扎称重桶柜架勺叉碗盘壶杯")
+    latin = ("widget", "crate", "bottle", "kilo", "sqmx", "lotx")
+    forms: list[str] = ["称重", "整套", "以公斤计", "单位"]
+    for _ in range(24):
+        token = "".join(rng.choice(cjk) for _ in range(2))
+        word = rng.choice(latin)
+        forms.append(token)
+        forms.append("\u200b".join(token))
+        forms.append(word)
+        forms.append("\u200b".join(word))
+        forms.append("".join(chr(ord(char) + 0xFEE0) for char in word))
+    seen: set[str] = set()
+    for form in forms:
+        if form in seen:
+            continue
+        seen.add(form)
+        text = f"单价 15.6 元{form}"
+        got = parse_quote(text)
+        assert got["parsed"]["unit_price"] is None, text
+        assert got["provenance"]["currency_evidence"] is None, text
+        for prompt in got["provenance"]["basis_prompts"].values():
+            assert prompt.get("kind") != "per_piece", text
+        reason = str(got["provenance"]["review_reason"] or "")
+        assert reason.startswith("unrecognised term:"), (text, reason)
+        assert "15.6" in got["provenance"]["candidates"], text
+
+
+def test_ordinary_per_piece_quotes_still_confirm_and_other_currencies_do_not(tmp_path, monkeypatch):
+    """Clean per-piece quotes confirm. Any other currency marker does not."""
+    monkeypatch.setenv("TRADEFLOW_DESK_DB", str(tmp_path / "desk.db"))
+    monkeypatch.setenv("TRADEFLOW_ENV", "sandbox")
+    monkeypatch.setenv("TRADEFLOW_CHAIN_KEY", "phase2a-key")
+    monkeypatch.setenv("TRADEFLOW_API_KEY", "phase2a-desk-key")
+    from fastapi.testclient import TestClient
+
+    from src.app.main import app
+    from src.desk.parse import parse_quote
+    from src.desk.service import create_deal, ingest_message
+    from src.desk.store import DeskStore, reset_stores
+
+    reset_stores()
+    store = DeskStore(str(tmp_path / "desk.db"))
+    client = TestClient(app)
+    headers = {"X-API-Key": "phase2a-desk-key"}
+
+    def open_deal(currency: str):
+        snapshot = create_deal(
+            store,
+            product="valve",
+            quantity=1000,
+            target_price=8,
+            ceiling_price=40,
+            risk_tolerance=0.5,
+            seed=6,
+            suppliers=SUPPLIERS,
+            currency=currency,
+        )
+        return snapshot["deal"]["id"], snapshot["suppliers"][0]["id"]
+
+    def review(deal_id: str, supplier: str, event_id: str, token: str, **extra: object):
+        body = {"supplier_id": supplier, "action": "accept", "chosen_token": token}
+        body.update(extra)
+        return client.post(
+            f"/api/v1/desk/deals/{deal_id}/review/{event_id}",
+            headers=headers,
+            json=body,
+        )
+
+    deal_id, supplier = open_deal("CNY")
+    explicit = parse_quote("单价 14.80 元/件")
+    assert explicit["status"] == "accepted"
+    assert explicit["parsed"]["unit_price"] == pytest.approx(14.80)
+    opened = ingest_message(
+        store, deal_id, source="paste", raw_text="单价 14.80 元/件", supplier_id=supplier
+    )
+    assert review(deal_id, supplier, opened["event"]["id"], "14.80").status_code == 200
+    bare = parse_quote("单价 15.60 元")
+    assert bare["provenance"]["basis_prompts"]["15.60"]["kind"] == "per_piece"
+    assert bare["provenance"]["currency_evidence"] is None
+    held = ingest_message(store, deal_id, source="paste", raw_text="单价 15.60 元", supplier_id=supplier)
+    assert review(deal_id, supplier, held["event"]["id"], "15.60").status_code == 422
+    clicked = review(
+        deal_id, supplier, held["event"]["id"], "15.60", human_confirmed=True, unit_basis="per_piece"
+    )
+    assert clicked.status_code == 200, clicked.text
+    moq = ingest_message(
+        store, deal_id, source="paste", raw_text="单价 15.60 元，起订量 1000 件", supplier_id=supplier
+    )
+    assert review(deal_id, supplier, moq["event"]["id"], "15.60").status_code == 200
+    rmb = ingest_message(store, deal_id, source="paste", raw_text="31 RMB per piece", supplier_id=supplier)
+    assert review(deal_id, supplier, rmb["event"]["id"], "31").status_code == 200
+    folded = parse_quote("单\u200b价 15.6 元称\u200b重")
+    assert folded["provenance"]["currency_evidence"] is None
+    assert folded["provenance"]["basis_prompts"] == {}
+    assert folded["provenance"]["review_reason"] == "unrecognised term: 称重"
+    wide = parse_quote("单价 15.6 元" + "".join(chr(ord(char) + 0xFEE0) for char in "WIDGET"))
+    assert wide["provenance"]["basis_prompts"] == {}
+    assert wide["provenance"]["review_reason"] == "unrecognised term: WIDGET"
+    for text, token in (
+        ("单价 15 港元", "15"),
+        ("单价 15 澳元", "15"),
+        ("单价 15 韩元", "15"),
+        ("单价 15 日元", "15"),
+        ("单价 15 新台币", "15"),
+        ("单价 15 港币", "15"),
+        ("单价 15 泰铢", "15"),
+        ("单价 15 卢布", "15"),
+        ("单价 15 TWD", "15"),
+        ("单价 15 ₩", "15"),
+        ("单价 15 刀", "15"),
+        ("单价 15 美刀", "15"),
+        ("单价 15 欧", "15"),
+    ):
+        reading = parse_quote(text)
+        assert reading["provenance"]["basis_prompts"] == {}, text
+        assert reading["provenance"]["currency_evidence"] is None, text
+        assert "not the deal currency" in reading["provenance"]["review_reasons"], text
+        event = ingest_message(store, deal_id, source="paste", raw_text=text, supplier_id=supplier)["event"]
+        plain = review(deal_id, supplier, event["id"], token)
+        posted = review(
+            deal_id, supplier, event["id"], token, human_confirmed=True, unit_basis="per_piece"
+        )
+        assert plain.status_code == 422, (text, plain.text)
+        assert posted.status_code == 422, (text, posted.text)
+        assert plain.json()["detail"] == "not the deal currency", text
+        assert posted.json()["detail"] == "not the deal currency", text
+
+    usd_id, usd_supplier = open_deal("USD")
+    for text, token, plain_ok in (
+        ("单价 15.6 美元", "15.6", False),
+        ("15.6美元一个", "15.6", True),
+        ("美元一个15.6", "15.6", True),
+    ):
+        reading = parse_quote(text, deal_currency="USD")
+        assert reading["provenance"]["currency_evidence"] != "not the deal currency"
+        assert "not the deal currency" not in reading["provenance"]["review_reasons"], text
+        event = ingest_message(store, usd_id, source="paste", raw_text=text, supplier_id=usd_supplier)["event"]
+        plain = review(usd_id, usd_supplier, event["id"], token)
+        if plain_ok:
+            assert plain.status_code == 200, (text, plain.text)
+        else:
+            assert plain.status_code == 422, (text, plain.text)
+            assert plain.json()["detail"] == "unit mismatch", text
+            posted = review(
+                usd_id,
+                usd_supplier,
+                event["id"],
+                token,
+                human_confirmed=True,
+                unit_basis="per_piece",
+            )
+            assert posted.status_code == 200, (text, posted.text)
+    eur_id, eur_supplier = open_deal("EUR")
+    euro = ingest_message(store, eur_id, source="paste", raw_text="15.6欧元/件", supplier_id=eur_supplier)
+    assert review(eur_id, eur_supplier, euro["event"]["id"], "15.6").status_code == 200
+    slang = ingest_message(store, eur_id, source="paste", raw_text="单价 15 刀", supplier_id=eur_supplier)
+    refused = review(eur_id, eur_supplier, slang["event"]["id"], "15")
+    assert refused.status_code == 422
+    assert refused.json()["detail"] == "not the deal currency"
+    store.close()
+    reset_stores()

@@ -89,7 +89,7 @@ def test_known_real_quotes_stay_accepted():
     bare = parse_quote(BARE_UNIT_PRICE)
     assert bare["status"] == "review"
     assert bare["parsed"]["unit_price"] is None
-    assert bare["provenance"]["review_reason"] == "unit mismatch"
+    assert bare["provenance"]["review_reason"] == "unrecognised term: price"
     assert "33.10" in bare["provenance"]["candidates"]
 
 
@@ -195,7 +195,7 @@ def test_tier_uses_the_deal_quantity_and_otherwise_reviews():
     held = parse_quote(ladder, quantity=10000)
     assert held["status"] == "review"
     assert held["parsed"]["unit_price"] is None
-    assert held["provenance"]["review_reason"] == "unit mismatch"
+    assert held["provenance"]["review_reason"] == "unrecognised term: Price"
     assert "32.10" in held["provenance"]["candidates"]
 
 
@@ -262,7 +262,7 @@ def test_plausibility_band_is_three_and_blocks_the_loose_cases(tmp_path, monkeyp
         assert event["parsed"]["unit_price"] is None
         assert event["provenance"]["auto_accept"] is False
         assert event["provenance"]["rule_would_accept"] is False
-        assert event["provenance"]["review_reason"] == "unit mismatch"
+        assert event["provenance"]["review_reason"] == "unrecognised term: price"
     piece = _event(small, "Unit price 33.10 RMB per piece.")
     assert piece["status"] == "review"
     assert piece["parsed"]["unit_price"] is None

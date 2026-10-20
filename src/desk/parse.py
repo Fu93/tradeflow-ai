@@ -9,6 +9,7 @@ pre-filled. Another currency is never rewritten as the deal currency.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any
 
 from src.engine.bilingual import InboundIntentClassifier
@@ -34,16 +35,43 @@ _EXCLUSION = re.compile(
     re.IGNORECASE,
 )
 _CLAUSE_MARKS = ("\n", "。", "，", ",", ";", "；", "、")
-_FOREIGN = re.compile(r"(?i)(?:usd|eur|gbp|hkd|jpy|aud|cad|美元|欧元|歐元|英镑|英鎊|港币|港幣|日元|\$|€|£)")
-_CNY = re.compile(r"(?i)(?:cny|rmb|yuan|元|块|塊|￥|¥|人民币|人民幣)")
+# 元 and 块 are CNY only as their own token. 港元, 美元, and 欧元 are other names.
+_CNY = re.compile(
+    r"(?i)(?:人民币|人民幣|(?<![A-Za-z])(?:cny|rmb|yuan)(?![A-Za-z])|"
+    r"(?<![\u4e00-\u9fff])[元块塊](?![\u4e00-\u9fff])|¥)"
+)
+_USD = re.compile(
+    r"(?i)(?:us\s*\$|u\.s\.\s+dollars?|us\s+dollars?|(?<![A-Za-z])usd(?![A-Za-z])|"
+    r"(?<![A-Za-z])dollars?(?![A-Za-z])|美元|美金|美刀|(?<![\u4e00-\u9fff])刀(?![\u4e00-\u9fff])|\$)"
+)
+_EUR = re.compile(
+    r"(?i)(?:(?<![A-Za-z])eur(?![A-Za-z])|(?<![A-Za-z])euros?(?![A-Za-z])|"
+    r"欧元|歐元|(?<![\u4e00-\u9fff])[欧歐](?![\u4e00-\u9fff])|€)"
+)
+_TWD = re.compile(
+    r"(?i)NT\s*\$|新台币|新台幣|新臺幣|台币|臺幣|台幣|(?<![A-Za-z])TWD(?![A-Za-z])"
+)
+_CJK_CURRENCY = re.compile(
+    r"(?<![\u4e00-\u9fff])(?P<name>[\u4e00-\u9fff]{1,8}(?:元|币|幣|圆|圓|铢|銖|镑|鎊|円)|卢布|盧布)"
+    r"(?![\u4e00-\u9fff])"
+)
+_DEAL_CURRENCY_WORDS = frozenset({"人民币", "人民幣", "美元", "美金", "美刀", "欧元", "歐元"})
+_ISO_OTHER = re.compile(
+    r"(?i)(?<![A-Za-z])(?:AED|AFN|AUD|BRL|CAD|CHF|CZK|DKK|EGP|GBP|HKD|HUF|IDR|ILS|INR|"
+    r"JPY|KRW|KWD|MXN|MYR|NOK|NZD|PHP|PLN|QAR|RON|RUB|SAR|SEK|SGD|THB|TWD|UAH|VND|ZAR)"
+    r"(?![A-Za-z])"
+)
+_OTHER_SYMBOL = re.compile(r"[£₩₽₹₺₴₪฿₫₭₦₱₲₡₵₸₼]")
 _RANGE = re.compile(rf"(?i)({_NUM})\s*(?:-|–|~|到|至|\bto\b)\s*({_NUM})")
 _DURATION = re.compile(
-    r"(?i)\s*(?:[A-Za-z]+\s+){0,3}(?:days?|weeks?|months?)\b|\s*(?:个)?(?:天|日|周|週)"
+    r"(?i)\s*(?:[A-Za-z]+\s+){0,3}(?:days?|weeks?|months?)\b|\s*(?:个)?(?:天|日(?!元)|周|週)"
 )
 _AMOUNT = re.compile(
-    rf"(?i)(?P<pre>cny|rmb|usd|eur|gbp|hkd|jpy|￥|¥|\$|€|£)?\s*"
+    rf"(?i)(?P<pre>人民币|人民幣|美元|美金|美刀|欧元|歐元|cny|rmb|usd|eur|gbp|hkd|jpy|twd|"
+    rf"￥|¥|\$|€|£|₩|(?<![\u4e00-\u9fff])[刀欧歐])?\s*"
     rf"(?P<num>{_NUM})\s*"
-    rf"(?P<post>cny|rmb|yuan|usd|eur|gbp|hkd|jpy|元|块|塊|人民币|人民幣|美元|美金|欧元|歐元|英镑|英鎊|dollars?|\$|€|£)?"
+    rf"(?P<post>人民币|人民幣|美元|美金|美刀|欧元|歐元|cny|rmb|yuan|usd|eur|gbp|hkd|jpy|twd|"
+    rf"元|块|塊|英镑|英鎊|dollars?|\$|€|£|₩|(?<![\u4e00-\u9fff])[刀欧歐](?![\u4e00-\u9fff]))?"
 )
 # Positive slots. These name what an offer looks like. They are not a list of
 # words that disqualify a sentence.
@@ -328,24 +356,10 @@ def _sentence_of(text: str, start: int) -> str:
 
 
 def _mentions_other_currency(text: str, deal_currency: str) -> bool:
-    from src.config.heuristics import DEAL_CURRENCY
-
-    if not text:
-        return False
-    usd = bool(_USD.search(text))
-    eur = bool(_EUR.search(text))
-    yuan = bool(_CNY.search(text))
-    other = bool(_FOREIGN.search(text)) and not (usd or eur)
-    named: set[str] = set()
-    if yuan:
-        named.add(str(DEAL_CURRENCY))
-    if usd:
-        named.add("USD")
-    if eur:
-        named.add("EUR")
-    if other:
-        named.add("OTHER")
-    return any(code != deal_currency for code in named)
+    families = _currency_families(text)
+    if "OTHER" in families:
+        return True
+    return any(code != deal_currency for code in families)
 
 
 def _bare_blocked_by_other_currency(visible: str, start: int, token: str, deal_currency: str) -> bool:
@@ -377,27 +391,45 @@ def _for_rules(clause: str) -> str:
     return _EXCLUSION.sub(" ", clause)
 
 
-_USD = re.compile(r"(?i)(?:usd|us\s+dollars?|u\.s\.\s+dollars?|美元|美金|\$|\bdollars?\b)")
-_EUR = re.compile(r"(?i)(?:eur|euros?|欧元|歐元|€)")
 _CONVERSION_PAREN = re.compile(r"（[^）]{0,80}）|\([^)]{0,96}\)")
 _CONVERSION_CUE = re.compile(
     r"(?i)(?:\b(?:about|approx(?:imately)?|around|roughly|circa)\b|大约|大約|约合|約合|折合|约|約|≈)"
 )
 
 
+def _fold(text: str) -> str:
+    """NFKC, then drop format characters such as zero-width and word joiners."""
+    folded = unicodedata.normalize("NFKC", text or "")
+    return "".join(char for char in folded if unicodedata.category(char) != "Cf")
+
+
+def _blank_match(pattern: re.Pattern[str], text: str) -> str:
+    return pattern.sub(lambda match: " " * len(match.group(0)), text)
+
+
+def _has_other_cjk_currency(text: str) -> bool:
+    for match in _CJK_CURRENCY.finditer(text):
+        if match.group("name") not in _DEAL_CURRENCY_WORDS:
+            return True
+    return False
+
+
 def _currency_families(text: str) -> set[str]:
-    """Currency families named in text. The 元 inside 美元 is not a second currency."""
-    raw = text or ""
+    """Currency families named in text. 元 inside 美元 or 港元 is not a second CNY."""
+    raw = _fold(text or "")
     found: set[str] = set()
-    if _USD.search(raw):
-        found.add("USD")
-    if _EUR.search(raw):
-        found.add("EUR")
-    without_named = _EUR.sub(" ", _USD.sub(" ", raw))
-    if _CNY.search(without_named):
-        found.add("CNY")
-    if _FOREIGN.search(_CNY.sub(" ", without_named)):
+    if _TWD.search(raw) or _ISO_OTHER.search(raw) or _OTHER_SYMBOL.search(raw):
         found.add("OTHER")
+    body = _blank_match(_OTHER_SYMBOL, _blank_match(_ISO_OTHER, _blank_match(_TWD, raw)))
+    if _USD.search(body):
+        found.add("USD")
+    if _EUR.search(body):
+        found.add("EUR")
+    body = _blank_match(_EUR, _blank_match(_USD, body))
+    if _has_other_cjk_currency(body):
+        found.add("OTHER")
+    if _CNY.search(body):
+        found.add("CNY")
     return found
 
 
@@ -449,45 +481,34 @@ def _clause_without_conversions(clause: str) -> str:
     return "".join(chars)
 
 
+def _kind_code(families: set[str]) -> str | None:
+    from src.config.heuristics import DEAL_CURRENCY
+
+    if not families:
+        return None
+    if "OTHER" in families or len(families) > 1:
+        return "foreign"
+    only = next(iter(families))
+    if only == "CNY":
+        return str(DEAL_CURRENCY)
+    return only
+
+
 def _kind_for(pre: str, post: str, clause: str) -> str | None:
     """Currency of this amount. Two currency families on the clause stay unconfirmed.
 
     A parenthetical conversion ('about USD x' beside a CNY price) is not a
     second family, so the primary amount stays confirmable.
     """
-    kind = _currency_of(pre, post)
     counted = _clause_without_conversions(clause)
-    families = 0
-    if _USD.search(counted):
-        families += 1
-    if _EUR.search(counted):
-        families += 1
-    if _CNY.search(counted):
-        families += 1
-    if families > 1:
-        return "foreign"
-    if kind is None and _USD.search(counted):
-        return "USD"
-    return kind
+    families = _currency_families(counted)
+    if families:
+        return _kind_code(families)
+    return _currency_of(pre, post)
 
 
 def _currency_of(pre: str, post: str) -> str | None:
-    from src.config.heuristics import DEAL_CURRENCY
-
-    token = f"{pre} {post}"
-    yuan = bool(_CNY.search(token))
-    usd = bool(_USD.search(token))
-    eur = bool(_EUR.search(token))
-    other = bool(_FOREIGN.search(token)) and not usd and not eur
-    if yuan and not (usd or eur or other):
-        return DEAL_CURRENCY
-    if usd and not yuan:
-        return "USD"
-    if eur and not yuan:
-        return "EUR"
-    if usd or eur or other or yuan:
-        return "foreign"
-    return None
+    return _kind_code(_currency_families(f"{pre} {post}"))
 
 
 def _other_speaker(clause: str) -> bool:
@@ -597,7 +618,7 @@ def _not_a_price_range(text: str, match: re.Match[str]) -> bool:
     head = text[max(0, match.start() - len(window)):match.start()]
     pieces = re.split(r"\d", head)
     attached = (pieces[-1] if pieces else head) + tail
-    if not (_CNY.search(attached) or _FOREIGN.search(attached) or _UNIT_LABEL.search(attached)):
+    if not (_currency_families(attached) or _UNIT_LABEL.search(attached)):
         return True
     if _DATE.search(window):
         return True
@@ -669,7 +690,6 @@ _PAST = re.compile(r"之前|以前|上次|买过|買過|当时|當時")
 _HEARSAY = re.compile(r"听说|聽說|据说|據說|网上|網上")
 _HYPOTHETICAL = re.compile(r"如果|假如|估计|估計|预计|預計|应该|應該")
 _BUYER_ASK = re.compile(r"能不能|可不可以|可以吗|可以嗎|希望|给个|給個|最低多少")
-_TW_CUE = re.compile(r"(?i)NT\s*\$|新台幣|新臺幣|台幣|臺幣|新台币|台币")
 # Characters that simplified supplier text does not use. 元 beside these is not CNY.
 _TRADITIONAL_MARK = re.compile("[報價稅隻條雙點張碼噸錢樣運務買過應說聽據網與對經為臺幣]")
 _ATTACH_HEAD = re.compile(
@@ -678,7 +698,7 @@ _ATTACH_HEAD = re.compile(
 )
 _PERCENT_TAIL = re.compile(r"^\s*(?:%|％|个百分点|个点|百分点)")
 _COUNT_TAIL = re.compile(r"^\s*(?:万|萬|千)")
-_DATE_TAIL = re.compile(r"^\s*(?:年|月|日|号|號)")
+_DATE_TAIL = re.compile(r"^\s*(?:年|月|日(?!元)|号|號)")
 _THRESHOLD_HEAD = re.compile(r"(?:超过|超過|不低于|不低於)\s*$")
 _THRESHOLD_TAIL = re.compile(r"^\s*(?:以上|以下)")
 _MODEL_HEAD = re.compile(
@@ -767,8 +787,16 @@ _PACK_COUNT = re.compile(
     r"(?:一\s*(?P<pack>箱|包|套|盒|打)\s*(?P<n>\d+(?:\.\d+)?)\s*(?:个|個|件|只|隻)|"
     r"(?P<n2>\d+(?:\.\d+)?)\s*(?:个|個|件|只|隻)\s*/\s*(?P<pack2>箱|包|套|盒|打))"
 )
-_COMPOUND_JIAO = re.compile(
-    r"^\s*(?:元|块|塊)\s*(?:(?P<n>\d+)\s*(?P<u>毛|角)|(?P<bare>\d)(?!\d))"
+# Yuan, then jiao, then fen. A bare digit is jiao. A leading-zero pair is jiao then fen.
+# A digit after 毛 or 角 is fen. Two digits without that zero, such as 1块20, stay a
+# separate number.
+_COMPOUND = re.compile(
+    r"^\s*(?:元|块|塊)\s*(?:"
+    r"(?P<jiao>\d+)\s*(?:毛|角)\s*(?:(?P<fen>\d+)\s*分|(?P<fenbare>\d)(?!\d))?"
+    r"|(?P<fenword>\d+)\s*分"
+    r"|(?P<pair>0\d)(?!\d)"
+    r"|(?P<bare>\d)(?!\d)"
+    r")"
 )
 _MOQ_PIECE = re.compile(
     r"(?i)(?:moq|起订量|起訂量|起订|起訂)\s*[:：]?\s*\d+(?:[.,]\d+)?\s*(?:件|个|個|只|隻|pcs|pc|pieces)\b"
@@ -796,9 +824,10 @@ def _unknown_classifier(tail: str) -> str | None:
 
     A slash may carry one or two characters. Without a slash only a single
     character counts, so a following word such as 出售 is not a unit. Grammar
-    after the price (含, 整, 以) is not a unit either.
+    after the price (含, 整, 以) is not a unit either. Zero-width characters
+    are removed first so they cannot split one word into a false unit.
     """
-    found = _UNKNOWN_SLASHED.match(tail or "") or _UNKNOWN_BARE.match(tail or "")
+    found = _UNKNOWN_SLASHED.match(_fold(tail or "")) or _UNKNOWN_BARE.match(_fold(tail or ""))
     if found is None:
         return None
     surface = found.group("u")
@@ -901,13 +930,13 @@ def _subunit_factor(tail: str) -> float | None:
 
 
 def _taiwan_unknown(text: str, pre: str, post: str) -> bool:
-    """Traditional script or a Taiwan dollar cue is not implicit CNY."""
-    if _TW_CUE.search(text or ""):
-        return True
+    """Traditional script beside a bare 元 is not CNY. A named currency is handled apart."""
     marker = f"{pre} {post}"
     if not re.search(r"元|块|塊", marker):
         return False
     if re.search(r"(?i)cny|rmb|yuan|￥|¥|人民币|人民幣", text or ""):
+        return False
+    if _TWD.search(_fold(text or "")):
         return False
     return _TRADITIONAL_MARK.search(text or "") is not None
 
@@ -933,17 +962,67 @@ def _amount_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _compound_minor_spans(text: str) -> list[tuple[int, int]]:
-    """The jiao digit of 3块5 or 1块2毛. It is not a second amount."""
+def _compound_minor(tail: str) -> tuple[float, list[tuple[int, int]]] | None:
+    """Minor yuan after 元 or 块, and the digit spans that are not their own prices."""
+    from src.config.heuristics import FEN_IN_YUAN, JIAO_IN_YUAN
+
+    match = _COMPOUND.match(tail or "")
+    if match is None:
+        return None
     spans: list[tuple[int, int]] = []
-    for match in _AMOUNT.finditer(text or ""):
-        compound = _COMPOUND_JIAO.match((text or "")[match.end("num"):])
-        if compound is None:
+    jiao: float | None = None
+    fen: float | None = None
+    if match.group("jiao") is not None:
+        parsed = _number(match.group("jiao") or "")
+        if parsed is None:
+            return None
+        jiao = float(parsed)
+        spans.append((match.start("jiao"), match.end("jiao")))
+        fen_text = match.group("fen") if match.group("fen") is not None else match.group("fenbare")
+        fen_name = "fen" if match.group("fen") is not None else "fenbare"
+        if fen_text is not None:
+            parsed_fen = _number(fen_text)
+            if parsed_fen is None:
+                return None
+            fen = float(parsed_fen)
+            spans.append((match.start(fen_name), match.end(fen_name)))
+    elif match.group("fenword") is not None:
+        parsed_fen = _number(match.group("fenword") or "")
+        if parsed_fen is None:
+            return None
+        fen = float(parsed_fen)
+        spans.append((match.start("fenword"), match.end("fenword")))
+    elif match.group("pair") is not None:
+        pair = match.group("pair") or ""
+        jiao = float(_number(pair[:1]) or 0)
+        fen = float(_number(pair[1:]) or 0)
+        spans.append((match.start("pair"), match.end("pair")))
+    else:
+        parsed = _number(match.group("bare") or "")
+        if parsed is None:
+            return None
+        jiao = float(parsed)
+        spans.append((match.start("bare"), match.end("bare")))
+    minor = 0.0
+    if jiao is not None:
+        minor += jiao * float(JIAO_IN_YUAN)
+    if fen is not None:
+        minor += fen * float(FEN_IN_YUAN)
+    return minor, spans
+
+
+def _compound_minor_spans(text: str) -> list[tuple[int, int]]:
+    """Jiao and fen digits of a compound amount. They are not a second price."""
+    spans: list[tuple[int, int]] = []
+    body = text or ""
+    for match in _AMOUNT.finditer(body):
+        found = _compound_minor(body[match.end("num"):])
+        if found is None:
             continue
-        which = "n" if compound.group("n") else "bare"
-        spans.append(
-            (match.end("num") + compound.start(which), match.end("num") + compound.end(which))
-        )
+        _minor, parts = found
+        base = match.end("num")
+        for start, end in parts:
+            spans.append((base + start, base + end))
     return spans
 
 
@@ -1129,13 +1208,114 @@ def _pieces_label(count: float) -> str:
     return str(count)
 
 
+# The per-piece shortcut and implicit CNY read a closed list. Anything else in the
+# clause is an unrecognised term: the number stays in review, with no one-click
+# deal unit and no implicit currency. The lexicon above still converts a stated pack.
+_PRICE_CUES: tuple[str, ...] = (
+    "不含税", "出厂价", "批发价", "单价", "报价", "价格", "价钱",
+    "含税", "税后", "每个", "一个", "每件", "一件", "每只", "一只",
+)
+_DEAL_UNIT_WORDS: tuple[str, ...] = (
+    "per piece", "piece", "pcs", "each", "unit", "pc", "个", "件", "只",
+)
+_CNY_MARKERS: tuple[str, ...] = ("人民币", "人民幣", "rmb", "cny", "yuan", "元", "块", "塊", "¥")
+_USD_MARKERS: tuple[str, ...] = ("美刀", "美元", "美金", "us$", "usd", "$", "刀")
+_EUR_MARKERS: tuple[str, ...] = ("欧元", "歐元", "eur", "€", "欧", "歐")
+_SUBUNIT_WORDS: tuple[str, ...] = ("毛", "角", "分", "厘", "釐")
+_CJK_CHAR = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
+_MOQ_PHRASE = re.compile(
+    r"(?i)(?:起订量|起订|起批|moq)\s*[:：]?\s*\d+(?:[.,]\d+)?\s*"
+    r"(?:个|件|只|pcs|pc|piece|each|unit)(?![\u4e00-\u9fffA-Za-z])"
+)
+
+
+def _marker_phrases(deal_currency: str) -> tuple[str, ...]:
+    code = (deal_currency or "").upper()
+    if code == "USD":
+        return _USD_MARKERS
+    if code == "EUR":
+        return _EUR_MARKERS
+    return _CNY_MARKERS
+
+
+def _is_cjk_char(char: str) -> bool:
+    return bool(_CJK_CHAR.match(char or ""))
+
+
+def _clause_word(char: str) -> bool:
+    return _is_cjk_char(char) or (char.isascii() and char.isalpha())
+
+
+def _skipped_symbol(char: str) -> bool:
+    if char.isspace():
+        return True
+    return unicodedata.category(char).startswith(("P", "Z"))
+
+
+def _first_unrecognised(clause: str, deal_currency: str) -> str | None:
+    """The first letter or CJK token in the clause that is outside the allowlist."""
+    text = _fold(clause)
+    phrases = sorted(
+        {
+            *_PRICE_CUES,
+            *_DEAL_UNIT_WORDS,
+            *_marker_phrases(deal_currency),
+            *_SUBUNIT_WORDS,
+        },
+        key=len,
+        reverse=True,
+    )
+    index = 0
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if _skipped_symbol(char):
+            index += 1
+            continue
+        number = re.match(r"\d+(?:[.,]\d+)?", text[index:])
+        if number:
+            index += number.end()
+            continue
+        moq = _MOQ_PHRASE.match(text, index)
+        if moq:
+            index = moq.end()
+            continue
+        lowered = text[index:].lower()
+        taken = 0
+        for phrase in phrases:
+            if not lowered.startswith(phrase.lower()):
+                continue
+            end = index + len(phrase)
+            nxt = text[end] if end < length else ""
+            if phrase[:1].isascii() and phrase[:1].isalpha() and nxt.isascii() and nxt.isalpha():
+                continue
+            taken = len(phrase)
+            break
+        if taken:
+            index += taken
+            continue
+        if _clause_word(char):
+            end = index + 1
+            cjk = _is_cjk_char(char)
+            while end < length and _clause_word(text[end]) and _is_cjk_char(text[end]) == cjk:
+                if not cjk and not (text[end].isascii() and text[end].isalpha()):
+                    break
+                end += 1
+            return text[index:end]
+        if _OTHER_SYMBOL.match(char):
+            return char
+        index += 1
+    return None
+
+
 def _basis_prompt(text: str, item: dict[str, Any]) -> dict[str, Any] | None:
     """The one human choice that can settle this number. None when no choice is legal.
 
-    The per-piece shortcut exists only for a number that states no basis and
-    already carries the deal currency. A stated unit, a missed classifier, or
-    a missing currency is not that shortcut.
+    The per-piece shortcut exists only for a number that states no basis, already
+    carries the deal currency, and whose clause is nothing but the allowlist.
     """
+    if item.get("unrecognised"):
+        return None
     if item.get("currency_ok") is not True:
         return None
     basis = str(item.get("basis") or "unknown")
@@ -1240,7 +1420,7 @@ def _currency_failed(item: dict[str, Any], deal_currency: str) -> bool:
 
 def _collect(text: str, deal_currency: str) -> dict[str, Any]:
     """Unit rows, other money, fees, and labelled references. A measure word is not a currency."""
-    from src.config.heuristics import DEAL_CURRENCY, JIAO_IN_YUAN
+    from src.config.heuristics import DEAL_CURRENCY
 
     units: list[dict[str, Any]] = []
     competing: list[dict[str, Any]] = []
@@ -1278,19 +1458,14 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
         if _excluded_number(text, match.start("num"), token, clause, amount_at):
             continue
         tail = text[match.end("num"):]
-        compound = _COMPOUND_JIAO.match(tail)
+        compound = _compound_minor(tail)
         factor = None
         if compound is not None:
-            which = "n" if compound.group("n") else "bare"
-            minor = _number(compound.group(which) or "")
-            if minor is not None and value is not None:
-                value = float(value) + float(minor) * float(JIAO_IN_YUAN)
-                consumed.append(
-                    (
-                        match.end("num") + compound.start(which),
-                        match.end("num") + compound.end(which),
-                    )
-                )
+            minor, parts = compound
+            if value is not None:
+                value = float(value) + minor
+                for part_start, part_end in parts:
+                    consumed.append((match.end("num") + part_start, match.end("num") + part_end))
         else:
             factor = _subunit_factor(tail)
             if factor is not None and value is not None:
@@ -1299,6 +1474,7 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
                     kind = deal_currency
         sentence = _sentence_of(text, match.start("num"))
         basis = _basis_for_number(text, match.start("num"), match.end("num"))
+        offender = _first_unrecognised(clause, deal_currency)
         per_piece = basis == "per_piece"
         fee = _fee_of(clause, amount_at, token)
         key = round(float(value), 4)
@@ -1313,6 +1489,12 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
             "unit": "per_piece" if unit_name == "per_piece" else unit_name,
             "identity": (key, str(kind or ""), unit_name),
         }
+        if _TWD.search(_fold(sentence)):
+            kind = "foreign"
+            item["kind"] = kind
+            item["identity"] = (key, str(kind), unit_name)
+        if offender and basis is None:
+            item["unrecognised"] = offender
 
         if fee:
             item["label"] = fee
@@ -1342,13 +1524,15 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
         if basis != "per_piece":
             if not _offer_speech(clause):
                 continue
-            if _moq_piece_evidence(text, clause, basis):
+            if _moq_piece_evidence(text, clause, basis) and not offender:
                 item["basis"] = "per_piece"
                 item["unit"] = "per_piece"
+                item.pop("unrecognised", None)
                 _keep(review_tokens, item)
                 continue
             if (
                 basis is None
+                and not offender
                 and chinese
                 and deal_currency == DEAL_CURRENCY
                 and not pre
@@ -1384,7 +1568,7 @@ def _collect(text: str, deal_currency: str) -> dict[str, Any]:
                 continue
             if _bare_blocked_by_other_currency(text, match.start("num"), token, deal_currency):
                 continue
-            if chinese and deal_currency == DEAL_CURRENCY and cued:
+            if chinese and deal_currency == DEAL_CURRENCY and cued and not offender:
                 item["evidence"] = _IMPLICIT_EVIDENCE
                 if _implicit_may_accept() and per_piece:
                     ok, breakpoint = _slots_ok(clause, amount_at, value)
@@ -1578,6 +1762,9 @@ def parse_quote(
     elif mismatches and not units:
         if any(item.get("currency_state") == "other" for item in mismatches):
             reason = "not the deal currency"
+        elif all(str(item.get("basis") or "") in {"", "unknown"} for item in mismatches):
+            named = next((item.get("unrecognised") for item in mismatches if item.get("unrecognised")), None)
+            reason = f"unrecognised term: {named}" if named else "unit mismatch"
         else:
             reason = "unit mismatch"
     elif fees and not units and not review_tokens:
@@ -1726,6 +1913,9 @@ def _item_reasons(item: dict[str, Any], deal_currency: str, *, goods: bool) -> l
         reasons.append(_REASON_REFERENCE)
     if label and label != "reference":
         reasons.append(_REASON_FEE)
+    term = item.get("unrecognised")
+    if term:
+        reasons.append(f"unrecognised term: {term}")
     stated = str(item.get("basis") or "")
     if item.get("issue") == "unit_mismatch" or (
         goods and stated not in {"", "per_piece", "unknown"}
@@ -1735,8 +1925,12 @@ def _item_reasons(item: dict[str, Any], deal_currency: str, *, goods: bool) -> l
 
 
 def _ordered_reasons(reasons: list[str]) -> list[str]:
-    order = (_REASON_CURRENCY, _REASON_REFERENCE, _REASON_FEE, _REASON_BASIS)
-    return [reason for reason in order if reason in reasons]
+    order = (_REASON_CURRENCY, _REASON_REFERENCE, _REASON_FEE)
+    ordered = [reason for reason in order if reason in reasons]
+    ordered.extend(reason for reason in reasons if str(reason).startswith("unrecognised term:"))
+    if _REASON_BASIS in reasons:
+        ordered.append(_REASON_BASIS)
+    return ordered
 
 
 def _reading_reasons(collected: dict[str, Any], deal_currency: str) -> list[str]:

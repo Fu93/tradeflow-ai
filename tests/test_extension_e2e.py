@@ -345,13 +345,7 @@ def main() -> int:
                 check("confirm buttons offer a token from the message",
                       confirms >= 1, f"confirm buttons = {confirms}")
                 if confirms >= 1:
-                    page.evaluate(
-                        """() => {
-                            const el = document.querySelector('[data-tradeflow="overlay"]');
-                            const btn = el && el.shadowRoot && el.shadowRoot.querySelector('.tf-confirm-btn');
-                            if (btn) btn.click();
-                        }"""
-                    )
+                    page.locator(".tf-confirm-btn").first.click()
                     confirmed = ""
                     deadline = time.time() + 60
                     while time.time() < deadline:
