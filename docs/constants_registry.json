@@ -838,6 +838,11 @@
       "category": "n",
       "justification": "HTTP status when a deal cannot be created because the chain key is missing. The process stays up and the route says why."
     },
+    "HTTP_NOT_FOUND": {
+      "value": 404,
+      "category": "n",
+      "justification": "HTTP status an anchor store returns when this deal has no recorded head. That response is an empty export chain, not a store outage."
+    },
     "EXTRACTOR_HTTP_TOO_MANY": {
       "value": 429,
       "category": "n",

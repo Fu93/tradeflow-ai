@@ -80,7 +80,12 @@ def test_reanchor_refuses_a_truncated_send_on_a_url_anchor(tmp_path, monkeypatch
             from urllib.parse import parse_qs, urlparse
 
             deal = parse_qs(urlparse(self.path).query).get("deal_id", [""])[0]
-            raw = json.dumps(_Anchor.heads[deal]).encode("utf-8")
+            item = _Anchor.heads.get(deal)
+            if item is None:
+                self.send_response(404)
+                self.end_headers()
+                return
+            raw = json.dumps(item).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(raw)))

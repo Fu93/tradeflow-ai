@@ -76,7 +76,12 @@ def test_recorded_approval_is_not_retried_on_a_url_anchor(tmp_path, monkeypatch)
             from urllib.parse import parse_qs, urlparse
 
             deal = parse_qs(urlparse(self.path).query).get("deal_id", [""])[0]
-            raw = json.dumps(_Anchor.heads[deal]).encode("utf-8")
+            item = _Anchor.heads.get(deal)
+            if item is None:
+                self.send_response(404)
+                self.end_headers()
+                return
+            raw = json.dumps(item).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(raw)))
@@ -118,9 +123,9 @@ def test_recorded_approval_is_not_retried_on_a_url_anchor(tmp_path, monkeypatch)
         with pytest.raises(SendRefused, match="already approved"):
             asyncio.run(send_draft(store, draft["id"], human_approved=True, body_sha256=draft_digest(draft["body"])))
         assert _Anchor.heads[deal_id]["type"] != "send_approved"
-        history = Path(str(tmp_path / "desk.db") + ".anchor-history.jsonl")
-        recorded = [json.loads(line) for line in history.read_text(encoding="utf-8").splitlines() if line.strip()]
-        assert sum(1 for item in recorded if item.get("type") == "send_approved") == 1
+        approvals = list(_Anchor.heads[deal_id]["approvals"])
+        assert sum(1 for item in approvals if item.get("type") == "send_approved") == 1
+        assert not Path(str(tmp_path / "desk.db") + ".anchor-history.jsonl").exists()
         store.close()
     finally:
         server.shutdown()

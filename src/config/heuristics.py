@@ -556,6 +556,10 @@ CHAIN_ANCHOR_TIMEOUT_SECONDS = 5
 # key is missing. The process stays up. The create route tells the caller.
 HTTP_UNAVAILABLE = 503
 
+# Rationale: HTTP status an anchor store returns when this deal has no head yet.
+# The desk treats that as an empty export chain, not as a store that is down.
+HTTP_NOT_FOUND = 404
+
 # Rationale: HTTP status that means the extractor was rate limited. That
 # status retries the next hop. It is not a price and not a quote amount.
 EXTRACTOR_HTTP_TOO_MANY = 429

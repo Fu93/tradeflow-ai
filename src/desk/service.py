@@ -24,7 +24,7 @@ from src.config.heuristics import (
     UNIT_SANITY_MULTIPLE,
 )
 from src.desk import mailbox, recompute
-from src.desk.audit_chain import approval_recorded, chain_key_configured, reanchor_refusal
+from src.desk.audit_chain import approval_recorded, chain_key_configured, export_history, reanchor_refusal
 from src.desk.extract import time_left
 from src.desk.input_checks import message_id_or_blank, references_or_blank, require_address, require_plain
 from src.desk.names import supplier_name_key
@@ -972,6 +972,37 @@ def reanchor_deal(store: DeskStore, deal_id: str, *, human_confirmed: bool) -> d
         return publish(store, deal_id)
 
 
+def recover_anchor_history(store: DeskStore, deal_id: str, *, human_confirmed: bool) -> dict[str, Any]:
+    """Start a new signed export chain. This is the only repair for a missing or rewritten one.
+
+    A chain that still verifies is left as it is, so recovery cannot drop an approval
+    the anchor can still prove.
+    """
+    if human_confirmed is not True:
+        raise DeskRejected("A person has to recover the anchor history.")
+    if chain_key_configured() is False:
+        raise DeskRejected("Anchor recovery requires TRADEFLOW_CHAIN_KEY.")
+    with deal_lock(deal_id):
+        if store.get_deal(deal_id) is None:
+            raise KeyError(deal_id)
+        links = store.verify_links(deal_id)
+        if not links["ok"]:
+            raise DeskRejected("The audit chain does not verify. Recovery will not sign a broken chain.")
+        history = export_history(deal_id)
+        if history["status"] in {"unset", "ok"}:
+            raise DeskRejected("The anchor history still verifies.")
+        if history["status"] == "down":
+            raise DeskRejected("The anchor store was down.")
+        written = store.append_chain(
+            deal_id,
+            "export_recovery",
+            {"confirmed_by": "human"},
+        )
+        if written.get("anchor_ok") is False:
+            raise DeskRejected("The anchor did not record this recovery.")
+        return publish(store, deal_id)
+
+
 def confirm_supplier_address(
     store: DeskStore,
     deal_id: str,
@@ -1846,6 +1877,9 @@ async def send_draft(
             supplier,
             float(record["counter"]),
         )
+        history = export_history(draft["deal_id"])
+        if history["status"] in {"invalid", "down"}:
+            raise SendRefused("The anchor history does not verify.")
         if approval_recorded(
             draft["deal_id"],
             list(prior_chain.get("entries") or []),
