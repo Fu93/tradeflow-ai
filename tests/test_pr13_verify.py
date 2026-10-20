@@ -182,10 +182,12 @@ def _simpson_cdf(alpha: float, beta: float, low: float, high: float, point: floa
 
 
 def test_concession_uses_the_first_ask_as_the_reference():
-    from src.engine.decision import choose_offer
+    from src.engine.decision import choose_offer, reference_ask
     from src.engine.reserve import ReserveState
 
     state = ReserveState.policy().with_reference(34.0).tighten(30.0 / 34.0)
+    assert state.reference_ask == 34.0
+    assert reference_ask(state, 30.0) == 34.0
     choice = choose_offer(ask=30.0, outside=30.0, state=state, risk_cap=1.0)
     latest_only = ReserveState.policy().with_reference(30.0)
     wrong = choose_offer(ask=30.0, outside=30.0, state=latest_only, risk_cap=1.0)
