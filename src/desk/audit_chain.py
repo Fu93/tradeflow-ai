@@ -29,6 +29,12 @@ A head that the anchor recorded and the chain no longer contains is
 is ``anchor missing because the anchor store was down``. Re-anchor appends
 only when every recorded anchor head is still in the chain and the links
 after it verify.
+
+Each anchor record also carries the append-only export chain, HMAC-SHA256
+with the same chain key: every exported head, and every exported approval.
+A URL anchor that keeps only its latest body still returns that chain.
+A missing or rewritten chain is not treated as "this approval was never
+exported". Another approval waits for an operator ``export_recovery``.
 """
 from __future__ import annotations
 
@@ -232,39 +238,92 @@ def _index_path(path: Path) -> Path:
     return Path(str(path) + ".index")
 
 
-def _url_history_path() -> Path:
-    """Local copy of heads a URL anchor accepted. The remote may keep only the latest."""
-    explicit = os.environ.get("TRADEFLOW_DESK_DB", "").strip()
-    if explicit:
-        return Path(explicit + ".anchor-history.jsonl")
-    store = os.environ.get("TRADEFLOW_STORE_DIR", "").strip()
-    base = Path(store) if store else Path("data")
-    return base / "desk.anchor-history.jsonl"
+def _export_mac(body: dict[str, Any]) -> str:
+    """HMAC of one export record. The chain key is not written into the anchor."""
+    signed = hmac.new(chain_key(), canonical(body), hashlib.sha256)
+    return signed.hexdigest()
 
 
-def _remember_url_head(record: dict[str, Any]) -> None:
-    path = _url_history_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    line = json.dumps(record, sort_keys=True) + "\n"
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(line)
-        handle.flush()
-        os.fsync(handle.fileno())
+def _export_body_from(record: dict[str, Any]) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "deal_id": str(record.get("deal_id") or ""),
+        "seq": int(record["seq"]),
+        "entry_hash": str(record.get("entry_hash") or ""),
+        "type": str(record.get("type") or ""),
+        "prev_export": str(record.get("prev_export") or ""),
+        "approvals": record.get("approvals"),
+        "exports": record.get("exports"),
+    }
+    for key in ("draft_id", "body_sha256", "transmission_sha256"):
+        if record.get(key):
+            body[key] = str(record.get(key))
+    return body
 
 
-def _merge_heads(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    found: list[dict[str, Any]] = []
-    seen: set[tuple[int, str]] = set()
-    for group in groups:
-        for head in group:
-            if not isinstance(head, dict) or not _real_anchor_head(head):
-                continue
-            key = (int(head["seq"]), str(head["entry_hash"]))
-            if key in seen:
-                continue
-            seen.add(key)
-            found.append(head)
+def _verified_export(record: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The signed export chain carried by this anchor record.
+
+    None means the bytes are not a chain this key will vouch for. A latest-only
+    anchor is enough, because the latest record holds the whole chain.
+    """
+    if not isinstance(record, dict) or not _real_anchor_head(record):
+        return None
+    mac = str(record.get("export_mac") or "")
+    approvals = record.get("approvals")
+    exports = record.get("exports")
+    if not mac or not isinstance(approvals, list) or not isinstance(exports, list):
+        return None
+    body = _export_body_from(record)
+    expected = _export_mac(body)
+    if len(mac) != len(expected) or not hmac.compare_digest(expected, mac):
+        return None
+    return {
+        "approvals": [item for item in approvals if isinstance(item, dict)],
+        "exports": [item for item in exports if isinstance(item, dict)],
+        "export_mac": mac,
+    }
+
+
+def _empty_export() -> dict[str, Any]:
+    return {"approvals": [], "exports": [], "export_mac": GENESIS}
+
+
+def _anchor_not_found(exc: BaseException) -> bool:
+    from src.config.heuristics import HTTP_NOT_FOUND
+
+    return isinstance(exc, urllib.error.HTTPError) and exc.code == int(HTTP_NOT_FOUND)
+
+
+def _current_anchor_record(deal_id: str) -> dict[str, Any]:
+    """The latest anchor bytes. A missing deal is an empty store. Any other error propagates."""
+    target = _anchor_target()
+    if not target:
+        return _anchor_absent()
+    try:
+        if _is_url(target):
+            found = _read_anchor_url(target, deal_id)
+        else:
+            found = _read_anchor_file(target, deal_id)
+    except urllib.error.HTTPError as exc:
+        if _anchor_not_found(exc):
+            return _anchor_absent()
+        raise
+    if not isinstance(found, dict):
+        return _anchor_absent()
     return found
+
+
+def _prior_export(deal_id: str, type_: str) -> dict[str, Any]:
+    """The chain this export extends. Recovery is the only fresh start."""
+    if type_ == "export_recovery":
+        return _empty_export()
+    record = _current_anchor_record(deal_id)
+    if not _real_anchor_head(record):
+        return _empty_export()
+    verified = _verified_export(record)
+    if verified is None:
+        raise OSError("anchor history does not verify")
+    return verified
 
 
 def _anchor_absent() -> dict[str, Any]:
@@ -281,14 +340,34 @@ def _anchor_record(
     mac: str,
     type_: str,
     payload: dict[str, Any] | None,
+    prior: dict[str, Any],
 ) -> dict[str, Any]:
-    """The bytes the anchor stores. An approval keeps the envelope identity."""
-    record: dict[str, Any] = {"deal_id": deal_id, "seq": seq, "entry_hash": mac, "type": type_}
+    """The bytes the anchor stores. The latest record holds the signed export chain."""
+    approvals = [dict(item) for item in list(prior.get("approvals") or []) if isinstance(item, dict)]
+    exports = [dict(item) for item in list(prior.get("exports") or []) if isinstance(item, dict)]
+    head: dict[str, Any] = {"seq": seq, "entry_hash": mac, "type": type_}
     if isinstance(payload, dict):
         for key in ("draft_id", "body_sha256", "transmission_sha256"):
             value = payload.get(key)
             if value:
-                record[key] = str(value)
+                head[key] = str(value)
+    exports.append(dict(head))
+    if type_ == "send_approved":
+        approvals.append(dict(head))
+    body: dict[str, Any] = {
+        "deal_id": deal_id,
+        "seq": seq,
+        "entry_hash": mac,
+        "type": type_,
+        "prev_export": str(prior.get("export_mac") or GENESIS),
+        "approvals": approvals,
+        "exports": exports,
+    }
+    for key in ("draft_id", "body_sha256", "transmission_sha256"):
+        if head.get(key):
+            body[key] = head[key]
+    record = dict(body)
+    record["export_mac"] = _export_mac(body)
     return record
 
 
@@ -303,7 +382,8 @@ def _export_anchor(
     target = _anchor_target()
     if not target:
         return
-    record = _anchor_record(deal_id, seq, mac, type_, payload)
+    prior = _prior_export(deal_id, type_)
+    record = _anchor_record(deal_id, seq, mac, type_, payload, prior)
     raw = json.dumps(record, sort_keys=True).encode("utf-8")
     if _is_url(target):
         request = urllib.request.Request(
@@ -314,7 +394,6 @@ def _export_anchor(
         )
         with urllib.request.urlopen(request, timeout=_anchor_timeout()) as response:
             response.read()
-        _remember_url_head(record)
         return
     path = Path(target)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -512,6 +591,11 @@ def _indexed_heads(path: Path, deal_id: str) -> list[dict[str, Any]] | None:
         return None
     if not same:
         return None
+    verified = _verified_export(item)
+    if verified is not None:
+        signed = [head for head in verified["exports"] if _real_anchor_head(head)]
+        if signed:
+            return signed
     heads = slot.get("heads")
     if isinstance(heads, list) and heads:
         return [head for head in heads if isinstance(head, dict)]
@@ -519,9 +603,14 @@ def _indexed_heads(path: Path, deal_id: str) -> list[dict[str, Any]] | None:
 
 
 def _url_heads(item: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """A URL anchor may return its history. A single head is that history."""
+    """Heads carried by the latest URL record. A signed chain beats a single head."""
     if not isinstance(item, dict):
         return []
+    verified = _verified_export(item)
+    if verified is not None:
+        signed = [head for head in verified["exports"] if _real_anchor_head(head)]
+        if signed:
+            return signed
     raw = item.get("heads")
     if isinstance(raw, list):
         found = [head for head in raw if _real_anchor_head(head)]
@@ -561,11 +650,7 @@ def _anchor_observation(deal_id: str) -> dict[str, Any]:
     try:
         if _is_url(target):
             item = _read_anchor_url(target, deal_id)
-            local: list[dict[str, Any]] = []
-            history = _url_history_path()
-            if history.is_file():
-                local = _heads_from_log(history, deal_id)
-            heads = _merge_heads(_url_heads(item), local)
+            heads = _url_heads(item)
             if not heads:
                 return {"status": "absent", "heads": []}
             return {"status": "head", "heads": heads}
@@ -574,6 +659,10 @@ def _anchor_observation(deal_id: str) -> dict[str, Any]:
             return {"status": "absent", "heads": []}
         indexed = _indexed_heads(path, deal_id)
         heads = _heads_from_log(path, deal_id) if indexed is None else indexed
+    except urllib.error.HTTPError as exc:
+        if _anchor_not_found(exc):
+            return {"status": "absent", "heads": []}
+        return {"status": "down", "heads": []}
     except (OSError, urllib.error.URLError, json.JSONDecodeError, TimeoutError, ValueError, UnicodeError):
         return {"status": "down", "heads": []}
     if not heads:
@@ -592,13 +681,41 @@ def _recorded_heads_in_chain(entries: list[dict[str, Any]], heads: list[dict[str
     return True
 
 
+def export_history(deal_id: str) -> dict[str, Any]:
+    """The signed approval chain, or why it cannot be used.
+
+    ``status`` is ``unset`` (no anchor), ``absent`` (nothing stored), ``down``
+    (the store could not be read), ``invalid`` (bytes that this key will not
+    vouch for), or ``ok``. A missing or invalid chain is not an empty one.
+    """
+    target = _anchor_target()
+    if not target:
+        return {"status": "unset", "approvals": []}
+    try:
+        record = _current_anchor_record(deal_id)
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, TimeoutError, ValueError, UnicodeError):
+        return {"status": "down", "approvals": []}
+    if not _real_anchor_head(record):
+        return {"status": "absent", "approvals": []}
+    verified = _verified_export(record)
+    if verified is None:
+        return {"status": "invalid", "approvals": []}
+    return {"status": "ok", "approvals": list(verified["approvals"])}
+
+
 def reanchor_refusal(deal_id: str, entries: list[dict[str, Any]]) -> str | None:
     """Refuse a re-anchor that would sign a chain shorter than the anchor remembers.
 
     A readable head must still be in this chain. No readable head, when an
     anchor is configured, is the same refusal: the cut cannot be ruled out.
     A store that errors is reported separately and is not signed over.
+    An anchor whose export chain does not verify is not signed over either.
     """
+    history = export_history(deal_id)
+    if history["status"] == "down":
+        return "Re-anchor refused. The anchor store was down."
+    if history["status"] == "invalid":
+        return "Re-anchor refused. The anchor history does not verify."
     observed = _anchor_observation(deal_id)
     if observed["status"] == "unset":
         return None
@@ -632,20 +749,22 @@ def approval_recorded(
     body_sha256: str,
     transmission_sha256: str,
 ) -> bool:
-    """The anchor history already has this approval. A later copy is a duplicate.
+    """The signed anchor chain already has this approval. A later copy is a duplicate.
 
-    The database rows after that approval are not what decides it. A head that
-    names the envelope, or a head whose sequence still matches the approval
-    row, is enough.
+    The database rows after that approval are not what decides it. Only an
+    export chain this key verifies can say the approval is absent. A missing
+    or rewritten chain is not that evidence.
     """
-    observed = _anchor_observation(deal_id)
+    history = export_history(deal_id)
+    if history["status"] != "ok":
+        return False
     known = {
         (int(item["seq"]), str(item["entry_hash"])): item
         for item in entries
         if item.get("seq") is not None and item.get("entry_hash")
     }
-    for head in list(observed.get("heads") or []):
-        if not isinstance(head, dict) or not _real_anchor_head(head):
+    for head in list(history.get("approvals") or []):
+        if not isinstance(head, dict):
             continue
         if _head_is_approval(
             head,
@@ -654,6 +773,8 @@ def approval_recorded(
             transmission_sha256=transmission_sha256,
         ):
             return True
+        if not _real_anchor_head(head):
+            continue
         matched = known.get((int(head["seq"]), str(head["entry_hash"])))
         if matched is None:
             continue
@@ -786,7 +907,7 @@ def append(conn: sqlite3.Connection, deal_id: str, type_: str, ts: str, payload:
     anchor_ok = True
     try:
         _export_anchor(deal_id, seq, digest, type_, stored)
-        if type_ == "reanchor" or not _pending_anchor(conn, deal_id):
+        if type_ in {"reanchor", "export_recovery"} or not _pending_anchor(conn, deal_id):
             _clear_anchor_pending(conn, deal_id)
     except Exception:
         _remember_anchor_pending(conn, deal_id, seq, digest)

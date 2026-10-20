@@ -350,12 +350,13 @@ def _mentions_other_currency(text: str, deal_currency: str) -> bool:
 
 
 def _bare_blocked_by_other_currency(visible: str, start: int, token: str, deal_currency: str) -> bool:
+    visible = _clause_without_conversions(visible or "")
     line = ""
-    for row in (visible or "").splitlines():
+    for row in visible.splitlines():
         if token and token in row:
             line = row
             break
-    sentence = _sentence_of(visible or "", start)
+    sentence = _sentence_of(visible, start)
     blocked = _mentions_other_currency(line, deal_currency) or _mentions_other_currency(sentence, deal_currency)
     elsewhere = _other_currency_on_another_line(visible, start, deal_currency)
     return blocked or elsewhere
@@ -402,13 +403,19 @@ def _currency_families(text: str) -> set[str]:
 
 
 def _is_fx_conversion(text: str, outside: str) -> bool:
-    """A parenthetical amount in another currency. A same-currency rebate is not one."""
+    """A parenthetical amount in another currency. A same-currency rebate is not one.
+
+    An unlabelled primary has no currency family. The cued parenthetical is
+    still not the unit price.
+    """
     if not _CONVERSION_CUE.search(text) or not _TOKEN.search(text):
         return False
     inner = _currency_families(text)
-    outer = _currency_families(outside)
-    if not inner or not outer:
+    if not inner:
         return False
+    outer = _currency_families(outside)
+    if not outer:
+        return True
     return bool(inner - outer)
 
 

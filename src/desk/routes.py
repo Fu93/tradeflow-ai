@@ -39,6 +39,7 @@ from src.desk.service import (
     migrate_deal,
     record_outcome,
     reanchor_deal,
+    recover_anchor_history,
     reopen_supplier,
     set_assumptions,
     poll_gmail_once,
@@ -375,6 +376,16 @@ def register_desk_routes(api_v1: APIRouter) -> None:
         _ident(deal_id)
         try:
             return reanchor_deal(get_store(), deal_id, human_confirmed=body.human_confirmed)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="No such deal") from exc
+        except DeskRejected as exc:
+            raise _rejected(exc) from exc
+
+    @api_v1.post("/desk/deals/{deal_id}/anchor-history/recover")
+    def post_anchor_history_recover(deal_id: str, body: ReanchorIn, _: str = Depends(require_desk_mutation)):
+        _ident(deal_id)
+        try:
+            return recover_anchor_history(get_store(), deal_id, human_confirmed=body.human_confirmed)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="No such deal") from exc
         except DeskRejected as exc:
