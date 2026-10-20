@@ -745,13 +745,15 @@ def _piece_confirmation(
     *,
     human_confirmed: bool,
     raw_text: str,
+    currency_ok: bool = True,
 ) -> tuple[float, str, float | None] | None:
     """Deal-unit price, the confirmed basis, and the pack count the message allows.
 
     A stated piece basis needs no extra choice. An unknown basis becomes the
-    deal unit only when the human confirm proof is true. A stated non-piece
-    basis converts only at the pack count the message states, or at the
-    registered dozen, and only with that same proof.
+    deal unit only when the human confirm proof is true and the number already
+    carries the deal currency. A stated non-piece basis converts only at the
+    pack count the message states, or at the registered dozen, and only with
+    that same proof.
     """
     choice = str(unit_basis or "").strip()
     if basis == "per_piece":
@@ -761,7 +763,7 @@ def _piece_confirmation(
     if basis in {None, "", "unknown"}:
         if pieces_per_basis is not None or choice not in {"", "per_piece"}:
             return None
-        if human_confirmed is not True:
+        if human_confirmed is not True or currency_ok is not True:
             return None
         return float(amount), "per_piece", None
     if choice == "per_piece" or (choice and choice != basis):
@@ -844,17 +846,16 @@ def accept_review(
             raise DeskRejected("Accept confirms only the amount shown from the message.")
         if _quantity_token(event["raw_text"], chosen_token):
             raise DeskRejected("That amount is a quantity, not a unit price.")
-        from src.desk.parse import confirm_amount, token_issue
+        from src.desk.parse import confirm_amount, token_currency_ok, token_issues
 
-        issue = token_issue(event["raw_text"], chosen_token, deal_currency=currency)
-        if issue and issue != "unit mismatch":
-            raise DeskRejected(issue)
+        reasons = token_issues(event["raw_text"], chosen_token, deal_currency=currency)
+        blocking = [reason for reason in reasons if reason != "unit mismatch"]
+        if blocking:
+            raise DeskRejected(blocking[0], reasons=reasons)
         found = confirm_amount(event["raw_text"], chosen_token, deal_currency=currency)
         if found is None:
             raise DeskRejected("That amount is not a unit price in the deal currency.")
         amount, basis = found
-        if issue is None and basis != "per_piece":
-            issue = "unit mismatch"
         resolved = _piece_confirmation(
             amount,
             basis,
@@ -862,11 +863,12 @@ def accept_review(
             pieces_per_basis,
             human_confirmed=human_confirmed,
             raw_text=str(event.get("raw_text") or ""),
+            currency_ok=token_currency_ok(event["raw_text"], chosen_token, deal_currency=currency),
         )
         if resolved is None:
-            raise DeskRejected("unit mismatch")
+            raise DeskRejected("unit mismatch", reasons=reasons or ["unit mismatch"])
         price, confirmed_basis, pieces = resolved
-        if issue is None:
+        if basis == "per_piece" and "unit mismatch" not in reasons:
             checked = price_from_token(event["raw_text"], chosen_token, deal_currency=currency)
             if checked is None:
                 raise DeskRejected("That amount is not a unit price in the deal currency.")
@@ -874,7 +876,8 @@ def accept_review(
         parsed["unit_price"] = price
         parsed["currency"] = currency
         if price is None or _outside_sanity(float(price), deal):
-            raise DeskRejected("That amount is outside the plausible unit-price band. It was not accepted.")
+            band = "That amount is outside the plausible unit-price band. It was not accepted."
+            raise DeskRejected(band, reasons=[*reasons, band])
         provenance = dict(event["provenance"])
         provenance["review_accepted_by"] = "human"
         provenance["review_reason"] = None

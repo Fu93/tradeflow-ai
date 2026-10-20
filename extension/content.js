@@ -324,7 +324,10 @@
       this.el = document.createElement("div");
       this.el.className = "tradeflow-overlay";
       this.el.setAttribute("data-tradeflow", "overlay");
-      // opened shadow root：隔離頁面 CSS（等同舊版 :host { all: initial } 的效果）
+      // The root stays open. tests/test_extension_e2e.py reads shadowRoot from the
+      // page, and a closed root is null there, so the confirm buttons would be
+      // invisible to that test. A synthetic click is ignored because the
+      // confirm and basis buttons require event.isTrusted.
       this.shadowRoot = this.el.attachShadow({ mode: "open" });
       this._state = {
         active: true,
@@ -709,8 +712,8 @@
           btn.className = "tf-btn tf-confirm-btn";
           const label = String(token);
           btn.textContent = label === highlighted ? label + " (matches quantity)" : label;
-          btn.addEventListener("click", () => {
-            if (!token || !onPick) return;
+          btn.addEventListener("click", (event) => {
+            if (!event.isTrusted || !token || !onPick) return;
             const prompt = basisPrompts[String(token)];
             if (!prompt) {
               onPick(String(token));
@@ -725,7 +728,10 @@
               row.appendChild(basisBtn);
             }
             basisBtn.textContent = prompt.kind === "per_piece" ? "per piece (deal unit)" : (prompt.label || "");
-            basisBtn.onclick = () => onPick(String(token), prompt);
+            basisBtn.onclick = (basisEvent) => {
+              if (!basisEvent.isTrusted) return;
+              onPick(String(token), prompt);
+            };
           });
           row.appendChild(btn);
         });

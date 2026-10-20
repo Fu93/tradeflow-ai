@@ -17,6 +17,7 @@ from src.config.heuristics import (
     EXTRACTOR_NVIDIA_MODEL,
     EXTRACTOR_SUPER_DIRECT_CHARS,
 )
+from src.desk.parse import UNIT_LEXICON
 
 _EVIDENCE = "implicit currency from deal + language"
 SUPPLIERS = [
@@ -1291,3 +1292,185 @@ def test_health_reports_the_nvidia_hop_and_the_import_queue():
         "tail truncation is detectable only with an anchor",
     ):
         assert phrase in readme
+
+
+_STATED_NOT_PIECE = (
+    "18/kg",
+    "18元/kg",
+    "每kg 18 元",
+    "按套出售 88元",
+    "立方价 320 元",
+    "45元/平方",
+    "45元/㎡",
+    "30元/卷",
+    "5元/对",
+    "整箱价 480 元",
+    "批发价按箱 480 元",
+    "按吨 5200 元",
+    "吨价 5200 元",
+    "克价 3 元",
+    "米价 3.5 元",
+    "18元/瓶",
+)
+
+
+def test_a_stated_basis_never_confirms_as_the_raw_per_piece_price(tmp_path, monkeypatch):
+    """The per-piece button is absent, and the UI payload cannot rewrite the basis."""
+    monkeypatch.setenv("TRADEFLOW_DESK_DB", str(tmp_path / "desk.db"))
+    monkeypatch.setenv("TRADEFLOW_ENV", "sandbox")
+    monkeypatch.setenv("TRADEFLOW_CHAIN_KEY", "phase2a-key")
+    monkeypatch.setenv("TRADEFLOW_API_KEY", "phase2a-desk-key")
+    from fastapi.testclient import TestClient
+
+    from src.app.main import app
+    from src.desk.parse import parse_quote
+    from src.desk.service import create_deal, ingest_message
+    from src.desk.store import DeskStore, reset_stores
+
+    reset_stores()
+    store = DeskStore(str(tmp_path / "desk.db"))
+    snapshot = create_deal(
+        store,
+        product="valve",
+        quantity=2000,
+        target_price=8,
+        ceiling_price=40,
+        risk_tolerance=0.5,
+        seed=6,
+        suppliers=SUPPLIERS,
+    )
+    deal_id = snapshot["deal"]["id"]
+    supplier = snapshot["suppliers"][0]["id"]
+    client = TestClient(app)
+    headers = {"X-API-Key": "phase2a-desk-key"}
+
+    def review(event_id: str, token: str, **extra: object):
+        body = {"supplier_id": supplier, "action": "accept", "chosen_token": token}
+        body.update(extra)
+        return client.post(
+            f"/api/v1/desk/deals/{deal_id}/review/{event_id}",
+            headers=headers,
+            json=body,
+        )
+
+    for text in _STATED_NOT_PIECE:
+        reading = parse_quote(text)
+        assert reading["parsed"]["unit_price"] is None, text
+        assert "unknown" not in reading["provenance"]["unit_basis"], text
+        assert reading["provenance"]["candidates"], text
+        for prompt in reading["provenance"]["basis_prompts"].values():
+            assert prompt["kind"] != "per_piece", text
+        token = reading["provenance"]["candidates"][0]
+        event = ingest_message(store, deal_id, source="paste", raw_text=text, supplier_id=supplier)["event"]
+        plain = review(event["id"], token)
+        clicked = review(event["id"], token, human_confirmed=True, unit_basis="per_piece")
+        assert plain.status_code == 422, text
+        assert clicked.status_code == 422, text
+        assert plain.json()["detail"] == "unit mismatch", text
+        assert clicked.json()["detail"] == "unit mismatch", text
+    exact = parse_quote("报价18元整")
+    assert exact["provenance"]["basis_prompts"]["18"]["kind"] == "per_piece"
+    hud = Path("extension/content.js").read_text(encoding="utf-8")
+    assert "event.isTrusted" in hud
+    assert "basisEvent.isTrusted" in hud
+    assert 'mode: "open"' in hud
+    store.close()
+    reset_stores()
+
+
+def test_basis_choice_cannot_skip_currency_reference_or_the_band(tmp_path, monkeypatch):
+    """A non-deal currency stays 422 even when the per-piece button is posted."""
+    monkeypatch.setenv("TRADEFLOW_DESK_DB", str(tmp_path / "desk.db"))
+    monkeypatch.setenv("TRADEFLOW_ENV", "sandbox")
+    monkeypatch.setenv("TRADEFLOW_CHAIN_KEY", "phase2a-key")
+    monkeypatch.setenv("TRADEFLOW_API_KEY", "phase2a-desk-key")
+    from fastapi.testclient import TestClient
+
+    from src.app.main import app
+    from src.desk.parse import parse_quote, price_from_token
+    from src.desk.service import create_deal, ingest_message
+    from src.desk.store import DeskStore, reset_stores
+
+    reset_stores()
+    store = DeskStore(str(tmp_path / "desk.db"))
+    client = TestClient(app)
+    headers = {"X-API-Key": "phase2a-desk-key"}
+    for code in ("USD", "EUR"):
+        snapshot = create_deal(
+            store,
+            product="valve",
+            quantity=1000,
+            target_price=10,
+            ceiling_price=40,
+            risk_tolerance=0.5,
+            seed=6,
+            suppliers=SUPPLIERS,
+            currency=code,
+        )
+        deal_id = snapshot["deal"]["id"]
+        supplier = snapshot["suppliers"][0]["id"]
+
+        def review(event_id: str, token: str, **extra: object):
+            body = {"supplier_id": supplier, "action": "accept", "chosen_token": token}
+            body.update(extra)
+            return client.post(
+                f"/api/v1/desk/deals/{deal_id}/review/{event_id}",
+                headers=headers,
+                json=body,
+            )
+
+        for text in ("单价 15.6 人民币", "报价 15.6", "报价 15.6，含税", "45元/平方"):
+            reading = parse_quote(text, deal_currency=code)
+            assert reading["provenance"]["basis_prompts"] == {}, text
+            assert "not the deal currency" in reading["provenance"]["review_reasons"], text
+            if text == "45元/平方":
+                assert "unit mismatch" in reading["provenance"]["review_reasons"]
+            event = ingest_message(
+                store, deal_id, source="paste", raw_text=text, supplier_id=supplier
+            )["event"]
+            assert event["parsed"]["unit_price"] is None
+            token = "45" if text.startswith("45") else "15.6"
+            plain = review(event["id"], token)
+            clicked = review(event["id"], token, human_confirmed=True, unit_basis="per_piece")
+            assert plain.status_code == 422, (code, text, plain.text)
+            assert clicked.status_code == 422, (code, text, clicked.text)
+            assert plain.json()["detail"] == "not the deal currency"
+            assert clicked.json()["detail"] == "not the deal currency"
+        card = next(row for row in store.get_snapshot(deal_id)["suppliers"] if row["id"] == supplier)
+        assert card["latest_quote"] is None
+        good = "unit price 15.60 USD per piece" if code == "USD" else "unit price 15.60 EUR per piece"
+        opened = ingest_message(store, deal_id, source="paste", raw_text=good, supplier_id=supplier)
+        assert price_from_token(good, "15.60", deal_currency=code) == pytest.approx(15.60)
+        accepted = review(opened["event"]["id"], "15.60")
+        assert accepted.status_code == 200, accepted.text
+        card = next(row for row in accepted.json()["suppliers"] if row["id"] == supplier)
+        assert card["latest_quote"] == pytest.approx(15.60)
+    compound = parse_quote("3块5一个")
+    assert compound["provenance"]["candidates"] == ["3"]
+    assert compound["parsed"]["unit_price"] == pytest.approx(3.5)
+    assert price_from_token("3块5一个", "3") == pytest.approx(3.5)
+    loose = parse_quote("2块8")
+    assert loose["provenance"]["candidates"] == ["2"]
+    assert "8" not in loose["provenance"]["candidates"]
+    assert loose["provenance"]["confirm_value"] == pytest.approx(2.8)
+    assert parse_quote("1块2毛")["provenance"]["confirm_value"] == pytest.approx(1.2)
+    store.close()
+    reset_stores()
+
+
+@pytest.mark.parametrize("surface,canon", UNIT_LEXICON)
+def test_every_lexicon_unit_refuses_the_per_piece_shortcut(surface, canon):
+    """A unit the lexicon knows is never settled by the unknown-basis shortcut."""
+    from src.desk.parse import parse_quote
+
+    for text in (
+        f"18元/{surface}",
+        f"每{surface} 18 元",
+        f"{surface}价 18 元",
+        f"按{surface} 18 元",
+    ):
+        got = parse_quote(text)
+        for prompt in got["provenance"]["basis_prompts"].values():
+            assert prompt.get("kind") != "per_piece", text
+        if canon != "per_piece":
+            assert got["parsed"]["unit_price"] is None, text

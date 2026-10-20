@@ -17,6 +17,10 @@ from src.desk import audit_chain
 class DeskRejected(ValueError):
     """The caller asked for a deal the desk will not store."""
 
+    def __init__(self, message: str, reasons: list[str] | None = None) -> None:
+        super().__init__(message)
+        self.reasons = list(reasons) if reasons else [message]
+
 
 class DeskUnavailable(DeskRejected):
     """The desk cannot open a deal because the chain key is missing."""
