@@ -51,7 +51,7 @@ Checked by `tests/test_logic_invariants.py`.
 Allowed to contain scenario floats:
 
 - `src/config/heuristics.py`, and only when the assignment sits under a `Rationale:` comment. These are chosen safety bands, unit caps, and display quantisation. `GET /api/v1/heuristics` is what the desk and the extension display.
-- `src/sim/`, including simulated mandates, archetype parameters, scripted red-team lines, and the inputs used by `verify_all.py` and `verify_live.py`.
+- `src/sim/`, including simulated mandates, archetype parameters, scripted red-team lines, and the inputs used by `verify_all.py`. (`verify_live.py` no longer uses `src/sim`: it walks the v2 desk surface over HTTP with its own inline inputs.)
 - The self-play generator (`src/benchmark/adversaries.py`, `src/benchmark/arena.py`, `src/benchmark/ood_500_dataset.py`, `scripts/generate_ood_500.py`) and the auction simulator (`src/engine/multi_solver.py`).
 - `extension/mock_chat.html`, which is labelled simulated on the page.
 - Plot geometry in `src/engine/viz.py`, and the frozen early copies `benchmark_negotiation.py` and `benchmark_negotiation_v2.py`. The live solver does not import those copies.
