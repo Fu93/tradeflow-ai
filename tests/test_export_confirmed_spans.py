@@ -13,12 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _store_with_confirmation(tmp_path):
-    import os
-
-    os.environ.setdefault("TRADEFLOW_API_KEY", "x" * 24)
-    os.environ.setdefault("TRADEFLOW_CHAIN_KEY", "k" * 24)
+    # No os.environ writes: conftest already provides TRADEFLOW_CHAIN_KEY,
+    # and service-level calls need no API key (that is HTTP auth). A test
+    # that writes os.environ directly poisons every later test in the same
+    # process (this file's first version did exactly that and broke 23
+    # desk-dependent tests in the full suite while passing standalone).
     db = str(tmp_path / "desk.db")
-    os.environ["TRADEFLOW_DESK_DB"] = db
     from src.desk.store import DeskStore
     from src.desk.service import accept_review, create_deal, ingest_message
 
