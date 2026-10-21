@@ -1,0 +1,157 @@
+{
+  "setting": {
+    "ask": 15.6,
+    "outside": 14.0,
+    "risk_cap": 0.5,
+    "belief": "policy prior anchored on the confirmed ask",
+    "engine_plan": "baseline eBay fit, as in production"
+  },
+  "baseline_intercept": -2.181004319580907,
+  "baseline_gap_coef": 3.11791041571198,
+  "rows": [
+    {
+      "scenario": "baseline",
+      "family": "baseline",
+      "intercept": -2.181,
+      "gap_coef": 3.1179,
+      "counter_planned": 12.7631,
+      "counter_scenario_optimal": 12.7631,
+      "value_optimal": 0.160106,
+      "value_planned": 0.160106,
+      "loss_vs_planned": 0.0
+    },
+    {
+      "scenario": "se+1",
+      "family": "statistical",
+      "intercept": -2.1501,
+      "gap_coef": 3.1179,
+      "counter_planned": 12.7631,
+      "counter_scenario_optimal": 12.7755,
+      "value_optimal": 0.1583,
+      "value_planned": 0.158286,
+      "loss_vs_planned": 1.4e-05
+    },
+    {
+      "scenario": "se-1",
+      "family": "statistical",
+      "intercept": -2.2119,
+      "gap_coef": 3.1179,
+      "counter_planned": 12.7631,
+      "counter_scenario_optimal": 12.7507,
+      "value_optimal": 0.161915,
+      "value_planned": 0.161901,
+      "loss_vs_planned": 1.3e-05
+    },
+    {
+      "scenario": "se+2",
+      "family": "statistical",
+      "intercept": -2.1192,
+      "gap_coef": 3.1179,
+      "counter_planned": 12.7631,
+      "counter_scenario_optimal": 12.7878,
+      "value_optimal": 0.156499,
+      "value_planned": 0.156445,
+      "loss_vs_planned": 5.4e-05
+    },
+    {
+      "scenario": "se-2",
+      "family": "statistical",
+      "intercept": -2.2428,
+      "gap_coef": 3.1179,
+      "counter_planned": 12.7631,
+      "counter_scenario_optimal": 12.7381,
+      "value_optimal": 0.163726,
+      "value_planned": 0.163673,
+      "loss_vs_planned": 5.4e-05
+    },
+    {
+      "scenario": "walk+0.5",
+      "family": "transfer",
+      "intercept": -1.681,
+      "gap_coef": 3.1179,
+      "counter_planned": 12.7631,
+      "counter_scenario_optimal": 12.9503,
+      "value_optimal": 0.131977,
+      "value_planned": 0.128444,
+      "loss_vs_planned": 0.003533
+    },
+    {
+      "scenario": "walk+1.0",
+      "family": "transfer",
+      "intercept": -1.181,
+      "gap_coef": 3.1179,
+      "counter_planned": 12.7631,
+      "counter_scenario_optimal": 13.0971,
+      "value_optimal": 0.108707,
+      "value_planned": 0.096147,
+      "loss_vs_planned": 0.01256
+    },
+    {
+      "scenario": "walk-0.5",
+      "family": "transfer",
+      "intercept": -2.681,
+      "gap_coef": 3.1179,
+      "counter_planned": 12.7631,
+      "counter_scenario_optimal": 12.5542,
+      "value_optimal": 0.189221,
+      "value_planned": 0.185986,
+      "loss_vs_planned": 0.003235
+    },
+    {
+      "scenario": "walk-1.0",
+      "family": "transfer",
+      "intercept": -3.181,
+      "gap_coef": 3.1179,
+      "counter_planned": 12.7631,
+      "counter_scenario_optimal": 12.3418,
+      "value_optimal": 0.216062,
+      "value_planned": 0.20489,
+      "loss_vs_planned": 0.011171
+    },
+    {
+      "scenario": "gap x0.5",
+      "family": "transfer",
+      "intercept": -2.181,
+      "gap_coef": 1.559,
+      "counter_planned": 12.7631,
+      "counter_scenario_optimal": 12.3112,
+      "value_optimal": 0.216342,
+      "value_planned": 0.20419,
+      "loss_vs_planned": 0.012152
+    },
+    {
+      "scenario": "gap x0.75",
+      "family": "transfer",
+      "intercept": -2.181,
+      "gap_coef": 2.3384,
+      "counter_planned": 12.7631,
+      "counter_scenario_optimal": 12.5629,
+      "value_optimal": 0.186174,
+      "value_planned": 0.183248,
+      "loss_vs_planned": 0.002926
+    },
+    {
+      "scenario": "gap x1.5",
+      "family": "transfer",
+      "intercept": -2.181,
+      "gap_coef": 4.6769,
+      "counter_planned": 12.7631,
+      "counter_scenario_optimal": 13.065,
+      "value_optimal": 0.117581,
+      "value_planned": 0.106868,
+      "loss_vs_planned": 0.010713
+    },
+    {
+      "scenario": "gap x2.0",
+      "family": "transfer",
+      "intercept": -2.181,
+      "gap_coef": 6.2358,
+      "counter_planned": 12.7631,
+      "counter_scenario_optimal": 13.2836,
+      "value_optimal": 0.084907,
+      "value_planned": 0.044129,
+      "loss_vs_planned": 0.040778
+    }
+  ],
+  "note": "Loss = expected value of the scenario-optimal counter minus the baseline-planned counter, both evaluated in the scenario world. Positive loss is the price of the eBay->factory transfer for one representative decision. Statistical rows use the fit's own clustered standard errors; transfer rows model a world that differs beyond sampling noise."
+}

@@ -42,6 +42,9 @@ ALLOW_FILES = {
     "scripts/generate_ood_500.py",
     # Datasheet quotes (5.3 TB/s, 5.2 Gbps) cited next to their URLs.
     "scripts/regen_mi300x_roofline.py",
+    # Hazard perturbation grid (logit deltas, gap scales, SEs read from
+    # the fit JSON). Sensitivity-scenario axes, not prices.
+    "scripts/hazard_sensitivity.py",
 }
 ALLOW_PREFIXES = ("src/sim/",)
 
