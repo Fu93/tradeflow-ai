@@ -2,6 +2,10 @@
 
 [![CI](https://github.com/Fu93/tradeflow-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Fu93/tradeflow-ai/actions/workflows/ci.yml)
 
+## Status (2026-10-21)
+
+AMD Developer Hackathon ACT III has concluded (online phase 12–18 October 2026). No lablab submission record for this project has been located. This repository is now a **research prototype in maintenance mode**: fixes and documentation only, no new modules. Current state and decision lines: [STATUS.md](STATUS.md). Where the code actually lives (including the `src/legacy/` naming inversion): [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## 30-second pitch
 
 Small cross-border sellers lose procurement margin when they negotiate factory quotes alone, often across a language gap, or pay a sourcing agent a commission. TradeFlow is a one-person desk for that problem: expected surplus of a one-step accept-or-reject model chooses the next price, an optional language model only reads and phrases the offer, and a human sends it. No factory has closed a deal through this prototype.
