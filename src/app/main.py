@@ -2546,10 +2546,10 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from ..web.routes_web import api_v1 as web_api_v1_router, router as web_open_router
-if _LEGACY_ON:
-    from ..engine.multi_solver import simulate_reverse_auction
-else:
-    simulate_reverse_auction = None
+# Not part of the retired v1 session surface: this is the labelled
+# self-play simulator behind the dashboard's "Run auction" button, and it
+# mounts on the default boot (see the route decorator below).
+from ..engine.multi_solver import simulate_reverse_auction
 
 static_path = Path(__file__).parent.parent / "web" / "static"
 if static_path.exists():
@@ -2621,12 +2621,19 @@ def _official_reference_bundle(suppliers: Optional[List[dict]], req: MultiAuctio
     return bundle
 
 
-@_legacy_route(api_v1.post)("/multi-auction/run")
+@api_v1.post("/multi-auction/run")
 def api_run_multi_auction(body: Optional[MultiAuctionRunRequest] = None):
     """觸發多供應商逆向拍賣。
 
     不傳報價時，改為執行動態多 Agent 自博弈競價（各家對抗 Agent 依據數學模型
     逐輪即時算出報價）；亦可傳入自定義供應商名單與逐輪報價矩陣。
+
+    Not legacy-gated: the dashboard's "Run auction" widget calls this route,
+    the panel is labelled "Simulated suppliers, not live factory quotes" on
+    its face, and the discipline contract (test_discipline_invariants)
+    mounts only /negotiate, /sessions, and the webhook behind
+    TRADEFLOW_LEGACY. Leaving this gated made the default-boot dashboard
+    show "Multi-auction rejected (HTTP 404)" on first click.
     """
     try:
         req = body or MultiAuctionRunRequest()

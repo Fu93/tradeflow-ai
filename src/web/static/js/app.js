@@ -456,7 +456,12 @@ async function refreshSessions() {
     const res = await fetch("/api/v1/sessions", { headers: tfAuthHeaders() });
     if (!res.ok) {
       if (listEl) {
-        listEl.innerHTML = `<div class="empty-state">Could not refresh sessions (HTTP ${tfEsc(res.status)}).</div>`;
+        // The v1 session surface mounts only with TRADEFLOW_LEGACY=1. On the
+        // default boot a 404 here means "surface off", not "server broken";
+        // say so instead of showing a raw error, and point at the product.
+        listEl.innerHTML = (res.status === 404)
+          ? `<div class="empty-state">The v1 session demo is off (mount with TRADEFLOW_LEGACY=1). The desk at <a href="/desk">/desk</a> is the product.</div>`
+          : `<div class="empty-state">Could not refresh sessions (HTTP ${tfEsc(res.status)}).</div>`;
       }
       return;
     }
