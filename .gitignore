@@ -67,3 +67,8 @@ debug_findings/**/*.png
 docs/internal/debug_findings/_sessions_backup/
 docs/internal/debug_findings/**/*.log
 docs/internal/debug_findings/**/*.png
+
+# Human-confirmed span exports (scripts/export_confirmed_spans.py):
+# real supplier correspondence, never committed. Export, train, delete.
+confirmed_spans.jsonl
+confirmed_spans.*.jsonl
