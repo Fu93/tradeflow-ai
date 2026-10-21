@@ -893,6 +893,7 @@ def simulate_reverse_auction(
     if target_price is None or walk_away_ceiling is None:
         raise ValueError("target_price and walk_away_ceiling are required")
     user_quotes = rounds_quotes is not None
+    suppliers_from_bundle = suppliers is None and demo and self_play is not None
     if suppliers is None:
         if not demo or not self_play:
             raise ValueError(
@@ -904,8 +905,11 @@ def simulate_reverse_auction(
         if embedded and all(item is not None for item in embedded):
             rounds_quotes = [[float(item) for item in embedded]]
             user_quotes = True
+    # Frozen reserves describe the bundle's own simulated suppliers, one per
+    # supplier. When the caller names their own supplier list, the bundle's
+    # reserves do not describe those suppliers and must not be applied.
     frozen = None
-    if demo and self_play and prior_mean is None and expected_markup is None:
+    if suppliers_from_bundle and prior_mean is None and expected_markup is None:
         frozen = [float(item["reserve_price"]) for item in self_play["specs"]]
     session = MultiAuctionSession(
         suppliers=suppliers,
