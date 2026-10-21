@@ -6,6 +6,7 @@ import concurrent.futures
 import hashlib
 import json
 import logging
+import math
 import os
 import queue
 import threading
@@ -29,7 +30,14 @@ from src.desk.audit_chain import approval_recorded, chain_key_configured, export
 from src.desk.extract import time_left
 from src.desk.input_checks import message_id_or_blank, references_or_blank, require_address, require_plain
 from src.desk.names import supplier_name_key
-from src.desk.parse import _confirm_span, _visible_text, parse_quote, price_from_token
+from src.desk.parse import (
+    _confirm_span,
+    _visible_text,
+    confirm_amount,
+    conversion_pieces,
+    parse_quote,
+    price_from_token,
+)
 from src.desk.store import DeskRejected, DeskStore, DeskUnavailable, get_store
 from src.desk.transmission import (
     chained_supplier,
@@ -103,6 +111,8 @@ _EXTRACTOR_THREADS: dict[str, _ExtractorJob] = {}
 _EXTRACTOR_THREADS_GUARD = threading.Lock()
 _EXTRACTOR_POOL: concurrent.futures.ThreadPoolExecutor | None = None
 _EXTRACTOR_POOL_GUARD = threading.Lock()
+_IMPORT_GUARD = threading.Lock()
+_IMPORT_STATUS = {"queued": 0, "running": 0, "finished": 0}
 
 
 def deal_lock(deal_id: str) -> threading.Lock:
@@ -385,7 +395,11 @@ def _quantity_token(raw_text: str, token: str) -> bool:
         tail = raw_text[match.end():match.end() + 8]
         if re.search(r"(?i)(?:moq|起订量|起訂量|起订|起訂|最少|数量|數量)\s*$", head):
             return True
-        if re.match(r"(?i)\s*(?:个|件|只|pcs|pc|pieces|k)(?:\b|(?=[\u4e00-\u9fff])|$)", tail):
+        if re.match(
+            r"(?i)\s*(?:个|個|件|只|隻|条|條|双|雙|套|台|臺|箱|斤|公斤|千克|米|包|盒|打|立方|pcs|pc|pieces|k)"
+            r"(?:\b|(?=[\u4e00-\u9fff])|$)",
+            tail,
+        ):
             return True
     return False
 
@@ -489,6 +503,9 @@ def _ingest_locked(
                 "supplier_id": event.get("supplier_id"),
                 "message_id": message_id_or_blank(provenance.get("message_id")),
                 "references": references_or_blank(provenance.get("references")),
+                "unit_basis": list(provenance.get("unit_basis") or []),
+                "currency_evidence": str(provenance.get("currency_evidence") or ""),
+                "review_reason": str(provenance.get("review_reason") or ""),
             },
         )
         store.append_chain(
@@ -507,6 +524,26 @@ def _ingest_locked(
     snapshot = publish(store, deal_id)
     _maybe_gmail_drafts(store, deal_id, snapshot)
     return {"duplicate": False, "event": event, "snapshot": store.get_snapshot(deal_id)}
+
+
+def import_status() -> dict[str, Any]:
+    """Queue depth for a burst import. The per-message budget starts when the call starts."""
+    with _IMPORT_GUARD:
+        snap = {key: int(value) for key, value in _IMPORT_STATUS.items()}
+    snap["concurrency"] = int(EXTRACTOR_MAX_IN_FLIGHT)
+    return snap
+
+
+def reset_import_status() -> None:
+    with _IMPORT_GUARD:
+        _IMPORT_STATUS["queued"] = 0
+        _IMPORT_STATUS["running"] = 0
+        _IMPORT_STATUS["finished"] = 0
+
+
+def _import_move(field: str, delta: int) -> None:
+    with _IMPORT_GUARD:
+        _IMPORT_STATUS[field] = int(_IMPORT_STATUS.get(field) or 0) + delta
 
 
 def _extractor_pool() -> concurrent.futures.ThreadPoolExecutor:
@@ -654,17 +691,20 @@ def _schedule_extractor(
     high = float(prepared.get("high") or 0.0)
     from src.desk.extract import EXTRACTOR_TIMEOUT_BUDGET_SECONDS, _hop_timeout
 
-    queued = time.monotonic()
     budget = _hop_timeout(
         "TRADEFLOW_EXTRACTOR_TIMEOUT_BUDGET", float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS)
     )
     job = _ExtractorJob()
+    _import_move("queued", 1)
 
     def _run() -> None:
+        _import_move("queued", -1)
+        _import_move("running", 1)
         try:
             from src.desk.shadow import shadow_from_message
 
-            remaining = time_left(budget, queued)
+            # Queue wait is not part of this message's budget. The clock starts here.
+            remaining = time_left(budget, time.monotonic())
             if remaining <= 0:
                 finished = _failed_shadow()
                 finished["error"] = "extractor_unreachable"
@@ -686,6 +726,8 @@ def _schedule_extractor(
         except Exception as exc:
             logger.warning("desk extractor result was not stored: %s", type(exc).__name__)
         finally:
+            _import_move("running", -1)
+            _import_move("finished", 1)
             job.finish()
             with _EXTRACTOR_THREADS_GUARD:
                 if _EXTRACTOR_THREADS.get(event_id) is job:
@@ -696,6 +738,49 @@ def _schedule_extractor(
     _extractor_pool().submit(_run)
 
 
+def _piece_confirmation(
+    amount: float,
+    basis: str,
+    unit_basis: str | None,
+    pieces_per_basis: float | None,
+    *,
+    human_confirmed: bool,
+    raw_text: str,
+    currency_ok: bool = True,
+) -> tuple[float, str, float | None] | None:
+    """Deal-unit price, the confirmed basis, and the pack count the message allows.
+
+    A stated piece basis needs no extra choice. An unknown basis becomes the
+    deal unit only when the human confirm proof is true and the number already
+    carries the deal currency. A stated non-piece basis converts only at the
+    pack count the message states, or at the registered dozen, and only with
+    that same proof.
+    """
+    choice = str(unit_basis or "").strip()
+    if basis == "per_piece":
+        if pieces_per_basis is not None or choice not in {"", "per_piece"}:
+            return None
+        return float(amount), "per_piece", None
+    if basis in {None, "", "unknown"}:
+        if pieces_per_basis is not None or choice not in {"", "per_piece"}:
+            return None
+        if human_confirmed is not True or currency_ok is not True:
+            return None
+        return float(amount), "per_piece", None
+    if choice == "per_piece" or (choice and choice != basis):
+        return None
+    allowed = conversion_pieces(raw_text, basis)
+    if (
+        pieces_per_basis is None
+        or allowed is None
+        or not math.isclose(float(pieces_per_basis), float(allowed))
+    ):
+        return None
+    if human_confirmed is not True:
+        return None
+    return float(amount) / float(allowed), "per_piece", float(allowed)
+
+
 def accept_review(
     store: DeskStore,
     deal_id: str,
@@ -704,6 +789,10 @@ def accept_review(
     *,
     chosen_token: str | None = None,
     reject: bool = False,
+    unit_basis: str | None = None,
+    pieces_per_basis: float | None = None,
+    human_confirmed: bool = False,
+    entered_currency: str | None = None,
 ) -> dict[str, Any]:
     with deal_lock(deal_id):
         event = store.event(deal_id, event_id)
@@ -759,13 +848,61 @@ def accept_review(
             raise DeskRejected("Accept confirms only the amount shown from the message.")
         if _quantity_token(event["raw_text"], chosen_token):
             raise DeskRejected("That amount is a quantity, not a unit price.")
-        price = price_from_token(event["raw_text"], chosen_token, deal_currency=currency)
-        if price is None:
+        from src.desk.parse import confirm_amount, token_currency_ok, token_issues
+
+        reasons = token_issues(event["raw_text"], chosen_token, deal_currency=currency)
+        named_currency = str(entered_currency or "").strip().upper()
+        human_entry = (
+            human_confirmed is True
+            and bool(str(unit_basis or "").strip())
+            and bool(named_currency)
+        )
+        # A detected foreign currency stays foreign. Naming the deal currency
+        # does not rewrite it. An unrecognised term has no shortcut: the person
+        # has to enter both the basis and the currency, and nothing is inferred.
+        # Fee, reference, and currency stay ahead of that term.
+        if any(reason == "not the deal currency" for reason in reasons):
+            raise DeskRejected("not the deal currency", reasons=reasons)
+        if human_entry and named_currency != currency:
+            raise DeskRejected("not the deal currency", reasons=reasons)
+        blocking = []
+        for reason in reasons:
+            if reason == "unit mismatch":
+                continue
+            if human_entry and str(reason).startswith("unrecognised term:"):
+                continue
+            blocking.append(reason)
+        if blocking:
+            raise DeskRejected(blocking[0], reasons=reasons)
+        found = confirm_amount(event["raw_text"], chosen_token, deal_currency=currency)
+        if found is None:
             raise DeskRejected("That amount is not a unit price in the deal currency.")
+        amount, basis = found
+        currency_ok = token_currency_ok(event["raw_text"], chosen_token, deal_currency=currency)
+        if human_entry and named_currency == currency:
+            currency_ok = True
+        resolved = _piece_confirmation(
+            amount,
+            basis,
+            unit_basis,
+            pieces_per_basis,
+            human_confirmed=human_confirmed,
+            raw_text=str(event.get("raw_text") or ""),
+            currency_ok=currency_ok,
+        )
+        if resolved is None:
+            raise DeskRejected("unit mismatch", reasons=reasons or ["unit mismatch"])
+        price, confirmed_basis, pieces = resolved
+        if basis == "per_piece" and "unit mismatch" not in reasons:
+            checked = price_from_token(event["raw_text"], chosen_token, deal_currency=currency)
+            if checked is None:
+                raise DeskRejected("That amount is not a unit price in the deal currency.")
+            price = checked
         parsed["unit_price"] = price
         parsed["currency"] = currency
         if price is None or _outside_sanity(float(price), deal):
-            raise DeskRejected("That amount is outside the plausible unit-price band. It was not accepted.")
+            band = "That amount is outside the plausible unit-price band. It was not accepted."
+            raise DeskRejected(band, reasons=[*reasons, band])
         provenance = dict(event["provenance"])
         provenance["review_accepted_by"] = "human"
         provenance["review_reason"] = None
@@ -773,6 +910,12 @@ def accept_review(
         rule_shadow = provenance.get("span_value")
         if chosen_token:
             provenance["chosen_token"] = chosen_token
+        provenance["stated_basis"] = basis
+        provenance["confirmed_basis"] = confirmed_basis
+        provenance["pieces_per_basis"] = pieces
+        if human_entry:
+            provenance["human_entered_basis"] = str(unit_basis or "").strip()
+            provenance["human_entered_currency"] = named_currency
         provenance["shadow_matched"] = bool(
             provenance.get("shadow_would_accept")
             and rule_shadow is not None
@@ -802,6 +945,12 @@ def accept_review(
                 "value": float(price),
                 "currency": currency,
                 "unit": "per_piece",
+                "stated_basis": basis,
+                "confirmed_basis": confirmed_basis,
+                "pieces_per_basis": pieces,
+                "human_confirmed": human_confirmed is True,
+                "human_entered_basis": str(unit_basis or "").strip() if human_entry else None,
+                "human_entered_currency": named_currency if human_entry else None,
                 "span": _confirm_span(_visible_text(raw_text), str(chosen_token)),
                 "raw_sha256": hashlib.sha256(raw_text.encode("utf-8")).hexdigest(),
                 "freight": parsed.get("freight"),
@@ -1416,13 +1565,42 @@ def _migrated_unconfirmed(opened: dict[str, Any], review_seq: int | None) -> boo
     return int(review_seq) <= marker
 
 
+def _chained_piece_amount(raw_text: str, review: dict[str, Any], currency: str) -> float | None:
+    """Re-read the confirmed deal-unit price from the message and the chain.
+
+    A piece basis re-reads directly. An unknown or non-piece basis re-reads
+    only when the chain recorded the human's basis choice or conversion.
+    """
+    token = str(review.get("token") or "")
+    derived = price_from_token(raw_text, token, deal_currency=currency or None)
+    if derived is not None:
+        return float(derived)
+    if str(review.get("confirmed_basis") or "") != "per_piece":
+        return None
+    found = confirm_amount(raw_text, token, deal_currency=currency or None)
+    if found is None:
+        return None
+    amount, basis = found
+    if str(review.get("stated_basis") or "") != str(basis):
+        return None
+    pieces = review.get("pieces_per_basis")
+    if basis not in {None, "", "unknown", "per_piece"}:
+        allowed = conversion_pieces(raw_text, basis)
+        if pieces is None or allowed is None or not math.isclose(float(pieces), float(allowed)):
+            return None
+        return float(amount) / float(allowed)
+    if pieces is not None:
+        return None
+    return float(amount)
+
+
 def _review_binds_ok(raw_text: str, review: dict[str, Any], ask: float, ingested_hash: str) -> bool:
     """The raw message, the re-derived price, and the chained review are one confirmation."""
     digest = hashlib.sha256((raw_text or "").encode("utf-8")).hexdigest()
     chained_raw = str(review.get("raw_sha256") or "")
     token = str(review.get("token") or "")
     currency = str(review.get("currency") or "")
-    derived = price_from_token(raw_text, token, deal_currency=currency or None)
+    derived = _chained_piece_amount(raw_text, review, currency)
     span = _confirm_span(_visible_text(raw_text), token)
     chained_value = review.get("value")
     tolerance = float(OPT_TOL) * max(1.0, abs(float(chained_value or 0.0)), abs(float(ask)))
@@ -1491,8 +1669,7 @@ def _price_in_message(raw_text: str, review: dict[str, Any], currency: str) -> f
     that token, so the amount now on the line is what a bypassed bind would
     price. The bind itself is what requires the amount to equal the chain.
     """
-    token = str(review.get("token") or "")
-    derived = price_from_token(raw_text, token, deal_currency=currency or None)
+    derived = _chained_piece_amount(raw_text, review, currency)
     if derived is not None:
         return float(derived)
     reading = parse_quote(raw_text, deal_currency=currency or None)
@@ -2105,6 +2282,7 @@ def ingest_mailbox_items(
                         _seen_key(mailbox_key, target),
                         f"uid:{validity}:{uid_key}",
                     )
+    counts["extractor_import"] = import_status()
     return counts
 
 

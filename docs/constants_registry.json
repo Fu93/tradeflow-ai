@@ -878,6 +878,41 @@
       "category": "d",
       "justification": "ISO code for the yuan. A deal stores its own currency. This is the parser's yuan code and the labelled default when the caller omits one."
     },
+    "IMPLICIT_CNY_AUTO_ACCEPT": {
+      "value": 0,
+      "category": "d",
+      "justification": "Labelled policy. A bare number in a Chinese message on a CNY deal is a review candidate. It is accepted only when this value is 1. The default leaves it for a person."
+    },
+    "UNIT_BASIS_FROM_MESSAGE": {
+      "value": 0,
+      "category": "d",
+      "justification": "Labelled policy. A pack count written beside a bundle price converts into the deal unit only when this value is 1. The default does not divide it."
+    },
+    "FEN_IN_YUAN": {
+      "value": 0.01,
+      "category": "c",
+      "justification": "One fen is one hundredth of a yuan. A count written in 分 converts to yuan by this factor."
+    },
+    "JIAO_IN_YUAN": {
+      "value": 0.1,
+      "category": "c",
+      "justification": "One jiao, also called mao, is one tenth of a yuan. A count written in 角 or 毛 converts to yuan by this factor."
+    },
+    "LI_IN_YUAN": {
+      "value": 0.001,
+      "category": "c",
+      "justification": "One li is one thousandth of a yuan. A count written in 厘 converts to yuan by this factor."
+    },
+    "DOZEN_PIECES": {
+      "value": 12,
+      "category": "c",
+      "justification": "A dozen is twelve pieces. A price per 打 converts by this count when the message states no other pack count."
+    },
+    "EXTRACTOR_SUPER_DIRECT_CHARS": {
+      "value": 24000,
+      "category": "d",
+      "justification": "Character length above which the extractor skips the Ultra hop and calls Super. A longer supplier message was timing out on Ultra."
+    },
     "DEAL_CURRENCIES": {
       "value": [
         "CNY",

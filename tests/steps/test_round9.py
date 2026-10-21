@@ -256,9 +256,11 @@ def test_bare_primary_beside_a_conversion_stays_unconfirmed():
     assert yuan_reading["parsed"]["unit_price"] is None
     assert yuan_reading["provenance"]["candidates"] == ["33"]
     assert price_from_token(yuan, "4.6", deal_currency="CNY") is None
-    assert price_from_token(yuan, "33", deal_currency="CNY") == pytest.approx(33)
+    assert price_from_token(yuan, "33", deal_currency="CNY") is None
     labelled = "Unit price 33元（约4.6美元）."
     kept = parse_quote(labelled)
-    assert kept["status"] == "accepted"
-    assert kept["parsed"]["unit_price"] == pytest.approx(33)
+    assert kept["status"] != "accepted"
+    assert kept["parsed"]["unit_price"] is None
+    assert "33" in kept["provenance"]["candidates"]
+    assert price_from_token(labelled, "33", deal_currency="CNY") is None
     assert price_from_token(labelled, "4.6", deal_currency="CNY") is None

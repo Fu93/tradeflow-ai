@@ -290,6 +290,10 @@ async function handleOfferSubmission(tabId, payload) {
       supplier_id: event.supplier_id || supplierId,
       candidates: provenance.candidates || [],
       suggested_token: provenance.suggested_token || null,
+      highlighted_token: provenance.highlighted_token || null,
+      basis_prompts: provenance.basis_prompts || {},
+      review_reason: provenance.review_reason || "",
+      tiers: provenance.tiers || [],
       raw_text: context,
       session: {
         spec: {
@@ -327,6 +331,14 @@ async function confirmDeskPrice(tabId, payload) {
           action: "accept",
           supplier_id: supplierId,
           chosen_token: token,
+          ...(payload && payload.humanConfirmed === true
+            ? {
+                human_confirmed: true,
+                ...(payload.unitBasis ? { unit_basis: payload.unitBasis } : {}),
+                ...(payload.enteredCurrency ? { entered_currency: payload.enteredCurrency } : {}),
+                ...(payload.piecesPerBasis != null ? { pieces_per_basis: payload.piecesPerBasis } : {}),
+              }
+            : {}),
         }),
       }
     );

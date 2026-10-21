@@ -324,7 +324,10 @@
       this.el = document.createElement("div");
       this.el.className = "tradeflow-overlay";
       this.el.setAttribute("data-tradeflow", "overlay");
-      // opened shadow root：隔離頁面 CSS（等同舊版 :host { all: initial } 的效果）
+      // The root stays open. tests/test_extension_e2e.py reads shadowRoot from the
+      // page, and a closed root is null there, so the confirm buttons would be
+      // invisible to that test. A synthetic click is ignored because the
+      // confirm and basis buttons require event.isTrusted.
       this.shadowRoot = this.el.attachShadow({ mode: "open" });
       this._state = {
         active: true,
@@ -679,11 +682,13 @@
       deck.innerHTML = "";
     }
 
-    renderConfirm(candidates, onPick) {
+    renderConfirm(candidates, onPick, prompts, highlighted, reviewReason) {
       const deck = this.shadowRoot.getElementById("tf-deck");
       if (!deck) return;
       const doc = deck.ownerDocument;
       const tokens = Array.isArray(candidates) ? candidates : [];
+      const basisPrompts = prompts || {};
+      const manualTerm = String(reviewReason || "").indexOf("unrecognised term:") === 0;
       deck.replaceChildren();
       deck.style.display = "block";
 
@@ -706,9 +711,71 @@
           const btn = doc.createElement("button");
           btn.type = "button";
           btn.className = "tf-btn tf-confirm-btn";
-          btn.textContent = String(token);
-          btn.addEventListener("click", () => {
-            if (token && onPick) onPick(String(token));
+          const label = String(token);
+          btn.textContent = label === highlighted ? label + " (matches quantity)" : label;
+          btn.addEventListener("click", (event) => {
+            if (!event.isTrusted || !token || !onPick) return;
+            const prompt = basisPrompts[String(token)];
+            if (!prompt && !manualTerm) {
+              onPick(String(token));
+              return;
+            }
+            if (manualTerm && !prompt) {
+              let basisSelect = row.querySelector("[data-manual-basis]");
+              let currencySelect = row.querySelector("[data-manual-currency]");
+              let manualBtn = row.querySelector("[data-manual-confirm]");
+              if (!basisSelect) {
+                basisSelect = doc.createElement("select");
+                basisSelect.dataset.manualBasis = "1";
+                const basisBlank = doc.createElement("option");
+                basisBlank.value = "";
+                basisBlank.textContent = "Choose basis";
+                basisSelect.appendChild(basisBlank);
+                const piece = doc.createElement("option");
+                piece.value = "per_piece";
+                piece.textContent = "per piece";
+                basisSelect.appendChild(piece);
+                currencySelect = doc.createElement("select");
+                currencySelect.dataset.manualCurrency = "1";
+                const currencyBlank = doc.createElement("option");
+                currencyBlank.value = "";
+                currencyBlank.textContent = "Choose currency";
+                currencySelect.appendChild(currencyBlank);
+                ["CNY", "USD", "EUR"].forEach((code) => {
+                  const option = doc.createElement("option");
+                  option.value = code;
+                  option.textContent = code;
+                  currencySelect.appendChild(option);
+                });
+                manualBtn = doc.createElement("button");
+                manualBtn.type = "button";
+                manualBtn.dataset.manualConfirm = "1";
+                manualBtn.className = "tf-btn tf-confirm-btn";
+                manualBtn.textContent = "Confirm entered basis and currency";
+                row.append(basisSelect, currencySelect, manualBtn);
+              }
+              manualBtn.onclick = (manualEvent) => {
+                if (!manualEvent.isTrusted) return;
+                const enteredBasis = basisSelect.value;
+                const enteredCurrency = currencySelect.value;
+                if (!enteredBasis || !enteredCurrency) return;
+                onPick(String(token), { kind: enteredBasis, entered_currency: enteredCurrency });
+              };
+              return;
+            }
+            let basisBtn = row.querySelector("[data-basis-choice]");
+            if (!basisBtn) {
+              basisBtn = doc.createElement("button");
+              basisBtn.type = "button";
+              basisBtn.dataset.basisChoice = "1";
+              basisBtn.className = "tf-btn tf-confirm-btn";
+              row.appendChild(basisBtn);
+            }
+            basisBtn.textContent = prompt.kind === "per_piece" ? "per piece (deal unit)" : (prompt.label || "");
+            basisBtn.onclick = (basisEvent) => {
+              if (!basisEvent.isTrusted) return;
+              onPick(String(token), prompt);
+            };
           });
           row.appendChild(btn);
         });
@@ -1201,14 +1268,23 @@
           "#f59e0b",
           "Pick the supplier unit price from the message. Nothing is countered until you confirm."
         );
-        overlayEl.renderConfirm(data.candidates || [], (token) => {
-          portClient.send("CONFIRM_DESK_PRICE", {
+        overlayEl.renderConfirm(data.candidates || [], (token, prompt) => {
+          const payload = {
             dealId: data.deal_id,
             eventId: data.event_id,
             supplierId: data.supplier_id,
             token: token,
-          });
-        });
+          };
+          if (prompt) {
+            payload.humanConfirmed = true;
+            if (prompt.kind === "per_piece") payload.unitBasis = "per_piece";
+            if (prompt.entered_currency) payload.enteredCurrency = prompt.entered_currency;
+            if (prompt.kind === "convert" && prompt.pieces_per_basis != null) {
+              payload.piecesPerBasis = prompt.pieces_per_basis;
+            }
+          }
+          portClient.send("CONFIRM_DESK_PRICE", payload);
+        }, data.basis_prompts || {}, data.highlighted_token || "", data.review_reason || "");
         return;
       }
 

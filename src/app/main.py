@@ -431,6 +431,9 @@ def simulated_mandates():
 def health():
     from src.desk.audit_chain import chain_key_configured
 
+    from src.desk.extract import nvidia_hop_status
+    from src.desk.service import import_status
+
     language = llm_status()
     desk_line = "desk sends enabled"
     if not chain_key_configured():
@@ -442,6 +445,8 @@ def health():
         "llm": language,
         "offline_demo": language["offline_demo"],
         "desk": desk_line,
+        "nvidia": nvidia_hop_status(),
+        "extractor_import": import_status(),
     }
 
 

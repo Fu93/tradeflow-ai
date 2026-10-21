@@ -103,7 +103,8 @@ def test_numeric_extractor_field_is_discarded_and_span_must_be_verbatim():
     )
     assert payload["numeric_field_discarded"] is True
     assert "price" not in payload["mentions"][0]
-    message = "单价 15.60 元"
+    message = "单价 15.60 元/件"
+    payload["mentions"][0]["evidence_span"] = "15.60 元/件"
     decision = evaluate_shadow(
         message,
         {"status": "accepted", "parsed": {"unit_price": 15.60}},
@@ -113,6 +114,16 @@ def test_numeric_extractor_field_is_discarded_and_span_must_be_verbatim():
         extractor_configured=True,
     )
     assert decision["would_accept"] is True
+    bare = dict(payload["mentions"][0], evidence_span="15.60")
+    bare_decision = evaluate_shadow(
+        message,
+        {"status": "accepted", "parsed": {"unit_price": 15.60}},
+        low=1.0,
+        high=100.0,
+        mentions=[bare],
+        extractor_configured=True,
+    )
+    assert bare_decision["would_accept"] is False
     assert decision["applied"] is False
     forged = dict(payload["mentions"][0])
     forged["evidence_span"] = "99.00"

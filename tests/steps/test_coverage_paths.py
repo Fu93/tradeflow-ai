@@ -263,7 +263,7 @@ def test_shadow_rejects_currency_unit_and_amount_mismatches():
         "is_question": False,
     }
     assert _mention_agrees(mention, message, 15.60, 1, 100, "CNY") == 15.60
-    foreign = dict(mention, currency="USD", evidence_span="15.60 USD")
+    foreign = dict(mention, currency="USD", evidence_span="15.60 USD each")
     usd = evaluate_shadow(
         "price 15.60 USD each",
         {"status": "accepted", "parsed": {"unit_price": 15.60}},
@@ -394,7 +394,7 @@ def test_send_guard_and_smtp_outcomes(tmp_path, monkeypatch):
     deal = snapshot["deal"]
     supplier = snapshot["suppliers"][0]["id"]
     opened = ingest_message(store, deal["id"], source="paste", raw_text="单价 15.60 元", supplier_id=supplier)
-    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(store, deal["id"], opened["event"]["id"], supplier, chosen_token="15.60", human_confirmed=True)
     from src.engine.reserve import ReserveState
 
     draft = next(item for item in store.drafts(deal["id"]) if item["status"] == "draft")
@@ -570,7 +570,7 @@ def test_send_guard_and_smtp_outcomes(tmp_path, monkeypatch):
     opened_other = ingest_message(
         store, deal["id"], source="paste", raw_text="单价 12.40 元", supplier_id=other,
     )
-    accept_review(store, deal["id"], opened_other["event"]["id"], other, chosen_token="12.40")
+    accept_review(store, deal["id"], opened_other["event"]["id"], other, chosen_token="12.40", human_confirmed=True)
     other_draft = next(
         item for item in store.drafts(deal["id"])
         if item["supplier_id"] == other and item["status"] == "draft"

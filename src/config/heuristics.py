@@ -592,6 +592,37 @@ SMALL_GAP_KNOT = 0.10
 # and the labelled default when a caller omits the deal currency.
 DEAL_CURRENCY = "CNY"
 
+# Rationale: labelled policy for a bare number in a Chinese supplier message
+# on a CNY deal. The number is a review candidate either way. It is accepted
+# only when this value is 1. The default 0 leaves that confirm to a person.
+IMPLICIT_CNY_AUTO_ACCEPT = 0
+
+# Rationale: labelled policy for a pack count the supplier wrote beside a
+# bundle price. That count converts into the deal unit only when this value
+# is 1. The default 0 records the bundle and does not divide it.
+UNIT_BASIS_FROM_MESSAGE = 0
+
+# Rationale: one fen is one hundredth of a yuan. A supplier who writes 分
+# is naming that subunit. The price in yuan is the count times this factor.
+FEN_IN_YUAN = 0.01
+
+# Rationale: one jiao, also called 毛, is one tenth of a yuan. A supplier
+# who writes 角 or 毛 is naming that subunit, and the yuan price is the count
+# times this factor.
+JIAO_IN_YUAN = 0.1
+
+# Rationale: one li is one thousandth of a yuan. A supplier who writes 厘
+# is naming that subunit. The price in yuan is the count times this factor.
+LI_IN_YUAN = 0.001
+
+# Rationale: a dozen is twelve pieces. A price stated per 打 converts to the
+# deal unit by this count when the message does not state a different pack count.
+DOZEN_PIECES = 12
+
+# Rationale: supplier-message length, in characters, above which the extractor
+# skips the Ultra hop and calls Super. A longer message was timing out on Ultra.
+EXTRACTOR_SUPER_DIRECT_CHARS = 24000
+
 # Rationale: currencies a deal may store. The decision reads the deal row.
 # It does not pick one of these itself.
 DEAL_CURRENCIES = ["CNY", "USD", "EUR"]

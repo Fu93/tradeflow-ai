@@ -409,9 +409,25 @@
         ? provenance.candidates
         : (provenance.tokens || []);
       const suggested = provenance.suggested_token || "";
+      const highlighted = provenance.highlighted_token || "";
+      const prompts = provenance.basis_prompts || {};
       const currency = provenance.currency || "CNY";
+      const manualTerm = String(reason).indexOf("unrecognised term:") === 0;
+      let manualBasis = "";
+      let manualCurrency = "";
       let chosen = saved.token || suggested || "";
       if (chosen && tokens.indexOf(chosen) < 0) chosen = "";
+      let basisArmed = false;
+      let basisPayload = null;
+      function promptFor(token) {
+        return prompts[token] || null;
+      }
+      function basisReady(token) {
+        if (manualTerm) return Boolean(manualBasis) && Boolean(manualCurrency);
+        const prompt = promptFor(token);
+        if (!prompt) return true;
+        return basisArmed && basisPayload && basisPayload.token === token;
+      }
       if (chosen && !saved.token) {
         reviewChoice.set(item.id, { supplierId: item.supplier_id || saved.supplierId || "", token: chosen });
       }
@@ -447,13 +463,18 @@
         tokens.forEach((token) => {
           const pick = document.createElement("button");
           pick.type = "button";
-          pick.textContent = token;
+          pick.textContent = token === highlighted ? token + " (matches quantity)" : token;
           if (token === chosen) pick.disabled = true;
           pick.addEventListener("click", () => {
+            if (chosen !== token) {
+              basisArmed = false;
+              basisPayload = null;
+            }
             chosen = token;
             reviewChoice.set(item.id, { supplierId: select.value, token: token });
             showConfirm(chosen);
-            button.disabled = !chosen;
+            showBasis(chosen);
+            button.disabled = !chosen || !basisReady(chosen);
             Array.prototype.forEach.call(picks.children, (node) => {
               node.disabled = node === pick;
             });
@@ -484,10 +505,67 @@
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = "Accept";
-      button.disabled = !chosen;
+      function showBasis(token) {
+        const existing = actions.querySelector("[data-basis-choice]");
+        if (existing) existing.remove();
+        const prompt = promptFor(token);
+        if (!prompt) return;
+        const choice = document.createElement("button");
+        choice.type = "button";
+        choice.dataset.basisChoice = "1";
+        choice.textContent = prompt.kind === "per_piece" ? "per piece (deal unit)" : (prompt.label || "");
+        choice.addEventListener("click", () => {
+          basisArmed = true;
+          basisPayload = {
+            token: token,
+            kind: prompt.kind,
+            pieces_per_basis: prompt.pieces_per_basis,
+          };
+          choice.disabled = true;
+          button.disabled = !chosen || !basisReady(chosen);
+        });
+        actions.insertBefore(choice, button);
+      }
+      function blankOption(label) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = label;
+        return option;
+      }
+      if (manualTerm) {
+        const basisSelect = document.createElement("select");
+        basisSelect.appendChild(blankOption("Choose basis"));
+        const piece = document.createElement("option");
+        piece.value = "per_piece";
+        piece.textContent = "per piece";
+        basisSelect.appendChild(piece);
+        basisSelect.addEventListener("change", () => {
+          manualBasis = basisSelect.value;
+          basisPayload = null;
+          button.disabled = !chosen || !basisReady(chosen);
+        });
+        const currencySelect = document.createElement("select");
+        currencySelect.appendChild(blankOption("Choose currency"));
+        ["CNY", "USD", "EUR"].forEach((code) => {
+          const option = document.createElement("option");
+          option.value = code;
+          option.textContent = code;
+          currencySelect.appendChild(option);
+        });
+        currencySelect.addEventListener("change", () => {
+          manualCurrency = currencySelect.value;
+          basisPayload = null;
+          button.disabled = !chosen || !basisReady(chosen);
+        });
+        actions.appendChild(basisSelect);
+        actions.appendChild(currencySelect);
+      }
       button.addEventListener("click", () => {
-        if (!chosen || !note.dataset.confirmValue) return;
-        accept(item.id, select.value, note.dataset.confirmValue, false, block);
+        if (!chosen || !note.dataset.confirmValue || !basisReady(chosen)) return;
+        const posted = manualTerm
+          ? { token: chosen, kind: manualBasis, entered_currency: manualCurrency }
+          : basisPayload;
+        accept(item.id, select.value, note.dataset.confirmValue, false, block, posted);
       });
       const reject = document.createElement("button");
       reject.type = "button";
@@ -496,15 +574,25 @@
       actions.appendChild(select);
       actions.appendChild(button);
       actions.appendChild(reject);
+      button.disabled = !chosen || !basisReady(chosen);
+      showBasis(chosen);
       block.appendChild(actions);
       root.appendChild(block);
     });
   }
 
-  async function accept(eventId, supplierId, chosenToken, reject, block) {
+  async function accept(eventId, supplierId, chosenToken, reject, block, basis) {
     const payload = { action: reject ? "reject" : "accept" };
     if (!reject) payload.supplier_id = supplierId || null;
     if (chosenToken) payload.chosen_token = chosenToken;
+    if (!reject && basis && basis.token === chosenToken) {
+      payload.human_confirmed = true;
+      if (basis.kind === "per_piece") payload.unit_basis = "per_piece";
+      if (basis.entered_currency) payload.entered_currency = basis.entered_currency;
+      if (basis.kind === "convert" && basis.pieces_per_basis != null) {
+        payload.pieces_per_basis = basis.pieces_per_basis;
+      }
+    }
     try {
       const snapshot = await request("/api/v1/desk/deals/" + dealId + "/review/" + eventId, {
         method: "POST",

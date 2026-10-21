@@ -31,7 +31,7 @@ def test_draft_body_quotes_the_issued_counter(tmp_path, monkeypatch):
     deal_id = snapshot["deal"]["id"]
     supplier = snapshot["suppliers"][0]["id"]
     opened = ingest_message(store, deal_id, source="paste", raw_text="单价 15.60 元", supplier_id=supplier)
-    accept_review(store, deal_id, opened["event"]["id"], supplier, chosen_token="15.60")
+    accept_review(store, deal_id, opened["event"]["id"], supplier, chosen_token="15.60", human_confirmed=True)
     draft = next(item for item in store.drafts(deal_id) if item["status"] == "draft")
     card = next(item for item in store.get_snapshot(deal_id)["suppliers"] if item["id"] == supplier)
     found = re.findall(r"\d+\.\d{2}", draft["body"])

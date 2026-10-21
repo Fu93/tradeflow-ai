@@ -9,7 +9,9 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
+import logging
 import os
+import re
 import socket
 import threading
 import time
@@ -33,12 +35,20 @@ from src.config.heuristics import (
     EXTRACTOR_NVIDIA_MODEL,
     EXTRACTOR_OUTPUT_TOKEN_CAP,
     EXTRACTOR_REASONING_BUDGET,
+    EXTRACTOR_SUPER_DIRECT_CHARS,
     EXTRACTOR_TIMEOUT_BUDGET_SECONDS,
     EXTRACTOR_TIMEOUT_NVIDIA_SECONDS,
     EXTRACTOR_TIMEOUT_SUPER_SECONDS,
     EXTRACTOR_TIMEOUT_ULTRA_SECONDS,
     FIELD_MAX_CHARS,
+    HTTP_NOT_FOUND,
 )
+
+logger = logging.getLogger("tradeflow.desk.extract")
+# NVIDIA's 404 names the function id between "Function" and this phrase.
+_NVIDIA_MISSING = re.compile(r"not found for account", re.IGNORECASE)
+_nvidia_disabled = False
+_nvidia_guard = threading.Lock()
 
 CLASSES = (
     "own_unit_offer",
@@ -325,11 +335,43 @@ def _http_status(code: int) -> str:
     return "http_" + str(code)
 
 
-def _exception_status(exc: BaseException) -> tuple[str, str]:
+def nvidia_hop_status() -> str:
+    """Health flag. A missing NVIDIA function disables that hop until the process restarts."""
+    with _nvidia_guard:
+        if _nvidia_disabled:
+            return "nvidia hop disabled: function not found for account"
+    return "nvidia hop ready"
+
+
+def reset_nvidia_hop() -> None:
+    global _nvidia_disabled
+    with _nvidia_guard:
+        _nvidia_disabled = False
+
+
+def _nvidia_blocked() -> bool:
+    with _nvidia_guard:
+        return bool(_nvidia_disabled)
+
+
+def _disable_nvidia() -> None:
+    global _nvidia_disabled
+    with _nvidia_guard:
+        already = _nvidia_disabled
+        _nvidia_disabled = True
+    if not already:
+        logger.warning("nvidia hop disabled: function not found for account")
+
+
+def _exception_status(exc: BaseException, *, nvidia: bool = False) -> tuple[str, str]:
     if isinstance(exc, _UnreadableBody):
         return "malformed", exc.digest
     if isinstance(exc, urllib.error.HTTPError):
-        return _http_status(int(exc.code)), _sha(_read_http(exc))
+        raw = _read_http(exc)
+        missing = _NVIDIA_MISSING.search(raw.decode("utf-8", errors="replace")) is not None
+        if nvidia and int(exc.code) == int(HTTP_NOT_FOUND) and missing:
+            return "config", _sha(raw)
+        return _http_status(int(exc.code)), _sha(raw)
     if isinstance(exc, TimeoutError):
         return "timeout", ""
     if isinstance(exc, urllib.error.URLError):
@@ -356,6 +398,8 @@ def _status_error(status: str) -> str:
     mapped = {value: key for key, value in _STATUS_FROM_ERROR.items()}
     if status in mapped:
         return mapped[status]
+    if status == "config":
+        return "extractor_nvidia_unconfigured"
     if status in {"timeout", "unreachable", "budget"} or status.startswith("http_"):
         return "extractor_unreachable"
     return "extractor_failed"
@@ -558,7 +602,9 @@ def _execute_hop(
             decoded = _post(str(hop["base"]), body, timeout, tuple(hop["keys"]))
     except Exception as exc:
         latency = time.perf_counter() - started
-        status, digest = _exception_status(exc)
+        status, digest = _exception_status(exc, nvidia=str(hop.get("provider")) == "nvidia")
+        if status == "config":
+            _disable_nvidia()
         result = _empty(_status_error(status))
         result["model"] = hop["model"]
         result["response_sha256"] = digest
@@ -603,7 +649,11 @@ def extract_mentions(
     last = _empty("extractor_failed")
     provider_failed = False
     stopped = False
-    for hop in _nebius_hops():
+    hops = _nebius_hops()
+    if len(str(message or "")) > int(EXTRACTOR_SUPER_DIRECT_CHARS) and hops:
+        attempts.append(_attempt(hops[0], "skipped_length", 0.0, ""))
+        hops = hops[1:]
+    for hop in hops:
         remaining = deadline - time.perf_counter()
         if remaining <= 0:
             last = _stop_for_budget(hop, attempts)
@@ -620,6 +670,12 @@ def extract_mentions(
             provider_failed = True
     if not stopped and provider_failed and _env("NVIDIA_API_KEY"):
         hop = _nvidia_hop()
+        if _nvidia_blocked():
+            attempts.append(_attempt(hop, "config", 0.0, ""))
+            last = _empty("extractor_nvidia_unconfigured")
+            last["model"] = hop["model"]
+            last["attempts"] = list(attempts)
+            return last
         remaining = deadline - time.perf_counter()
         if remaining <= 0:
             last = _stop_for_budget(hop, attempts)

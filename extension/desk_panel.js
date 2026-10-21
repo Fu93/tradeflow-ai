@@ -3,6 +3,7 @@
 
   let confirmPage = "";
   let askedPage = "";
+  let holdStatus = false;
 
   function headers() {
     const input = document.getElementById("desk-api-key");
@@ -147,18 +148,18 @@
     try {
       const response = await fetch(apiBase() + "/api/v1/desk/deals/" + dealId, { headers: headers() });
       if (response.status === 401) {
-        setStatus("The API key was rejected. Enter the key this server expects.");
+        if (!holdStatus) setStatus("The API key was rejected. Enter the key this server expects.");
         return;
       }
       if (!response.ok) {
-        setStatus("Desk request failed.");
+        if (!holdStatus) setStatus("Desk request failed.");
         return;
       }
       render(await response.json());
       window.tfDeskLinked = true;
-      setStatus("Desk linked");
+      if (!holdStatus) setStatus("Desk linked");
     } catch (err) {
-      setStatus("Desk is offline.");
+      if (!holdStatus) setStatus("Desk is offline.");
     }
   }
 
@@ -176,6 +177,7 @@
       refresh();
     });
     input.addEventListener("change", () => {
+      holdStatus = false;
       storageSet({ tfDeskDeal: input.value.trim() });
       refresh();
     });
@@ -191,6 +193,7 @@
     });
     button.addEventListener("click", () => {
       const remembered = { tfDeskDeal: input.value.trim(), tfApiKey: keyInput ? keyInput.value.trim() : "" };
+      holdStatus = true;
       const send = () => {
       if (!globalThis.chrome || !chrome.runtime || !chrome.runtime.sendMessage) {
         setStatus("Import runs inside the extension.");
