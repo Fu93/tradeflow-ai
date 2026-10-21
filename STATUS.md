@@ -70,6 +70,10 @@
 
 ## Next steps
 
+- **The remaining gate on "actually usable" is a live pilot**:
+  [docs/PILOT_RUNBOOK.md](docs/PILOT_RUNBOOK.md) — 3 real quotes, one
+  supplier, 2 weeks max, pre-committed success criteria. Until it runs,
+  every capability claim is configuration- or simulator-level.
 - This repository is in **maintenance / consolidation mode**: fixes and
   documentation only, no new modules, until a new competition target
   exists.
