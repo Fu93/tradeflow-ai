@@ -24,6 +24,7 @@ from src.config.heuristics import (
     UNIT_SANITY_MULTIPLE,
 )
 from src.desk import mailbox, recompute
+from src.desk.approval_signing import required_approval_pubkey, signed_payload, verify_signed_approval
 from src.desk.audit_chain import approval_recorded, chain_key_configured, export_history, reanchor_refusal
 from src.desk.extract import time_left
 from src.desk.input_checks import message_id_or_blank, references_or_blank, require_address, require_plain
@@ -1837,6 +1838,7 @@ async def send_draft(
     *,
     human_approved: bool,
     body_sha256: str,
+    approval: dict[str, Any] | None = None,
     sender: Sender | None = None,
 ) -> dict[str, Any]:
     if human_approved is not True:
@@ -1888,15 +1890,33 @@ async def send_draft(
             transmission_sha256=envelope["digest"],
         ):
             raise SendRefused("This draft was already approved.")
+        # Human-level accountability gate. The signed payload is exactly what
+        # the approving person reviewed: the deal, the draft, and the body
+        # digest. The transmission digest is server-computed and recorded, but
+        # the human never saw it, so it is not signed. When
+        # TRADEFLOW_APPROVAL_PUBKEY is set, unsigned sends are refused.
+        requires_signature = required_approval_pubkey() is not None
+        if requires_signature and approval is None:
+            raise SendRefused("This desk requires a signed approval for sends.")
+        if approval is not None:
+            if not verify_signed_approval(approval, signed_payload(draft["deal_id"], draft_id, digest)):
+                raise SendRefused("The approval signature does not verify.")
+        chain_payload: dict[str, Any] = {
+            "draft_id": draft_id,
+            "decision_id": draft.get("decision_id"),
+            "body_sha256": digest,
+            "transmission_sha256": envelope["digest"],
+        }
+        if approval is not None:
+            chain_payload["approval"] = {
+                "alg": approval.get("alg"),
+                "pubkey": approval.get("pubkey"),
+                "sig": approval.get("sig"),
+            }
         approved = store.append_chain(
             draft["deal_id"],
             "send_approved",
-            {
-                "draft_id": draft_id,
-                "decision_id": draft.get("decision_id"),
-                "body_sha256": digest,
-                "transmission_sha256": envelope["digest"],
-            },
+            chain_payload,
         )
         if approved.get("anchor_ok") is False:
             publish(store, draft["deal_id"])

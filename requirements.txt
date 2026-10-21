@@ -40,3 +40,10 @@ tenacity>=8.2
 # Install cupy-rocm or a ROCm torch build to enable use_gpu=True in src/engine/solver.py.
 # If unavailable, the engine automatically falls back to the NumPy CPU path.
 # cupy-rocm  OR  torch (ROCm build)
+
+# Ed25519 human approval signatures for the desk send gate
+# (src/desk/approval_signing.py). Runtime dependency: the desk service
+# verifies signatures in the send path. Introduced 2026-10-21 as the
+# accountability upgrade: the server can hold every HMAC key and still
+# cannot forge one human approval.
+pynacl>=1.5

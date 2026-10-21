@@ -879,7 +879,11 @@
       "justification": "ISO code for the yuan. A deal stores its own currency. This is the parser's yuan code and the labelled default when the caller omits one."
     },
     "DEAL_CURRENCIES": {
-      "value": ["CNY", "USD", "EUR"],
+      "value": [
+        "CNY",
+        "USD",
+        "EUR"
+      ],
       "category": "d",
       "justification": "Currencies a deal may store. The decision reads the deal row and does not choose among these itself."
     },
@@ -1202,8 +1206,8 @@
     {
       "file": "src/legacy/logrolling.py",
       "value": 0.0001,
-      "context": "premise = f\"\u82e5\u55ae\u50f9\u7dad\u6301\u5728\u8cb4\u5ee0\u5831\u50f9 \u00a5{offer.price:.2f}\" if abs(p - offer.price) < 1e-4 else f\"\u82e5\u55ae\u50f9\u6309\u6279\u91cf\u6298\u8b93\u843d\u5b9a\u5728 \u00a5{p:.2f}\"",
-      "justification": "Use of 0.0001 on this line of src/engine/logrolling.py: premise = f\"\u82e5\u55ae\u50f9\u7dad\u6301\u5728\u8cb4\u5ee0\u5831\u50f9 \u00a5{offer.price:.2f}\" if abs(p - offer.price) < 1e-4 else f\"\u82e5\u55ae\u50f9\u6309\u6279\u91cf\u6298\u8b93\u843d\u5b9a\u5728 \u00a5{p:.2f}\". A different line that repeats the digits is not covered."
+      "context": "premise = f\"若單價維持在貴廠報價 ¥{offer.price:.2f}\" if abs(p - offer.price) < 1e-4 else f\"若單價按批量折讓落定在 ¥{p:.2f}\"",
+      "justification": "Use of 0.0001 on this line of src/engine/logrolling.py: premise = f\"若單價維持在貴廠報價 ¥{offer.price:.2f}\" if abs(p - offer.price) < 1e-4 else f\"若單價按批量折讓落定在 ¥{p:.2f}\". A different line that repeats the digits is not covered."
     },
     {
       "file": "src/legacy/logrolling.py",
@@ -1244,8 +1248,8 @@
     {
       "file": "src/legacy/logrolling.py",
       "value": 100,
-      "context": "f\"\u5b9a\u91d1 {best_proposal.proposed_deposit_pct*100:.0f}% (\u539f {offer.deposit_pct*100:.0f}%)\uff0c\"",
-      "justification": "Use of 100 on this line of src/engine/logrolling.py: f\"\u5b9a\u91d1 {best_proposal.proposed_deposit_pct*100:.0f}% (\u539f {offer.deposit_pct*100:.0f}%)\uff0c\". A different line that repeats the digits is not covered."
+      "context": "f\"定金 {best_proposal.proposed_deposit_pct*100:.0f}% (原 {offer.deposit_pct*100:.0f}%)，\"",
+      "justification": "Use of 100 on this line of src/engine/logrolling.py: f\"定金 {best_proposal.proposed_deposit_pct*100:.0f}% (原 {offer.deposit_pct*100:.0f}%)，\". A different line that repeats the digits is not covered."
     },
     {
       "file": "src/legacy/logrolling.py",
@@ -1262,8 +1266,8 @@
     {
       "file": "src/legacy/logrolling.py",
       "value": 100,
-      "context": "f\"\u5b9a\u91d1 {d*100:.0f}% \u63db\u53d6\u4ea4\u671f\u58d3\u7e2e\u81f3 {l} \u5929 (\u7bc0\u7701 {mandate.baseline_lead_days - l} \u5929)\uff0c\"",
-      "justification": "Use of 100 on this line of src/engine/logrolling.py: f\"\u5b9a\u91d1 {d*100:.0f}% \u63db\u53d6\u4ea4\u671f\u58d3\u7e2e\u81f3 {l} \u5929 (\u7bc0\u7701 {mandate.baseline_lead_days - l} \u5929)\uff0c\". A different line that repeats the digits is not covered."
+      "context": "f\"定金 {d*100:.0f}% 換取交期壓縮至 {l} 天 (節省 {mandate.baseline_lead_days - l} 天)，\"",
+      "justification": "Use of 100 on this line of src/engine/logrolling.py: f\"定金 {d*100:.0f}% 換取交期壓縮至 {l} 天 (節省 {mandate.baseline_lead_days - l} 天)，\". A different line that repeats the digits is not covered."
     },
     {
       "file": "src/legacy/logrolling.py",
@@ -1280,8 +1284,8 @@
     {
       "file": "src/legacy/logrolling.py",
       "value": 100,
-      "context": "f\"AST: \u8a71\u8853\u627f\u8afe\u5b9a\u91d1 {pct_str}% \u8d85\u51fa\u516c\u53f8\u6700\u9ad8\u6388\u6b0a {mandate.max_allowed_deposit_pct*100:.1f}%\"",
-      "justification": "Use of 100 on this line of src/engine/logrolling.py: f\"AST: \u8a71\u8853\u627f\u8afe\u5b9a\u91d1 {pct_str}% \u8d85\u51fa\u516c\u53f8\u6700\u9ad8\u6388\u6b0a {mandate.max_allowed_deposit_pct*100:.1f}%\". A different line that repeats the digits is not covered."
+      "context": "f\"AST: 話術承諾定金 {pct_str}% 超出公司最高授權 {mandate.max_allowed_deposit_pct*100:.1f}%\"",
+      "justification": "Use of 100 on this line of src/engine/logrolling.py: f\"AST: 話術承諾定金 {pct_str}% 超出公司最高授權 {mandate.max_allowed_deposit_pct*100:.1f}%\". A different line that repeats the digits is not covered."
     },
     {
       "file": "src/engine/tco.py",
@@ -2540,14 +2544,14 @@
     {
       "file": "src/engine/safe_regex.py",
       "value": 8,
-      "context": "opts.max_mem = 8 << 20  # 8 MB DFA \u72c0\u614b\u7de9\u5b58",
-      "justification": "Use of 8 on this line of src/engine/safe_regex.py: opts.max_mem = 8 << 20  # 8 MB DFA \u72c0\u614b\u7de9\u5b58. A different line that repeats the digits is not covered."
+      "context": "opts.max_mem = 8 << 20  # 8 MB DFA 狀態緩存",
+      "justification": "Use of 8 on this line of src/engine/safe_regex.py: opts.max_mem = 8 << 20  # 8 MB DFA 狀態緩存. A different line that repeats the digits is not covered."
     },
     {
       "file": "src/engine/safe_regex.py",
       "value": 20,
-      "context": "opts.max_mem = 8 << 20  # 8 MB DFA \u72c0\u614b\u7de9\u5b58",
-      "justification": "Use of 20 on this line of src/engine/safe_regex.py: opts.max_mem = 8 << 20  # 8 MB DFA \u72c0\u614b\u7de9\u5b58. A different line that repeats the digits is not covered."
+      "context": "opts.max_mem = 8 << 20  # 8 MB DFA 狀態緩存",
+      "justification": "Use of 20 on this line of src/engine/safe_regex.py: opts.max_mem = 8 << 20  # 8 MB DFA 狀態緩存. A different line that repeats the digits is not covered."
     },
     {
       "file": "src/engine/safe_regex.py",
@@ -2896,6 +2900,36 @@
       "value": 12,
       "context": "head = raw_text[max(0, match.start() - 12):match.start()]",
       "justification": "Use of 12 on this line of src/desk/service.py: head = raw_text[max(0, match.start() - 12):match.start()]. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/approval_signing.py",
+      "value": 64,
+      "context": "PUBKEY_HEX_LEN = 64  # 32 bytes",
+      "justification": "Use of 64 on this line of src/desk/approval_signing.py: PUBKEY_HEX_LEN = 64  # 32 bytes. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/approval_signing.py",
+      "value": 128,
+      "context": "SIG_HEX_LEN = 128  # 64 bytes",
+      "justification": "Use of 128 on this line of src/desk/approval_signing.py: SIG_HEX_LEN = 128  # 64 bytes. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/approval_signing.py",
+      "value": 384,
+      "context": "os.chmod(path, 0o600)",
+      "justification": "Use of 384 on this line of src/desk/approval_signing.py: os.chmod(path, 0o600). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 64,
+      "context": "pubkey: str = Field(min_length=64, max_length=64)",
+      "justification": "Use of 64 on this line of src/desk/routes.py: pubkey: str = Field(min_length=64, max_length=64). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 128,
+      "context": "sig: str = Field(min_length=128, max_length=128)",
+      "justification": "Use of 128 on this line of src/desk/routes.py: sig: str = Field(min_length=128, max_length=128). A different line that repeats the digits is not covered."
     }
   ]
 }

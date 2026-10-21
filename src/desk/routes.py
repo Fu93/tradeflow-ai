@@ -129,10 +129,24 @@ class ReviewIn(BaseModel):
     chosen_token: str | None = Field(default=None, max_length=80)
 
 
+class ApprovalSignatureIn(BaseModel):
+    """Ed25519 signature over {deal_id, draft_id, body_sha256}.
+
+    Produced client-side by `python -m src.desk.approval_signing sign`.
+    The private key never reaches the server.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    alg: Literal["ed25519"]
+    pubkey: str = Field(min_length=64, max_length=64)
+    sig: str = Field(min_length=128, max_length=128)
+
+
 class SendIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     human_approved: StrictBool
     body_sha256: str = Field(min_length=64, max_length=64)
+    approval: ApprovalSignatureIn | None = None
 
 
 class AddressIn(BaseModel):
@@ -478,6 +492,7 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 draft_id,
                 human_approved=body.human_approved,
                 body_sha256=body.body_sha256,
+                approval=body.approval.model_dump() if body.approval is not None else None,
             )
         except SendRefused as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
