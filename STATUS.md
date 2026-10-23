@@ -39,19 +39,116 @@
 
 | Check | Result |
 |---|---|
-| `python -m pytest tests -q` | 813 passed, 6 skipped, 112 subtests, 3 failed |
+| `python -m pytest tests -q` | 861 passed, 6 skipped, 112 subtests, 3 failed |
 | `python verify_all.py` | ALL 6 PILLARS PASS |
 | `python verify_live.py` | V2 DESK SURFACE VERIFIED END TO END (9 steps) |
 | `python scripts/mutation_sanity.py` | 66 mutants killed |
-| `python scripts/check_decision_literals.py` | decision registry ok (180 constants) |
+| `python scripts/check_decision_literals.py` | decision registry ok (183 constants) |
 | `python scripts/check_no_fake_literals.py` | no undeclared scenario floats |
 | `ruff check` + `mypy` (phase-1 modules) | clean |
-| Frozen-reserve wiring regression | covered by `tests/test_explicit_suppliers_frozen_reserves.py` |
 
-The 3 failures are platform-only and pre-date this pass: `test_round_rss.py`
-and `test_coupled_properties.py` read `/proc/self/status`, and
-`test_desk_phase2.py::test_five_supplier_streaming_budget` asserts a Linux RSS
-ceiling. They fail on Windows and pass on the Linux CI image.
+The 3 failures are all pre-existing and platform- or machine-dependent. They
+were re-run in a clean worktree at the previous commit and fail there too:
+
+- `test_round_rss.py` and `test_coupled_properties.py` read `/proc/self/status`.
+- `test_desk_phase2.py::test_five_supplier_streaming_budget` asserts a Linux RSS
+  ceiling.
+
+A fourth, `test_ood_500_benchmark.py::test_held_out_ood_benchmark_metrics`,
+asserts a mean ONNX inference latency under 1.0 ms. This host measures 2.2–2.8 ms
+on the *unmodified* previous commit, so the guard is machine-dependent rather
+than a regression — it passes when the machine is idle and fails under load. It
+is not counted in the 3 above because it is intermittent, not deterministic.
+
+## Round 2 — structural pass (2026-10-23)
+
+The first pass fixed behaviour. This one fixes the shape that made the behaviour
+hard to reason about. 48 new regression tests across four files.
+
+### The send gate is a module of its own
+
+`src/desk/service.py` went from 2,237 to 1,710 lines and no longer defines
+`_guard_send`, `_envelope`, `publish` or `DeskBus`. The gate is
+`src/desk/verify.py` (657 lines) and it **cannot reach back into the service
+layer** — it imports `errors`, `snapshot`, `store`, `record`, `recompute`,
+`decide` and the engine's landed-cost and reserve types, and nothing else.
+`tests/test_structure_round2.py` proves the isolation in a subprocess: the gate
+loads in a fresh interpreter with the service layer absent.
+
+Every existing import path still resolves. `service.py` re-exports the moved
+names, including the private predicates the step tests import directly, so 116
+call sites did not have to move. That is deliberate: breaking them to make a
+point about underscores would be a worse trade.
+
+### The schema has a version
+
+`src/desk/migrations.py` reads and writes `PRAGMA user_version`. Before, the
+schema was `CREATE TABLE IF NOT EXISTS` plus guarded `ALTER TABLE` — additive
+only, recording nothing. A rename, a type change or a backfill could not be
+expressed, and a rolled-back deploy left a schema the old code only
+half-understood with no way to detect it.
+
+Migration 1 is byte-for-byte the old `_create()` output, so opening an existing
+database is a stamp rather than a rebuild. A database written by a **newer**
+build is refused (`SchemaTooNew`) instead of being written into by code that
+cannot read it — that is the rollback case, and it used to be silent.
+
+Atomicity, stated honestly: `executescript` issues an implicit COMMIT, so a
+migration is not one transaction. The guarantee that is actually made is that
+`user_version` only advances after the body returns without raising, and every
+migration is written to be safe to re-run.
+
+### Writes are rate-limited and every request is traceable
+
+The API had no limit at all: a client could loop
+`POST /api/v1/desk/deals/{id}/quotes` and each call runs the extractor, the
+belief update and the solver. A sliding window (not a fixed bucket, which lets a
+caller send `limit` at each window boundary) keyed on a SHA-256 prefix of the
+API key or the client address. 600/min and 6000/hr by default, read from the
+environment per check so a test can tighten it without a restart. A missing
+config means *limited*, not unlimited. `Retry-After` is set, because a 429
+without it invites a retry storm.
+
+It is in-process, so per-instance: a restart clears the window and a second
+replica has its own. That is an abuse cap for this process, not a distributed
+rate limit, and the module says so rather than implying otherwise.
+
+Every request now carries an id — honoured from an inbound `X-Request-ID` when a
+proxy supplies one, otherwise generated, always returned on the response. It is
+available through a context variable and a logging filter, and one access line
+per request records method, path, status and duration. The query string is
+deliberately dropped: it is the part that can carry a token someone pasted into
+a URL. A caller-supplied id is validated (short, alphanumeric) so it cannot
+inject a header.
+
+### The numerical kernel is written once
+
+`_betacf` existed twice — in `reserve.py` with `BETA_CF_ITERS`/`OPT_TOL`, and in
+`legacy/bayesian_v2.py` with 200/3e-14 hardcoded. The duplication was the
+defect; the tolerance difference is not. `src/engine/numerics.py` is now the only
+implementation, with the precision passed explicitly, and
+`tests/test_numerics.py` pins that the two precisions agree to 1e-9 relative.
+**No number changes.**
+
+### Configuration is a leaf
+
+`public_payload` moved from `src/config/heuristics.py` to
+`src/app/heuristics_view.py`. It used to import `src.engine.hazard_fit` inside
+the function body while `hazard_fit` imports `heuristics` at module scope — a
+real cycle, hidden by a function-level import and a bare `except`. The
+dependency direction is now `app → engine → config` with no edge pointing back
+down, and `src/config/heuristics.py` imports nothing from `src` at all.
+
+### The round safety gate is testable
+
+Stage 4 of the round handler — the six-branch decision that blocks a round and
+escalates to a person — is now `src/app/round/circuit_breaker.py`, a pure
+function with a frozen input dataclass and a `str | None` output. The notify and
+the state transition stay in the handler: those are the effects, not the check.
+14 tests assert the ordering, which is the contract: no-counter wins over a
+security escalation, a security escalation wins over a breakdown trip, and the
+engine-above-ceiling branch is last because it should never fire.
+
 
 ## Hardening pass (2026-10-23)
 
@@ -159,33 +256,46 @@ fix has a regression test in `tests/test_hardening_2026_10_23.py` (37 tests).
   and `proposal.py` no longer import their own siblings through the
   `src.engine` shims. The compatibility layer is now external-only, which is
   what makes the 2026-10-21 "freeze" decision actually stable.
-- `src/app/limits.py` and `src/desk/money.py` are new, single-purpose modules.
+- `src/app/limits.py`, `src/desk/money.py`, `src/desk/errors.py`,
+  `src/desk/bus.py`, `src/desk/snapshot.py`, `src/desk/verify.py`,
+  `src/desk/migrations.py`, `src/engine/numerics.py`,
+  `src/app/heuristics_view.py`, `src/app/observability.py` and
+  `src/app/round/circuit_breaker.py` are new, single-purpose modules.
 - `GET /ready` is a real readiness probe (chain key, writable store, approval
   policy) and returns 503 with the blocking list. `GET /health` stays a cheap
   liveness probe with its existing body, because callers depend on it.
 
 ### Not done (deliberate, with reasons)
 
-- **`src/desk/service.py` (2,237 lines) and `src/app/main.py` (2,888 lines) are
-  still god modules.** The decomposition plan (extract `desk/verify.py` from the
-  280-line send guard, then `ingest`/`delivery`/`polling`/`bus`; split the
-  877-line round handler into `app/round/*`) is written down but not executed.
-  It is a large mechanical diff across 116 test imports, and it should not share
-  a commit with behavioural fixes.
-- **No SQLite migration manager.** `_ensure_column` is additive only and
-  `PRAGMA user_version` is never written. A rename, type change, or backfill
-  cannot be expressed.
+What the round-2 pass removed from this list is not repeated here. What remains:
+
+- **`src/app/main.py` is still a god module** (2,997 lines). Its
+  `process_negotiation_round` is 877 lines across twelve numbered stages, and
+  only stage 4 (the safety gate) has been extracted so far, to
+  `src/app/round/circuit_breaker.py`. The other eleven stages share local state
+  heavily, so extracting them means threading a state object through the
+  handler — a real refactor, not a move, and one that should not share a commit
+  with behavioural fixes.
+- **`src/desk/service.py` is still large** (1,710 lines, down from 2,237). The
+  send gate, the bus, `publish`, the errors and the schema are out; what is left
+  is deal CRUD, ingest, the extractor pool and the mailbox poller. Ingest and
+  polling are the next candidates.
 - **No per-user identity.** The desk is single-tenant behind one shared API key.
   Supplier address changes are still gated by a client-supplied
   `human_confirmed` boolean rather than a signature, which is the real
   business-email-compromise path. This needs a user model, not a code tweak.
 - **`src/engine/bilingual.py` (2,035 lines)** is outside both the coverage gate
-  and the mutation set. Its `NumericGuardrailValidator` has no mutants.
-- **`_betacf` is still duplicated** in `reserve.py` and `legacy/bayesian_v2.py`
-  with different tolerances. Measured money impact is 1.86e-9 absolute, so it is
-  a maintenance liability, not a live defect.
-- **The rate limiter is in-memory and per-process**, and only covers the AMD
-  routes. Restarting resets it.
+  and the mutation set. Its `NumericGuardrailValidator` has no mutants, and it
+  is on the production parse path.
+- **Rate limiting is in-process**, so per-instance and cleared by a restart. A
+  shared counter needs a shared store; adding Redis to a single-instance
+  deployment to bound abuse would be a larger operational commitment than the
+  problem warrants today.
+- **`_betacf` still runs at two precisions** — one kernel, two tolerance
+  budgets, in `src/engine/numerics.py`. They are pinned to agree to 1e-9
+  relative, so this is a documented choice rather than a defect, but it is still
+  two answers where a reader might expect one.
+
 
 ## Not verified (do not claim otherwise)
 

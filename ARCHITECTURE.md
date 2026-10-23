@@ -52,8 +52,19 @@ compatibility surface only, not an internal dependency, which is what makes
 | `src/engine/<name>.py` (10 files) | Compatibility shims → `src/legacy/` |
 | `src/engine/decision.py`, `reserve.py`, `hazard_fit.py` | v2 phase-1 verified decision core (real files, no shims) |
 | `src/desk/` | v2 phase-1 persistent live desk: quote intake (IMAP/Gmail/chat import) → SQLite → belief update → coupled solver; drafts approved by a human; HMAC-SHA256 keyed audit chain (`audit_chain.py`) |
-| `src/desk/money.py` | the single money-quantisation choke point (`quantise`, `quantise_offer`, `to_minor`). Nothing else rounds a price. |
-| `src/app/` | App entry, demo data, security primitives (`security.py`), request-size limit (`limits.py`) |
+| `src/desk/verify.py` | The send gate: every predicate a draft must pass before mail leaves. Imports `errors`, `snapshot`, `store`, `record`, `recompute`, `decide`; never `service`. |
+| `src/desk/migrations.py` | Numbered schema migrations + `PRAGMA user_version`. The only place DDL lives. |
+| `src/desk/errors.py` | `SendRefused`, `DraftStale`. Below everything, so a caller can catch them without the service layer. |
+| `src/desk/bus.py` | In-process snapshot fan-out for the event stream. |
+| `src/desk/snapshot.py` | `publish()` — recompute + store + fan out. |
+| `src/desk/money.py` | The single money-quantisation choke point (`quantise`, `quantise_offer`, `to_minor`). Nothing else rounds a price. |
+| `src/engine/numerics.py` | The shared incomplete-beta continued fraction. One implementation, precision passed explicitly. |
+| `src/app/security.py` | Authentication gate primitives (API key, webhook token). |
+| `src/app/limits.py` | Request-body size limit, enforced before the body is buffered. |
+| `src/app/observability.py` | Request id, context variable, access log. |
+| `src/app/rate_limit.py` | AMD cost limiter + the write-path sliding window. |
+| `src/app/heuristics_view.py` | The documented-constants view. Above both config and engine. |
+| `src/app/round/` | Extracted pure stages of the round handler. Currently `circuit_breaker`. |
 | `src/web/`, `extension/` | Dashboard and Chrome extension (v1 demo surface) |
 | `src/sim/` | Labelled simulator (never imported by production decision paths) |
 

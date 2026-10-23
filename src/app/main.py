@@ -55,6 +55,7 @@ from src.config.heuristics import (
     SUPERVISOR_MIN_PRICE_RATIO,
 )
 from src.app.heuristics_view import public_payload as heuristics_payload
+from src.app.round.circuit_breaker import RoundSafetyInput, circuit_breaker_reason
 from src.desk.names import supplier_name_key
 from ..engine.backend import describe_solver_backend, resolve_use_gpu
 from ..engine.llm_config import llm_status
@@ -2043,25 +2044,22 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
         raise HTTPException(status_code=409, detail=str(exc))
 
     # 4. 安全熔斷矩陣評估
-    trip_reason = None
-    if raw_recommended_price is None:
-        trip_reason = "No counter. Every feasible offer exceeds the walk-away hazard cap."
-    elif inbound_classification.requires_escalation:
-        trip_reason = f"Security escalation: {inbound_classification.primary_intent.value} ({inbound_classification.tactical_rationale})"
-    elif model.breakdown_circuit_tripped(p_break, action.risk_tolerance):
-        cap = (
-            model.BREAKDOWN_TRIP_THRESHOLD
-            if action.risk_tolerance is None
-            else float(action.risk_tolerance)
+    # The decision itself moved to src/app/round/circuit_breaker.py so it can be
+    # asserted directly instead of only through a full session. The notify and
+    # the state transition below stay here: those are the effects, not the check.
+    trip_reason = circuit_breaker_reason(
+        RoundSafetyInput(
+            recommended_price=raw_recommended_price,
+            requires_escalation=bool(inbound_classification.requires_escalation),
+            primary_intent=inbound_classification.primary_intent,
+            tactical_rationale=str(inbound_classification.tactical_rationale or ""),
+            breakdown_probability=float(p_break),
+            risk_tolerance=action.risk_tolerance,
+            breakdown_trip_threshold=float(model.BREAKDOWN_TRIP_THRESHOLD),
+            opponent_price=opp_price,
+            ceiling_price=float(ceiling_price),
         )
-        trip_reason = (
-            f"Breakdown risk {p_break:.1%} exceeds "
-            f"{cap:.0%} safety limit."
-        )
-    elif opp_price and opp_price > ceiling_price:
-        trip_reason = f"Opponent offer ¥{opp_price:.2f} breaches ceiling ¥{ceiling_price:.2f}."
-    elif raw_recommended_price > ceiling_price:
-        trip_reason = f"Engine recommended price ¥{raw_recommended_price:.2f} breaches ceiling ¥{ceiling_price:.2f}."
+    )
 
     if trip_reason and raw_recommended_price is None:
         notifier.notify_circuit_breaker(
