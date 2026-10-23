@@ -85,7 +85,7 @@ fix has a regression test in `tests/test_hardening_2026_10_23.py` (37 tests).
 - **`render.yaml`** pins `TRADEFLOW_APPROVAL_PUBKEY` (`sync: false`) so a
   production deploy states its intent instead of failing silently at send time.
 
-### Correctness — four defects that changed a number
+### Correctness — seven defects in how a price is produced, recorded, or labelled
 
 - **An extreme prior std collapsed the belief.** `std=1e-5` produced α+β≈9e8,
   where the `lgamma` subtraction loses enough precision that `cdf(mean)` returns
