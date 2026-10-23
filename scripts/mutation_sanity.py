@@ -59,7 +59,7 @@ MUTANTS = [
     ("src/engine/bilingual.py", "if not cls._is_commitment_price(draft_text, start, end):", "if False:", GUARD_EXEMPT),
     ("src/engine/bilingual.py", "if cls.STRONG_REFUSAL.search(clause):", "if False:", GUARD_REFUSAL),
     ("src/engine/bilingual.py", "return any(abs(v - a) <= tolerance for a in (authorized_price,) + tolerated)", "return True", GUARD_SECOND),
-    ("src/engine/bilingual.py", 'if word in draft_text:', 'if False:', GUARD_PHRASE),
+    ("src/engine/bilingual.py", 'if word in compact:', 'if False:', GUARD_PHRASE),
     ("src/desk/shadow.py", '"applied": False', '"applied": True', SHADOW),
     ("src/desk/shadow.py", "if count <= 0:", "if count < 0:", SHADOW),
     ("src/desk/shadow.py", "return max(0.0, centre - margin), min(1.0, centre + margin)", "return 0.0, 1.0", WILSON),

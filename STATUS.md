@@ -210,8 +210,25 @@ raw traceback. `_link_or_copy` falls back to a copy for a throwaway staging
 tree — semantically identical, and the worktree-untouched property is
 unchanged. The test passes here and in CI.
 
+### One surviving mutant closed a real guardrail bypass
+
+CI had never reached the mutation step after the bilingual needles were added
+(the coverage gate failed first), so this round's run was their first, and one
+mutant survived: disabling the literal blacklist
+(`if word in draft_text:` → `if False:`) changed no test outcome. Reasoning
+through it found two facts. First, "換次級料" is the one literal word the
+synonym patterns do not cover (`換次料` has no 級), so the literal backstop
+has exactly one distinguishing input and no test fed it. Second, and worse:
+the backstop scanned the raw text while the synonym scan scans compacted
+text, so "換 次 級 料" escaped **both** layers by spacing alone. The fix
+compacts once and both layers scan the same text; the distinguishing inputs
+are pinned in `TestBypass3ForbiddenPhraseRewrites`, and the harness needle
+tracks the new line. `mutation_sanity.py` reports 73 mutants killed, none
+surviving.
+
 Net effect: total coverage 89.19% → 92.04%; `approval_signing.py` 57% → 100%;
-`routes.py` 79% → 95%; `audit_chain.py` 84% → 89%.
+`routes.py` 79% → 95%; `audit_chain.py` 84% → 89%; the numeric guardrail's
+literal backstop is mutation-pinned and spacing-proof.
 
 
 ## Hardening pass (2026-10-23)

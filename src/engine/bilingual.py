@@ -1826,16 +1826,18 @@ class NumericGuardrailValidator:
         return True
 
     @classmethod
-    def _scan_forbidden_phrases(cls, text: str) -> None:
+    def _scan_forbidden_phrases(cls, text: str, compact: str | None = None) -> None:
         """片語級禁用詞掃描（含拒絕語境豁免）。
 
         先在**正規化文字**（移除所有空白）上比對，讓「私 下 打 款」與
         「私底下打款」等效；同時因為模式本身不含 `\\s*`，對超長空白草稿仍為線性。
         拒絕語境豁免以「片語所屬子句」為範圍，且**只採認強拒絕詞**。
+        ``compact`` 由呼叫端傳入以免重複壓縮；未傳入時在此計算。
         """
         if not text:
             return
-        compact = re.sub(r"\s+", "", text)
+        if compact is None:
+            compact = re.sub(r"\s+", "", text)
         for pattern in cls.FORBIDDEN_COMPROMISE_PATTERNS:
             for m in pattern.finditer(compact):
                 hit = m.group(0)
@@ -1888,10 +1890,14 @@ class NumericGuardrailValidator:
         tolerated = tuple(float(v) for v in (allowed_values or ()))
 
         # 1. 片語級禁用詞（原字面清單保底 + 近義模式集）
+        # [SECURITY 2026-10-23] 保底層與近義層掃同一份**壓縮文字**。此前保底層
+        # 掃原文，「換 次 級 料」靠字元間空白即可同時逃過兩層（近義模式刻意
+        # 不含「次級料」）。壓縮一次、兩層共用，插入空白不再是繞過手段。
+        compact = re.sub(r"\s+", "", draft_text)
         for word in cls.FORBIDDEN_COMPROMISE_WORDS:
-            if word in draft_text:
+            if word in compact:
                 raise GuardrailViolationError(f"Forbidden compromise phrase detected: '{word}'")
-        cls._scan_forbidden_phrases(draft_text)
+        cls._scan_forbidden_phrases(draft_text, compact)
 
         # 2. 貨幣化價格掃描（更完整的格式覆蓋：C1）
         spans = list(cls._iter_price_spans(draft_text))
