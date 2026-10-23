@@ -3,7 +3,8 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config.heuristics import YOUR_CEILING
-from src.engine import solve, recommend, bayes_update, model, proposal
+from src.legacy import model, proposal
+from src.legacy.solver import solve, recommend, bayes_update
 
 
 def test_strategy_grid():

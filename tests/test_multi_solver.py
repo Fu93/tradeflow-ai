@@ -5,7 +5,7 @@ It is not K x n_opp_samples x n_open x n_sched.
 """
 import unittest
 import numpy as np
-from src.engine.multi_solver import MultiSupplierSolver
+from src.legacy.multi_solver import MultiSupplierSolver
 
 
 class TestMultiSolver(unittest.TestCase):
@@ -20,7 +20,7 @@ class TestMultiSolver(unittest.TestCase):
 
     def test_first_round_priors_are_anchored_to_quotes(self):
         """[§3.2 回歸] 首輪 step_round 必須讓各家先驗隨報價分化，且單調。"""
-        from src.engine.multi_solver import MultiAuctionSession
+        from src.legacy.multi_solver import MultiAuctionSession
 
         session = MultiAuctionSession(
             suppliers=[{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}],
@@ -123,7 +123,7 @@ class TestMultiSolver(unittest.TestCase):
         容易被讀成「比供應商報價省 22%」，因此 get_summary 另外回報相對首輪
         報價與相對目標價的兩個基準；這三組數字任一被寫死都不會被既有測試抓到。
         """
-        from src.engine.multi_solver import MultiAuctionSession
+        from src.legacy.multi_solver import MultiAuctionSession
 
         session = MultiAuctionSession(
             suppliers=[{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}],
@@ -156,7 +156,7 @@ class TestMultiSolver(unittest.TestCase):
 
     def test_negative_headline_is_not_clamped(self):
         """A close above the first quote is a negative headline, not zero."""
-        from src.engine.multi_solver import MultiAuctionSession
+        from src.legacy.multi_solver import MultiAuctionSession
 
         session = MultiAuctionSession(
             suppliers=[{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}],

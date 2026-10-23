@@ -10,7 +10,7 @@ from src.transport.base import BaseTransport, InboundMessage
 from src.transport.email_std import EmailStdTransport
 from src.transport.webhook_hub import WebhookHub, SessionExecutionBridge
 from src.transport.telemetry import TelemetryNotifier
-from src.session.schema import RemoteAuthCommand, SessionSpec
+from src.legacy.session.schema import RemoteAuthCommand, SessionSpec
 from src.app.main import app
 import src.app.main as api_main
 

@@ -79,7 +79,7 @@ def test_held_out_quotes_follow_the_same_rules():
 
 def test_auction_keeps_the_off_grid_cap_and_the_desk_drops_it():
     from src.config.heuristics import OFFER_GRID_FLOOR
-    from src.engine.coupled import _candidates, _master_grid
+    from src.legacy.coupled import _candidates, _master_grid
 
     grid = _master_grid(float(OFFER_GRID_FLOOR), 1.4, 20)
     hi = float((grid[3] + grid[4]) / 2)
@@ -95,7 +95,7 @@ def test_auction_keeps_the_off_grid_cap_and_the_desk_drops_it():
 
 
 def test_snap_to_grid_does_not_raise_when_a_rival_improves():
-    from src.engine.coupled import solve_coupled
+    from src.legacy.coupled import solve_coupled
 
     rng = np.random.default_rng(11)
     rises = 0

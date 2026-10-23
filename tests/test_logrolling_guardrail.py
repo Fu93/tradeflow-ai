@@ -30,7 +30,7 @@ from src.engine.bilingual import (
     TacticalActionObject,
     TacticalModeEnum,
 )
-from src.engine.logrolling import (
+from src.legacy.logrolling import (
     ASTMandateGuardrail,
     ASTMandateViolationError,
     CorporateMandate,
@@ -336,7 +336,7 @@ class TestGuardrailSurvivesOptimisation(unittest.TestCase):
         做法是直接移除 AST 中所有 Assert 節點後再編譯執行 —— 這正是 `-O`
         對本段程式碼所做的事，不需另起一個最佳化直譯器程序。
         """
-        from src.engine.logrolling import ASTMandateGuardrail as _G  # noqa: F401  (存在性檢查)
+        from src.legacy.logrolling import ASTMandateGuardrail as _G  # noqa: F401  (存在性檢查)
 
         # 1. logrolling：AST 護欄在 assert 被剝除後仍須攔阻越界方案。
         tree = ast.parse(ASTMandateGuardrail._GUARDRAIL_SNIPPET)

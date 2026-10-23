@@ -12,7 +12,7 @@ that ceiling. Both rules are in the result file.
 from __future__ import annotations
 
 from src.config.heuristics import PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD
-from src.engine.solver import bayes_update, recommend, solve
+from src.legacy.solver import bayes_update, recommend, solve
 from src.sim.archetypes import OPPONENT_TYPE_ROWS
 from src.sim.scenarios import MANDATES
 

@@ -8,7 +8,7 @@
 from __future__ import annotations
 import asyncio
 from typing import Dict, Optional, Tuple
-from ..session.schema import RemoteAuthCommand
+from ..legacy.session.schema import RemoteAuthCommand
 
 
 class SessionExecutionBridge:

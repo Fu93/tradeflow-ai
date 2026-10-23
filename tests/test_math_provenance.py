@@ -6,9 +6,9 @@ import pytest
 
 from scripts.check_decision_literals import scan
 from src.desk.parse import parse_quote
-from src.engine.bayesian_v2 import robust_bayes_update
-from src.engine.coupled import sample_joint_scenarios
-from src.engine.hazard import HazardBelief
+from src.legacy.bayesian_v2 import robust_bayes_update
+from src.legacy.coupled import sample_joint_scenarios
+from src.legacy.hazard import HazardBelief
 
 
 def test_registry_covers_decision_literals():

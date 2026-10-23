@@ -13,9 +13,9 @@ import numpy as np
 import pytest
 
 from src.desk.parse import parse_quote
-from src.engine.bayesian_v2 import student_t_cdf, student_t_ppf
-from src.engine.coupled import solve_coupled
-from src.engine.hazard import HazardBelief, sigmoid
+from src.legacy.bayesian_v2 import student_t_cdf, student_t_ppf
+from src.legacy.coupled import solve_coupled
+from src.legacy.hazard import HazardBelief, sigmoid
 from src.config.heuristics import HAZARD_INTERCEPT, SEARCH_STEP
 
 _FOUR = [

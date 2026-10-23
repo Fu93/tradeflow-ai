@@ -37,7 +37,7 @@ Until `HAZARD_MIN_EVENTS` responses are on file for that supplier, the card says
 
 ## Offer
 
-Code: `src/engine/decision.py`, called from `src/engine/coupled.py` and `src/engine/one_step.py`.
+Code: `src/engine/decision.py`, called from `src/legacy/coupled.py` and `src/legacy/one_step.py`.
 
 Let `q` be this supplier's latest ask, `q0` the reference (first) ask, and `W` the outside option: the best other confirmed landed quote, already capped by this latest ask and by the ceiling. When this supplier is the cheapest, `W = q`. The split `(q + target) / 2` is not used.
 
@@ -67,7 +67,7 @@ The general Beta and the hazard penalty use the golden-section search. The prior
 
 A tighter rival can only lower `W`. It cannot raise a counter.
 
-Student-t utilities remain in `src/engine/bayesian_v2.py` for intervals and for older callers. They do not set this offer. The Weitzman index orders suppliers with a normal approximation to `ask × D`. It does not set the offer. Monte Carlo fills the reported tail. It does not pick the price. CVaR is a report.
+Student-t utilities remain in `src/legacy/bayesian_v2.py` for intervals and for older callers. They do not set this offer. The Weitzman index orders suppliers with a normal approximation to `ask × D`. It does not set the offer. Monte Carlo fills the reported tail. It does not pick the price. CVaR is a report.
 
 `/negotiate` is mounted only with the legacy flag, and a posted price is not a confirmation: the handler counts it and does not return a counter. `/webhook/evolus` is mounted only with that flag, and extractor numbers stay unconfirmed: the handler counts them and does not return a counter. The reserve is the labelled Beta prior, not a markup subtracted from the ask. A posted `/round` price is not a confirmation and does not become the offer. Raw text alone is HTTP 422 and is not a decision input. A quote above the ceiling still circuit-trips and does not issue a counter. A missing target or ceiling is HTTP 422.
 
@@ -89,7 +89,7 @@ The user's risk cap applies to `Δh`, not to the level of `h`. The cap can limit
 
 ## Shared reserve factor
 
-Code: `sample_joint_scenarios` in `src/engine/coupled.py`.
+Code: `sample_joint_scenarios` in `src/legacy/coupled.py`.
 
 Idiosyncratic loading `sqrt(1 − ρ)`, common loading `sqrt(ρ)`. Each shock then has variance 1 and the correlation of two suppliers' shocks is `ρ`. The previous loadings `sqrt(1 − ρ²)` and `sqrt(ρ)` produced correlation `ρ / (1 − ρ² + ρ)`, which is about 0.248 when `ρ` is 0.3. The reserve draw is `mean + std × shock`, and `std` is the absolute posterior scale.
 
@@ -105,7 +105,7 @@ Code: `src/engine/landed.py`. A missing freight, duty, or fee is "no data". It i
 
 ## Legacy grid
 
-`src/engine/solver.py` still scores one opening and one concession schedule for the CLI. It requires an explicit ceiling and opponent rows installed by `bind_archetypes`. HTTP `/round` returns 404 when the session does not exist and otherwise calls `one_step_counter`. That call maximises expected surplus. It is not a multi-ply expectimax.
+`src/legacy/solver.py` still scores one opening and one concession schedule for the CLI. It requires an explicit ceiling and opponent rows installed by `bind_archetypes`. HTTP `/round` returns 404 when the session does not exist and otherwise calls `one_step_counter`. That call maximises expected surplus. It is not a multi-ply expectimax.
 
 ## Categories
 

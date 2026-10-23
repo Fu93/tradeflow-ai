@@ -6,7 +6,7 @@
     —— 把「年化 5%」當成**一次性**費用直接乘，係數 ≈ 0.05。
   * `calculate_nonlinear_effective_tco`（非線性路徑）：`p_raw * excess_ratio
     * (wacc * 90/365)` —— 係數 ≈ 0.0197。
-同一概念相差約 2.5 倍，而 `src/app/main.py` 與 `src/engine/logrolling.py`
+同一概念相差約 2.5 倍，而 `src/app/main.py` 與 `src/legacy/logrolling.py`
 分別採用其中一套，使決策路徑上的影子定價不一致。
 
 本測試固定修正後的行為：兩條路徑的**持有天數同源**（共用

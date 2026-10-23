@@ -6,7 +6,7 @@ CDF helper stays available for callers that ask for a Gaussian tail.
 Deal probability uses the Student-t.
 """
 import unittest
-from src.engine.bayesian_v2 import (
+from src.legacy.bayesian_v2 import (
     RobustBayesianInferenceEngine,
     robust_bayes_update,
     compute_calibrated_deal_prob,

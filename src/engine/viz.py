@@ -14,7 +14,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from . import model
+from ..legacy import model
 
 
 def _sample_reserve(reserve_mean, reserve_std, n=20000, seed=0):
@@ -189,7 +189,7 @@ def plot_robustness(report_data, save_path=None):
 
 def plot_prior_decomp(reserve_mean, reserve_std, target_price, ceiling, save_path=None, seed=0):
     """Wow #1 加強：把底價後驗分解成 4 類供應商成分（按 type-center 距離加權）。"""
-    from . import model
+    from ..legacy import model
     rng = np.random.default_rng(seed)
     n = 4000
     samples = reserve_mean + rng.normal(0, reserve_std, n)

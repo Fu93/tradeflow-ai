@@ -59,7 +59,7 @@ def breakdown_circuit_tripped(breakdown_probability: float, risk_tolerance: floa
     Kept as a call into the engine's own predicate so the definition of
     "tripped" has exactly one home; this wrapper only resolves which cap.
     """
-    from src.engine import model
+    from src.legacy import model
 
     return bool(model.breakdown_circuit_tripped(breakdown_probability, risk_tolerance))
 

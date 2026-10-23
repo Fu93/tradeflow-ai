@@ -63,17 +63,13 @@ from ..engine.llm_config import llm_status
 # V1 engines stay unloaded unless this process is asked to mount them.
 _LEGACY_ON = os.environ.get("TRADEFLOW_LEGACY", "0") == "1"
 if _LEGACY_ON:
-    from src.engine.one_step import one_step_counter
-    from src.engine.bayesian_v2 import robust_location
-    from src.engine.hazard import HazardBelief
-    from ..engine import (
-        compute_belief_confidence,
-        model,
-        proposal,
-        robust_bayes_update,
-        BayesianBeliefState,
-        TCOEngine,
-    )
+    from src.legacy.one_step import one_step_counter
+    from src.legacy.bayesian_v2 import robust_location
+    from src.legacy.hazard import HazardBelief
+    from ..legacy import model, proposal
+    from ..legacy.solver import compute_belief_confidence
+    from ..legacy.bayesian_v2 import robust_bayes_update, BayesianBeliefState
+    from ..engine.tco import TCOEngine
 else:
     import types
 
@@ -86,17 +82,17 @@ else:
     BayesianBeliefState = None
     TCOEngine = None
     model = types.SimpleNamespace(ROUNDS=int("5"))
-from ..session.schema import (
+from ..legacy.session.schema import (
     SessionSpec,
     NegotiationSession,
     NegotiationTurn,
     AutopilotState,
     RemoteAuthCommand,
 )
-from ..session.manager import SessionManager, InvalidStateTransitionError, OptimisticLockConflictError
+from ..legacy.session.manager import SessionManager, InvalidStateTransitionError, OptimisticLockConflictError
 from ..transport.webhook_hub import hub
 from ..transport.telemetry import notifier
-from . import orchestrator
+from ..legacy import orchestrator
 
 logger = logging.getLogger("tradeflow.app")
 
@@ -137,7 +133,7 @@ class SafeJSONResponse(JSONResponse):
 # ---------------------------------------------------------------------------
 # [PERF] /round 求解結果快取（有界 LRU）
 # 同一會話每輪 /round 都以相同輸入重解 20,000 樣本（≈1.1-1.7s）。solve() 為
-# 確定性函數（固定 seed 20261013，見 src/engine/solver.py），故以「完整輸入」
+# 確定性函數（固定 seed 20261013，見 src/legacy/solver.py），故以「完整輸入」
 # 為鍵的快取不會回傳過期建議：任何輸入（樣本數、後驗均值/標準差、GPU 旗標）
 # 不同必不命中。僅快取 solve() 的昂貴輸出；recommend() 只讀不改（已核實）。
 _SOLVE_CACHE_MAX = 128
@@ -352,7 +348,7 @@ def _validate_session_id_path(session_id: str) -> str:
     store_dir；`C:/.../pwn` 甚至會讓 os.path.join 丟棄 store_dir，再用 os.replace
     原子覆寫該路徑。路徑參數不經過 SessionSpec 驗證，所以在這裡補上。
     """
-    from ..session.schema import SAFE_SESSION_ID_RE
+    from ..legacy.session.schema import SAFE_SESSION_ID_RE
 
     if not isinstance(session_id, str) or not SAFE_SESSION_ID_RE.fullmatch(session_id):
         raise HTTPException(
@@ -2184,7 +2180,7 @@ def process_negotiation_round(session_id: str, action: RoundActionRequest):
 
     # 5. 多維契約條款置換 (Logrolling Pareto Optimization)
     logrolling_data = None
-    from ..engine.logrolling import (
+    from ..legacy.logrolling import (
         LogrollingEngine,
         CorporateMandate,
         SupplierCurrentOffer,
@@ -2665,7 +2661,7 @@ from ..web.routes_web import api_v1 as web_api_v1_router, router as web_open_rou
 # Not part of the retired v1 session surface: this is the labelled
 # self-play simulator behind the dashboard's "Run auction" button, and it
 # mounts on the default boot (see the route decorator below).
-from ..engine.multi_solver import simulate_reverse_auction
+from ..legacy.multi_solver import simulate_reverse_auction
 
 static_path = Path(__file__).parent.parent / "web" / "static"
 if static_path.exists():

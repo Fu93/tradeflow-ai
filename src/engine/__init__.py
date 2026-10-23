@@ -1,8 +1,9 @@
 """Engine package. Submodules load on first use.
 
-The desk path imports ``decision``, ``reserve``, and ``hazard_fit`` by
-name. The v1 engines live in ``src.legacy`` and are reached through the
-compatibility modules in this package.
+This package holds the v2 decision core (``decision``, ``reserve``,
+``hazard_fit``, ``numerics``) and the shared engine utilities. The v1
+negotiation engines live in ``src.legacy`` and are imported from there
+directly; nothing in this package re-exports them.
 """
 from __future__ import annotations
 
@@ -11,25 +12,10 @@ import importlib
 _LAZY_MODULES = {
     "viz": "src.engine.viz",
     "benchmark": "src.engine.benchmark",
-    "model": "src.engine.model",
-    "solver": "src.engine.solver",
-    "robustness": "src.engine.robustness",
-    "proposal": "src.engine.proposal",
-    "multi_solver": "src.engine.multi_solver",
-    "bayesian_v2": "src.engine.bayesian_v2",
     "tco": "src.engine.tco",
 }
 
 _EXPORTS = {
-    "solve": ("src.engine.solver", "solve"),
-    "recommend": ("src.engine.solver", "recommend"),
-    "bayes_update": ("src.engine.solver", "bayes_update"),
-    "compute_belief_confidence": ("src.engine.solver", "compute_belief_confidence"),
-    "MultiSupplierSolver": ("src.engine.multi_solver", "MultiSupplierSolver"),
-    "RobustBayesianInferenceEngine": ("src.engine.bayesian_v2", "RobustBayesianInferenceEngine"),
-    "robust_bayes_update": ("src.engine.bayesian_v2", "robust_bayes_update"),
-    "compute_calibrated_deal_prob": ("src.engine.bayesian_v2", "compute_calibrated_deal_prob"),
-    "BayesianBeliefState": ("src.engine.bayesian_v2", "BayesianBeliefState"),
     "TCOEngine": ("src.engine.tco", "TCOEngine"),
     "TradeTermsSpec": ("src.engine.tco", "TradeTermsSpec"),
     "SupplierOfferedTerms": ("src.engine.tco", "SupplierOfferedTerms"),

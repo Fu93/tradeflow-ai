@@ -15,7 +15,7 @@ from src.config.heuristics import (  # noqa: E402
     PRIOR_RESERVE_MEAN,
     WEITZMAN_SEARCH_COST,
 )
-from src.engine.coupled import (  # noqa: E402
+from src.legacy.coupled import (  # noqa: E402
     _cvar_se,
     _cvar_upper,
     _expected_improvement,
@@ -23,8 +23,8 @@ from src.engine.coupled import (  # noqa: E402
     solve_coupled,
     weitzman_reservation,
 )
-from src.engine.hazard import HazardBelief  # noqa: E402
-from src.engine.multi_solver import MultiAuctionSession  # noqa: E402
+from src.legacy.hazard import HazardBelief  # noqa: E402
+from src.legacy.multi_solver import MultiAuctionSession  # noqa: E402
 from src.market.official_refs import fetch_ecb_rates, fx_to_base  # noqa: E402
 
 FIXTURE = ROOT / "tests" / "fixtures" / "frankfurter_ecb_v2_rates.json"

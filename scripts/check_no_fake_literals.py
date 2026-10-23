@@ -35,9 +35,6 @@ ALLOW_FILES = {
     "src/benchmark/ood_500_dataset.py",
     # Plot geometry (bar offsets, alphas, line widths). Not prices.
     "src/engine/viz.py",
-    # Frozen copies of the early simulator. The live solver does not import them.
-    "benchmark_negotiation.py",
-    "benchmark_negotiation_v2.py",
     "extension/mock_chat.html",
     "scripts/generate_ood_500.py",
     # Datasheet quotes (5.3 TB/s, 5.2 Gbps) cited next to their URLs.
@@ -51,8 +48,6 @@ ALLOW_PREFIXES = ("src/sim/",)
 SCAN_PY = (
     "src",
     "scripts",
-    "benchmark_negotiation.py",
-    "benchmark_negotiation_v2.py",
     "verify_all.py",
     "verify_live.py",
 )

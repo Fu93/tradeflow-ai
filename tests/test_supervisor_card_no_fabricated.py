@@ -44,7 +44,7 @@ class _IsolatedSupervisorCase(unittest.TestCase):
 
     Mirrors tests/test_api.py's isolation idiom. The env-var approach is
     deliberately NOT used here: TRADEFLOW_DB_PATH / TRADEFLOW_STORE_DIR are read
-    as module-level defaults at import time by src.session.manager, so setting
+    as module-level defaults at import time by src.legacy.session.manager, so setting
     them in the shell would break
     test_api_security.py::test_defaults_are_unchanged_when_unset.
     """

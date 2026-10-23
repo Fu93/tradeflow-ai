@@ -19,7 +19,7 @@ from .adversaries import (
     BluffingAdversary,
     NoisyAdversary,
 )
-from ..engine import solver, model, proposal
+from ..legacy import solver, model, proposal
 
 
 class AdversarialArena:

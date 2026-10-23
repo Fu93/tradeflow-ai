@@ -51,7 +51,7 @@ def partition_session_ids(
 
 
 def _resolve_paths() -> tuple[Path, Path]:
-    from src.session.manager import DEFAULT_DB_PATH, DEFAULT_STORE_DIR
+    from src.legacy.session.manager import DEFAULT_DB_PATH, DEFAULT_STORE_DIR
 
     return Path(DEFAULT_DB_PATH), Path(DEFAULT_STORE_DIR)
 

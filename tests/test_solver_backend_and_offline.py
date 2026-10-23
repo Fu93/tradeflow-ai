@@ -11,8 +11,8 @@ from unittest.mock import patch
 
 from src.engine.backend import configured_use_gpu, describe_solver_backend, resolve_use_gpu
 from src.engine.llm_config import evolus_credentials, real_secret, resolve_chat_endpoint
-from src.engine.solver import solve
-from src.app.orchestrator import draft_email
+from src.legacy.solver import solve
+from src.legacy.orchestrator import draft_email
 from src.engine.bilingual import CrossLingualSanityChecker, InboundIntentClassifier
 
 

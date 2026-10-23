@@ -3,7 +3,8 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.app.demo_data import self_play_bundle
-from src.engine import benchmark, robustness, viz
+from src.engine import benchmark, viz
+from src.legacy import robustness
 
 _BUNDLE = self_play_bundle()
 _CEILING = _BUNDLE["ceiling"] / _BUNDLE["target"]
@@ -60,7 +61,7 @@ def test_misbelief_sensitivity_structure():
     鎖定結構與量綱不變量，不鎖定具體數值 —— 若未來模型改進使不對稱性消失，
     本測試不應假性失敗；數值結論記錄於 LIMITATIONS §十三。
     """
-    from src.engine.robustness import misbelief_sensitivity
+    from src.legacy.robustness import misbelief_sensitivity
 
     res = misbelief_sensitivity(n_samples=3000, value_ceiling=_CEILING)
     assert len(res) == 3

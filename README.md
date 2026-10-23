@@ -4,7 +4,7 @@
 
 ## Status (2026-10-21)
 
-AMD Developer Hackathon ACT III has concluded (online phase 12–18 October 2026). No lablab submission record for this project has been located. This repository is now a **research prototype in maintenance mode**: fixes and documentation only, no new modules. Current state and decision lines: [STATUS.md](STATUS.md). Where the code actually lives (including the `src/legacy/` naming inversion): [ARCHITECTURE.md](ARCHITECTURE.md).
+AMD Developer Hackathon ACT III has concluded (online phase 12–18 October 2026). No lablab submission record for this project has been located. This repository is now a **research prototype in maintenance mode**: fixes and documentation only, no new modules. Current state and decision lines: [STATUS.md](STATUS.md). Where the code lives (v2 desk and decision core vs the v1 engines in `src/legacy/`): [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 30-second pitch
 
@@ -198,7 +198,7 @@ Three buckets. They are not interchangeable.
 What is wired in code:
 
 1. **Language endpoint.** Stage-2 intent classification can call an OpenAI-compatible API. `.env.example` points `VLLM_BASE_URL` at the tokenfactory base above and `VLLM_MODEL` at `Gemma-4-31B-IT`. The dashboard AMD live mode toggle calls `POST /api/v1/quotes/read` in parallel with the solver round. That request is the live demo's quote reading: the AMD tokenfactory and `Gemma-4-31B-IT` unless `VLLM_BASE_URL` or `VLLM_MODEL` is set. The round's price comes from the explicit offer or the deterministic reader. Model output cannot change it.
-2. **Solver backend, selectable.** `TRADEFLOW_SOLVER_BACKEND=numpy` (default) or `cupy` / `rocm` / `auto`. `cupy` requests CuPy and falls back to NumPy if the import fails. Explicit `use_gpu=True/False` still overrides the environment. Code: `src/engine/backend.py`, `src/engine/solver.py`.
+2. **Solver backend, selectable.** `TRADEFLOW_SOLVER_BACKEND=numpy` (default) or `cupy` / `rocm` / `auto`. `cupy` requests CuPy and falls back to NumPy if the import fails. Explicit `use_gpu=True/False` still overrides the environment. Code: `src/engine/backend.py`, `src/legacy/solver.py`.
 3. **GPU-box benchmark.** On a machine with ROCm and CuPy:
 
    ```bash

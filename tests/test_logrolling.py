@@ -1,6 +1,6 @@
 """TradeFlow v4 — Logrolling 多維條款置換引擎單元測試與 AST 護欄驗證。"""
 import unittest
-from src.engine.logrolling import (
+from src.legacy.logrolling import (
     CorporateMandate,
     TradeoffType,
     SupplierCurrentOffer,

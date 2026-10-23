@@ -9,7 +9,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from src.app import main as api_main
-from src.session.schema import SessionSpec
+from src.legacy.session.schema import SessionSpec
 
 ENGLISH = (
     "Hi, the price is 3.20 USD/pc for 1000 pcs, MOQ 500. "

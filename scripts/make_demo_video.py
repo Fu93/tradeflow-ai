@@ -254,11 +254,12 @@ def build():
     # import engine after path setup
     import sys
     sys.path.insert(0, ROOT)
-    from src.engine import solve, recommend, bayes_update
-    from src.engine import robustness, benchmark, model, viz
+    from src.legacy.solver import solve, recommend, bayes_update
+    from src.engine import benchmark, viz
+    from src.legacy import robustness, model
     from src.app import demo_data
 
-    from src.engine.model import bind_archetypes
+    from src.legacy.model import bind_archetypes
     from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS
     bind_archetypes(OPPONENT_TYPE_ROWS, OPPONENT_TYPE_NAMES)
     tp = demo_data.DEMO_SPEC["target_price"]

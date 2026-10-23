@@ -24,7 +24,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.engine.logrolling import (
+from src.legacy.logrolling import (
     CorporateMandate,
     LogrollingEngine,
     LogrollingProposal,

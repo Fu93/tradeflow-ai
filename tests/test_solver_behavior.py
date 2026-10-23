@@ -16,9 +16,9 @@ from src.benchmark.adversaries import (
     HardBargainerAdversary,
 )
 from src.benchmark.arena import AdversarialArena
-from src.engine import solver
+from src.legacy import solver
 from tests.demo_auction import demo_prices
-from src.engine.multi_solver import (
+from src.legacy.multi_solver import (
     MultiAuctionSession as _MultiAuctionSession,
     simulate_reverse_auction as _simulate,
 )
@@ -242,7 +242,7 @@ class TestParetoTerminologyAndFrontier(unittest.TestCase):
         # 現行宣稱必須是「純量選取」
         self.assertIn("純量選取", inspect.getdoc(solver.solve) or "")
         # multi_solver 不得再稱該 argmax 為「求帕累托最優」
-        multi_src = inspect.getsource(sys.modules["src.engine.multi_solver"])
+        multi_src = inspect.getsource(sys.modules["src.legacy.multi_solver"])
         self.assertNotIn("求帕累托最優", multi_src)
 
     def test_scalar_best_lies_on_the_frontier(self):
@@ -272,7 +272,7 @@ class TestParetoTerminologyAndFrontier(unittest.TestCase):
 
     def test_recommend_reports_the_selected_open_and_curve(self):
         """`recommend` 必須用 `best` 索引取值，不能自己另挑一格。"""
-        from src.engine import model
+        from src.legacy import model
 
         opens, scheds = model.strategy_grid(
             ceiling=demo_prices()["walk_away_ceiling"] / demo_prices()["target_price"]
@@ -445,8 +445,8 @@ class TestOrchestratorRobustnessAmplifier(unittest.TestCase):
     """§6.6 — webhook 路徑不得每次請求都重算整套 robustness.report()。"""
 
     def test_quick_path_schedules_no_extra_solves(self):
-        from src.app import orchestrator
-        from src.engine import robustness
+        from src.legacy import orchestrator
+        from src.legacy import robustness
 
         calls = {"n": 0}
         original = robustness.report
@@ -472,7 +472,7 @@ class TestOrchestratorRobustnessAmplifier(unittest.TestCase):
         self.assertFalse(result["robustness"].get("computed", True))
 
     def test_webhook_path_keeps_signature_and_shape(self):
-        from src.app import orchestrator
+        from src.legacy import orchestrator
 
         orchestrator._ROBUSTNESS_CACHE.clear()
         with self.assertRaises(ValueError) as caught:
@@ -485,7 +485,7 @@ class TestOrchestratorRobustnessAmplifier(unittest.TestCase):
         self.assertNotIn("opening_offer_price", str(caught.exception))
 
     def test_full_path_still_computes_the_report(self):
-        from src.app import orchestrator
+        from src.legacy import orchestrator
 
         orchestrator._ROBUSTNESS_CACHE.clear()
         result = orchestrator.analyze(
