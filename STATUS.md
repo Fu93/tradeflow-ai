@@ -35,14 +35,14 @@
   (`src/desk/` + `src/engine/decision.py`, `reserve.py`,
   `hazard_fit.py`).
 
-## Verified state (as of 2026-10-23, local run, Windows)
+## Verified state (as of 2026-10-23, local run, Windows, after round 3)
 
 | Check | Result |
 |---|---|
-| `python -m pytest tests -q` | 876 passed, 6 skipped, 112 subtests, 3 failed |
+| `python -m pytest tests -q` (with the CI coverage gate) | 1013 passed, 2 skipped, 112 subtests, 3 failed — **coverage 92.04%** (gate: 90%) |
 | `python verify_all.py` | ALL 6 PILLARS PASS |
 | `python verify_live.py` | V2 DESK SURFACE VERIFIED END TO END (9 steps) |
-| `python scripts/mutation_sanity.py` | 73 mutants killed |
+| `python scripts/mutation_sanity.py` | runs on Windows (symlink → copy fallback); sampled mutants killed |
 | `python scripts/check_decision_literals.py` | decision registry ok (183 constants) |
 | `python scripts/check_no_fake_literals.py` | no undeclared scenario floats |
 | `ruff check` + `mypy` (phase-1 modules) | clean |
@@ -59,6 +59,10 @@ asserts a mean ONNX inference latency under 1.0 ms. This host measures 2.2–2.8
 on the *unmodified* previous commit, so the guard is machine-dependent rather
 than a regression — it passes when the machine is idle and fails under load. It
 is not counted in the 3 above because it is intermittent, not deterministic.
+
+A fifth, `test_mutation_runner_leaves_the_worktree_untouched`, failed on Windows
+because staging used `os.symlink`, which needs developer mode. It now falls back
+to a copy (round 3 below) and passes here and in CI.
 
 ## Round 2 — structural pass (2026-10-23)
 
@@ -148,6 +152,66 @@ the state transition stay in the handler: those are the effects, not the check.
 14 tests assert the ordering, which is the contract: no-counter wins over a
 security escalation, a security escalation wins over a breakdown trip, and the
 engine-above-ceiling branch is last because it should never fire.
+
+
+## Round 3 — test-debt and platform pass (2026-10-23)
+
+91 new tests across three files, one refactor, one platform fix. No new modules.
+
+### The coverage gate is green again, and the new code is the reason it was red
+
+The signing round landed `approval_signing.py` at 57% covered and dropped the
+total to 89.19% — under the 90% CI gate — without breaking a single test. What
+was untested was exactly the human-facing half of the accountability story:
+the keygen/sign CLI, the operator's policy words, and the malformed-block
+branches. Round 3 pins all three (`tests/test_approval_signing_cli.py`): the
+CLI round-trips a keygen blob through sign to the server verifier in every
+documented key form (hex, keygen JSON, bare-hex file); an unrecognised
+`TRADEFLOW_REQUIRE_SIGNED_APPROVAL` word falls through to the environment
+default instead of silently downgrading a production gate; and a bad key or
+payload file exits with a clean one-line error rather than a traceback in the
+human's terminal between review and send.
+
+### The route layer's HTTP contract is pinned
+
+`tests/test_desk_routes_gaps.py` drives every desk mutation route over HTTP:
+a well-formed but unknown id is 404 (not 500) on all fourteen read and
+confirmation routes, a `DeskRejected` is 422 with the reason, a stale send
+digest is 409, poll keeps its channel validation and translates mailbox and
+TLS failures into 502, audit verify returns a summary by default with
+opt-in paginated entries, and deal creation without a chain key is 503.
+`routes.py` went from 79% to 95% covered.
+
+### The audit chain's fail-closed paths are behaviours, not line noise
+
+`tests/test_audit_chain_failclosed.py` pins the paths that only run when
+something is already wrong: a key holder who backdates a row (valid MAC,
+falsified clock) breaks the chain with `timestamp_regression`; a key id that
+is neither current nor published in the retired ring leaves the chain
+unverifiable rather than silently accepted; a published retired key still
+verifies; legacy key-less rows verify under the round-5 MAC and a tampered
+one is broken; and an unreadable anchor counts as present — fail closed.
+
+### One verifier, not two
+
+`verify_signed_approval` and `verify_address_change` were line-for-line
+duplicates of ~25 security-critical lines whose docstring claimed "one place
+to reason about what a valid signature means". They now delegate to a shared
+`_verify_block`, as do both signing functions through a shared `_sign_block`.
+Public API unchanged; the rules can no longer drift between send approvals
+and address changes.
+
+### The mutation harness runs on a plain Windows box again
+
+Staging used `os.symlink`, which Windows without developer mode refuses
+(WinError 1314), so `scripts/mutation_sanity.py` and
+`test_mutation_runner_leaves_the_worktree_untouched` failed on Windows with a
+raw traceback. `_link_or_copy` falls back to a copy for a throwaway staging
+tree — semantically identical, and the worktree-untouched property is
+unchanged. The test passes here and in CI.
+
+Net effect: total coverage 89.19% → 92.04%; `approval_signing.py` 57% → 100%;
+`routes.py` 79% → 95%; `audit_chain.py` 84% → 89%.
 
 
 ## Hardening pass (2026-10-23)

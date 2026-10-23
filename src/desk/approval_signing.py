@@ -142,11 +142,10 @@ def signed_payload(deal_id: str, draft_id: str, body_sha256: str) -> dict[str, s
     return {"deal_id": deal_id, "draft_id": draft_id, "body_sha256": body_sha256}
 
 
-def sign_approval(private_hex: str, deal_id: str, draft_id: str, body_sha256: str) -> dict[str, str]:
-    """Sign one approval. Run this on the human's machine, not on the server."""
+def _sign_block(private_hex: str, payload: dict[str, str]) -> dict[str, str]:
+    """Sign one canonical payload. The only signing implementation on the desk."""
     private = bytes.fromhex(private_hex)
     signing = SigningKey(private)
-    payload = signed_payload(deal_id, draft_id, body_sha256)
     sig = signing.sign(canonical(payload)).signature.hex()
     return {
         "alg": ALG,
@@ -155,25 +154,34 @@ def sign_approval(private_hex: str, deal_id: str, draft_id: str, body_sha256: st
     }
 
 
+def sign_approval(private_hex: str, deal_id: str, draft_id: str, body_sha256: str) -> dict[str, str]:
+    """Sign one approval. Run this on the human's machine, not on the server."""
+    return _sign_block(private_hex, signed_payload(deal_id, draft_id, body_sha256))
+
+
 def required_approval_pubkey() -> str | None:
     """The pubkey that approvals must carry, when the desk enforces signed approvals."""
     value = os.environ.get(APPROVAL_PUBKEY_ENV, "").strip().lower()
     return value or None
 
 
-def verify_signed_approval(approval: Any, payload: dict[str, str]) -> bool:
-    """Verify one approval block against the payload and the server policy.
+def _verify_block(approval: Any, payload: dict[str, str]) -> bool:
+    """The one place that reasons about what a valid signature block means.
 
     Malformed input never raises here; it only fails. When a required pubkey
-    is configured, the approval must be signed by exactly that key.
+    is configured, the block must be signed by exactly that key.
 
-    [SECURITY 2026-10-23] A supplied approval block is now always checked
-    against the pinned key when one exists, and the ``pubkey`` field is never
-    trusted as a claim of identity on its own: an approval signed by a key the
-    server did not pin is a *valid signature by an unknown signer*, which is not
-    the same thing as a human approval. ``pinned_ok`` is therefore reported
-    separately so the caller can refuse an unpinned signer explicitly instead of
-    relying on the absence of a policy.
+    [SECURITY 2026-10-23] A supplied block is always checked against the
+    pinned key when one exists, and the ``pubkey`` field is never trusted as
+    a claim of identity on its own: a signature by a key the server did not
+    pin is a *valid signature by an unknown signer*, which is not the same
+    thing as a human approval. ``approval_is_pinned`` reports that
+    separately so a caller can refuse an unpinned signer explicitly instead
+    of relying on the absence of a policy.
+
+    Every human-decision signature on the desk — send approvals and supplier
+    address changes alike — goes through this function, so the rules cannot
+    drift between them.
     """
     if not isinstance(approval, dict):
         return False
@@ -194,6 +202,11 @@ def verify_signed_approval(approval: Any, payload: dict[str, str]) -> bool:
     except (BadSignatureError, ValueError, TypeError):
         return False
     return True
+
+
+def verify_signed_approval(approval: Any, payload: dict[str, str]) -> bool:
+    """Verify one approval block against the payload and the server policy."""
+    return _verify_block(approval, payload)
 
 
 def approval_is_pinned(approval: Any) -> bool:
@@ -223,43 +236,38 @@ def address_change_payload(deal_id: str, supplier_id: str, address: str) -> dict
 
 def sign_address_change(private_hex: str, deal_id: str, supplier_id: str, address: str) -> dict[str, str]:
     """Sign one supplier-address change. Run this on the human's machine."""
-    private = bytes.fromhex(private_hex)
-    signing = SigningKey(private)
-    payload = address_change_payload(deal_id, supplier_id, address)
-    sig = signing.sign(canonical(payload)).signature.hex()
-    return {
-        "alg": ALG,
-        "pubkey": signing.verify_key.encode().hex(),
-        "sig": sig,
-    }
+    return _sign_block(private_hex, address_change_payload(deal_id, supplier_id, address))
 
 
 def verify_address_change(approval: Any, payload: dict[str, str]) -> bool:
-    """Verify one address-change block, with the same rules as an approval.
+    """Verify one address-change block.
 
-    Deliberately the same function shape as :func:`verify_signed_approval` so
-    there is one place to reason about what a valid signature means.
+    Deliberately the *same* verifier as a send approval — both delegate to
+    :func:`_verify_block`, so there is exactly one implementation of what a
+    valid human signature means on this desk.
     """
-    if not isinstance(approval, dict):
-        return False
-    if approval.get("alg") != ALG:
-        return False
-    pubkey = approval.get("pubkey")
-    sig = approval.get("sig")
-    if not isinstance(pubkey, str) or not isinstance(sig, str):
-        return False
-    if len(pubkey) != PUBKEY_HEX_LEN or len(sig) != SIG_HEX_LEN:
-        return False
-    required = required_approval_pubkey()
-    if required is not None and pubkey != required:
-        return False
-    try:
-        verify_key = VerifyKey(bytes.fromhex(pubkey))
-        verify_key.verify(canonical(payload), bytes.fromhex(sig))
-    except (BadSignatureError, ValueError, TypeError):
-        return False
-    return True
+    return _verify_block(approval, payload)
 
+
+
+def _load_private_key(key_text: str) -> str:
+    """Accept a bare hex string, or a file holding hex or a keygen JSON blob."""
+    if os.path.isfile(key_text):
+        with open(key_text, encoding="utf-8") as handle:
+            key_text = handle.read().strip()
+        try:
+            key_text = json.loads(key_text)["private_key"]
+        except (json.JSONDecodeError, KeyError):
+            pass  # a bare hex key file is also accepted
+    return key_text.strip()
+
+
+def _write_out(blob: str, out: str) -> None:
+    if out == "-":
+        print(blob)
+    else:
+        with open(out, "w", encoding="utf-8") as handle:
+            handle.write(blob + "\n")
 
 
 def _cli(argv: list[str] | None = None) -> int:
@@ -289,68 +297,48 @@ def _cli(argv: list[str] | None = None) -> int:
     address.add_argument("--out", default="-", help="Write the signature block JSON to a file instead of stdout.")
 
     args = parser.parse_args(argv)
-    if args.cmd == "keygen":
-        private_hex, public_hex = generate_keypair()
-        blob = json.dumps(
-            {"alg": ALG, "private_key": private_hex, "public_key": public_hex},
-            indent=2,
-            sort_keys=True,
-        )
-        if args.out == "-":
-            print(blob)
-        else:
-            path = os.path.abspath(args.out)
-            with open(path, "w", encoding="utf-8") as handle:
-                handle.write(blob + "\n")
-            os.chmod(path, 0o600)
-            print(f"keypair written to {path} (private key, mode 0600)", file=sys.stderr)
-        return 0
-    if args.cmd == "sign":
-        key_text = args.key
-        if os.path.isfile(key_text):
-            with open(key_text, encoding="utf-8") as handle:
-                key_text = handle.read().strip()
-            try:
-                key_text = json.loads(key_text)["private_key"]
-            except (json.JSONDecodeError, KeyError):
-                pass  # a bare hex key file is also accepted
-        with open(args.payload, encoding="utf-8") as handle:
-            payload = json.load(handle)
-        approval = sign_approval(
-            key_text.strip(),
-            str(payload["deal_id"]),
-            str(payload["draft_id"]),
-            str(payload["body_sha256"]),
-        )
-        blob = json.dumps(approval, indent=2, sort_keys=True)
-        if args.out == "-":
-            print(blob)
-        else:
-            with open(args.out, "w", encoding="utf-8") as handle:
-                handle.write(blob + "\n")
-        return 0
-    if args.cmd == "sign-address":
-        key_text = args.key
-        if os.path.isfile(key_text):
-            with open(key_text, encoding="utf-8") as handle:
-                key_text = handle.read().strip()
-            try:
-                key_text = json.loads(key_text)["private_key"]
-            except (json.JSONDecodeError, KeyError):
-                pass
-        block = sign_address_change(
-            key_text.strip(),
-            str(args.deal),
-            str(args.supplier),
-            str(args.address),
-        )
-        blob = json.dumps(block, indent=2, sort_keys=True)
-        if args.out == "-":
-            print(blob)
-        else:
-            with open(args.out, "w", encoding="utf-8") as handle:
-                handle.write(blob + "\n")
-        return 0
+    try:
+        if args.cmd == "keygen":
+            private_hex, public_hex = generate_keypair()
+            blob = json.dumps(
+                {"alg": ALG, "private_key": private_hex, "public_key": public_hex},
+                indent=2,
+                sort_keys=True,
+            )
+            if args.out == "-":
+                print(blob)
+            else:
+                path = os.path.abspath(args.out)
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write(blob + "\n")
+                os.chmod(path, 0o600)
+                print(f"keypair written to {path} (private key, mode 0600)", file=sys.stderr)
+            return 0
+        if args.cmd == "sign":
+            with open(args.payload, encoding="utf-8") as handle:
+                payload = json.load(handle)
+            approval = sign_approval(
+                _load_private_key(args.key),
+                str(payload["deal_id"]),
+                str(payload["draft_id"]),
+                str(payload["body_sha256"]),
+            )
+            _write_out(json.dumps(approval, indent=2, sort_keys=True), args.out)
+            return 0
+        if args.cmd == "sign-address":
+            block = sign_address_change(
+                _load_private_key(args.key),
+                str(args.deal),
+                str(args.supplier),
+                str(args.address),
+            )
+            _write_out(json.dumps(block, indent=2, sort_keys=True), args.out)
+            return 0
+    except (OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
+        # A human runs this between review and send. A traceback on a typoed
+        # key or a malformed payload file is noise at exactly the wrong moment.
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     return 2
 
 

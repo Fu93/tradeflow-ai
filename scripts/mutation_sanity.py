@@ -302,6 +302,24 @@ def _write_mutant(dest: Path, mutated: str, live: Path) -> None:
     dest.write_text(mutated, encoding="utf-8")
 
 
+def _link_or_copy(src: Path, dest: Path, *, directory: bool = False) -> None:
+    """Symlink where the OS allows; copy where it does not.
+
+    Windows without developer mode refuses ``os.symlink`` (WinError 1314), which
+    used to make the whole harness unusable on a plain Windows dev box. A copy is
+    semantically identical for a throwaway staging tree: the staged sources are
+    read-only inputs to a subprocess run and are never written back to the
+    worktree, which is the property the worktree-untouched test pins.
+    """
+    try:
+        dest.symlink_to(src, target_is_directory=directory)
+    except OSError:
+        if directory:
+            shutil.copytree(src, dest)
+        else:
+            shutil.copyfile(src, dest)
+
+
 def stage_mutant(path: Path, mutated: str) -> Path:
     """A temp tree. The mutated file is a real copy. Package inits are copies too.
 
@@ -328,7 +346,7 @@ def stage_mutant(path: Path, mutated: str) -> Path:
             elif name == "__init__.py":
                 shutil.copyfile(src_file, dest)
             else:
-                dest.symlink_to(src_file)
+                _link_or_copy(src_file, dest)
     if not under_src:
         dest = stage / live.relative_to(repo)
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -336,7 +354,7 @@ def stage_mutant(path: Path, mutated: str) -> Path:
     for name in ("models", "data", "docs"):
         source = repo / name
         if source.exists():
-            (stage / name).symlink_to(source, target_is_directory=True)
+            _link_or_copy(source, stage / name, directory=True)
     return stage
 
 
