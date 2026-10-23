@@ -39,7 +39,7 @@
 
 | Check | Result |
 |---|---|
-| `python -m pytest tests -q` | 861 passed, 6 skipped, 112 subtests, 3 failed |
+| `python -m pytest tests -q` | 863 passed, 6 skipped, 112 subtests, 3 failed |
 | `python verify_all.py` | ALL 6 PILLARS PASS |
 | `python verify_live.py` | V2 DESK SURFACE VERIFIED END TO END (9 steps) |
 | `python scripts/mutation_sanity.py` | 66 mutants killed |
