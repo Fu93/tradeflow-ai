@@ -281,6 +281,28 @@ class TestBeliefNumerics:
         assert state.n_responses == 2
         assert state.upper == pytest.approx(0.8)
 
+    def test_a_later_higher_ask_never_loosens_the_bound(self):
+        """The one guard, in the one place.
+
+        ``tighten`` used to clamp with ``min(self.upper, ...)`` *and* return
+        ``self`` when the bound did not move. The early return subsumes the
+        clamp, so a mutation of the clamp was invisible. This pins the invariant
+        directly rather than relying on the mutation harness to find it again.
+        """
+        state = ReserveState.policy().with_reference(10.0)
+        tightened = state.tighten(0.8)
+        for ratio in (1.2, 5.0, 1.0, 0.9):
+            raised = tightened.tighten(ratio)
+            assert raised.upper == pytest.approx(tightened.upper), ratio
+            assert raised.n_responses == tightened.n_responses, ratio
+        # A ratio below one still tightens.
+        assert tightened.tighten(0.7).upper == pytest.approx(0.7)
+
+    def test_a_bound_above_one_never_loosens_the_bound(self):
+        state = ReserveState.policy().with_reference(10.0)
+        tightened = state.tighten(0.8)
+        assert tightened.tighten(3.0).upper == pytest.approx(0.8)
+
 
 # ---------------------------------------------------------------------------
 # Correctness: the record and the message agree about the price

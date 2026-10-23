@@ -36,7 +36,7 @@ MUTANTS = [
     ("src/engine/decision.py", "push_counter=push", "push_counter=float(ask)", "tests/steps/test_t7_optimiser.py::test_desk_decide_matches_choose_offer"),
     ("src/engine/decision.py", "return _clip(found, floor, hi), \"golden_section\"", "return _clip(found, floor, hi), \"mesh\"", "tests/steps/test_t7_optimiser.py::test_desk_decide_matches_choose_offer"),
     ("src/engine/decision.py", "belief = state if state is not None else ReserveState.policy()", "belief = ReserveState.policy()", FIRST),
-    ("src/engine/reserve.py", "bound = min(float(self.upper), max(float(ratio), _TINY))", "bound = max(float(ratio), _TINY)", TIGHT),
+    ("src/engine/reserve.py", "if bound >= self.upper:", "if False:", TIGHT),
     ("src/engine/reserve.py", "ratios = self.reject_ratios + (min(max(float(ratio), _TINY), 1.0),)", "ratios = self.reject_ratios", REJECT),
     ("src/engine/reserve.py", "lower = max(float(ratio) for ratio in self.reject_ratios)", "lower = 0.0", REJECT),
     ("src/engine/reserve.py", "return self._spawn(reference_ask=float(ask))", "return self._spawn(reference_ask=None)", FIRST),

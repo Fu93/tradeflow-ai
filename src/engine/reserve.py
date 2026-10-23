@@ -217,9 +217,16 @@ class ReserveState:
         supplier's Beta posterior" while the posterior was still the policy
         prior. ``n_responses`` now means "observations that moved D", which is
         what the provenance label is supposed to mean.
+
+        [CORRECTNESS 2026-10-23, second pass] The ``min(self.upper, ...)`` clamp
+        that used to sit here was removed because the early return subsumes it:
+        once a bound that does not move ``upper`` returns ``self``, clamping to
+        ``self.upper`` first cannot change the outcome, and two guards for one
+        invariant let the mutation harness plant a bug that neither guard could
+        see. The invariant now lives in exactly one place — the early return —
+        and the mutant targets it.
         """
-        bound = min(float(self.upper), max(float(ratio), _TINY))
-        bound = min(bound, 1.0)
+        bound = min(max(float(ratio), _TINY), 1.0)
         if bound >= self.upper:
             return self
         return self._spawn(upper=bound, n_responses=self.n_responses + 1)
