@@ -53,8 +53,8 @@ from src.config.heuristics import (
     RISK_TOLERANCE_MAX,
     STAGNATION_PREMIUM,
     SUPERVISOR_MIN_PRICE_RATIO,
-    public_payload as heuristics_payload,
 )
+from src.app.heuristics_view import public_payload as heuristics_payload
 from src.desk.names import supplier_name_key
 from ..engine.backend import describe_solver_backend, resolve_use_gpu
 from ..engine.llm_config import llm_status
@@ -260,6 +260,10 @@ def _readable_validation_detail(detail):
 # CORSMiddleware 允許 allow_origin_regex，但 allow_origins 一旦含 "*" 就會
 # 無條件加上 Access-Control-Allow-Origin: *）。
 from .limits import BodySizeLimitMiddleware  # noqa: E402
+from .observability import RequestContextMiddleware, install_request_id_filter  # noqa: E402
+from .rate_limit import WriteRateLimitMiddleware  # noqa: E402
+
+install_request_id_filter()
 
 app.add_middleware(
     CORSMiddleware,
@@ -271,10 +275,19 @@ app.add_middleware(
 
 # [SECURITY 2026-10-23] 請求體大小上限。Pydantic 的欄位長度檢查發生在
 # ASGI 伺服器**已經緩衝完整個 body** 之後，所以單筆 500 MB 的 POST 就能在
-# 任何驗證器看到它之前耗盡記憶體。這個中介層是最外層（在 CORS 之後註冊，
-# Starlette 會把它排到最前），在讀取 body 前就用 Content-Length 拒絕，
-# 並在串流過程中累計位元組數作為第二道保證。
+# 任何驗證器看到它之前耗盡記憶體。這個中介層在讀取 body 前就用
+# Content-Length 拒絕，並在串流過程中累計位元組數作為第二道保證。
 app.add_middleware(BodySizeLimitMiddleware)
+
+# [SECURITY 2026-10-23] 寫入路徑限流。在此之前整個 API 沒有任何上限：一個
+# 客戶端可以迴圈呼叫 /api/v1/desk/deals/{id}/quotes，每次都會跑抽取器、信念
+# 更新與求解器。鍵是 API key（雜湊後）或客戶端位址，所以一個租戶無法餓死
+# 另一個。行程內計數，重啟即清空——這是「本行程的濫用上限」，不是分散式限流。
+app.add_middleware(WriteRateLimitMiddleware)
+
+# [OPS 2026-10-23] 請求身分與存取日誌。放在最外層，所以被限流或體積上限
+# 拒絕的請求也會留下帶 request id 的一行記錄。
+app.add_middleware(RequestContextMiddleware)
 
 # 全域會話管理器實例
 session_mgr = SessionManager()

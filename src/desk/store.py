@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.config.heuristics import DEAL_CURRENCY
-from src.desk import audit_chain
+from src.desk import audit_chain, migrations
 
 
 class DeskRejected(ValueError):
@@ -79,186 +79,15 @@ class DeskStore:
                 return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
             return {"ok": True, "detail": "writable"}
 
-    def _create_indexes(self) -> None:
-        """Indexes for the columns the read paths actually filter on.
-
-        ``EXPLAIN QUERY PLAN`` showed four full table scans on the hot paths:
-        the event list ordered by ``received_at``, the draft lookups, the hazard
-        outcome lookups, and the decision lookups. All four were served by a
-        ``SCAN`` plus a temporary B-tree. The existing ``quote_external`` index
-        is *partial* (``WHERE external_id IS NOT NULL``), so it cannot answer a
-        plain ``deal_id`` filter — a common mistake worth stating explicitly.
-
-        Created separately from the table DDL so a pre-existing database picks
-        them up on the next open without a migration.
-        """
-        self.conn.executescript(
-            """
-            CREATE INDEX IF NOT EXISTS quote_events_deal_received
-                ON quote_events(deal_id, received_at);
-            CREATE INDEX IF NOT EXISTS quote_events_deal_supplier
-                ON quote_events(deal_id, supplier_id);
-            CREATE INDEX IF NOT EXISTS drafts_deal_supplier
-                ON drafts(deal_id, supplier_id);
-            CREATE INDEX IF NOT EXISTS drafts_deal_status
-                ON drafts(deal_id, status);
-            CREATE INDEX IF NOT EXISTS suppliers_deal
-                ON suppliers(deal_id);
-            """
-        )
-        # The remaining tables are created by later migration steps, so their
-        # indexes are added where the table is guaranteed to exist.
-        for statement in (
-            "CREATE INDEX IF NOT EXISTS hazard_outcomes_deal ON hazard_outcomes(deal_id)",
-            "CREATE INDEX IF NOT EXISTS decisions_deal ON decisions(deal_id)",
-            "CREATE INDEX IF NOT EXISTS desk_chain_deal_seq ON desk_chain(deal_id, seq)",
-        ):
-            try:
-                self.conn.execute(statement)
-            except sqlite3.Error:
-                # A database that has never run the step that creates this table
-                # is not an error; the index is created on the next open.
-                continue
-
     def _create(self) -> None:
-        self.conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS deals (
-                id TEXT PRIMARY KEY,
-                product TEXT NOT NULL,
-                quantity INTEGER NOT NULL,
-                target_price REAL NOT NULL,
-                ceiling_price REAL NOT NULL,
-                risk_tolerance REAL NOT NULL,
-                seed INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS suppliers (
-                id TEXT PRIMARY KEY,
-                deal_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                address TEXT NOT NULL,
-                channel TEXT NOT NULL,
-                belief_mean REAL,
-                belief_std REAL,
-                hazard_events INTEGER NOT NULL DEFAULT 0,
-                hazard_walks INTEGER NOT NULL DEFAULT 0,
-                FOREIGN KEY (deal_id) REFERENCES deals(id)
-            );
-            CREATE UNIQUE INDEX IF NOT EXISTS suppliers_deal_address
-                ON suppliers(deal_id, address COLLATE NOCASE);
-            CREATE TABLE IF NOT EXISTS quote_events (
-                id TEXT PRIMARY KEY,
-                deal_id TEXT NOT NULL,
-                supplier_id TEXT,
-                source TEXT NOT NULL,
-                raw_text TEXT NOT NULL,
-                parsed_json TEXT NOT NULL,
-                confidence TEXT NOT NULL,
-                status TEXT NOT NULL,
-                provenance_json TEXT NOT NULL,
-                external_id TEXT,
-                received_at TEXT NOT NULL
-            );
-            CREATE UNIQUE INDEX IF NOT EXISTS quote_external
-                ON quote_events(deal_id, external_id)
-                WHERE external_id IS NOT NULL;
-            CREATE TABLE IF NOT EXISTS drafts (
-                id TEXT PRIMARY KEY,
-                deal_id TEXT NOT NULL,
-                supplier_id TEXT NOT NULL,
-                body TEXT NOT NULL,
-                status TEXT NOT NULL,
-                human_approved INTEGER NOT NULL DEFAULT 0,
-                transmitted INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                sent_at TEXT,
-                gmail_draft_id TEXT,
-                gmail_error TEXT
-            );
-            CREATE TABLE IF NOT EXISTS snapshots (
-                deal_id TEXT PRIMARY KEY,
-                payload_json TEXT NOT NULL,
-                computed_at TEXT NOT NULL,
-                elapsed_ms INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS mailbox_seen (
-                mailbox_key TEXT NOT NULL,
-                external_id TEXT NOT NULL,
-                PRIMARY KEY (mailbox_key, external_id)
-            );
-            """
-        )
-        self._ensure_column("drafts", "version", "INTEGER NOT NULL DEFAULT 1")
-        self._ensure_column("drafts", "body_sha256", "TEXT")
-        self._ensure_column("drafts", "send_error", "TEXT")
-        self._ensure_column("drafts", "reply_to", "TEXT")
-        self._ensure_column("drafts", "references_header", "TEXT")
-        self._ensure_column("drafts", "message_id", "TEXT")
-        self._ensure_column("drafts", "seq", "INTEGER")
-        self.conn.execute("UPDATE drafts SET seq = rowid WHERE seq IS NULL")
-        for column, ddl in (
-            ("hazard_intercept", "REAL"),
-            ("hazard_tau", "REAL"),
-            ("hazard_quote_gap", "REAL"),
-            ("reserve_prior_mean", "REAL"),
-            ("reserve_prior_std", "REAL"),
-            ("expected_markup", "REAL"),
-            ("search_cost", "REAL"),
-            ("include_unverified", "INTEGER NOT NULL DEFAULT 0"),
-            ("hazard_reserve_gap", "REAL"),
-            ("bayes_obs_noise", "REAL"),
-            ("unit_sanity_multiple", "REAL"),
-        ):
-            self._ensure_column("deals", column, ddl)
-        self._ensure_column("deals", "currency", "TEXT")
-        self.conn.execute(
-            "UPDATE deals SET currency = ? WHERE currency IS NULL OR currency = ''",
-            (DEAL_CURRENCY,),
-        )
-        self._ensure_column("quote_events", "raw_sha256", "TEXT")
-        self._ensure_column("drafts", "decision_id", "TEXT")
-        self._ensure_column("snapshots", "decision_id", "TEXT")
-        self.conn.executescript(audit_chain.SCHEMA)
-        self._ensure_column("desk_chain", "key_id", "TEXT")
-        self.conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS decisions (
-                id TEXT PRIMARY KEY,
-                deal_id TEXT NOT NULL,
-                supplier_id TEXT NOT NULL,
-                record_json TEXT NOT NULL,
-                record_sha256 TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            CREATE TRIGGER IF NOT EXISTS decisions_no_update BEFORE UPDATE ON decisions
-            BEGIN SELECT RAISE(ABORT, 'decisions is append-only'); END;
-            CREATE TRIGGER IF NOT EXISTS decisions_no_delete BEFORE DELETE ON decisions
-            BEGIN SELECT RAISE(ABORT, 'decisions is append-only'); END;
-            """
-        )
-        self.conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS hazard_outcomes (
-                id TEXT PRIMARY KEY,
-                deal_id TEXT NOT NULL,
-                supplier_id TEXT NOT NULL,
-                outcome TEXT NOT NULL,
-                quote REAL,
-                offer REAL,
-                agreed_price REAL,
-                created_at TEXT NOT NULL
-            );
-            """
-        )
-        self._create_indexes()
-        self.conn.commit()
+        """Bring the schema to the version this build expects.
 
-    def _ensure_column(self, table: str, column: str, ddl: str) -> None:
-        found = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
-        if column not in found:
-            self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+        The DDL itself lives in ``src/desk/migrations.py``, which records the
+        applied version in ``PRAGMA user_version``. This method used to hold the
+        whole schema plus a list of guarded ``ALTER TABLE`` calls, which could
+        only ever add columns and never recorded what shape the database was in.
+        """
+        self.schema = migrations.apply_all(self.conn)
 
     def _supplier_snapshot(self, deal_id: str) -> list[dict[str, str]]:
         rows = self.conn.execute(

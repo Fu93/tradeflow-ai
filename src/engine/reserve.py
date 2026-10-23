@@ -17,7 +17,6 @@ from typing import Any
 import numpy as np
 
 from src.config.heuristics import (
-    BETA_CF_ITERS,
     BETA_CDF_CACHE_MAXSIZE,
     D_PRIOR_MEAN,
     D_PRIOR_STRENGTH,
@@ -27,6 +26,7 @@ from src.config.heuristics import (
     ONE_HALF,
     OPT_TOL,
 )
+from src.engine.numerics import betacf
 
 _TINY = float(np.finfo(np.float64).tiny)
 
@@ -54,40 +54,12 @@ def _log_beta(alpha: float, beta: float) -> float:
 
 
 def _betacf(alpha: float, beta: float, x: float) -> float:
-    """Lentz continued fraction for the incomplete-beta tail series."""
-    qab = alpha + beta
-    qap = alpha + 1.0
-    qam = alpha - 1.0
-    c = 1.0
-    d = 1.0 - qab * x / qap
-    if abs(d) < _TINY:
-        d = _TINY
-    d = 1.0 / d
-    height = d
-    for m in range(1, int(BETA_CF_ITERS) + 1):
-        m2 = 2 * m
-        aa = m * (beta - m) * x / ((qam + m2) * (alpha + m2))
-        d = 1.0 + aa * d
-        if abs(d) < _TINY:
-            d = _TINY
-        c = 1.0 + aa / c
-        if abs(c) < _TINY:
-            c = _TINY
-        d = 1.0 / d
-        height *= d * c
-        aa = -(alpha + m) * (qab + m) * x / ((alpha + m2) * (qap + m2))
-        d = 1.0 + aa * d
-        if abs(d) < _TINY:
-            d = _TINY
-        c = 1.0 + aa / c
-        if abs(c) < _TINY:
-            c = _TINY
-        d = 1.0 / d
-        delta = d * c
-        height *= delta
-        if abs(delta - 1.0) < float(OPT_TOL):
-            break
-    return height
+    """Decision-path precision. The kernel itself lives in ``src.engine.numerics``.
+
+    Kept as a thin local name so the rest of this module (and its tests) reads
+    unchanged; the duplicate implementation that used to sit here is gone.
+    """
+    return betacf(alpha, beta, x)
 
 
 def regularized_beta(x: float, alpha: float, beta: float) -> float:

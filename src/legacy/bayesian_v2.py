@@ -24,6 +24,7 @@ from src.config.heuristics import (
     STUDENT_T_BRACKET,
     STUDENT_T_DF,
 )
+from src.engine.numerics import betacf_precise, log_beta
 
 
 class BayesianBeliefState(BaseModel):
@@ -42,52 +43,17 @@ class BayesianBeliefState(BaseModel):
 
 
 def _log_beta(a: float, b: float) -> float:
-    return math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b)
+    return log_beta(a, b)
 
 
 def _betacf(a: float, b: float, x: float) -> float:
-    """Lentz continued fraction for the incomplete beta (Numerical Recipes).
+    """The tighter precision. The kernel lives in ``src.engine.numerics``.
 
-    The previous recurrence normalised ``b1`` to 1 and then reused it as the
-    next denominator, so the fraction collapsed and the regularised beta
-    returned 1. A positive Student-t then had CDF 0.5.
+    The duplicate implementation that used to sit here carried the same
+    recurrence with different convergence constants; both copies are now one
+    function with the precision passed in. Behaviour is unchanged.
     """
-    max_iter = 200
-    eps = 3e-14
-    tiny = 1e-30
-    qab = a + b
-    qap = a + 1.0
-    qam = a - 1.0
-    c = 1.0
-    d = 1.0 - qab * x / qap
-    if abs(d) < tiny:
-        d = tiny
-    d = 1.0 / d
-    h = d
-    for m in range(1, max_iter + 1):
-        m2 = 2 * m
-        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
-        d = 1.0 + aa * d
-        if abs(d) < tiny:
-            d = tiny
-        c = 1.0 + aa / c
-        if abs(c) < tiny:
-            c = tiny
-        d = 1.0 / d
-        h *= d * c
-        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
-        d = 1.0 + aa * d
-        if abs(d) < tiny:
-            d = tiny
-        c = 1.0 + aa / c
-        if abs(c) < tiny:
-            c = tiny
-        d = 1.0 / d
-        delta = d * c
-        h *= delta
-        if abs(delta - 1.0) < eps:
-            break
-    return h
+    return betacf_precise(a, b, x)
 
 
 def regularized_incomplete_beta(a: float, b: float, x: float) -> float:

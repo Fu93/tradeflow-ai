@@ -643,68 +643,26 @@ AUDIT_VERIFY_DEFAULT_LIMIT = 200
 # for the whole chain by passing a large limit.
 AUDIT_VERIFY_MAX_LIMIT = 2000
 
+# Rationale: convergence budget for the shared incomplete-beta continued
+# fraction when the caller asks for the tighter of the two precisions. The
+# legacy belief update renders a Student-t interval to a person and was written
+# against 200 iterations at 3e-14; the decision path keeps BETA_CF_ITERS and
+# OPT_TOL above. Both now run the same kernel in src/engine/numerics.py, and the
+# two precisions are named here instead of being an accident of which file a
+# reviewer happens to open.
+LEGACY_BETA_CF_ITERS = 200
 
-def _sigmoid(value: float) -> float:
-    import math
+# Rationale: convergence epsilon for the tighter precision above. It is a
+# numerical tolerance, not a price or a rate.
+LEGACY_BETA_CF_EPS = 3e-14
 
-    if value >= 0:
-        z = math.exp(-value)
-        return 1.0 / (1.0 + z)
-    z = math.exp(value)
-    return z / (1.0 + z)
+# Rationale: floor used in place of zero inside the continued fraction when the
+# tighter precision is requested. Not a price.
+LEGACY_BETA_CF_TINY = 1e-30
 
-
-def public_payload() -> dict:
-    """Numbers the dashboard and the extension are allowed to display."""
-    intercept = float(HAZARD_INTERCEPT)
-    gap = float(HAZARD_QUOTE_GAP)
-    hazard_status = "fit-missing"
-    hazard_note = "The eBay hazard file is not available in this process."
-    try:
-        from src.engine.hazard_fit import load_hazard_fit
-
-        fit = load_hazard_fit()
-        intercept = float(fit.intercept)
-        gap = float(fit.gap_coef)
-        hazard_status = "ebay_seller_ended"
-        caveat = str((fit.provenance or {}).get("transfer_caveat") or "")
-        hazard_note = (
-            "Walk-away hazard is transferred from eBay Best Offer, 2012–13, "
-            "Business & Industrial, seller-ended, with a small-gap hinge. "
-            "It is not a measured Chinese-factory rate. A reserve-gap term is "
-            "not in the decision. The risk cap applies to the incremental hazard "
-            "of our offer. " + caveat
-        ).strip()
-    except Exception:
-        pass
-    return {
-        "documented": True,
-        "source": "src/config/heuristics.py",
-        "breakdown_trip_threshold": BREAKDOWN_TRIP_THRESHOLD,
-        "risk_tolerance_default": BREAKDOWN_TRIP_THRESHOLD,
-        "risk_tolerance_floor": RISK_TOLERANCE_FLOOR,
-        "risk_tolerance_max": RISK_TOLERANCE_MAX,
-        "cvar_tail_fraction": CVAR_TAIL_FRACTION,
-        "caution_risk_threshold": CAUTION_RISK_THRESHOLD,
-        "hazard_status": hazard_status,
-        "hazard_intercept": intercept,
-        "hazard_tau": HAZARD_SUPPLIER_TAU,
-        "hazard_quote_gap": gap,
-        "hazard_baseline_rate": _sigmoid(intercept),
-        "hazard_baseline_low": _sigmoid(intercept - HAZARD_SUPPLIER_TAU),
-        "hazard_baseline_high": _sigmoid(intercept + HAZARD_SUPPLIER_TAU),
-        "hazard_min_events": HAZARD_MIN_EVENTS,
-        "prior_reserve_suggestion": PRIOR_RESERVE_MEAN,
-        "prior_reserve_std_suggestion": PRIOR_RESERVE_STD,
-        "student_t_df": STUDENT_T_DF,
-        "dashboard_expected_markup": None,
-        "unit_sanity_multiple": UNIT_SANITY_MULTIPLE,
-        "hazard_credible_alpha": HAZARD_CREDIBLE_ALPHA,
-        "weitzman_search_cost": WEITZMAN_SEARCH_COST,
-        "hazard_note": hazard_note,
-        "ladder_edge_lo": LADDER_EDGE_LO,
-        "ladder_edge_hi": LADDER_EDGE_HI,
-        "ladder_step_fine": LADDER_STEP_FINE,
-        "ladder_step_mid": LADDER_STEP_MID,
-        "note": "Chosen safety bands and display quantisation, not fitted rates.",
-    }
+# The documented-constants view (`public_payload`) lives in
+# `src/app/heuristics_view.py`. It used to be defined here and imported
+# `src.engine.hazard_fit` inside the function body, which made this lowest
+# layer depend on the engine while `hazard_fit` imports this module at module
+# scope — a real cycle, hidden by a function-level import and a bare `except`.
+# This module is now configuration only: it imports nothing from src.

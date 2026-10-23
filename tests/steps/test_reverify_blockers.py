@@ -615,14 +615,18 @@ def test_mutation_runner_leaves_the_worktree_untouched(tmp_path):
     spec = importlib.util.spec_from_file_location("mutation_sanity_under_test", script)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    live = Path(__file__).resolve().parents[2] / "src" / "desk" / "service.py"
+    # The body-must-be-rendered check moved to src/desk/verify.py when the send
+    # gate was extracted (2026-10-23). The point of this test is the staging
+    # mechanism, so it stages whichever file now holds the needle.
+    live = Path(__file__).resolve().parents[2] / "src" / "desk" / "verify.py"
     original = live.read_bytes()
     needle = "return draft_digest(body) == draft_digest(rendered)"
     mutated = original.decode("utf-8").replace(needle, "return rendered in body", 1)
+    assert mutated != original.decode("utf-8"), "the staged needle must still exist in verify.py"
     stage = module.stage_mutant(live, mutated)
     try:
         assert live.read_bytes() == original
-        staged = stage / "src" / "desk" / "service.py"
+        staged = stage / "src" / "desk" / "verify.py"
         assert staged.is_file()
         assert not staged.is_symlink()
         assert "return rendered in body" in staged.read_text(encoding="utf-8")

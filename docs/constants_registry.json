@@ -971,6 +971,21 @@
       "value": 3.0,
       "category": "d",
       "justification": "Auto-accept only from target divided by this multiple up to max(target, ceiling) times it. Three still allows about twice the ceiling and reviews an eighth of the target."
+    },
+    "LEGACY_BETA_CF_ITERS": {
+      "value": 200,
+      "category": "n",
+      "justification": "Convergence budget for the shared incomplete-beta continued fraction at the tighter of the two precisions. The legacy belief update renders a Student-t interval to a person; the decision path keeps BETA_CF_ITERS."
+    },
+    "LEGACY_BETA_CF_EPS": {
+      "value": 3e-14,
+      "category": "n",
+      "justification": "Convergence epsilon for the tighter precision above. It is a numerical tolerance for a continued fraction, not a price, a rate, or a policy band."
+    },
+    "LEGACY_BETA_CF_TINY": {
+      "value": 1e-30,
+      "category": "n",
+      "justification": "Floor used in place of zero inside the continued fraction when the tighter precision is requested. It prevents a division by zero and is not a price."
     }
   },
   "inline": [
@@ -979,24 +994,6 @@
       "value": 1e-08,
       "context": "return bool(np.max(np.abs(worst - float(ceiling))) <= span * 1e-8)",
       "justification": "Use of 1e-08 on this line of src/engine/coupled.py: return bool(np.max(np.abs(worst - float(ceiling))) <= span * 1e-8). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/legacy/bayesian_v2.py",
-      "value": 200,
-      "context": "max_iter = 200",
-      "justification": "Use of 200 on this line of src/engine/bayesian_v2.py: max_iter = 200. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/legacy/bayesian_v2.py",
-      "value": 3e-14,
-      "context": "eps = 3e-14",
-      "justification": "Use of 3e-14 on this line of src/engine/bayesian_v2.py: eps = 3e-14. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/legacy/bayesian_v2.py",
-      "value": 1e-30,
-      "context": "tiny = 1e-30",
-      "justification": "Use of 1e-30 on this line of src/engine/bayesian_v2.py: tiny = 1e-30. A different line that repeats the digits is not covered."
     },
     {
       "file": "src/legacy/bayesian_v2.py",
@@ -1549,12 +1546,6 @@
       "value": 60,
       "context": "return 60",
       "justification": "Use of 60 on this line of src/desk/service.py: return 60. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/desk/service.py",
-      "value": 8,
-      "context": "mailbox_queue: queue.Queue = self._queue.Queue(maxsize=8)",
-      "justification": "Use of 8 on this line of src/desk/service.py: the desk bus keeps eight snapshots. A different line that repeats the digits is not covered."
     },
     {
       "file": "src/desk/routes.py",
@@ -2965,6 +2956,12 @@
       "value": 128,
       "context": "sig: str = Field(min_length=128, max_length=128)",
       "justification": "Use of 128 on this line of src/desk/routes.py: sig: str = Field(min_length=128, max_length=128). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/bus.py",
+      "value": 8,
+      "context": "mailbox_queue: queue.Queue = self._queue.Queue(maxsize=8)",
+      "justification": "Subscriber queue depth for the in-process snapshot fan-out, unchanged when DeskBus moved to its own module. A full queue drops the oldest snapshot rather than blocking the writer on the request path."
     }
   ]
 }
