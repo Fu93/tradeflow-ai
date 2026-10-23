@@ -383,7 +383,7 @@ def test_concurrent_quotes_all_land_on_the_snapshot(desk_env):
 
 
 def test_a_better_rival_does_not_raise_the_other_offer():
-    from src.engine.coupled import solve_coupled
+    from src.legacy.coupled import solve_coupled
 
     means = np.array([1.08, 1.08])
     stds = np.array([0.10, 0.10])
@@ -448,7 +448,7 @@ def test_a_better_rival_does_not_raise_the_other_offer():
 
 
 def test_reported_standard_error_tracks_the_seed_spread():
-    from src.engine.coupled import solve_coupled
+    from src.legacy.coupled import solve_coupled
 
     quotes = np.array([1.05, 1.08, 1.12, 1.16])
     means = np.full(4, 1.08)

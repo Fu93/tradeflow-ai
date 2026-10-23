@@ -10,7 +10,7 @@ import os
 import shutil
 import tempfile
 import unittest
-from src.session import (
+from src.legacy.session import (
     SessionManager,
     SessionSpec,
     NegotiationTurn,

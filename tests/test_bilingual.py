@@ -532,7 +532,7 @@ class TestBilingualCognitiveBridge(unittest.TestCase):
 
     def test_session_silence_break_trigger(self):
         """驗證多供應商獨立會話在對手主動降價 >= 3% 或實質讓步時瞬間破冰喚醒。"""
-        from src.session.schema import NegotiationSession, SessionSpec
+        from src.legacy.session.schema import NegotiationSession, SessionSpec
         session = NegotiationSession(
             spec=SessionSpec(session_id="S_TEST", product_name="殼體", target_price=12.0, ceiling_price=15.0,
             expected_markup=0.0,

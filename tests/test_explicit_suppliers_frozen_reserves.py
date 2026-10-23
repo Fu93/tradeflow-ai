@@ -16,7 +16,7 @@ bundle's reserves, and its supplier count is respected.
 import unittest
 
 from src.app.demo_data import self_play_bundle
-from src.engine.multi_solver import simulate_reverse_auction
+from src.legacy.multi_solver import simulate_reverse_auction
 
 
 class TestExplicitSuppliersDoNotInheritBundleReserves(unittest.TestCase):

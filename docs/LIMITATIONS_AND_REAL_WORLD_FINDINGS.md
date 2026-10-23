@@ -341,9 +341,9 @@ The self-play baseline (recorded artefact: 100 matches = 20 × 5 archetypes, see
 | **API security** | No authentication at all; public exposure was wide open | `require_api_key` gate (`X-API-Key` header); production forces 401 | `tests/test_intent_benchmark.py::test_api_key_security_gate` |
 | **ReDoS** | Unbounded `.*` greedy patterns, catastrophic backtracking | Bounded quantifiers `[^\n，。！？]{0,15}` plus a hard 1,000-character input cap | `tests/test_intent_benchmark.py::test_redos_catastrophic_backtracking_immunity` (30,000 chars in 0.09 ms) |
 | **Intent-classifier credibility** | No labelled set; F1 was never evaluated | A 60-item **in-distribution regression set** covering 8 real/adversarial trade phrasings; Stage-1 measures **accuracy 100%, macro-F1 100%** with thresholds raised to 97%/96% so regressions are caught | `tests/test_intent_benchmark.py::test_intent_classification_benchmark_metrics` |
-| **Bayesian confidence units** | $1.0 - \sigma_{\text{post}}$ is dimensionally meaningless; breaks when sigma is in currency | Replaced with `compute_belief_confidence` based on the posterior coefficient of variation ($CV = \sigma/\mu$) and variance reduction | `src/engine/solver.py` + endpoint coverage |
-| **Resistance to probe quotes** | An EMA smoother with no outlier rejection, easily dragged by extreme quotes | **Huber soft clipping** in `bayes_update`: deviations above 30% are compressed sub-linearly (square root) | `src/engine/solver.py` |
-| **Non-atomic double write** | SQLite and JSON writes with no compensation | SQLite WAL declared the single source of truth (SSOT); `rebuild_json_snapshot` re-exports and rebuilds the cache | `src/session/manager.py` |
+| **Bayesian confidence units** | $1.0 - \sigma_{\text{post}}$ is dimensionally meaningless; breaks when sigma is in currency | Replaced with `compute_belief_confidence` based on the posterior coefficient of variation ($CV = \sigma/\mu$) and variance reduction | `src/legacy/solver.py` + endpoint coverage |
+| **Resistance to probe quotes** | An EMA smoother with no outlier rejection, easily dragged by extreme quotes | **Huber soft clipping** in `bayes_update`: deviations above 30% are compressed sub-linearly (square root) | `src/legacy/solver.py` |
+| **Non-atomic double write** | SQLite and JSON writes with no compensation | SQLite WAL declared the single source of truth (SSOT); `rebuild_json_snapshot` re-exports and rebuilds the cache | `src/legacy/session/manager.py` |
 
 ---
 
@@ -354,7 +354,7 @@ The self-play baseline (recorded artefact: 100 matches = 20 × 5 archetypes, see
   > **Correction on record**: an earlier version called the dev environment an "AMD Zen CPU". `Get-CimInstance Win32_Processor` reports Intel Core Ultra 7 355 (GenuineIntel). That was a factual error and is corrected here. AMD's **real** role in this project is limited to: calling the AMD tokenfactory endpoint from the model layer, and the `_xp()` abstraction switching to an AMD GPU when ROCm/CuPy is available.
 * **Not run on MI300X.** No Instinct GPU timing is in this repository. External kernel write-ups are not copied here, because their inputs are not in the repo. The only MI300X number kept is the theoretical roofline lower-bound estimate, not measured, in `results/mi300x_roofline.json`.
 * **Architecture portability**:
-  * The engine wraps its array backend in the `_xp()` abstraction in [`src/engine/solver.py`](../src/engine/solver.py). The default is NumPy. `TRADEFLOW_SOLVER_BACKEND=cupy` (or `use_gpu=True`) requests CuPy and falls back to NumPy when CuPy cannot be imported. That GPU path has not been measured on an AMD device in this repository.
+  * The engine wraps its array backend in the `_xp()` abstraction in [`src/legacy/solver.py`](../src/legacy/solver.py). The default is NumPy. `TRADEFLOW_SOLVER_BACKEND=cupy` (or `use_gpu=True`) requests CuPy and falls back to NumPy when CuPy cannot be imported. That GPU path has not been measured on an AMD device in this repository.
 
 ---
 
@@ -441,7 +441,7 @@ On 2026-10-14 the Evolus workspace was tested over real HTTP. **Every call below
 
 * The track requires "at least 2 building blocks" — **3 AI tools have actually produced usage**.
 
-### 11.3 End-to-end chain (`src/app/orchestrator.py`)
+### 11.3 End-to-end chain (`src/legacy/orchestrator.py`)
 
 * **Before the fix**: `draft_email()` returned 401 because `EVOLUS_APP_ID` was unset, and an `except` swallowed it into an `offline stub` string.
 * **After the fix**: `on_webhook()` → engine → real Evolus AI Tool drafting, measured output:

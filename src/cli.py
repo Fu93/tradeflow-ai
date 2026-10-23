@@ -10,13 +10,15 @@ from __future__ import annotations
 import sys, time, argparse, os
 from pathlib import Path
 import numpy as np
-from .engine import solve, recommend, bayes_update, model, robustness, viz, benchmark
+from .engine import viz, benchmark
+from .legacy import model, robustness
+from .legacy.solver import solve, recommend, bayes_update
 from .benchmark import AdversarialArena
-from .engine.multi_solver import simulate_reverse_auction
+from .legacy.multi_solver import simulate_reverse_auction
 from .app.demo_data import DEMO_SPEC, SUPPLIER_REPLIES, self_play_bundle
 from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS
 from src.sim.scenarios import UMBRELLA
-from .engine.model import bind_archetypes
+from .legacy.model import bind_archetypes
 
 bind_archetypes(OPPONENT_TYPE_ROWS, OPPONENT_TYPE_NAMES)
 
@@ -65,7 +67,7 @@ def run_demo():
     # [誠實揭露] 這裡的數字是「張量元素位數」= n_samples × 開盤檔 × 讓步曲線，
     # 不是迴圈執行次數；一次向量化廣播就求完整個張量。舊版把 480 寫成魔法數
     # 並稱其為 measured rollouts，容易讀成「執行了 960 萬次 rollout」。
-    from .engine import model as _model
+    from .legacy import model as _model
     _opens, _scheds = _model.strategy_grid(
         ceiling=DEMO_SPEC["ceiling_price"] / DEMO_SPEC["target_price"]
     )
@@ -256,8 +258,8 @@ def run_sandbox_demo(host: str = "127.0.0.1", port: int = 8000):
     3. 自動在瀏覽器開啟 Web 戰情大屏
     """
     import webbrowser
-    from .session.manager import SessionManager
-    from .session.schema import SessionSpec, AutopilotState
+    from .legacy.session.manager import SessionManager
+    from .legacy.session.schema import SessionSpec, AutopilotState
 
     print("=== TradeFlow Interactive Evaluation Sandbox ===")
     print(f"Target URL: http://{host}:{port}/")

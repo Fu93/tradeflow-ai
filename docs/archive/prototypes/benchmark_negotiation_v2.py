@@ -149,9 +149,9 @@ if __name__ == "__main__":
     working_set_source = None
     try:
         from src.engine import benchmark as engine_benchmark
-        from src.engine import model as engine_model
+        from src.legacy import model as engine_model
 
-        from src.engine.model import bind_archetypes
+        from src.legacy.model import bind_archetypes
         from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS
         bind_archetypes(OPPONENT_TYPE_ROWS, OPPONENT_TYPE_NAMES)
         e_opens, e_scheds = engine_model.strategy_grid(ceiling=YOUR_CEILING)

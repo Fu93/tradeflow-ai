@@ -16,7 +16,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from src.app.main import app, session_mgr
-from src.session.schema import AutopilotState
+from src.legacy.session.schema import AutopilotState
 
 
 class TestApiV4Integration(unittest.TestCase):

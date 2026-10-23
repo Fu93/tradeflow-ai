@@ -7,7 +7,7 @@ import unittest
 from datetime import datetime
 
 # 導入待測模組
-from src.session import (
+from src.legacy.session import (
     SessionManager,
     SessionSpec,
     NegotiationTurn,

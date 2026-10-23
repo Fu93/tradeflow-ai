@@ -1,7 +1,7 @@
 """單元測試：多供應商逆向拍賣模擬協同與動態 BATNA 收斂流程。"""
 import unittest
 from src.app.demo_data import self_play_bundle
-from src.engine.multi_solver import simulate_reverse_auction
+from src.legacy.multi_solver import simulate_reverse_auction
 
 
 class TestMultiSupplierSimulation(unittest.TestCase):
@@ -87,7 +87,7 @@ class TestMultiSupplierSimulation(unittest.TestCase):
 
     def test_interactive_multi_auction_session(self):
         """驗證真實即時逐輪交互會話 (MultiAuctionSession)：每一輪報價獨立傳入，不預設未來報價。"""
-        from src.engine.multi_solver import MultiAuctionSession
+        from src.legacy.multi_solver import MultiAuctionSession
 
         suppliers = [
             {"name": "Factory Alpha (寧波)", "profile": "Aggressive"},

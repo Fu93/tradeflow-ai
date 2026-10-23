@@ -97,7 +97,7 @@ Creating a session (dashboard commodity picker, `POST /api/v1/sessions`, or the 
 
 `POST /api/v1/multi-auction/run` runs `simulate_reverse_auction` first, then attaches `market_context`. The block is not an argument of the simulator.
 
-Invariant: `market_context` does not influence the solver, the recommended price, or the circuit breaker. `src/engine/solver.py` and `src/engine/multi_solver.py` do not read it. A test creates two sessions with the same offer, one of them carrying a different unit value, and requires the same `recommended_offer_price`. Another test shows a model JSON that includes `recommended_price` still leaves `buyer_price` null.
+Invariant: `market_context` does not influence the solver, the recommended price, or the circuit breaker. `src/legacy/solver.py` and `src/legacy/multi_solver.py` do not read it. A test creates two sessions with the same offer, one of them carrying a different unit value, and requires the same `recommended_offer_price`. Another test shows a model JSON that includes `recommended_price` still leaves `buyer_price` null.
 
 Offline (`TRADEFLOW_MARKET_OFFLINE=1`, or a failed preview call) stores an explicit unavailable state. It does not invent a value. Cache lives in gitignored `.cache/market`. Optional `COMTRADE_API_KEY` is sent only as a header and is not written into URLs or this document.
 

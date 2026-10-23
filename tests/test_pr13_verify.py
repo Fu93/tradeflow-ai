@@ -408,7 +408,7 @@ def test_user_prior_mean_and_spread_set_the_beta():
 
 
 def test_webhook_does_not_subtract_a_markup():
-    from src.app import orchestrator
+    from src.legacy import orchestrator
     from src.engine.reserve import ReserveState
 
     out = orchestrator.analyze({

@@ -23,8 +23,8 @@ import os
 import time
 from typing import Dict, Any, List, Tuple
 import numpy as np
-from . import model, solver
-from .multi_solver import simulate_reverse_auction
+from ..legacy import model, solver
+from ..legacy.multi_solver import simulate_reverse_auction
 from .roofline import label as roofline_label
 from .roofline import load as load_roofline
 from .roofline import rounded_lower_bound_seconds

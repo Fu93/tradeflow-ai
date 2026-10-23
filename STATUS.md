@@ -30,8 +30,8 @@
   from this repository's CPU runs or a labelled simulator. The honest
   boundary list lives in `docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md`.
 - Two architecture generations coexist (see `ARCHITECTURE.md`):
-  the v1 negotiation engines (active implementation in `src/legacy/`,
-  re-exported through `src/engine/`) and the v2 phase-1 desk
+  the v1 negotiation engines (`src/legacy/`, imported there by name since
+  2026-10-24) and the v2 phase-1 desk
   (`src/desk/` + `src/engine/decision.py`, `reserve.py`,
   `hazard_fit.py`).
 
@@ -337,6 +337,7 @@ fix has a regression test in `tests/test_hardening_2026_10_23.py` (37 tests).
   and `proposal.py` no longer import their own siblings through the
   `src.engine` shims. The compatibility layer is now external-only, which is
   what makes the 2026-10-21 "freeze" decision actually stable.
+  (Superseded 2026-10-24: the shims were removed; see `ARCHITECTURE.md`.)
 - `src/app/limits.py`, `src/desk/money.py`, `src/desk/errors.py`,
   `src/desk/bus.py`, `src/desk/snapshot.py`, `src/desk/verify.py`,
   `src/desk/migrations.py`, `src/engine/numerics.py`,

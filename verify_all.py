@@ -58,8 +58,8 @@ def audit_system():
         import tempfile as _tf
         import sqlite3 as _sq
         import gc as _gc
-        from src.session.manager import SessionManager
-        from src.session.schema import SessionSpec, AutopilotState
+        from src.legacy.session.manager import SessionManager
+        from src.legacy.session.schema import SessionSpec, AutopilotState
         # 注意：Windows 上只要還有 sqlite 連線未關，TemporaryDirectory 清理就會
         # 拋 WinError 32。故顯式關閉連線並回收，再讓 with 區塊結束。
         _td = _tf.mkdtemp()
@@ -112,7 +112,7 @@ def audit_system():
     # 輸出必須隨輸入改變，且必須真的回報它自己算出的 rollout 數。
     try:
         from src.app.demo_data import self_play_bundle
-        from src.engine.multi_solver import simulate_reverse_auction
+        from src.legacy.multi_solver import simulate_reverse_auction
         bundle = self_play_bundle()
         t0 = time.perf_counter()
         res = simulate_reverse_auction(
@@ -145,7 +145,7 @@ def audit_system():
 
     # Pillar 3: Corporate Mandate & Logrolling Pareto Frontier
     try:
-        from src.engine.logrolling import CorporateMandate, SupplierCurrentOffer, LogrollingEngine
+        from src.legacy.logrolling import CorporateMandate, SupplierCurrentOffer, LogrollingEngine
         mandate = CorporateMandate(
             target_price=LOGROLL_TARGET,
             walk_away_ceiling=LOGROLL_CEILING,
@@ -168,7 +168,7 @@ def audit_system():
 
     # Pillar 4: AST Guardrail Attack & Invariant Interception
     try:
-        from src.engine.logrolling import ASTMandateGuardrail, ASTMandateViolationError
+        from src.legacy.logrolling import ASTMandateGuardrail, ASTMandateViolationError
         illegal_script = "我方今天財務特批預付 85% 定金現款秒結排單"
         blocked = False
         try:

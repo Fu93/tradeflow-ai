@@ -25,10 +25,10 @@ from src.config.heuristics import (  # noqa: E402
     PRIOR_RESERVE_STD,
     YOUR_CEILING,
 )
-from src.engine.coupled import solve_coupled  # noqa: E402
-from src.engine.hazard import HazardBelief, walk_away_hazard  # noqa: E402
+from src.legacy.coupled import solve_coupled  # noqa: E402
+from src.legacy.hazard import HazardBelief, walk_away_hazard  # noqa: E402
 from src.engine.landed import landed_unit_cost, ranking_basis  # noqa: E402
-from src.engine.multi_solver import MultiAuctionSession, simulate_reverse_auction  # noqa: E402
+from src.legacy.multi_solver import MultiAuctionSession, simulate_reverse_auction  # noqa: E402
 from src.market.official_refs import fx_to_base, reference_bundle  # noqa: E402
 from src.sim.coupled_benchmark import run_markets  # noqa: E402
 from src.sim.misspecified import ground_truth_hazard  # noqa: E402
@@ -172,7 +172,7 @@ class TestMonteCarlo(unittest.TestCase):
 import json, time
 import numpy as np
 from src.config.heuristics import PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD, YOUR_CEILING
-from src.engine.coupled import solve_coupled
+from src.legacy.coupled import solve_coupled
 
 def rss():
     with open("/proc/self/status", encoding="utf-8") as handle:
@@ -300,8 +300,8 @@ class TestPriceIndependence(unittest.TestCase):
         self.assertFalse(left.json()["simulated"])
         self.assertEqual(left.json()["ranking_basis"], "landed_cost")
         self.assertTrue(left.json()["market_context_reference_only"])
-        coupled = (ROOT / "src" / "engine" / "coupled.py").read_text(encoding="utf-8")
-        multi = (ROOT / "src" / "engine" / "multi_solver.py").read_text(encoding="utf-8")
+        coupled = (ROOT / "src" / "legacy" / "coupled.py").read_text(encoding="utf-8")
+        multi = (ROOT / "src" / "legacy" / "multi_solver.py").read_text(encoding="utf-8")
         self.assertNotIn("evolus", coupled)
         self.assertNotIn("evolus", multi)
 

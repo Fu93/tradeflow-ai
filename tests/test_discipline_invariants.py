@@ -25,13 +25,13 @@ BANNED_MODULES = {
     "numpy.random",
     "src.desk.extract",
     "src.sim",
-    "src.engine.solver",
-    "src.engine.multi_solver",
-    "src.engine.coupled",
-    "src.engine.bayesian_v2",
-    "src.engine.logrolling",
-    "src.engine.one_step",
-    "src.engine.hazard",
+    "src.legacy.solver",
+    "src.legacy.multi_solver",
+    "src.legacy.coupled",
+    "src.legacy.bayesian_v2",
+    "src.legacy.logrolling",
+    "src.legacy.one_step",
+    "src.legacy.hazard",
     "src.legacy",
     "src.legacy.solver",
     "src.legacy.coupled",
@@ -40,13 +40,13 @@ BANNED_MODULES = {
 }
 
 DESK_BANNED = {
-    "src.engine.solver",
-    "src.engine.multi_solver",
-    "src.engine.coupled",
-    "src.engine.bayesian_v2",
-    "src.engine.logrolling",
-    "src.engine.one_step",
-    "src.engine.hazard",
+    "src.legacy.solver",
+    "src.legacy.multi_solver",
+    "src.legacy.coupled",
+    "src.legacy.bayesian_v2",
+    "src.legacy.logrolling",
+    "src.legacy.one_step",
+    "src.legacy.hazard",
     "src.legacy",
     "openai",
 }
@@ -217,3 +217,14 @@ def test_a_tighter_rival_never_raises_the_counter():
     tight = choose_offer(ask=15.0, outside=12.0, state=state, risk_cap=0.5)
     assert tight.default_counter <= loose.default_counter
     assert tight.default_counter == 12.0
+
+
+def test_no_compatibility_shims_hide_the_v1_engines():
+    """v1 lives in src/legacy and is imported from there by name. No module may
+    alias itself to another one, so a path in src/engine always holds the code it names."""
+    offenders = []
+    for path in sorted((ROOT / "src").rglob("*.py")):
+        if "sys.modules[__name__]" in path.read_text(encoding="utf-8"):
+            offenders.append(path.relative_to(ROOT).as_posix())
+    assert offenders == []
+    assert not list((ROOT / "src" / "session").glob("*.py"))

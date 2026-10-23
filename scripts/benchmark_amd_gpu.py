@@ -29,7 +29,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from src.engine.backend import describe_solver_backend, resolve_use_gpu  # noqa: E402
-from src.engine import model  # noqa: E402
+from src.legacy import model  # noqa: E402
 from src.engine.roofline import (  # noqa: E402
     formula as roofline_formula,
     label as roofline_label,
@@ -37,8 +37,8 @@ from src.engine.roofline import (  # noqa: E402
     rounded_lower_bound_seconds,
 )
 from src.app.demo_data import self_play_bundle  # noqa: E402
-from src.engine.model import bind_archetypes  # noqa: E402
-from src.engine.solver import solve  # noqa: E402
+from src.legacy.model import bind_archetypes  # noqa: E402
+from src.legacy.solver import solve  # noqa: E402
 from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS  # noqa: E402
 
 bind_archetypes(OPPONENT_TYPE_ROWS, OPPONENT_TYPE_NAMES)

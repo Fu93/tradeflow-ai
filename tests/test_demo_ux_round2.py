@@ -13,7 +13,7 @@ from src.engine.quote_fields import describe_supplier_price, extract_stage1
 from src.engine.quote_read import read_supplier_quote
 from src.engine.bilingual import render_supplier_reply, supplier_message_language
 from src.engine.bilingual import TacticalActionObject, CURRENT_SCHEMA_VERSION
-from src.session.schema import AutopilotState, SessionSpec
+from src.legacy.session.schema import AutopilotState, SessionSpec
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WALKTHROUGH = (

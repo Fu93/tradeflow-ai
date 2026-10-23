@@ -17,8 +17,8 @@ import shutil
 from fastapi.testclient import TestClient
 
 from src.app.main import app, session_mgr, SANDBOX_DEMO_TOKEN
-from src.session.schema import SessionSpec, AutopilotState
-from src.session.manager import SessionManager
+from src.legacy.session.schema import SessionSpec, AutopilotState
+from src.legacy.session.manager import SessionManager
 
 
 class TestCopilotHumanApproval(unittest.TestCase):

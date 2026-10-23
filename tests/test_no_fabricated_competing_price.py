@@ -29,7 +29,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 不設定 TRADEFLOW_DB_PATH / TRADEFLOW_STORE_DIR：那些環境變數會在
-# `src.session.manager` 被 import 的當下就被讀成模組級預設值
+# `src.legacy.session.manager` 被 import 的當下就被讀成模組級預設值
 # （DEFAULT_DB_PATH / DEFAULT_STORE_DIR），而 tests/test_api_security.py
 # 的 test_defaults_are_unchanged_when_unset 斷言它們必須維持
 # "data/sessions.db" / "data/sessions_json"。改沿用 test_api.py 的做法：

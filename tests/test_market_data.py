@@ -12,7 +12,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from src.app import main as api_main
-from src.engine.multi_solver import simulate_reverse_auction
+from src.legacy.multi_solver import simulate_reverse_auction
 from src.engine.quote_read import read_supplier_quote
 from src.market.trade_data import (
     BadRequest,
@@ -204,8 +204,8 @@ def test_market_route_is_on_the_authenticated_router(monkeypatch):
 
 
 def test_recommended_price_ignores_market_context():
-    solver = (ROOT / "src" / "engine" / "solver.py").read_text(encoding="utf-8")
-    multi = (ROOT / "src" / "engine" / "multi_solver.py").read_text(encoding="utf-8")
+    solver = (ROOT / "src" / "legacy" / "solver.py").read_text(encoding="utf-8")
+    multi = (ROOT / "src" / "legacy" / "multi_solver.py").read_text(encoding="utf-8")
     assert "market_context" not in solver
     assert "market_context" not in multi
     client = TestClient(api_main.app)

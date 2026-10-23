@@ -20,14 +20,14 @@ ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "docs" / "constants_registry.json"
 HEURISTICS = ROOT / "src" / "config" / "heuristics.py"
 DECISION = (
-    "src/engine/coupled.py",
-    "src/engine/bayesian_v2.py",
-    "src/engine/hazard.py",
-    "src/engine/one_step.py",
-    "src/engine/proposal.py",
-    "src/engine/solver.py",
-    "src/engine/multi_solver.py",
-    "src/engine/logrolling.py",
+    "src/legacy/coupled.py",
+    "src/legacy/bayesian_v2.py",
+    "src/legacy/hazard.py",
+    "src/legacy/one_step.py",
+    "src/legacy/proposal.py",
+    "src/legacy/solver.py",
+    "src/legacy/multi_solver.py",
+    "src/legacy/logrolling.py",
     "src/engine/tco.py",
     "src/desk/recompute.py",
     "src/desk/parse.py",
@@ -35,11 +35,11 @@ DECISION = (
     "src/desk/routes.py",
     "src/engine/quote_fields.py",
     "src/engine/bilingual.py",
-    "src/app/orchestrator.py",
+    "src/legacy/orchestrator.py",
     "src/app/main.py",
     "src/engine/landed.py",
     "src/engine/quote_read.py",
-    "src/engine/model.py",
+    "src/legacy/model.py",
     "src/desk/store.py",
     "src/engine/reserve.py",
     "src/engine/decision.py",
@@ -137,7 +137,7 @@ def _decision_files() -> list[str]:
             found.append(path.relative_to(ROOT).as_posix())
     for path in sorted((ROOT / "src" / "legacy").glob("*.py")):
         found.append(path.relative_to(ROOT).as_posix())
-    for extra in ("src/app/main.py", "src/app/orchestrator.py"):
+    for extra in ("src/app/main.py",):
         if extra not in found:
             found.append(extra)
     return found

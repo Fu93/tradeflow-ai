@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from src.app import main as api_main  # noqa: E402
-from src.session.schema import SessionSpec  # noqa: E402
+from src.legacy.session.schema import SessionSpec  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -625,7 +625,7 @@ class TestSessionIdPathTraversal(_IsolatedCase):
         self.assertEqual(r.status_code, 422)
 
     def test_manager_refuses_to_write_outside_store_dir(self):
-        from src.session.manager import SessionManager
+        from src.legacy.session.manager import SessionManager
         mgr = api_main.session_mgr
         spec = SessionSpec(
             session_id="legit_id_ok", product_name="x", target_price=12.0, ceiling_price=16.0,
@@ -653,7 +653,7 @@ class TestCasIsAlwaysEnforced(_IsolatedCase):
     """[9.C] Omitting expected_version must not bypass the optimistic lock."""
 
     def test_stale_write_without_expected_version_conflicts(self):
-        from src.session.schema import NegotiationTurn
+        from src.legacy.session.schema import NegotiationTurn
         mgr = api_main.session_mgr
         spec = SessionSpec(
             session_id="sec-cas-01", product_name="x", target_price=20.0, ceiling_price=25.0,
@@ -685,8 +685,8 @@ class TestCasIsAlwaysEnforced(_IsolatedCase):
         """The existing stress test gives every thread a distinct id, so it cannot
         detect this. Here both writers genuinely contend on ONE session id."""
         import concurrent.futures
-        from src.session.schema import NegotiationTurn
-        from src.session.manager import OptimisticLockConflictError
+        from src.legacy.session.schema import NegotiationTurn
+        from src.legacy.session.manager import OptimisticLockConflictError
 
         mgr = api_main.session_mgr
         mgr.create_session(SessionSpec(
@@ -718,8 +718,8 @@ class TestCasIsAlwaysEnforced(_IsolatedCase):
     def test_true_optimistic_lock_semantics_on_transition(self):
         """A correctly-stale caller must get a conflict, and a correct caller must
         not be falsely rejected."""
-        from src.session.schema import AutopilotState
-        from src.session.manager import OptimisticLockConflictError
+        from src.legacy.session.schema import AutopilotState
+        from src.legacy.session.manager import OptimisticLockConflictError
         mgr = api_main.session_mgr
         mgr.create_session(SessionSpec(
             session_id="sec-cas-02", product_name="x", target_price=20.0, ceiling_price=25.0,
@@ -901,7 +901,7 @@ class TestSseErrorSurfacing(_IsolatedCase):
         self.assertNotIn("error", frame)
 
     def test_read_failure_is_surfaced_in_the_payload(self):
-        from src.session import manager as manager_mod
+        from src.legacy.session import manager as manager_mod
 
         def boom(self):
             raise RuntimeError("simulated store read failure")
@@ -925,7 +925,7 @@ class TestTestIsolationEnvOverrides(unittest.TestCase):
     """[task-1 item 10] Concurrent test runs must be able to avoid collisions."""
 
     def test_env_overrides_change_the_defaults(self):
-        from src.session.manager import SessionManager
+        from src.legacy.session.manager import SessionManager
         tmp = tempfile.mkdtemp(prefix="tf_env_iso_")
         db = os.path.join(tmp, "alt.db")
         store = os.path.join(tmp, "alt_json")
@@ -944,7 +944,7 @@ class TestTestIsolationEnvOverrides(unittest.TestCase):
                     os.environ[k] = v
 
     def test_defaults_are_unchanged_when_unset(self):
-        from src.session import manager as manager_mod
+        from src.legacy.session import manager as manager_mod
         self.assertEqual(manager_mod.DEFAULT_DB_PATH, "data/sessions.db")
         self.assertEqual(manager_mod.DEFAULT_STORE_DIR, "data/sessions_json")
 

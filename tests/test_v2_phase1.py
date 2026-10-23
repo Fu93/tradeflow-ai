@@ -276,7 +276,7 @@ def test_hazard_file_has_both_outcomes_and_one_decision_gap():
 
 
 def test_offer_at_the_ask_has_zero_incremental_hazard_and_a_step_does_not_move_it():
-    from src.engine.coupled import solve_coupled
+    from src.legacy.coupled import solve_coupled
     from src.engine.hazard_fit import incremental_hazard, load_hazard_fit
     from src.engine.reserve import ReserveState
 

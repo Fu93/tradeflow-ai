@@ -22,20 +22,20 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.engine import model, solver  # noqa: E402
-from src.engine.bayesian_v2 import RobustBayesianInferenceEngine  # noqa: E402
+from src.legacy import model, solver  # noqa: E402
+from src.legacy.bayesian_v2 import RobustBayesianInferenceEngine  # noqa: E402
 from src.engine.bilingual import (  # noqa: E402
     ActionObjectASTGuardrail,
     GuardrailViolationError,
     InboundIntentClassifier,
     TacticalActionObject,
 )
-from src.engine.logrolling import (  # noqa: E402
+from src.legacy.logrolling import (  # noqa: E402
     CorporateMandate,
     LogrollingEngine,
     SupplierCurrentOffer,
 )
-from src.engine.multi_solver import MultiAuctionSession  # noqa: E402
+from src.legacy.multi_solver import MultiAuctionSession  # noqa: E402
 
 
 def _scalar_expectimax(reserve, urgency, bluff, conc, opens, scheds):
@@ -54,7 +54,7 @@ def _scalar_expectimax(reserve, urgency, bluff, conc, opens, scheds):
         HAZARD_RESERVE_GAP,
         OPPONENT_GAP_SHARE,
     )
-    from src.engine.hazard import sigmoid
+    from src.legacy.hazard import sigmoid
 
     n_open = len(opens)
     n_sched = len(scheds)

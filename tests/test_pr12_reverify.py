@@ -13,9 +13,9 @@ from fastapi.testclient import TestClient
 
 from src.config.heuristics import SEARCH_STEP, UNIT_SANITY_MULTIPLE
 from src.desk.parse import parse_quote
-from src.engine.bayesian_v2 import student_t_cdf, student_t_ppf
-from src.engine.coupled import solve_coupled
-from src.engine.one_step import one_step_counter
+from src.legacy.bayesian_v2 import student_t_cdf, student_t_ppf
+from src.legacy.coupled import solve_coupled
+from src.legacy.one_step import one_step_counter
 
 # Real unit prices the previous reader sent to review.
 MUST_ACCEPT = [

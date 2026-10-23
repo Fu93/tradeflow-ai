@@ -13,9 +13,9 @@ from typing import Any
 import numpy as np
 
 from src.config.heuristics import PRIOR_RESERVE_MEAN, PRIOR_RESERVE_STD, YOUR_CEILING
-from src.engine.coupled import solve_coupled
-from src.engine.hazard import HazardBelief
-from src.engine.solver import bayes_update
+from src.legacy.coupled import solve_coupled
+from src.legacy.hazard import HazardBelief
+from src.legacy.solver import bayes_update
 from src.sim.misspecified import (
     FARATIN_BOULWARE,
     FARATIN_CONCEDER,

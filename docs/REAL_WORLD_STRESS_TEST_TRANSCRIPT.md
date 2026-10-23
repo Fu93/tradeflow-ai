@@ -109,7 +109,7 @@ The project also has an unscripted adversarial narrative (`scripts/run_unscripte
 
 What is verifiable is limited to:
 * `results/unscripted_adversarial_log.json` exists and was produced by that script;
-* the current state-transition table in `src/session/manager.py` and the `min(rec, ceiling)` clip in `src/app/main.py` can be read directly in the code.
+* the current state-transition table in `src/legacy/session/manager.py` and the `min(rec, ceiling)` clip in `src/app/main.py` can be read directly in the code.
 
 If a reviewer asks us to reproduce the "pre-fix failure" from that narrative, we **cannot provide evidence**, because nothing was archived at the time. That is a genuine gap in this project's record-keeping practice and we acknowledge it plainly.
 

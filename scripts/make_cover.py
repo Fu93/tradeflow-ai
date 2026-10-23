@@ -42,8 +42,8 @@ def _robustness_chips():
     """
     try:
         from src.app.demo_data import DEMO_SPEC
-        from src.engine import robustness
-        from src.engine.model import bind_archetypes
+        from src.legacy import robustness
+        from src.legacy.model import bind_archetypes
         from src.sim.archetypes import OPPONENT_TYPE_NAMES, OPPONENT_TYPE_ROWS
         bind_archetypes(OPPONENT_TYPE_ROWS, OPPONENT_TYPE_NAMES)
         target = float(DEMO_SPEC["target_price"])
@@ -63,7 +63,7 @@ def _robustness_chips():
 def _deposit_ceiling_label():
     """讀 CorporateMandate 的真實授權欄位，而非 bilingual.py 的 assert 後備值。"""
     try:
-        from src.engine.logrolling import CorporateMandate
+        from src.legacy.logrolling import CorporateMandate
         pct = CorporateMandate(target_price=12.0, walk_away_ceiling=16.2).max_allowed_deposit_pct
         return f"Mandate ≤ {pct * 100:.0f}%"
     except Exception as exc:
