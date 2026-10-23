@@ -39,10 +39,10 @@
 
 | Check | Result |
 |---|---|
-| `python -m pytest tests -q` | 863 passed, 6 skipped, 112 subtests, 3 failed |
+| `python -m pytest tests -q` | 876 passed, 6 skipped, 112 subtests, 3 failed |
 | `python verify_all.py` | ALL 6 PILLARS PASS |
 | `python verify_live.py` | V2 DESK SURFACE VERIFIED END TO END (9 steps) |
-| `python scripts/mutation_sanity.py` | 66 mutants killed |
+| `python scripts/mutation_sanity.py` | 73 mutants killed |
 | `python scripts/check_decision_literals.py` | decision registry ok (183 constants) |
 | `python scripts/check_no_fake_literals.py` | no undeclared scenario floats |
 | `ruff check` + `mypy` (phase-1 modules) | clean |
@@ -281,12 +281,18 @@ What the round-2 pass removed from this list is not repeated here. What remains:
   is deal CRUD, ingest, the extractor pool and the mailbox poller. Ingest and
   polling are the next candidates.
 - **No per-user identity.** The desk is single-tenant behind one shared API key.
-  Supplier address changes are still gated by a client-supplied
-  `human_confirmed` boolean rather than a signature, which is the real
-  business-email-compromise path. This needs a user model, not a code tweak.
-- **`src/engine/bilingual.py` (2,035 lines)** is outside both the coverage gate
-  and the mutation set. Its `NumericGuardrailValidator` has no mutants, and it
-  is on the production parse path.
+  The *send* path and the *address-change* path now require an Ed25519
+  signature from a key that lives on a human's machine, so a shared API key is
+  no longer sufficient on its own for either. What is still missing is a user
+  model: the desk cannot say *which* human signed, only that the pinned key
+  did, and there is no per-user revocation. That needs a user model, not a code
+  tweak.
+- **`src/engine/bilingual.py` (2,035 lines)** is still outside the coverage
+  gate and is not split. Its `NumericGuardrailValidator` — the component that
+  decides whether a draft contains an unauthorized price — now has 7 mutants and
+  36 invariant tests (`tests/test_guardrail_invariants.py`) pinning the four
+  bypasses its own docstring lists. What is *not* done is the file's remaining
+  ~1,900 lines, which include the intent classifier and the tactical bridge.
 - **Rate limiting is in-process**, so per-instance and cleared by a restart. A
   shared counter needs a shared store; adding Redis to a single-instance
   deployment to bound abuse would be a larger operational commitment than the
@@ -316,6 +322,18 @@ What the round-2 pass removed from this list is not repeated here. What remains:
   chain entry. With `TRADEFLOW_APPROVAL_PUBKEY` set, unsigned sends are
   refused (fail-closed). Gold tests include: a server holding the HMAC
   chain key still cannot forge one human approval.
+- **Supplier address changes are signed too** (same key, same policy
+  resolution, `TRADEFLOW_REQUIRE_ADDRESS_SIGNATURE`). This closed the
+  business-email-compromise path: an address change redirects where the next
+  counter is sent, and the desk has one shared API key, so
+  `human_confirmed: true` was reachable by anyone holding it. The signature
+  covers `{deal_id, supplier_id, address}` — the address included, or a signer
+  would be approving "a change" while an attacker chose "where to" — and it is
+  recorded inside the `supplier_address` chain entry, so it is tamper-evident
+  rather than merely checked once at the door. CLI:
+  `python -m src.desk.approval_signing sign-address --key <key> --deal <id>
+  --supplier <id> --address <email>`. Sandbox without a pinned key keeps the
+  old boolean path, so existing callers are unaffected.
 - **Git anchoring** (`scripts/anchor_chain_head.py`): records every deal's
   chain head into a committable JSON or an annotated git tag. A git commit
   carries its own hash, author, and timestamp, so a database holder who

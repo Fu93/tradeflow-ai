@@ -22,6 +22,13 @@ REJECT = "tests/test_pr13_verify.py::test_rejection_is_a_lower_bound_and_never_r
 PRIOR = "tests/test_pr13_verify.py::test_user_prior_mean_and_spread_set_the_beta"
 TIGHT = "tests/steps/test_t5_reserve.py::test_later_higher_ask_does_not_raise_the_mean"
 SHADOW = "tests/steps/test_t3_shadow.py::test_shadow_never_applies_and_wilson_fails_closed"
+GUARD_FLOOR = "tests/test_guardrail_invariants.py::TestBypass1SecondaryLowerPrice::test_a_lower_promise_beside_the_authorized_price_is_refused"
+GUARD_CEILING = "tests/test_guardrail_invariants.py::TestBoundaries::test_a_price_above_the_ceiling_is_refused"
+GUARD_PRESENT = "tests/test_guardrail_invariants.py::TestTheAuthorizedPriceMustBePresent::test_a_draft_without_the_authorized_price_is_refused"
+GUARD_SECOND = "tests/test_guardrail_invariants.py::TestBoundaries::test_a_second_authorized_range_price_is_refused"
+GUARD_PHRASE = "tests/test_guardrail_invariants.py::TestBypass3ForbiddenPhraseRewrites::test_a_rewritten_compromise_phrase_is_refused"
+GUARD_EXEMPT = "tests/test_guardrail_invariants.py::TestBypass4NonCommitmentContext::test_a_cost_line_item_is_not_a_commitment"
+GUARD_REFUSAL = "tests/test_guardrail_invariants.py::TestBypass3ForbiddenPhraseRewrites::test_a_strong_refusal_in_the_same_clause_is_exempt"
 WILSON = "tests/test_v2_phase1.py::test_wilson_certification_count_is_189"
 VETO = "tests/test_v2_phase1.py::test_instruction_span_is_never_a_shadow_accept"
 
@@ -46,6 +53,13 @@ MUTANTS = [
     ("src/engine/reserve.py", "if self.n_responses >= int(HAZARD_MIN_EVENTS):\n            return \"supplier_responses\"", "if self.n_responses >= 0:\n            return \"supplier_responses\"", "tests/test_v2_phase1.py::test_labelled_policy_until_thirty_responses_and_strength_keeps_the_mean"),
     ("src/engine/reserve.py", "return (float(alpha) * float(beta)) / (total * total * (total + 1.0))", "return float(alpha)", TIGHT),
     ("src/engine/reserve.py", "alpha, beta = scale_strength(self.alpha, self.beta, factor)", "alpha, beta = self.alpha, self.beta", "tests/test_v2_phase1.py::test_labelled_policy_until_thirty_responses_and_strength_keeps_the_mean"),
+    ("src/engine/bilingual.py", "if p < floor - tolerance:", "if False:", GUARD_FLOOR),
+    ("src/engine/bilingual.py", "if p > walk_away_ceiling + tolerance:", "if False:", GUARD_CEILING),
+    ("src/engine/bilingual.py", "if not has_authorized:", "if False:", GUARD_PRESENT),
+    ("src/engine/bilingual.py", "if not cls._is_commitment_price(draft_text, start, end):", "if False:", GUARD_EXEMPT),
+    ("src/engine/bilingual.py", "if cls.STRONG_REFUSAL.search(clause):", "if False:", GUARD_REFUSAL),
+    ("src/engine/bilingual.py", "return any(abs(v - a) <= tolerance for a in (authorized_price,) + tolerated)", "return True", GUARD_SECOND),
+    ("src/engine/bilingual.py", 'if word in draft_text:', 'if False:', GUARD_PHRASE),
     ("src/desk/shadow.py", '"applied": False', '"applied": True', SHADOW),
     ("src/desk/shadow.py", "if count <= 0:", "if count < 0:", SHADOW),
     ("src/desk/shadow.py", "return max(0.0, centre - margin), min(1.0, centre + margin)", "return 0.0, 1.0", WILSON),

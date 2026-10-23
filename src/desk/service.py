@@ -22,10 +22,13 @@ from src.config.heuristics import (
 )
 from src.desk import mailbox, recompute
 from src.desk.approval_signing import (
+    address_change_payload,
+    address_change_policy,
     approval_is_pinned,
     approval_policy,
     required_approval_pubkey,
     signed_payload,
+    verify_address_change,
     verify_signed_approval,
 )
 from src.desk.audit_chain import approval_recorded, chain_key_configured, export_history, reanchor_refusal
@@ -1062,29 +1065,59 @@ def confirm_supplier_address(
     address: str,
     name: str | None = None,
     human_confirmed: bool,
+    address_change: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """A new email is sent only after a person confirms it on the chain."""
+    """A new email is sent only after a person confirms it on the chain.
+
+    [SECURITY 2026-10-23] The boolean is not the control any more. A supplier
+    address change redirects where the next counter is sent, and this desk has
+    one shared API key, so ``human_confirmed: true`` was reachable by anyone
+    holding that key — the business-email-compromise path. When the policy
+    requires it (a pinned approval key, or production), a valid signature over
+    ``{deal_id, supplier_id, address}`` from the pinned key must accompany the
+    change, and the signature is recorded inside the chain entry so it is
+    tamper-evident rather than merely checked once at the door.
+    """
     if human_confirmed is not True:
         raise DeskRejected("A person has to confirm this address.")
     cleaned = require_address(address)
     if not cleaned:
         raise DeskRejected("Each supplier needs an address.")
+    payload = address_change_payload(deal_id, supplier_id, cleaned)
+    recorded_change = None
+    if address_change_policy() == "required":
+        if not verify_address_change(address_change, payload):
+            raise DeskRejected(
+                "A supplier address change needs a signed confirmation from the "
+                "pinned approval key."
+            )
+        # verify_address_change has already established this is a dict with the
+        # three fields present and the right shape.
+        assert isinstance(address_change, dict)
+        recorded_change = {
+            "alg": str(address_change.get("alg") or ""),
+            "pubkey": str(address_change.get("pubkey") or ""),
+            "sig": str(address_change.get("sig") or ""),
+        }
+    elif address_change is not None and not verify_address_change(address_change, payload):
+        # Optional policy, but a bad signature is still a refusal: a caller who
+        # offered a signature meant to be held to it.
+        raise DeskRejected("The supplied address-change signature is not valid.")
     with deal_lock(deal_id):
         supplier = store.supplier(deal_id, supplier_id)
         if supplier is None:
             raise KeyError(supplier_id)
         new_name = (name or str(supplier["name"])).strip()
         store.update_supplier(supplier_id, name=new_name, address=cleaned)
-        store.append_chain(
-            deal_id,
-            "supplier_address",
-            {
-                "supplier_id": supplier_id,
-                "name": new_name,
-                "address": cleaned,
-                "confirmed_by": "human",
-            },
-        )
+        entry: dict[str, Any] = {
+            "supplier_id": supplier_id,
+            "name": new_name,
+            "address": cleaned,
+            "confirmed_by": "human",
+        }
+        if recorded_change is not None:
+            entry["address_change"] = recorded_change
+        store.append_chain(deal_id, "supplier_address", entry)
         return publish(store, deal_id)
 
 

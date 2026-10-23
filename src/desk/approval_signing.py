@@ -30,6 +30,11 @@ an environment variable being present:
 - Sandbox / demo / tests with no pinned key default to optional, so existing
   callers keep working.
 
+The same policy, key and verification rules cover **supplier address changes**
+(``address_change_policy``, ``sign_address_change``), which were previously
+gated by a client-supplied ``human_confirmed`` boolean — the real
+business-email-compromise path on a desk with one shared API key.
+
 When a key *is* pinned, every send must carry a valid signature from that exact
 key; unsigned sends and signatures from any other key are refused.
 
@@ -55,6 +60,7 @@ PUBKEY_HEX_LEN = 64  # 32 bytes
 SIG_HEX_LEN = 128  # 64 bytes
 APPROVAL_PUBKEY_ENV = "TRADEFLOW_APPROVAL_PUBKEY"
 REQUIRE_SIGNED_ENV = "TRADEFLOW_REQUIRE_SIGNED_APPROVAL"
+REQUIRE_ADDRESS_SIGNED_ENV = "TRADEFLOW_REQUIRE_ADDRESS_SIGNATURE"
 
 # Values accepted by TRADEFLOW_REQUIRE_SIGNED_APPROVAL. Anything unrecognised
 # falls through to the environment default, so a typo cannot silently downgrade
@@ -86,6 +92,41 @@ def approval_policy() -> str:
        existing callers depend on.
     """
     explicit = os.environ.get(REQUIRE_SIGNED_ENV, "").strip().lower()
+    if explicit in _REQUIRED_WORDS:
+        return "required"
+    if explicit in _OPTIONAL_WORDS:
+        return "optional"
+    if required_approval_pubkey() is not None:
+        return "required"
+    env = os.environ.get("TRADEFLOW_ENV", "sandbox").strip().lower()
+    return "required" if env == "production" else "optional"
+
+
+def address_change_policy() -> str:
+    """Whether a supplier address change needs a signature.
+
+    Same resolution as :func:`approval_policy`, with its own override variable:
+
+    1. ``TRADEFLOW_REQUIRE_ADDRESS_SIGNATURE`` — an explicit operator decision.
+    2. A pinned ``TRADEFLOW_APPROVAL_PUBKEY`` — pinning a key declares the intent
+       to enforce it for every human decision on the desk.
+    3. ``TRADEFLOW_ENV=production`` — required, for the reason below.
+    4. Otherwise optional, preserving existing callers.
+
+    Why this exists at all
+    ----------------------
+    A supplier address change was gated by a client-supplied
+    ``human_confirmed: true`` boolean. That is not a control: any caller holding
+    the API key — which is the desk's only credential, shared by every buyer in
+    the organisation — could move a supplier's email to their own address and
+    have the next counter sent there. That is the business-email-compromise path,
+    and it does not need a broken machine, only a shared credential.
+
+    A signature binds ``{deal_id, supplier_id, address}`` to a key that lives on
+    a human's machine. The server can still refuse to send, but it can no longer
+    be talked into sending somewhere new by a JSON field.
+    """
+    explicit = os.environ.get(REQUIRE_ADDRESS_SIGNED_ENV, "").strip().lower()
     if explicit in _REQUIRED_WORDS:
         return "required"
     if explicit in _OPTIONAL_WORDS:
@@ -170,6 +211,56 @@ def approval_is_pinned(approval: Any) -> bool:
     return str(approval.get("pubkey") or "") == required
 
 
+def address_change_payload(deal_id: str, supplier_id: str, address: str) -> dict[str, str]:
+    """The exact fields a human confirms when a supplier's address changes.
+
+    Sign only what the signer saw. The address is the whole point: a signature
+    over ``{deal, supplier}`` without the destination would let a signer approve
+    a *change* and an attacker choose *where to*.
+    """
+    return {"deal_id": deal_id, "supplier_id": supplier_id, "address": address}
+
+
+def sign_address_change(private_hex: str, deal_id: str, supplier_id: str, address: str) -> dict[str, str]:
+    """Sign one supplier-address change. Run this on the human's machine."""
+    private = bytes.fromhex(private_hex)
+    signing = SigningKey(private)
+    payload = address_change_payload(deal_id, supplier_id, address)
+    sig = signing.sign(canonical(payload)).signature.hex()
+    return {
+        "alg": ALG,
+        "pubkey": signing.verify_key.encode().hex(),
+        "sig": sig,
+    }
+
+
+def verify_address_change(approval: Any, payload: dict[str, str]) -> bool:
+    """Verify one address-change block, with the same rules as an approval.
+
+    Deliberately the same function shape as :func:`verify_signed_approval` so
+    there is one place to reason about what a valid signature means.
+    """
+    if not isinstance(approval, dict):
+        return False
+    if approval.get("alg") != ALG:
+        return False
+    pubkey = approval.get("pubkey")
+    sig = approval.get("sig")
+    if not isinstance(pubkey, str) or not isinstance(sig, str):
+        return False
+    if len(pubkey) != PUBKEY_HEX_LEN or len(sig) != SIG_HEX_LEN:
+        return False
+    required = required_approval_pubkey()
+    if required is not None and pubkey != required:
+        return False
+    try:
+        verify_key = VerifyKey(bytes.fromhex(pubkey))
+        verify_key.verify(canonical(payload), bytes.fromhex(sig))
+    except (BadSignatureError, ValueError, TypeError):
+        return False
+    return True
+
+
 
 def _cli(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
@@ -186,6 +277,16 @@ def _cli(argv: list[str] | None = None) -> int:
     sign.add_argument("--key", required=True, help="Private key hex, or a file containing it.")
     sign.add_argument("--payload", required=True, help="JSON file with {deal_id, draft_id, body_sha256}.")
     sign.add_argument("--out", default="-", help="Write the approval block JSON to a file instead of stdout.")
+
+    address = sub.add_parser(
+        "sign-address",
+        help="Sign one supplier address change. Run this on the human's machine.",
+    )
+    address.add_argument("--key", required=True, help="Private key hex, or a file containing it.")
+    address.add_argument("--deal", required=True, help="Deal id.")
+    address.add_argument("--supplier", required=True, help="Supplier id.")
+    address.add_argument("--address", required=True, help="The new supplier email address.")
+    address.add_argument("--out", default="-", help="Write the signature block JSON to a file instead of stdout.")
 
     args = parser.parse_args(argv)
     if args.cmd == "keygen":
@@ -222,6 +323,28 @@ def _cli(argv: list[str] | None = None) -> int:
             str(payload["body_sha256"]),
         )
         blob = json.dumps(approval, indent=2, sort_keys=True)
+        if args.out == "-":
+            print(blob)
+        else:
+            with open(args.out, "w", encoding="utf-8") as handle:
+                handle.write(blob + "\n")
+        return 0
+    if args.cmd == "sign-address":
+        key_text = args.key
+        if os.path.isfile(key_text):
+            with open(key_text, encoding="utf-8") as handle:
+                key_text = handle.read().strip()
+            try:
+                key_text = json.loads(key_text)["private_key"]
+            except (json.JSONDecodeError, KeyError):
+                pass
+        block = sign_address_change(
+            key_text.strip(),
+            str(args.deal),
+            str(args.supplier),
+            str(args.address),
+        )
+        blob = json.dumps(block, indent=2, sort_keys=True)
         if args.out == "-":
             print(blob)
         else:

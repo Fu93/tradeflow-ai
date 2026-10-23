@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, 
 from src.app.security import require_desk_mutation
 from src.desk.mailbox import MailboxError
 from src.config.heuristics import (
+    ADDRESS_CHANGE_MAX_BYTES,
     AUDIT_VERIFY_DEFAULT_LIMIT,
     AUDIT_VERIFY_MAX_LIMIT,
     BREAKDOWN_TRIP_THRESHOLD,
@@ -156,6 +157,11 @@ class AddressIn(BaseModel):
     address: str = Field(min_length=1, max_length=320)
     name: str | None = Field(default=None, max_length=200)
     human_confirmed: StrictBool
+    # [SECURITY 2026-10-23] Optional field, required by policy. A supplier
+    # address change redirects the next counter, so when the desk has a pinned
+    # approval key (or runs in production) it must carry a signature over
+    # {deal_id, supplier_id, address} from that key.
+    address_change: dict | None = Field(default=None, max_length=ADDRESS_CHANGE_MAX_BYTES)
 
     @field_validator("address")
     @classmethod
@@ -424,6 +430,7 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 address=body.address,
                 name=body.name,
                 human_confirmed=body.human_confirmed,
+                address_change=body.address_change,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="No such deal") from exc

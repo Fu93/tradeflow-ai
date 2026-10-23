@@ -643,6 +643,11 @@ AUDIT_VERIFY_DEFAULT_LIMIT = 200
 # for the whole chain by passing a large limit.
 AUDIT_VERIFY_MAX_LIMIT = 2000
 
+# Rationale: byte cap on the optional address-change signature block carried by
+# the supplier-address route. A real Ed25519 block is well under 200 bytes; the
+# cap stops a caller padding the field without changing any decision.
+ADDRESS_CHANGE_MAX_BYTES = 2048
+
 # Rationale: convergence budget for the shared incomplete-beta continued
 # fraction when the caller asks for the tighter of the two precisions. The
 # legacy belief update renders a Student-t interval to a person and was written

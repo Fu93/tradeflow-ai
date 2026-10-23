@@ -986,6 +986,11 @@
       "value": 1e-30,
       "category": "n",
       "justification": "Floor used in place of zero inside the continued fraction when the tighter precision is requested. It prevents a division by zero and is not a price."
+    },
+    "ADDRESS_CHANGE_MAX_BYTES": {
+      "value": 2048,
+      "category": "n",
+      "justification": "Byte cap on the optional address-change signature block carried by the supplier-address route. A real Ed25519 block is well under 200 bytes; the cap stops a caller padding the field without changing any decision."
     }
   },
   "inline": [
