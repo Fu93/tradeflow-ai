@@ -36,9 +36,9 @@ from src.config.heuristics import (
     WEITZMAN_BRACKET_SIGMAS,
     WEITZMAN_SEARCH_COST,
 )
-from src.engine.bayesian_v2 import student_t_cdf
+from src.legacy.bayesian_v2 import student_t_cdf
 from src.engine.decision import HEURISTIC_NOTE, choose_offer
-from src.engine.hazard import (
+from src.legacy.hazard import (
     PROVENANCE,
     HazardBelief,
     hazard_logit,
@@ -49,7 +49,7 @@ from src.engine.hazard import (
 from src.engine.hazard_fit import NOTE as HAZARD_TRANSFER_NOTE
 from src.engine.hazard_fit import incremental_hazard, load_hazard_fit
 from src.engine.reserve import ReserveState
-from src.engine.solver import EXPECTIMAX_SAMPLE_CHUNK
+from src.legacy.solver import EXPECTIMAX_SAMPLE_CHUNK
 
 
 def risk_cap(risk_tolerance: float | None) -> float:
@@ -554,6 +554,24 @@ def _analytic_choice(
     # A reserve-gap coefficient on the belief is not added. ``batna_surplus``
     # stays on the desk/auction split and does not raise this offer.
     del batna_surplus
+
+    # [CORRECTNESS 2026-10-23] ``choice.acceptance`` is the CDF at the *default*
+    # counter, which is the ask capped by the rival and the ceiling. When the
+    # default equals the ask — the common case — that CDF is exactly 1.0, so
+    # /negotiate reported "100 % acceptance" for every supplier. That is correct
+    # arithmetic about a useless question: of course a supplier accepts their own
+    # asking price. The number a buyer acts on is the acceptance probability of
+    # the counter actually issued, and of the push. Both are reported.
+    ref = belief_state.reference_ask if belief_state.reference_ask not in (None, 0.0) else float(quote)
+    ref = float(ref) if float(ref) > 0.0 else float(quote)
+
+    def _acceptance_at(value: float) -> float:
+        if choice.blocked or ref <= 0.0:
+            return 0.0
+        return float(belief_state.acceptance(min(max(float(value) / ref, 0.0), 1.0)))
+
+    p_accept_offer = _acceptance_at(float(choice.default_counter))
+    p_accept_push = _acceptance_at(float(choice.push_counter))
     return {
         "offer": float(choice.default_counter),
         "push_offer": float(choice.push_counter),
@@ -569,7 +587,11 @@ def _analytic_choice(
             gap_coef=float(belief.quote_gap_coef) if override else None,
         )),
         "surplus": float(choice.objective),
-        "p_accept": float(choice.acceptance),
+        # Acceptance at the counter that is actually issued. Kept under the
+        # historical key so existing callers keep reading a meaningful number.
+        "p_accept": p_accept_offer,
+        "p_accept_offer": p_accept_offer,
+        "p_accept_push": p_accept_push,
         "blocked": bool(choice.blocked),
         "push_limit": float(cap),
         "counter_relation": choice.counter_relation,
@@ -718,6 +740,12 @@ def solve_coupled(
     elapsed = time.perf_counter() - started
     return {
         "offers": [float(x) for x in offers],
+        # [CORRECTNESS 2026-10-23] A blocked supplier's entry in ``offers`` is
+        # 0.0, which reads as "offer zero" to anything that consumes the list
+        # without also reading ``blocked``. The numeric list stays for the
+        # vectorised consumers that need a dense array; this parallel list is
+        # the one to display, and it carries None where no price was issued.
+        "offers_masked": [None if item["blocked"] else float(item["offer"]) for item in choices],
         "push_offers": [float(item["push_offer"]) for item in choices],
         "push_half": [float(item["push_half"]) for item in choices],
         "push_double": [float(item["push_double"]) for item in choices],

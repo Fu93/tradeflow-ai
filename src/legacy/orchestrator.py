@@ -42,7 +42,7 @@ def robustness_report(target_price: float, n_samples: int, force: bool = False, 
     """Legacy demo grid. The live webhook does not call this."""
     if value_ceiling is None:
         raise ValueError("robustness_report requires value_ceiling")
-    from src.engine import robustness
+    from src.legacy import robustness
     key = (float(target_price), int(n_samples), float(value_ceiling))
     if not force and key in _ROBUSTNESS_CACHE:
         return _ROBUSTNESS_CACHE[key]
@@ -96,8 +96,8 @@ def analyze(spec: dict, observed_offer: float | None = None, quick: bool = False
     post_mean = norm_quote * float(state.mean())
     post_std = norm_quote * float(state.std())
     n_samples = spec.get("n_samples")
-    from src.engine.one_step import one_step_counter
-    from src.engine import proposal
+    from src.legacy.one_step import one_step_counter
+    from src.legacy import proposal
 
     rec = one_step_counter(
         quote=float(quote_price),

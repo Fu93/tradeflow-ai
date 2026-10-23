@@ -22,6 +22,7 @@ from src.desk.store import DeskStore
 from src.desk.headline import audit_line, confirmed_prices, saving_vs_best_first
 from src.desk.shadow import progress as shadow_progress
 from src.desk.decide import decide_supplier
+from src.desk.money import quantise_offer
 from src.engine.decision import HEURISTIC_NOTE
 from src.engine.hazard_fit import NOTE as HAZARD_TRANSFER_NOTE
 from src.engine.hazard_fit import baseline_rates, load_hazard_fit
@@ -322,10 +323,16 @@ def decision_for_supplier(
 
 
 def counter_of(choice: Any, ceiling: float, ask: float) -> float | None:
-    """The number the shared decision issues, before a held previous counter."""
+    """The number the shared decision issues, before a held previous counter.
+
+    Quantised to whole minor units here — the single choke point every issued
+    counter passes through. The record and the draft body both read this value,
+    so they cannot disagree about the price, and rounding can never lift an
+    offer above the ceiling.
+    """
     if choice is None or choice.blocked or str(choice.counter_relation) == "withheld":
         return None
-    return min(float(choice.default_counter), float(ceiling), float(ask))
+    return quantise_offer(float(choice.default_counter), float(ceiling), float(ask))
 
 
 def supplier_needs_keep(entries: list[dict[str, Any]], supplier_id: str) -> bool:
@@ -620,13 +627,20 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
                     relation = "at_ask"
             withheld_push = bool(choice.push_withheld)
             card["counter"] = counter
-            card["push_counter"] = None if blocked or withheld_push else min(
-                float(choice.push_counter), ceiling, own_quote
+            # The sensitivity band is displayed next to the counter, so it is
+            # quantised the same way. An unrounded figure beside a rounded one
+            # reads as a different recommendation.
+            card["push_counter"] = (
+                None if blocked or withheld_push else quantise_offer(float(choice.push_counter), ceiling, own_quote)
             )
             card["push_note"] = choice.push_note or ""
             card["counter_relation"] = relation
-            card["sensitivity_half"] = None if blocked else min(float(choice.push_half), ceiling, own_quote)
-            card["sensitivity_double"] = None if blocked else min(float(choice.push_double), ceiling, own_quote)
+            card["sensitivity_half"] = (
+                None if blocked else quantise_offer(float(choice.push_half), ceiling, own_quote)
+            )
+            card["sensitivity_double"] = (
+                None if blocked else quantise_offer(float(choice.push_double), ceiling, own_quote)
+            )
             card["blocked"] = blocked
             card["hazard"] = float(choice.incremental_hazard)
             card["hazard_upper"] = float(choice.incremental_hazard)

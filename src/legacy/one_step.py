@@ -11,8 +11,9 @@ import numpy as np
 
 from src.config.heuristics import DEFAULT_SOLVER_SEED, DESK_N_GRID, ROUND_N_SAMPLES, WEITZMAN_SEARCH_COST
 from src.desk.headline import audit_line
-from src.engine.coupled import solve_coupled
-from src.engine.hazard import HazardBelief
+from src.engine.reserve import ReserveState
+from src.legacy.coupled import solve_coupled
+from src.legacy.hazard import HazardBelief
 
 
 def one_step_counter(
@@ -32,7 +33,17 @@ def one_step_counter(
     belief: HazardBelief | None = None,
     credible_alpha: float | None = None,
     unconfirmed: int = 0,
+    state: "ReserveState | None" = None,
 ) -> dict:
+    """One supplier, one next offer.
+
+    [CORRECTNESS 2026-10-23] ``mean`` and ``std`` used to be passed to
+    ``solve_coupled`` and then discarded: the analytic price reads
+    ``reserves[i]``, and ``reserves`` defaulted to the policy prior. So the
+    caller's posterior had no effect on the number while the response echoed it
+    back as if it had. ``state`` is the explicit channel; when it is ``None``
+    the policy prior is used, which keeps every existing caller bit-identical.
+    """
     if target <= 0 or ceiling <= 0 or quote <= 0:
         raise ValueError("quote, target, and ceiling must be positive")
     samples = int(ROUND_N_SAMPLES if n_samples is None else n_samples)
@@ -51,6 +62,7 @@ def one_step_counter(
         round_index=float(round_index),
         lambda_break=float(lambda_break),
         credible_alpha=credible_alpha,
+        reserves=None if state is None else [state],
     )
     blocked = bool(solved["blocked"][0])
 

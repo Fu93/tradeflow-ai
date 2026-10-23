@@ -24,7 +24,13 @@ from src.config.heuristics import (
     UNIT_SANITY_MULTIPLE,
 )
 from src.desk import mailbox, recompute
-from src.desk.approval_signing import required_approval_pubkey, signed_payload, verify_signed_approval
+from src.desk.approval_signing import (
+    approval_is_pinned,
+    approval_policy,
+    required_approval_pubkey,
+    signed_payload,
+    verify_signed_approval,
+)
 from src.desk.audit_chain import approval_recorded, chain_key_configured, export_history, reanchor_refusal
 from src.desk.extract import time_left
 from src.desk.input_checks import message_id_or_blank, references_or_blank, require_address, require_plain
@@ -518,6 +524,22 @@ def _extractor_pool() -> concurrent.futures.ThreadPoolExecutor:
                 thread_name_prefix="desk-extractor-pool",
             )
         return _EXTRACTOR_POOL
+
+
+def shutdown_extractors(wait: bool = False) -> None:
+    """Close the extractor pool. Called from the app lifespan on shutdown.
+
+    Without this the pool outlives the event loop: interpreter exit joins the
+    worker threads abruptly, and any queued extraction is dropped without
+    recording that it never ran. ``wait=False`` keeps shutdown bounded — a
+    stuck provider call must not hold the process open — and the fail-closed
+    rule already treats an unsettled extraction as "not accepted".
+    """
+    global _EXTRACTOR_POOL
+    with _EXTRACTOR_POOL_GUARD:
+        pool, _EXTRACTOR_POOL = _EXTRACTOR_POOL, None
+    if pool is not None:
+        pool.shutdown(wait=wait, cancel_futures=True)
 
 
 def settle_extractor(event_id: str) -> None:
@@ -1893,14 +1915,29 @@ async def send_draft(
         # Human-level accountability gate. The signed payload is exactly what
         # the approving person reviewed: the deal, the draft, and the body
         # digest. The transmission digest is server-computed and recorded, but
-        # the human never saw it, so it is not signed. When
-        # TRADEFLOW_APPROVAL_PUBKEY is set, unsigned sends are refused.
-        requires_signature = required_approval_pubkey() is not None
-        if requires_signature and approval is None:
-            raise SendRefused("This desk requires a signed approval for sends.")
+        # the human never saw it, so it is not signed.
+        #
+        # [SECURITY 2026-10-23] Fail-closed policy, not opt-in-by-env-var:
+        #   * policy "required" + no pinned key  -> refuse the send. A desk that
+        #     claims signed approvals while holding no key to verify against is
+        #     worse than one that admits it has none, because the boolean path
+        #     would still be taken.
+        #   * policy "required" + no approval    -> refuse.
+        #   * a supplied approval from an unpinned key is not an approval.
+        policy = approval_policy()
+        if policy == "required":
+            if required_approval_pubkey() is None:
+                raise SendRefused(
+                    "This desk requires signed approvals but TRADEFLOW_APPROVAL_PUBKEY "
+                    "is not configured. Refusing to send (fail-closed)."
+                )
+            if approval is None:
+                raise SendRefused("This desk requires a signed approval for sends.")
         if approval is not None:
             if not verify_signed_approval(approval, signed_payload(draft["deal_id"], draft_id, digest)):
                 raise SendRefused("The approval signature does not verify.")
+            if required_approval_pubkey() is not None and not approval_is_pinned(approval):
+                raise SendRefused("The approval was signed by a key this desk does not pin.")
         chain_payload: dict[str, Any] = {
             "draft_id": draft_id,
             "decision_id": draft.get("decision_id"),

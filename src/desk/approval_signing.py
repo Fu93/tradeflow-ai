@@ -17,10 +17,21 @@ computed by the server and is recorded in the same chain entry, but it is
 not part of the signature, because the signer never saw it. Sign only what
 the signer saw.
 
-Server policy is fail-closed: when ``TRADEFLOW_APPROVAL_PUBKEY`` is set,
-every send must carry a valid signature from that exact key; unsigned
-sends are refused. Without the variable the gate is opt-in per request,
-preserving the pre-existing behaviour for existing callers.
+Server policy is fail-closed, and it is now a *policy*, not a side effect of
+an environment variable being present:
+
+- A pinned ``TRADEFLOW_APPROVAL_PUBKEY`` → signed approval is **required**.
+  Pinning a key is the operator declaring the intent to enforce it.
+- ``TRADEFLOW_ENV=production`` → signed approval is **required**, and the send
+  gate refuses to send at all when no key is pinned. A production desk that
+  accepts an unsigned boolean as proof of human approval has no
+  non-repudiation property, only the appearance of one.
+- ``TRADEFLOW_REQUIRE_SIGNED_APPROVAL`` overrides that either way, explicitly.
+- Sandbox / demo / tests with no pinned key default to optional, so existing
+  callers keep working.
+
+When a key *is* pinned, every send must carry a valid signature from that exact
+key; unsigned sends and signatures from any other key are refused.
 
 Boundary (stated honestly): this is engineering non-repudiation for the
 approval action, not legal-grade accountability. Key-to-identity binding
@@ -43,12 +54,46 @@ ALG = "ed25519"
 PUBKEY_HEX_LEN = 64  # 32 bytes
 SIG_HEX_LEN = 128  # 64 bytes
 APPROVAL_PUBKEY_ENV = "TRADEFLOW_APPROVAL_PUBKEY"
+REQUIRE_SIGNED_ENV = "TRADEFLOW_REQUIRE_SIGNED_APPROVAL"
+
+# Values accepted by TRADEFLOW_REQUIRE_SIGNED_APPROVAL. Anything unrecognised
+# falls through to the environment default, so a typo cannot silently downgrade
+# a production gate.
+_REQUIRED_WORDS = {"1", "true", "yes", "on", "required"}
+_OPTIONAL_WORDS = {"0", "false", "no", "off", "optional"}
 
 
 def generate_keypair() -> tuple[str, str]:
     """Return (private_hex, public_hex). The private half never leaves the caller."""
     signing = SigningKey.generate()
     return signing.encode().hex(), signing.verify_key.encode().hex()
+
+
+def approval_policy() -> str:
+    """Whether a signed human approval is mandatory: ``"required"`` or ``"optional"``.
+
+    Resolution order, highest first:
+
+    1. ``TRADEFLOW_REQUIRE_SIGNED_APPROVAL`` — an explicit operator decision.
+    2. A pinned ``TRADEFLOW_APPROVAL_PUBKEY`` — pinning a key *is* the intent to
+       enforce it. Requiring the signature whenever a key is configured keeps
+       the documented contract and removes the old failure mode where the gate
+       silently became optional because an environment variable was absent.
+    3. ``TRADEFLOW_ENV=production`` — required. A production deployment that
+       accepts an unsigned boolean as proof of human approval is not a
+       non-repudiation story; it is decoration.
+    4. Otherwise (sandbox / demo / tests) — optional, preserving the behaviour
+       existing callers depend on.
+    """
+    explicit = os.environ.get(REQUIRE_SIGNED_ENV, "").strip().lower()
+    if explicit in _REQUIRED_WORDS:
+        return "required"
+    if explicit in _OPTIONAL_WORDS:
+        return "optional"
+    if required_approval_pubkey() is not None:
+        return "required"
+    env = os.environ.get("TRADEFLOW_ENV", "sandbox").strip().lower()
+    return "required" if env == "production" else "optional"
 
 
 def signed_payload(deal_id: str, draft_id: str, body_sha256: str) -> dict[str, str]:
@@ -80,6 +125,14 @@ def verify_signed_approval(approval: Any, payload: dict[str, str]) -> bool:
 
     Malformed input never raises here; it only fails. When a required pubkey
     is configured, the approval must be signed by exactly that key.
+
+    [SECURITY 2026-10-23] A supplied approval block is now always checked
+    against the pinned key when one exists, and the ``pubkey`` field is never
+    trusted as a claim of identity on its own: an approval signed by a key the
+    server did not pin is a *valid signature by an unknown signer*, which is not
+    the same thing as a human approval. ``pinned_ok`` is therefore reported
+    separately so the caller can refuse an unpinned signer explicitly instead of
+    relying on the absence of a policy.
     """
     if not isinstance(approval, dict):
         return False
@@ -100,6 +153,22 @@ def verify_signed_approval(approval: Any, payload: dict[str, str]) -> bool:
     except (BadSignatureError, ValueError, TypeError):
         return False
     return True
+
+
+def approval_is_pinned(approval: Any) -> bool:
+    """True when the block was signed by the key this deployment pins.
+
+    A cryptographically valid signature from an unpinned key proves only that
+    *some* key signed it. On a desk that has pinned a key, that is not an
+    approval and must not be recorded as one.
+    """
+    if not isinstance(approval, dict):
+        return False
+    required = required_approval_pubkey()
+    if required is None:
+        return False
+    return str(approval.get("pubkey") or "") == required
+
 
 
 def _cli(argv: list[str] | None = None) -> int:

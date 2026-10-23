@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
-from src.config.heuristics import HAZARD_LOGIT_CLIP
+from src.config.heuristics import HAZARD_FIT_CACHE_MAXSIZE, HAZARD_LOGIT_CLIP, ZERO_GAP_HAZARD_CACHE_MAXSIZE
 
 _FIT_PATH = Path(__file__).resolve().parents[2] / "data" / "hazard_ebay_bi.json"
 
@@ -139,24 +140,33 @@ def incremental_hazard(
     hinge is largest at a zero gap, so subtracting it makes a small discount
     look safer than the ask and the risk cap never binds. The cap therefore
     uses the gap slope with the hinge held at zero.
+
+    [PERF 2026-10-23] ``base`` is the increment at a zero gap with the hinge
+    suppressed, which reduces to ``sigmoid(b0 + effect)`` — it does not depend
+    on the offer at all. It used to be recomputed through a full
+    ``hazard_at_gap`` call (which re-read the fit file) on every evaluation:
+    912 times per ``choose_offer``, 4,540 times per five-supplier solve. It is
+    now computed directly and memoised on its two float inputs.
     """
+    loaded = fit if fit is not None else load_hazard_fit()
     above = hazard_at_gap(
         quote_gap(ask, offer),
         effect,
-        fit,
+        loaded,
         intercept=intercept,
         gap_coef=gap_coef,
         small_gap_coef=0.0,
     )
-    base = hazard_at_gap(
-        0.0,
-        effect,
-        fit,
-        intercept=intercept,
-        gap_coef=gap_coef,
-        small_gap_coef=0.0,
-    )
+    b0 = loaded.intercept if intercept is None else float(intercept)
+    base = _zero_gap_hazard(b0, float(effect))
     return max(above - base, 0.0)
+
+
+@lru_cache(maxsize=ZERO_GAP_HAZARD_CACHE_MAXSIZE)
+def _zero_gap_hazard(b0: float, effect: float) -> float:
+    """sigmoid(b0 + effect). The hinge is zero at a zero gap by construction."""
+    return sigmoid(b0 + effect)
+
 
 
 def _logistic(row: dict) -> LogisticFit:
@@ -174,6 +184,18 @@ def _logistic(row: dict) -> LogisticFit:
 
 
 def load_hazard_fit(path: Path | None = None) -> HazardFit:
+    """Read the fitted coefficients. Memoised: the file is 7 KB and immutable.
+
+    It was re-read 157 µs at a time on every hazard evaluation — once per
+    supplier per decision, and once per grid point inside the hazard floor
+    bisection. The file is a pinned input whose digest is recorded on every
+    decision record, so caching it cannot change a decision.
+    """
+    return _load_hazard_fit(path)
+
+
+@lru_cache(maxsize=HAZARD_FIT_CACHE_MAXSIZE)
+def _load_hazard_fit(path: Path | None = None) -> HazardFit:
     source = _FIT_PATH if path is None else path
     payload = json.loads(source.read_text(encoding="utf-8"))
     return HazardFit(

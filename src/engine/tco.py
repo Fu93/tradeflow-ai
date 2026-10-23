@@ -83,8 +83,13 @@ class TCOEngine:
         p_raw = offered.raw_unit_price
         
         # 1. 交期延遲影子成本 (Lead Time Penalty)
+        # [CORRECTNESS 2026-10-23] 這裡補上與非線性路徑相同的 None 守衛。
+        # TradeTermsSpec 的兩個 baseline 欄位預設為 None（「未設定則不計該項
+        # 影子成本」），但線性路徑直接拿它做減法與除法：只要呼叫端只提供
+        # offered_lead_days 或 offered_moq 就會拋 TypeError，baseline_moq=0
+        # 則拋 ZeroDivisionError。docstring 承諾的「不計」在此才成立。
         lead_penalty = 0.0
-        if offered.offered_lead_days is not None:
+        if offered.offered_lead_days is not None and terms_spec.baseline_lead_days is not None:
             delay_days = max(0, offered.offered_lead_days - terms_spec.baseline_lead_days)
             lead_penalty = p_raw * delay_days * terms_spec.daily_lead_delay_penalty_pct
 
@@ -96,8 +101,9 @@ class TCOEngine:
         # 同一概念兩套數字（相差 ~2.5 倍），且 main.py 與 logrolling.py 各用一套。
         # 現統一：年化費率 × 持有天數/365，與非線性路徑同基準。
         moq_penalty = 0.0
-        if offered.offered_moq is not None and offered.offered_moq > terms_spec.baseline_moq:
-            excess_ratio = (offered.offered_moq - terms_spec.baseline_moq) / terms_spec.baseline_moq
+        baseline_moq = terms_spec.baseline_moq
+        if offered.offered_moq is not None and baseline_moq is not None and baseline_moq > 0 and offered.offered_moq > baseline_moq:
+            excess_ratio = (offered.offered_moq - baseline_moq) / baseline_moq
             holding_years = INVENTORY_HOLDING_DAYS / 365
             moq_penalty = p_raw * excess_ratio * terms_spec.excess_moq_holding_cost_rate * holding_years
 
@@ -107,7 +113,7 @@ class TCOEngine:
             # 相比基準定金多出的資金佔用
             deposit_delta = max(0.0, offered.deposit_pct - terms_spec.baseline_payment_deposit_pct)
             # 佔用時長預設以生產交期天數折算
-            lead_days = offered.offered_lead_days or terms_spec.baseline_lead_days
+            lead_days = offered.offered_lead_days or terms_spec.baseline_lead_days or 0
             payment_penalty = p_raw * deposit_delta * (terms_spec.annual_cost_of_capital * (lead_days / 365))
 
         # 4. 稅票與包裝拆分額外成本 (Tax & Packaging Surcharge)

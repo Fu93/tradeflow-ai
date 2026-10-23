@@ -46,6 +46,7 @@ import sqlite3
 import tempfile
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode, urlsplit, urlunsplit
@@ -95,6 +96,15 @@ CREATE TABLE IF NOT EXISTS desk_anchor_pending (
 
 class ChainKeyMissing(RuntimeError):
     """Desk chain writes need TRADEFLOW_CHAIN_KEY and the process does not have it."""
+
+
+class ChainTimestampRegression(RuntimeError):
+    """A new entry would be dated before the entry it links to.
+
+    Rejected rather than silently clamped: a clamped timestamp hides a broken
+    clock, and a broken clock is the thing that makes "the human approved before
+    the send" unverifiable.
+    """
 
 
 def chain_key_configured() -> bool:
@@ -839,6 +849,47 @@ def _broken(seq: int, count: int, entries: list[dict[str, Any]]) -> dict[str, An
     }
 
 
+def _parse_ts(value: Any) -> datetime | None:
+    """Best-effort ISO-8601 parse. Unparseable values are not a chain failure.
+
+    Legacy rows predate the timestamp guard and some were written with a bare
+    date. A value that cannot be parsed is skipped by the monotonicity check
+    rather than reported as a break, because the MAC already proves the row is
+    authentic — the question here is only ordering.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def ts_regression(entries: list[dict[str, Any]]) -> int | None:
+    """First seq whose timestamp is earlier than its predecessor, or None.
+
+    A keyed MAC stops anyone without the key from editing a row, but it does
+    not stop someone *with* the key from backdating a new row: ``ts`` is a
+    caller-supplied string inside the signed body, so a legitimate MAC over a
+    falsified clock is still a valid MAC. Non-decreasing time is the only
+    ordering property that can be checked from the chain alone, and it is what
+    makes "this approval happened before that send" meaningful.
+    """
+    previous: datetime | None = None
+    for item in entries:
+        current = _parse_ts(item.get("ts"))
+        if current is None:
+            continue
+        if previous is not None and current < previous:
+            return int(item.get("seq") or 0)
+        previous = current
+    return None
+
+
 def _annotate(result: dict[str, Any]) -> dict[str, Any]:
     if not _anchor_target():
         result["anchor"] = "anchor not configured"
@@ -887,13 +938,22 @@ def _expected_mac(row: Any, payload: Any) -> str:
 def append(conn: sqlite3.Connection, deal_id: str, type_: str, ts: str, payload: Any) -> dict[str, Any]:
     """Only write path. The database row is written before the anchor."""
     last = conn.execute(
-        "SELECT seq, entry_hash FROM desk_chain WHERE deal_id = ? ORDER BY seq DESC LIMIT 1",
+        "SELECT seq, entry_hash, ts FROM desk_chain WHERE deal_id = ? ORDER BY seq DESC LIMIT 1",
         (deal_id,),
     ).fetchone()
     if last is None:
         seq, prev = 1, GENESIS
     else:
         seq, prev = int(last["seq"]) + 1, str(last["entry_hash"])
+        # A keyed MAC over a backdated row is still a valid MAC: ``ts`` lives
+        # inside the signed body, so anyone holding the key can sign a false
+        # clock. Refuse the write instead of producing an unorderable chain.
+        prior_ts = _parse_ts(last["ts"])
+        new_ts = _parse_ts(ts)
+        if prior_ts is not None and new_ts is not None and new_ts < prior_ts:
+            raise ChainTimestampRegression(
+                f"entry ts {ts!r} precedes the head ts {last['ts']!r} for deal {deal_id}"
+            )
     stored = normalize(payload)
     digest = entry_hash(deal_id, seq, type_, ts, stored, prev)
     key_id = current_key_id()
@@ -948,14 +1008,30 @@ def anchor_head_present(deal_id: str) -> bool:
     return _real_anchor_head(item)
 
 
+def chain_rows(conn: sqlite3.Connection, deal_id: str) -> list[Any]:
+    """Fetch the chain for one deal, oldest first. Safe to call under a short lock.
+
+    Separated so the caller can release its lock before recomputing the MACs:
+    verification is pure CPU over already-fetched rows, and holding the store's
+    global lock for an O(n) HMAC pass serialised every read and write behind it.
+    """
+    return conn.execute(
+        "SELECT * FROM desk_chain WHERE deal_id = ? ORDER BY seq ASC",
+        (deal_id,),
+    ).fetchall()
+
+
 def verify_links(conn: sqlite3.Connection, deal_id: str) -> dict[str, Any]:
     """Recompute every MAC. The anchor and the pending mark are not consulted."""
     if not chain_key_configured():
         return _broken(1, 0, [])
-    rows = conn.execute(
-        "SELECT * FROM desk_chain WHERE deal_id = ? ORDER BY seq ASC",
-        (deal_id,),
-    ).fetchall()
+    return verify_rows(chain_rows(conn, deal_id))
+
+
+def verify_rows(rows: list[Any]) -> dict[str, Any]:
+    """Pure MAC recomputation over pre-fetched rows. No connection, no lock."""
+    if not chain_key_configured():
+        return _broken(1, 0, [])
     prev = GENESIS
     entries: list[dict[str, Any]] = []
     for row in rows:
@@ -979,6 +1055,14 @@ def verify_links(conn: sqlite3.Connection, deal_id: str) -> dict[str, Any]:
         if not linked:
             return _annotate(_broken(int(row["seq"]), len(entries), entries))
         prev = row["entry_hash"]
+    # MACs prove authorship, not order. A chain whose timestamps go backwards
+    # was written by someone who could set the clock, so it cannot answer
+    # "did the approval precede the send".
+    regressed = ts_regression(entries)
+    if regressed is not None:
+        out = _broken(regressed, len(entries), entries)
+        out["reason"] = "timestamp_regression"
+        return out
     head = prev if entries else GENESIS
     return {
         "ok": True,
@@ -991,15 +1075,24 @@ def verify_links(conn: sqlite3.Connection, deal_id: str) -> dict[str, Any]:
 
 def verify(conn: sqlite3.Connection, deal_id: str) -> dict[str, Any]:
     """Recompute every MAC, then require the anchor when one is configured."""
-    result = verify_links(conn, deal_id)
+    return verify_with_anchor(verify_links(conn, deal_id), deal_id, _pending_anchor(conn, deal_id))
+
+
+def verify_with_anchor(result: dict[str, Any], deal_id: str, pending: bool) -> dict[str, Any]:
+    """The anchor half of verification, over an already-computed link result.
+
+    Split out so a caller holding a database lock can fetch the rows and the
+    pending mark, release the lock, and then spend the O(n) HMAC time and the
+    anchor I/O without blocking every other request.
+    """
     if not result["ok"]:
         return _annotate(result)
     entries = list(result.get("entries") or [])
     head = str(result.get("head") or "")
-    if _pending_anchor(conn, deal_id):
-        pending = _annotate(_broken(len(entries) or 1, len(entries), entries))
-        pending["anchor"] = "anchor missing because the anchor store was down"
-        return pending
+    if pending:
+        pending_result = _annotate(_broken(len(entries) or 1, len(entries), entries))
+        pending_result["anchor"] = "anchor missing because the anchor store was down"
+        return pending_result
     observed = _anchor_observation(deal_id)
     if observed["status"] == "down":
         down = _annotate(_broken(len(entries) or 1, len(entries), entries))

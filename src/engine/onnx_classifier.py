@@ -12,12 +12,30 @@ import numpy as np
 
 logger = logging.getLogger("tradeflow.onnx_classifier")
 
-try:
-    import onnxruntime as ort
-    HAS_ORT = True
-except ImportError:
-    ort = None
-    HAS_ORT = False
+# [PERF 2026-10-23] ``onnxruntime`` is imported on first use, not at module
+# import. Its C extension costs ~168 ms of import time (723 ms cold) and it was
+# pulled in unconditionally by ``engine.bilingual`` → ``desk.parse`` → the app
+# entry point, so every process — including short-lived CLI runs and test
+# workers that never classify anything — paid for it. The session itself is only
+# 7 ms to create once the library is loaded.
+ort = None
+HAS_ORT: bool | None = None  # None = not probed yet
+
+
+def _load_ort() -> bool:
+    """Import onnxruntime once. Returns False when it is genuinely unavailable."""
+    global ort, HAS_ORT
+    if HAS_ORT is None:
+        try:
+            import onnxruntime as _ort
+
+            ort = _ort
+            HAS_ORT = True
+        except ImportError:
+            ort = None
+            HAS_ORT = False
+    return bool(HAS_ORT)
+
 
 # 8 類意圖字串標籤
 LABEL_STRINGS = [
@@ -56,7 +74,7 @@ class OnDeviceIntentClassifier:
         return cls._instance
 
     def _initialize(self):
-        if not HAS_ORT:
+        if not _load_ort():
             logger.warning("onnxruntime is not installed; on-device ONNX classification is disabled.")
             return
 

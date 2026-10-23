@@ -72,3 +72,17 @@ docs/internal/debug_findings/**/*.png
 # real supplier correspondence, never committed. Export, train, delete.
 confirmed_spans.jsonl
 confirmed_spans.*.jsonl
+
+# ---- Human approval key material (src/desk/approval_signing.py) ----
+# `python -m src.desk.approval_signing keygen --out <file>` writes a PRIVATE
+# Ed25519 key. It must never enter history: anyone holding it can forge a
+# human approval for every deal on the desk, which is precisely the property
+# the signature exists to provide. `.dockerignore` already excludes these
+# names from the image; git did not, so a local keygen could be committed.
+*.pem
+*.key
+*.p8
+*.p12
+approval_keypair.json
+approval_keypair*.json
+**/approval_keypair*.json

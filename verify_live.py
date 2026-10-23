@@ -118,10 +118,17 @@ assert sent["status"] in {"approved", "sent"}, sent["status"]
 print(f"[PASS] 7. Signed human approval accepted -> draft {sent['status']} (sandbox: no SMTP)")
 
 # 7. The audit chain verifies, and the approval is inside the chain entry.
-res_audit = client.get(f"/api/v1/desk/deals/{deal_id}/audit/verify", headers=HEADERS)
+# The default response is a summary; entries are opt-in (and paginated) because
+# returning the whole chain on every verify does not scale with the chain.
+res_audit = client.get(
+    f"/api/v1/desk/deals/{deal_id}/audit/verify",
+    params={"include_entries": True},
+    headers=HEADERS,
+)
 assert res_audit.status_code == 200, res_audit.text
 chain = res_audit.json()
 assert chain["ok"], "audit chain failed verification"
+assert chain.get("entries"), "audit verify returned no entries"
 approved_entry = next(
     (item for item in chain["entries"] if item["type"] == "send_approved"), None
 )

@@ -11,20 +11,29 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
 
 from src.config.heuristics import (
     BETA_CF_ITERS,
+    BETA_CDF_CACHE_MAXSIZE,
     D_PRIOR_MEAN,
     D_PRIOR_STRENGTH,
     HAZARD_MIN_EVENTS,
+    MAX_PRIOR_STRENGTH,
+    MIN_PRIOR_STRENGTH,
     ONE_HALF,
     OPT_TOL,
 )
 
 _TINY = float(np.finfo(np.float64).tiny)
+
+# Bounds on the Beta prior's total strength (α+β). These are numerical limits,
+# not policy knobs; the values and their rationale live in
+# src/config/heuristics.py so they stay registered and auditable.
+
 
 
 def policy_alpha_beta() -> tuple[float, float]:
@@ -82,7 +91,18 @@ def _betacf(alpha: float, beta: float, x: float) -> float:
 
 
 def regularized_beta(x: float, alpha: float, beta: float) -> float:
-    """Beta CDF. Beta(α, 1) is x^α. The symmetry identity covers the other tail."""
+    """Beta CDF. Beta(α, 1) is x^α. The symmetry identity covers the other tail.
+
+    Memoised: one ``choose_offer`` call issues ~844 evaluations, and the golden
+    section plus the Newton polish re-evaluate the same (x, α, β) triples many
+    times over. The function is pure, so the cache is safe; the bound keeps a
+    long-lived process from accumulating entries across deals.
+    """
+    return _regularized_beta(float(x), float(alpha), float(beta))
+
+
+@lru_cache(maxsize=BETA_CDF_CACHE_MAXSIZE)
+def _regularized_beta(x: float, alpha: float, beta: float) -> float:
     if x <= 0.0:
         return 0.0
     if x >= 1.0:
@@ -121,6 +141,14 @@ class ReserveState:
     reject_ratios: tuple[float, ...] = field(default_factory=tuple)
     n_responses: int = 0
     reference_ask: float | None = None
+    # Truncated-interval memo. ``cdf`` calls ``_interval`` once and ``std`` three
+    # times; ``mean`` calls it once and then ``self.mean()`` again. Every one of
+    # those recomputes the same two ``regularized_beta`` values from scratch,
+    # which the profiler attributed 71% of a snapshot rebuild to. Keyed by
+    # (α, β) because ``std`` asks for the α+1 and α+2 moments as well.
+    _interval_cache: dict[tuple, tuple[float, float, float, bool]] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     @classmethod
     def policy(cls) -> "ReserveState":
@@ -129,16 +157,28 @@ class ReserveState:
 
     @classmethod
     def from_moments(cls, mean: float, std: float | None = None) -> "ReserveState":
-        """User policy. Mean is a fraction of the reference ask. Spread is the standard deviation of D."""
+        """User policy. Mean is a fraction of the reference ask. Spread is the standard deviation of D.
+
+        [CORRECTNESS 2026-10-23] The implied strength is clamped. Before, a
+        legal ``std`` of 1e-5 produced α+β≈9e8, which made the truncated CDF
+        lose enough precision to report an acceptance probability of 0.0 while
+        the same belief still had a finite mean — the desk then sent the full
+        ask as a counter and labelled it "the supplier's posterior". A
+        non-finite ``std`` (inf/NaN) is now treated as "no spread supplied"
+        rather than propagating into α and β.
+        """
         centre = min(max(float(mean), _TINY), 1.0 - _TINY)
-        if std is None or float(std) <= 0.0:
+        spread = None if std is None else float(std)
+        if spread is None or not math.isfinite(spread) or spread <= 0.0:
             strength = float(D_PRIOR_STRENGTH)
         else:
-            variance = float(std) * float(std)
+            variance = spread * spread
             strength = centre * (1.0 - centre) / variance - 1.0
-            if strength <= _TINY:
-                strength = float(D_PRIOR_STRENGTH)
+            if not math.isfinite(strength):
+                strength = MAX_PRIOR_STRENGTH
+        strength = min(max(strength, MIN_PRIOR_STRENGTH), MAX_PRIOR_STRENGTH)
         return cls(alpha=centre * strength, beta=(1.0 - centre) * strength, upper=1.0, n_responses=0)
+
 
     @property
     def source(self) -> str:
@@ -195,9 +235,21 @@ class ReserveState:
         return self._spawn(reference_ask=float(ask))
 
     def tighten(self, ratio: float) -> "ReserveState":
-        """Record an upper bound. A ratio above 1 does not loosen a tighter bound."""
+        """Record an upper bound. A ratio above 1 does not loosen a tighter bound.
+
+        [CORRECTNESS 2026-10-23] A ratio that does not move the bound returns
+        ``self`` unchanged, and therefore does not increment ``n_responses``.
+        Before, re-ingesting the same quote thirty times counted thirty
+        "responses" against an unchanged α/β, which flipped ``source`` to
+        ``supplier_responses`` and made the card claim "Reserve is this
+        supplier's Beta posterior" while the posterior was still the policy
+        prior. ``n_responses`` now means "observations that moved D", which is
+        what the provenance label is supposed to mean.
+        """
         bound = min(float(self.upper), max(float(ratio), _TINY))
         bound = min(bound, 1.0)
+        if bound >= self.upper:
+            return self
         return self._spawn(upper=bound, n_responses=self.n_responses + 1)
 
     def record(self) -> "ReserveState":
@@ -218,9 +270,34 @@ class ReserveState:
         return lower, upper
 
     def consistent(self) -> bool:
-        """False when a rejection sits at or above the tightest upper bound."""
+        """False when a rejection sits at or above the tightest upper bound.
+
+        ``lower == upper`` is deliberately inconsistent: a point mass carries
+        no probability, so the truncation would divide by zero. A rejection
+        exactly at the upper bound is also a contradiction — the bound says the
+        supplier accepts there, the rejection says they did not — and withholding
+        the counter is the fail-closed reading.
+        """
         lower, upper = self.bounds()
         return lower < upper
+
+    def numerically_valid(self) -> bool:
+        """False when the belief cannot produce a number anyone should act on.
+
+        This is the fail-closed check the decision path was missing. A prior
+        whose α or β is non-finite, or whose truncated mass underflows to zero,
+        used to fall through to ``cdf() == 0.0``: the solver then read "the
+        supplier will never accept anything" and issued the full ask as a
+        counter with ``blocked=False``. A belief that cannot be evaluated must
+        withhold the price, not vote for the worst offer.
+        """
+        for value in (self.alpha, self.beta, self.upper):
+            if not math.isfinite(float(value)):
+                return False
+        if self.alpha <= 0.0 or self.beta <= 0.0:
+            return False
+        _lower, _upper, mass, ok = self._interval(self.alpha, self.beta)
+        return bool(ok) and math.isfinite(mass) and mass > 0.0
 
     def acceptance(self, x: float) -> float:
         """P(accept an offer at fraction x of the reference ask)."""
@@ -268,13 +345,28 @@ class ReserveState:
         return self.cdf(x)
 
     def _interval(self, alpha: float, beta: float) -> tuple[float, float, float, bool]:
+        """Truncated interval, mass, and validity, memoised on (α, β).
+
+        The bounds depend on the state, not on α/β, so the key is just the shape
+        pair. ``std`` asks for the α+1 and α+2 moments, hence a small dict rather
+        than a single slot.
+        """
+        key = (alpha, beta, self.upper, self.reject_ratios)
+        hit = self._interval_cache.get(key)
+        if hit is not None:
+            return hit
         lower, upper = self.bounds()
         if not (lower < upper):
-            return lower, upper, 0.0, False
-        mass = regularized_beta(upper, alpha, beta) - regularized_beta(lower, alpha, beta)
-        if mass <= _TINY:
-            return lower, upper, 0.0, False
-        return lower, upper, mass, True
+            result = (lower, upper, 0.0, False)
+        else:
+            mass = regularized_beta(upper, alpha, beta) - regularized_beta(lower, alpha, beta)
+            if not math.isfinite(mass) or mass <= _TINY:
+                result = (lower, upper, 0.0, False)
+            else:
+                result = (lower, upper, mass, True)
+        self._interval_cache[key] = result
+        return result
+
 
 
 def uniform_offer(outside: float, ask: float, low: float) -> float:

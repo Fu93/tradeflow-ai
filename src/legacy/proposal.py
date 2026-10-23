@@ -5,8 +5,8 @@ attached, because the scored policy does not choose one.
 """
 from __future__ import annotations
 
-from src.engine.model import BREAKDOWN_TRIP_THRESHOLD
-from src.engine.one_step import one_step_counter
+from src.legacy.model import BREAKDOWN_TRIP_THRESHOLD
+from src.legacy.one_step import one_step_counter
 
 
 def build_proposal(spec: dict, observed_offer: float | None = None):

@@ -902,6 +902,41 @@
       "category": "n",
       "justification": "Maximum characters stored for one extractor evidence span or a caller note. Longer text is rejected by the schema."
     },
+    "MAX_PRIOR_STRENGTH": {
+      "value": 1000000.0,
+      "category": "n",
+      "justification": "Numerical guard, not policy. Bounds the Beta prior's total strength so the truncated CDF stays evaluable: above this the lgamma subtraction loses enough precision that cdf(mean) stops being 0.5 and can collapse to exactly 0.0."
+    },
+    "MIN_PRIOR_STRENGTH": {
+      "value": 0.001,
+      "category": "n",
+      "justification": "Numerical guard, not policy. Below this the Beta is U-shaped and its mean is no longer where from_moments placed it, so the caller's stated prior would be silently contradicted."
+    },
+    "BETA_CDF_CACHE_MAXSIZE": {
+      "value": 16384,
+      "category": "n",
+      "justification": "Entry bound for the memoised regularized beta CDF. One choose_offer call issues roughly 844 evaluations and the optimiser re-evaluates the same triples; the bound stops a long-lived process growing without limit."
+    },
+    "HAZARD_FIT_CACHE_MAXSIZE": {
+      "value": 8,
+      "category": "n",
+      "justification": "Entry bound for the memoised hazard fit. The fitted file is a pinned input of about 7 KB whose digest is recorded on every decision, so a handful of entries covers every caller."
+    },
+    "ZERO_GAP_HAZARD_CACHE_MAXSIZE": {
+      "value": 4096,
+      "category": "n",
+      "justification": "Entry bound for the memoised zero-gap hazard. Its key is one intercept and one effect, so a small cache covers every supplier in a deal."
+    },
+    "AUDIT_VERIFY_DEFAULT_LIMIT": {
+      "value": 200,
+      "category": "n",
+      "justification": "Default page size for the audit verify endpoint. The response is a verdict plus a window rather than the whole chain, which at 100k entries was a 36.6 MB body built under the store lock."
+    },
+    "AUDIT_VERIFY_MAX_LIMIT": {
+      "value": 2000,
+      "category": "n",
+      "justification": "Hard ceiling on the audit verify page size, so a caller cannot ask for the whole chain by passing a large limit."
+    },
     "ONE_HALF": {
       "value": 0.5,
       "category": "c",

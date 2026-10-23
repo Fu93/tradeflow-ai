@@ -44,6 +44,7 @@ from src.config.heuristics import (
     BUYER_CAPITAL_RATE,
     CAUTION_RISK_THRESHOLD,
     DEPOSIT_HARD_CAP,
+    HTTP_UNAVAILABLE,
     MOQ_HEADROOM_MULTIPLE,
     NEAR_DEAL_RATIO,
     PRICE_MATCH_RATIO,
@@ -200,6 +201,16 @@ async def _lifespan(app: FastAPI):
                 await desk_poll
             except asyncio.CancelledError:
                 pass
+        # [PERF/LIFECYCLE 2026-10-23] The extractor pool is a module global that
+        # was never shut down, so queued extraction jobs were dropped silently at
+        # exit. Bounded shutdown: a stuck provider call must not hold the process
+        # open, and an unsettled extraction is already fail-closed.
+        try:
+            from src.desk.service import shutdown_extractors
+
+            await asyncio.to_thread(shutdown_extractors, False)
+        except Exception:  # pragma: no cover - shutdown must never raise
+            logger.warning("Extractor pool shutdown raised.", exc_info=True)
 
 
 app = FastAPI(
@@ -248,6 +259,8 @@ def _readable_validation_detail(detail):
 # 是因為擴充套件/儀表板可能帶憑證，但此時**不可**再使用萬用字元（Starlette 的
 # CORSMiddleware 允許 allow_origin_regex，但 allow_origins 一旦含 "*" 就會
 # 無條件加上 Access-Control-Allow-Origin: *）。
+from .limits import BodySizeLimitMiddleware  # noqa: E402
+
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|chrome-extension://[A-Za-z0-9_-]+)$",
@@ -255,6 +268,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# [SECURITY 2026-10-23] 請求體大小上限。Pydantic 的欄位長度檢查發生在
+# ASGI 伺服器**已經緩衝完整個 body** 之後，所以單筆 500 MB 的 POST 就能在
+# 任何驗證器看到它之前耗盡記憶體。這個中介層是最外層（在 CORS 之後註冊，
+# Starlette 會把它排到最前），在讀取 body 前就用 Content-Length 拒絕，
+# 並在串流過程中累計位元組數作為第二道保證。
+app.add_middleware(BodySizeLimitMiddleware)
 
 # 全域會話管理器實例
 session_mgr = SessionManager()
@@ -445,6 +465,69 @@ def health():
     }
 
 
+@app.get("/ready")
+def ready():
+    """Readiness probe: the process can actually serve a decision, or it cannot.
+
+    `/health` is a liveness probe — it answers "is this process up" and is
+    intentionally cheap and dependency-free. It used to be the only probe, so
+    a pod whose SQLite file was unwritable, whose chain key was missing, or
+    whose desk store had never been created still reported `ok` and received
+    traffic. Readiness is a different question: every dependency a send
+    depends on is checked here, and the answer is `503` when one is missing.
+
+    The body never contains a secret or a key value — only whether one is set.
+    """
+    from src.desk.audit_chain import chain_key_configured
+    from src.desk.approval_signing import approval_policy, required_approval_pubkey
+
+    checks: dict[str, dict[str, Any]] = {}
+
+    checks["chain_key"] = {
+        "ok": bool(chain_key_configured()),
+        "detail": "TRADEFLOW_CHAIN_KEY is set" if chain_key_configured() else "TRADEFLOW_CHAIN_KEY is missing",
+        "required": True,
+    }
+
+    store_ok = False
+    store_detail = "not probed"
+    try:
+        from src.desk.store import get_store
+
+        probe = get_store().probe_write()
+        store_ok = bool(probe.get("ok"))
+        store_detail = str(probe.get("detail") or ("writable" if store_ok else "not writable"))
+    except Exception as exc:  # pragma: no cover - defensive: a broken store must not 500 the probe
+        store_detail = f"store probe failed: {type(exc).__name__}"
+    checks["desk_store"] = {"ok": store_ok, "detail": store_detail, "required": True}
+
+    policy = approval_policy()
+    pubkey_present = required_approval_pubkey() is not None
+    approval_ok = policy != "required" or pubkey_present
+    checks["signed_approval"] = {
+        "ok": approval_ok,
+        "detail": (
+            "policy=required, public key pinned"
+            if policy == "required" and pubkey_present
+            else "policy=required, no public key pinned (fail-closed: sends are refused)"
+            if policy == "required"
+            else f"policy={policy}"
+        ),
+        "required": policy == "required",
+    }
+
+    blocking = [name for name, item in checks.items() if item["required"] and not item["ok"]]
+    body = {
+        "status": "ready" if not blocking else "not_ready",
+        "blocking": blocking,
+        "checks": checks,
+        "version": "0.4.0",
+    }
+    if blocking:
+        return JSONResponse(status_code=HTTP_UNAVAILABLE, content=body)
+    return body
+
+
 @_legacy_route(app.post)("/negotiate")
 def negotiate(spec: Spec):
     if spec.observed_offer is None:
@@ -489,7 +572,27 @@ def negotiate(spec: Spec):
     from src.engine.reserve import ReserveState
 
     fit = load_hazard_fit()
-    state = ReserveState.policy()
+    # [CORRECTNESS 2026-10-23] ``prior_reserve_mean`` / ``prior_reserve_std``
+    # were accepted by this endpoint and then silently ignored: the belief was
+    # always ``ReserveState.policy()`` while the response echoed a posterior
+    # derived from it, so a caller who set a prior saw no change and no warning.
+    # They are now honoured when supplied, as D = reserve / observed offer
+    # (a fraction in (0, 1), the same meaning the desk uses). Omitting them keeps
+    # the previous behaviour exactly, so existing callers are unaffected.
+    if spec.prior_reserve_mean is not None:
+        if not (0.0 < float(spec.prior_reserve_mean) < 1.0):
+            raise HTTPException(
+                status_code=422,
+                detail="prior_reserve_mean is D = reserve / observed offer, so it must be between 0 and 1.",
+            )
+        state = ReserveState.from_moments(
+            float(spec.prior_reserve_mean),
+            None if spec.prior_reserve_std is None else float(spec.prior_reserve_std),
+        )
+        prior_applied = True
+    else:
+        state = ReserveState.policy()
+        prior_applied = False
     post_mean = float(spec.observed_offer) * float(state.mean())
     post_std = float(spec.observed_offer) * float(state.std())
     belief = HazardBelief(
@@ -510,6 +613,7 @@ def negotiate(spec: Spec):
             lambda_break=float(spec.lambda_break),
             belief=belief,
             credible_alpha=spec.hazard_credible_alpha,
+            state=state,
         )
     except Exception:
         logger.exception("POST /negotiate failed")
@@ -519,6 +623,7 @@ def negotiate(spec: Spec):
     rec["markup_identified"] = False
     rec["markup_applied"] = False
     rec["reserve_source"] = state.source
+    rec["prior_applied"] = prior_applied
     return rec
 
 

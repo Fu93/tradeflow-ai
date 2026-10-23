@@ -241,7 +241,12 @@ def choose_offer(
     belief = state if state is not None else ReserveState.policy()
     hi = min(float(ask), float(outside))
     inconsistent = not belief.consistent()
-    blocked = hi <= 0.0 or inconsistent
+    # [CORRECTNESS 2026-10-23] A belief that cannot be evaluated is not a belief
+    # that says "reject everything". Treating the two the same made the solver
+    # issue the full ask as a counter with blocked=False. Withholding is the
+    # only honest answer when the posterior has no usable mass.
+    unevaluable = not belief.numerically_valid()
+    blocked = hi <= 0.0 or inconsistent or unevaluable
     default = 0.0 if blocked else hi
     push, kind = _push(
         float(ask), float(outside), belief, effect, float(risk_cap), loaded,
@@ -273,7 +278,11 @@ def choose_offer(
         push_half = default
         push_double = default
     push_note = ""
-    if inconsistent:
+    if unevaluable:
+        push_note = (
+            "The reserve belief has no usable probability mass, so no price is issued."
+        )
+    elif inconsistent:
         push_note = "The rejection lower bound meets or passes the upper bound, so no price is issued."
     elif push_withheld:
         push_note = "Push would reduce expected value, so it is withheld."
@@ -286,7 +295,7 @@ def choose_offer(
     else:
         relation = "match_rival"
     bound_note = belief.note()
-    if inconsistent:
+    if unevaluable or inconsistent:
         bound_note = push_note
     return OfferChoice(
         default_counter=default,

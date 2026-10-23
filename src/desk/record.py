@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config.heuristics import DEAL_CURRENCY, MINOR_SCALE, OPT_TOL
+from src.desk.money import is_quantised, to_minor
 
 ROOT = Path(__file__).resolve().parents[2]
 _OPTIMISER = "decision.choose_offer"
@@ -21,10 +22,6 @@ class Check:
 
     def as_dict(self) -> dict[str, Any]:
         return {"name": self.name, "passed": self.passed, "detail": self.detail}
-
-
-def to_minor(amount: float) -> int:
-    return int(round(float(amount) * int(MINOR_SCALE)))
 
 
 def file_sha256(path: Path) -> str:
@@ -148,12 +145,21 @@ def build_record(
     tolerance = float(OPT_TOL) * max(1.0, abs(float(ask or 0.0)), abs(float(ceiling)))
     counter_le_ask = counter is None or ask is None or float(counter) <= float(ask) + tolerance
     counter_le_ceiling = counter is None or float(counter) <= float(ceiling) + tolerance
+    # The number on the record must be the number the supplier reads. The draft
+    # body renders two decimals, so a counter with sub-cent precision produced a
+    # record and a message that disagreed about the price.
+    counter_quantised = counter is None or is_quantised(float(counter))
     fit_pinned = bool(fit)
     checks = (
         _check("only_accepted_inputs", only_accepted or not events, "every priced input was accepted by a person"),
         _check("currency_matches_deal", currencies_ok and bool(currency), f"deal currency is {currency}"),
         _check("counter_le_ask", counter_le_ask, "counter is at or below this supplier's ask"),
         _check("counter_le_ceiling", counter_le_ceiling, "counter is at or below the ceiling"),
+        _check(
+            "counter_quantised",
+            counter_quantised,
+            f"counter is a whole number of minor units (scale {int(MINOR_SCALE)})",
+        ),
         _check("hazard_within_cap", hazard_within_cap, "incremental hazard is inside the cap, or the push is withheld"),
         _check("fit_hash_pinned", fit_pinned, "the hazard file hash is on the record"),
         _check(

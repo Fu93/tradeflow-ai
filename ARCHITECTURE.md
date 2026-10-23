@@ -27,6 +27,23 @@ behavioral value, and this repository is in maintenance mode — the next
 competition entry is a fresh repo. Instead, this file is the authority
 that resolves the confusion.
 
+**Correction (2026-10-23): the shims are no longer part of v1's own graph.**
+The freeze decision had a defect the first version of this file did not
+name: `src/legacy/coupled.py`, `multi_solver.py`, `one_step.py`,
+`orchestrator.py`, and `proposal.py` imported their own sibling modules
+*through* the `src.engine` shims, which point back at `src.legacy`. That made
+the compatibility layer a load-bearing dependency inside the code it was meant
+to protect, and it meant the shim's resolution semantics were part of v1's
+contract. Those imports now point at `src.legacy.*` directly. The remaining
+`src.engine` imports inside `src/legacy/` are all real modules (`decision`,
+`hazard_fit`, `reserve`, `backend`, `landed`), which is the intended direction:
+v1 may call the v2 decision core, and must not call itself through a shim.
+
+The shims still exist and still serve external callers. They are now a
+compatibility surface only, not an internal dependency, which is what makes
+"freeze" a stable end state rather than a latent liability.
+
+
 ## What lives where
 
 | Path | Role |
@@ -35,7 +52,8 @@ that resolves the confusion.
 | `src/engine/<name>.py` (10 files) | Compatibility shims → `src/legacy/` |
 | `src/engine/decision.py`, `reserve.py`, `hazard_fit.py` | v2 phase-1 verified decision core (real files, no shims) |
 | `src/desk/` | v2 phase-1 persistent live desk: quote intake (IMAP/Gmail/chat import) → SQLite → belief update → coupled solver; drafts approved by a human; HMAC-SHA256 keyed audit chain (`audit_chain.py`) |
-| `src/app/` | App entry, demo data, security primitives |
+| `src/desk/money.py` | the single money-quantisation choke point (`quantise`, `quantise_offer`, `to_minor`). Nothing else rounds a price. |
+| `src/app/` | App entry, demo data, security primitives (`security.py`), request-size limit (`limits.py`) |
 | `src/web/`, `extension/` | Dashboard and Chrome extension (v1 demo surface) |
 | `src/sim/` | Labelled simulator (never imported by production decision paths) |
 

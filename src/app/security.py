@@ -37,6 +37,26 @@ webhook_auth_header = APIKeyHeader(name="X-Webhook-Token", auto_error=False)
 
 SANDBOX_DEMO_AUTH = os.getenv("TRADEFLOW_SANDBOX_DEMO_TOKEN", "SANDBOX-DEMO-TOKEN")
 
+# Minimum acceptable API-key length. Anything shorter is a guessable secret and
+# is treated as "not configured" in production.
+MIN_API_KEY_LEN = 16
+
+
+def _same_secret(provided: str, expected: str) -> bool:
+    """Constant-time secret comparison.
+
+    ``!=`` on str leaks the length and the position of the first differing byte
+    through timing. ``hmac.compare_digest`` does not, but it raises on
+    non-ASCII str, so both sides are encoded first. Length is compared first
+    only to avoid the exception; that comparison is not secret-dependent
+    because the expected length is a public property of the key format.
+    """
+    left = provided.encode("utf-8", "replace")
+    right = expected.encode("utf-8", "replace")
+    if len(left) != len(right):
+        return False
+    return hmac.compare_digest(left, right)
+
 
 def env_mode() -> str:
     """讀取當前環境模式（每次都讀 env，而非 import 期快照）。
@@ -56,30 +76,46 @@ def require_api_key(supplied: Optional[str] = Depends(api_key_header)):
     """API 安全金鑰驗證門禁 (Fail-Closed 默認拒絕規範).
 
     1. 演練沙盒模式 (TRADEFLOW_ENV=sandbox, 預設):
-       支援黑客松評委演示、前端無痛演練與 pytest 單元測試。
-       若配置了密鑰則強制驗證密鑰或 SANDBOX_DEMO_TOKEN，未配置時標記沙盒訪問放行。
+       - 未配置 TRADEFLOW_API_KEY: 放行，但**每次都記錄警告**，讓「未受保護」
+         是可觀測的，而不是靜默的。
+       - 已配置 TRADEFLOW_API_KEY: 該金鑰是**唯一**可用的金鑰。
     2. 生產模式 (TRADEFLOW_ENV=production):
        Fail-Closed: 若未設置 TRADEFLOW_API_KEY (或長度 < 16) 則直接阻斷存取 (500)；
-       未攜帶或攜帶非法密鑰則直接阻斷 (401)，杜絕未受控裸奔。
+       未攜帶或攜帶非法密鑰則直接阻斷 (401)。
+
+    [SECURITY 2026-10-23] 移除 `SANDBOX_DEMO_AUTH` 萬能繞過：
+    舊版在 sandbox 且**已配置真金鑰**時，仍接受硬寫在公開 repo 裡的
+    `SANDBOX-DEMO-TOKEN`，等於金鑰配置形同虛設。現在沙盒令牌只在
+    「伺服器完全沒有金鑰」的情境下作為演示佔位符返回，永不通過驗證。
+    比較改用常數時間 (`_same_secret`)，消除位元組級計時側通道。
     """
+    configured = (os.getenv("TRADEFLOW_API_KEY") or "").strip()
     if env_mode() == "sandbox":
-        configured_key = os.getenv("TRADEFLOW_API_KEY")
-        if configured_key:
-            if not supplied or (supplied.strip() != configured_key.strip() and supplied.strip() != SANDBOX_DEMO_AUTH):
-                raise HTTPException(
-                    status_code=401,
-                    detail="Unauthorized: Invalid X-API-Key header in sandbox mode. Access denied.",
-                )
-        return supplied or SANDBOX_DEMO_AUTH
+        if not configured:
+            logger.warning(
+                "TRADEFLOW_API_KEY is not configured; the sandbox API is fail-OPEN. "
+                "Set TRADEFLOW_API_KEY (or run production) to enforce authentication."
+            )
+            return supplied or SANDBOX_DEMO_AUTH
+        provided = (supplied or "").strip()
+        if not provided or not _same_secret(provided, configured):
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized: Invalid X-API-Key header in sandbox mode. Access denied.",
+            )
+        return supplied
 
     # 生產模式：Fail-Closed
-    configured_key = os.getenv("TRADEFLOW_API_KEY")
-    if not configured_key or len(configured_key.strip()) < 16:
+    if not configured or len(configured) < MIN_API_KEY_LEN:
         raise HTTPException(
             status_code=500,
-            detail="Security Violation: System is in production mode but TRADEFLOW_API_KEY is not configured (Fail-Closed).",
+            detail=(
+                "Security Violation: System is in production mode but TRADEFLOW_API_KEY "
+                f"is not configured or is shorter than {MIN_API_KEY_LEN} characters (Fail-Closed)."
+            ),
         )
-    if not supplied or supplied.strip() != configured_key.strip():
+    provided = (supplied or "").strip()
+    if not provided or not _same_secret(provided, configured):
         raise HTTPException(
             status_code=401,
             detail="Unauthorized: Invalid or missing X-API-Key header in production mode. Access denied.",

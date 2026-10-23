@@ -52,6 +52,16 @@ services:
         sync: false
       - key: TRADEFLOW_WEBHOOK_TOKEN
         sync: false
+      # Ed25519 public key of the human approver (64 hex chars). This service
+      # runs TRADEFLOW_ENV=production, so the send gate is fail-CLOSED: with no
+      # pinned key here, every desk send is refused rather than accepted on an
+      # unsigned boolean. /ready reports "signed_approval: false" until it is
+      # set. Generate the pair on the approver's own machine with
+      #   python -m src.desk.approval_signing keygen --out approval_keypair.json
+      # and copy only "public_key" into this variable. Never paste the private
+      # half into a hosting dashboard.
+      - key: TRADEFLOW_APPROVAL_PUBKEY
+        sync: false
       - key: DESK_N_SAMPLES
         value: "5000"
       - key: DESK_N_GRID

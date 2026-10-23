@@ -21,16 +21,16 @@ from src.config.heuristics import (
     ONE_HALF,
     SEARCH_STEP,
 )
-from src.engine import model
+from src.legacy import model
 from src.engine.backend import resolve_use_gpu
-from src.engine.coupled import (
+from src.legacy.coupled import (
     classify_tactics as _classify_tactics,
     solve_coupled,
 )
-from src.engine.hazard import HazardBelief
+from src.legacy.hazard import HazardBelief
 from src.engine.landed import landed_unit_cost
-from src.engine.bayesian_v2 import robust_location
-from src.engine.solver import bayes_update
+from src.legacy.bayesian_v2 import robust_location
+from src.legacy.solver import bayes_update
 
 
 def _get_xp(use_gpu: bool):

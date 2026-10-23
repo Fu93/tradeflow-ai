@@ -15,6 +15,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, 
 from src.app.security import require_desk_mutation
 from src.desk.mailbox import MailboxError
 from src.config.heuristics import (
+    AUDIT_VERIFY_DEFAULT_LIMIT,
+    AUDIT_VERIFY_MAX_LIMIT,
     BREAKDOWN_TRIP_THRESHOLD,
     DEAL_CURRENCY,
     FIELD_MAX_CHARS,
@@ -522,12 +524,45 @@ def register_desk_routes(api_v1: APIRouter) -> None:
             ) from exc
 
     @api_v1.get("/desk/deals/{deal_id}/audit/verify")
-    def get_audit_verify(deal_id: str, _: str = Depends(require_desk_mutation)):
+    def get_audit_verify(
+        deal_id: str,
+        include_entries: bool = False,
+        offset: int = 0,
+        limit: int = AUDIT_VERIFY_DEFAULT_LIMIT,
+        _: str = Depends(require_desk_mutation),
+    ):
+        """Verify the chain and return a summary, not the whole chain.
+
+        [PERF 2026-10-23] This endpoint returned every entry with its payload.
+        At 100,000 entries that is a 36.6 MB response built under the store lock,
+        and verification is O(n) — so the audit surface got slower and heavier
+        the more trustworthy the chain became, which is backwards. The default
+        answer is now the verdict plus a head and a count; entries are opt-in and
+        paginated. ``/evidence.json`` remains the full export.
+        """
         _ident(deal_id)
         store = get_store()
         if store.get_deal(deal_id) is None:
             raise HTTPException(status_code=404, detail="No such deal")
-        return store.verify_chain(deal_id)
+        result = store.verify_chain(deal_id)
+        entries = list(result.get("entries") or [])
+        summary = {
+            "ok": result.get("ok"),
+            "broken_seq": result.get("broken_seq"),
+            "head": result.get("head"),
+            "count": result.get("count", len(entries)),
+            "anchor": result.get("anchor"),
+            "reason": result.get("reason"),
+        }
+        if not include_entries:
+            return summary
+        window = max(0, min(int(limit), AUDIT_VERIFY_MAX_LIMIT))
+        start = max(0, int(offset))
+        summary["entries"] = entries[start:start + window]
+        summary["offset"] = start
+        summary["limit"] = window
+        summary["truncated"] = start + window < len(entries)
+        return summary
 
     @api_v1.get("/desk/deals/{deal_id}/evidence.json")
     def get_evidence(deal_id: str, _: str = Depends(require_desk_mutation)):

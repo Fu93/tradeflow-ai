@@ -608,6 +608,41 @@ EXTRACTOR_MAX_BYTES = 65536
 # caller note. Longer text is rejected by the schema. It is not a price.
 FIELD_MAX_CHARS = 500
 
+# Rationale: numerical guard, not policy. Bounds the Beta prior's total
+# strength (alpha plus beta) so the truncated CDF stays evaluable. Above this
+# the lgamma subtraction loses enough precision that cdf(mean) stops being 0.5
+# and can collapse to exactly 0.0, which reads as "the supplier never accepts".
+MAX_PRIOR_STRENGTH = 1e6
+
+# Rationale: numerical guard, not policy. Below this the Beta is U-shaped and
+# its mean is no longer where from_moments() put it, so the caller's stated
+# prior would be silently contradicted.
+MIN_PRIOR_STRENGTH = 1e-3
+
+# Rationale: entry bound for the memoised regularized beta CDF. One
+# choose_offer call issues roughly 844 evaluations and the optimiser re-evaluates
+# the same triples, so the cache pays for itself; the bound stops a long-lived
+# process from growing without limit across deals.
+BETA_CDF_CACHE_MAXSIZE = 16384
+
+# Rationale: entry bound for the memoised hazard fit. The fitted file is a
+# pinned input of about 7 KB whose digest is recorded on every decision, so a
+# handful of entries covers every caller including explicit-path overrides.
+HAZARD_FIT_CACHE_MAXSIZE = 8
+
+# Rationale: entry bound for the memoised zero-gap hazard. Its key is one
+# intercept and one effect, so a small cache covers every supplier in a deal.
+ZERO_GAP_HAZARD_CACHE_MAXSIZE = 4096
+
+# Rationale: default page size for the audit verify endpoint. The response is a
+# verdict plus a window, not the whole chain; at 100k entries the full chain was
+# a 36.6 MB body built under the store lock.
+AUDIT_VERIFY_DEFAULT_LIMIT = 200
+
+# Rationale: hard ceiling on the audit verify page size, so a caller cannot ask
+# for the whole chain by passing a large limit.
+AUDIT_VERIFY_MAX_LIMIT = 2000
+
 
 def _sigmoid(value: float) -> float:
     import math
