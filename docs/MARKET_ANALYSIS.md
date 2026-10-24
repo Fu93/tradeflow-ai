@@ -141,3 +141,38 @@ Customs data cannot separate automatic, carbon, and custom umbrellas. No sourced
 ## 繁體中文摘要
 
 雨傘（HS 6601）是示範品類，不是大市場。同一支 UN Comtrade 公開預覽腳本可查其他 HS 編碼。海關數字是對照，不進入求解器、建議價或熔斷。數量缺報記為 not available，不補零。英國 2025 年有 334,294 家進口企業（HMRC）；非歐盟進口者的代理區間是 132,484 至 239,616。英國自中國商品進口 GBP 697 億（ONS/DBT），含貴金屬與大型企業，會高估小買家採購。1.5% 至 3% 是大型買家公開區間，節省池上限是估算，不是 TradeFlow 的成績。HMRC 的英鎊與 Comtrade 的美元不合併。SOM 的取得率與價格是假設。
+
+## Closing the gaps (runbook, added 2026-10-24)
+
+Each gap above, with the source and the method to close it. Nothing in this
+section is a number; until someone runs the pull and cites the release here,
+the gap stays open and the "Must not claim" list still applies.
+
+1. **EU importer counts.** Eurostat, "Participation of enterprises in
+   international trade" (the same annual release the UK figures above come
+   from, ish — the UK rows cite the UK release; for the EU-27 bloc pull the
+   Eurostat structural business statistics on importers, table
+   `ext_tecpart`), filtered to goods importers from outside the EU. Record
+   the reference year and whether the count includes intra-EU importers,
+   exactly as the UK rows do.
+2. **China-specific importer count.** No public register separates
+   China-only importers in the UK or EU releases. Two honest options: (a)
+   state the proxy explicitly and never drop the "not a China-only count"
+   caveat (current practice); (b) commission or find a private panel and
+   cite it. Do not derive one by multiplying a goods-value share.
+3. **FX for the desk path.** The auction surface already fetches a sourced,
+   reference-only ECB rate (`src/market/official_refs.py`, frankfurter as
+   the alternate source, `used_in_solver` stamped). The desk's quote path
+   deliberately has no FX conversion: deals are CNY, and a USD quote is
+   flagged, not converted (`TRADEFLOW_USD_CNY_RATE` documents this). Closing
+   the gap means a sourced rate reaching the desk's provenance label —
+   never the solver — with the same `used_in_solver: false` stamping.
+4. **Small-buyer savings benchmark.** Only a real pilot produces this
+   (docs/PILOT_RUNBOOK.md); do not substitute the Walmart/Pactum
+   large-buyer rates.
+
+FX "cache": `official_refs.py` deliberately does not cache — every call
+fetches fresh with a timeout and stamps the retrieval. For a reference
+figure that must never enter the solver, freshness beats rate limiting; if
+call volume ever justifies a cache, it must keep the `as_of` date in the
+payload honest.

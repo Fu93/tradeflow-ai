@@ -78,3 +78,24 @@ python scripts/export_confirmed_spans.py        # real labelled data, git-ignore
 Not required for success: closing a cheaper deal. The pilot proves the
 desk works on real mail; the price quality is the next experiment and
 needs more than three rounds to say anything.
+
+## Getting the readiness check to LIVE-READY (2026-10-24)
+
+`scripts/check_live_readiness.py` fails on exactly three rows, and all three
+are operator credentials no code change can supply:
+
+1. `TRADEFLOW_API_KEY` — 16+ characters, `.env` line: `TRADEFLOW_API_KEY=<generate one>`.
+2. `TRADEFLOW_CHAIN_KEY` — the HMAC key of the audit chain; desk sends refuse
+   to start without it. Also consider `TRADEFLOW_APPROVAL_PUBKEY` (the
+   signed-approval gate) and named operator keys
+   (`scripts/manage_users.py issue --label …`, Phase 2).
+3. A mail intake channel — either `IMAP_HOST/PORT/USERNAME/PASSWORD/SSL=1`
+   (a dedicated app password, TLS on) or the Gmail API trio with
+   `GMAIL_DRAFTS=1`. The desk reads; a human always sends.
+
+`DESK_SMTP_SEND=1` plus the SMTP variables is what turns approved sends into
+transmitted mail; leaving it unset keeps sends recorded-but-not-transmitted,
+which is the correct posture for the first week of the pilot.
+
+Everything else the check prints — persistence, provenance notes — is
+informational. The verdict line counts only the `[FAIL]` rows.
