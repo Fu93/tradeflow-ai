@@ -49,6 +49,8 @@ compatibility surface only, not an internal dependency, which is what makes
 | Path | Role |
 |---|---|
 | `src/legacy/` | v1 negotiation engines (bayesian belief, hazard, coupled solver, multi-supplier auction, logrolling, robustness). **Active v1 implementation.** |
+| `src/app/state.py` | [2026-10-24] Shared app-layer process state: `session_mgr`, the legacy-engine conditional load, `SafeJSONResponse`, the retired solve cache, `_legacy_route`, the session-id path validator, shared turn helpers. Route modules import this, never `main`. |
+| `src/app/routes_meta.py` … `routes_auction.py` | [2026-10-24] The former `main.py` handlers, verbatim, grouped per surface (meta probes / v1 negotiate+webhook / supervisor commands / sessions+approve / round / analysis / auction). Each exposes `register_x_routes(...)`; `main.py` calls them in the original order and re-exports the historical names, so `from src.app.main import …` keeps working. `tests/test_app_structure.py` proves the route modules cannot import `main` back. |
 | `src/engine/<name>.py` (10 files) | Compatibility shims → `src/legacy/` |
 | `src/engine/decision.py`, `reserve.py`, `hazard_fit.py` | v2 phase-1 verified decision core (real files, no shims) |
 | `src/desk/` | v2 phase-1 persistent live desk: quote intake (IMAP/Gmail/chat import) → SQLite → belief update → coupled solver; drafts approved by a human; HMAC-SHA256 keyed audit chain (`audit_chain.py`) |

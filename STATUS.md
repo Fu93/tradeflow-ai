@@ -35,17 +35,18 @@
   (`src/desk/` + `src/engine/decision.py`, `reserve.py`,
   `hazard_fit.py`).
 
-## Verified state (as of 2026-10-23, local run, Windows, after round 3)
+## Verified state (as of 2026-10-24, local run, Windows, after round 4)
 
 | Check | Result |
 |---|---|
-| `python -m pytest tests -q` (with the CI coverage gate) | 1013 passed, 2 skipped, 112 subtests, 3 failed — **coverage 92.04%** (gate: 90%) |
+| `python -m pytest tests -q` (with the CI coverage gate) | 1025 passed, 2 skipped, 112 subtests, 3 failed — **coverage 92.04%** (gate: 90%) |
 | `python verify_all.py` | ALL 6 PILLARS PASS |
 | `python verify_live.py` | V2 DESK SURFACE VERIFIED END TO END (9 steps) |
-| `python scripts/mutation_sanity.py` | runs on Windows (symlink → copy fallback); sampled mutants killed |
-| `python scripts/check_decision_literals.py` | decision registry ok (183 constants) |
+| `python scripts/mutation_sanity.py` | 73 mutants killed, none surviving (runs on Windows) |
+| `python scripts/check_decision_literals.py` | decision registry ok (184 constants, relocated to the split modules) |
 | `python scripts/check_no_fake_literals.py` | no undeclared scenario floats |
-| `ruff check` + `mypy` (phase-1 modules) | clean |
+| `ruff check` (phase-1 modules + the 8 new app-layer modules) | clean |
+| `mypy` (phase-1 modules) | clean |
 
 The 3 failures are all pre-existing and platform- or machine-dependent. They
 were re-run in a clean worktree at the previous commit and fail there too:
@@ -230,6 +231,46 @@ Net effect: total coverage 89.19% → 92.04%; `approval_signing.py` 57% → 100%
 `routes.py` 79% → 95%; `audit_chain.py` 84% → 89%; the numeric guardrail's
 literal backstop is mutation-pinned and spacing-proof.
 
+
+## Round 4 — the app layer split (2026-10-24, Phase 1 of the upgrade plan)
+
+`src/app/main.py` went from **3,004 lines** to **~470 lines** of assembly.
+Every handler, model, and helper moved verbatim into modules beside it, on
+the same patterns the codebase already trusted (`register_desk_routes`,
+`security.py` cycle-cutting, re-export compatibility):
+
+| Module | Holds |
+|---|---|
+| `src/app/state.py` | `session_mgr`, the legacy-engine conditional load, `SafeJSONResponse`, the retired solve cache, `_legacy_route`, the session-id path validator, the shared turn/mold-fee helpers |
+| `src/app/routes_meta.py` | `/health`, `/ready` |
+| `src/app/routes_negotiate.py` | `Spec`, `/negotiate`, `/webhook/evolus`, heuristic views |
+| `src/app/routes_command.py` | `_dispatch_supervisor_command`, `/webhook/mobile-command`, `/sessions/{id}/command` |
+| `src/app/routes_sessions.py` | sessions CRUD, `ApproveActionRequest`, `/approve` |
+| `src/app/routes_round.py` | `ModeEnum`, `RoundActionRequest`, `/round` |
+| `src/app/routes_analysis.py` | TCO/Bayes/quote-read/classify endpoints |
+| `src/app/routes_auction.py` | `/multi-auction/run` and its bounded request models |
+
+- `main.py` re-exports the whole historical surface (`app`, `session_mgr`,
+  `require_api_key`, the request models, `serve_http`, the legacy engine
+  names …); every test imports `src.app.main` unchanged.
+- `tests/test_app_structure.py` proves in a subprocess that no route module
+  can import `src.app.main` (the split is real, not cosmetic), that the
+  session manager is one object across `state` and `main`, and that every
+  module's routes are actually registered.
+- CI: ruff now gates the eight new modules (clean). mypy stays scoped to the
+  phase-1 modules for a recorded reason — the `sys.modules` shim
+  architecture makes `src.session.*` / `src.engine.*` names statically
+  unresolvable, which is why `main.py` was never type-checked; the unblock
+  (static stubs for the shim layer) is Phase 4 work.
+- Two pre-existing dead-code defects surfaced by the first lint pass over
+  this code were removed: the retired solve-cache function referenced an
+  undefined `result` below its `raise` (F821), and `/round`'s unreachable
+  engine path computed a `demand_mold_waiver` nobody read (F841). The
+  unreachable engine path itself is kept and labelled — deleting it is a
+  recorded Phase-4 decision, not a refactor accident.
+- 13 pre-existing `raise`-inside-`except` sites gained explicit `from`
+  chaining (house style since the desk routes), and five over-long lines
+  were rewrapped with byte-identical message output.
 
 ## Hardening pass (2026-10-23)
 
@@ -427,9 +468,15 @@ What the round-2 pass removed from this list is not repeated here. What remains:
   [docs/PILOT_RUNBOOK.md](docs/PILOT_RUNBOOK.md) — 3 real quotes, one
   supplier, 2 weeks max, pre-committed success criteria. Until it runs,
   every capability claim is configuration- or simulator-level.
-- This repository is in **maintenance / consolidation mode**: fixes and
-  documentation only, no new modules, until a new competition target
-  exists.
+- **[Decision 2026-10-24, owner-approved] The maintenance-mode constraint
+  ("no new modules") is lifted.** This repository is now in
+  **productization-upgrade mode**, governed by
+  [docs/internal/UPGRADE_PLAN_2026-10-24.md](docs/internal/UPGRADE_PLAN_2026-10-24.md):
+  five phases (architecture split → multi-user identity → deployment
+  hardening → test-scope expansion → pilot readiness), each landing behind
+  the full verification battery. Phase 1 (the `main.py` split) is done —
+  see the Round 4 section below. The AMD AI League Match 5 entry stays a
+  separate fresh repository; that decision line is unchanged.
 - The next competition target is the **AMD AI League**
   (lablab, live until 2026-12-01): Match 5 "AI-Powered Code Repository
   Repair" (Oct 27 – Nov 10) is the planned main entry, as a **separate,

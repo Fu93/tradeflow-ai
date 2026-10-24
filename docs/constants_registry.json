@@ -995,6 +995,456 @@
   },
   "inline": [
     {
+      "file": "src/app/state.py",
+      "value": 128,
+      "context": "_SOLVE_CACHE_MAX = 128",
+      "justification": "Use of 128 on this line of src/app/main.py: _SOLVE_CACHE_MAX = 128. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/state.py",
+      "value": 422,
+      "context": "status_code=422,",
+      "justification": "Use of 422 on this line of src/app/main.py: status_code=422,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 512,
+      "context": "product: str = Field(default=\"\", max_length=512)",
+      "justification": "Use of 512 on this line of src/app/main.py: product: str = Field(default=\"\", max_length=512). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 10000000,
+      "context": "moq: int | None = Field(default=None, ge=1, le=10_000_000)",
+      "justification": "Use of 10000000 on this line of src/app/main.py: moq: int | None = Field(default=None, ge=1, le=10_000_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 100,
+      "context": "rounds: int = Field(default=model.ROUNDS, ge=1, le=100)",
+      "justification": "Use of 100 on this line of src/app/main.py: rounds: int = Field(default=model.ROUNDS, ge=1, le=100). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 2000,
+      "context": "n_samples: int = Field(default=2000, ge=1, le=50_000)",
+      "justification": "Use of 2000 on this line of src/app/main.py: n_samples: int = Field(default=2000, ge=1, le=50_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 50000,
+      "context": "n_samples: int = Field(default=2000, ge=1, le=50_000)",
+      "justification": "Use of 50000 on this line of src/app/main.py: n_samples: int = Field(default=2000, ge=1, le=50_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 20000,
+      "context": "n_samples: Optional[int] = Field(default=None, ge=1, le=20_000)",
+      "justification": "Use of 20000 on this line of src/app/main.py: n_samples: Optional[int] = Field(default=None, ge=1, le=20_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 20000,
+      "context": "email_body: Optional[str] = Field(default=None, max_length=20_000)",
+      "justification": "Use of 20000 on this line of src/app/main.py: email_body: Optional[str] = Field(default=None, max_length=20_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 422,
+      "context": "status_code=422,",
+      "justification": "Use of 422 on this line of src/app/main.py: status_code=422,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 422,
+      "context": "raise HTTPException(status_code=422, detail=\"A supplier quote is required.\")",
+      "justification": "Use of 422 on this line of src/app/main.py: raise HTTPException(status_code=422, detail=\"A supplier quote is required.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 422,
+      "context": "raise HTTPException(status_code=422, detail=\"The ceiling must be at or above the target.\")",
+      "justification": "Use of 422 on this line of src/app/main.py: raise HTTPException(status_code=422, detail=\"The ceiling must be at or above the target.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 500,
+      "context": "raise HTTPException(status_code=500, detail=\"Engine failure while solving the negotiation.\") from exc",
+      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Engine failure while solving the negotiation.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 422,
+      "context": "raise HTTPException(status_code=422, detail=str(exc)) from exc",
+      "justification": "Use of 422 on this line of src/app/main.py: raise HTTPException(status_code=422, detail=str(exc)) from exc. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 500,
+      "context": "raise HTTPException(status_code=500, detail=\"Webhook processing failed.\") from exc",
+      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Webhook processing failed.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_command.py",
+      "value": 512,
+      "context": "command: Optional[str] = Field(default=None, max_length=512)",
+      "justification": "Use of 512 on this line of src/app/main.py: command: Optional[str] = Field(default=None, max_length=512). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_command.py",
+      "value": 512,
+      "context": "command_text: Optional[str] = Field(default=None, max_length=512)",
+      "justification": "Use of 512 on this line of src/app/main.py: command_text: Optional[str] = Field(default=None, max_length=512). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_command.py",
+      "value": 64,
+      "context": "source: str = Field(default=\"mobile\", max_length=64)",
+      "justification": "Use of 64 on this line of src/app/main.py: source: str = Field(default=\"mobile\", max_length=64). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_command.py",
+      "value": 1e-09,
+      "context": "if custom_price is not None and custom_price < min_authorized_price - 1e-9:",
+      "justification": "Use of 1e-09 on this line of src/app/main.py: if custom_price is not None and custom_price < min_authorized_price - 1e-9:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_command.py",
+      "value": 422,
+      "context": "status_code=422,",
+      "justification": "Use of 422 on this line of src/app/main.py: status_code=422,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_command.py",
+      "value": 400,
+      "context": "raise HTTPException(status_code=400, detail=\"Missing command in payload.\")",
+      "justification": "Use of 400 on this line of src/app/main.py: raise HTTPException(status_code=400, detail=\"Missing command in payload.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_command.py",
+      "value": 400,
+      "context": "raise HTTPException(status_code=400, detail=\"Missing command.\")",
+      "justification": "Use of 400 on this line of src/app/main.py: raise HTTPException(status_code=400, detail=\"Missing command.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_command.py",
+      "value": 400,
+      "context": "raise HTTPException(status_code=400, detail=\"Invalid request body format.\") from exc",
+      "justification": "Use of 400 on this line of src/app/main.py: raise HTTPException(status_code=400, detail=\"Invalid request body format.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_sessions.py",
+      "value": 10000,
+      "context": "custom_reply_text: Optional[str] = Field(default=None, max_length=10_000)",
+      "justification": "Use of 10000 on this line of src/app/main.py: custom_reply_text: Optional[str] = Field(default=None, max_length=10_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_sessions.py",
+      "value": 2000,
+      "context": "tactical_rationale: Optional[str] = Field(default=None, max_length=2_000)",
+      "justification": "Use of 2000 on this line of src/app/main.py: tactical_rationale: Optional[str] = Field(default=None, max_length=2_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_sessions.py",
+      "value": 404,
+      "context": "raise HTTPException(status_code=404, detail=\"Session not found.\")",
+      "justification": "Use of 404 on this line of src/app/main.py: raise HTTPException(status_code=404, detail=\"Session not found.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_sessions.py",
+      "value": 409,
+      "context": "status_code=409,",
+      "justification": "Use of 409 on this line of src/app/main.py: status_code=409,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_sessions.py",
+      "value": 409,
+      "context": "raise HTTPException(status_code=409, detail=not_waiting)",
+      "justification": "Use of 409 on this line of src/app/main.py: raise HTTPException(status_code=409, detail=not_waiting). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_sessions.py",
+      "value": 422,
+      "context": "status_code=422,",
+      "justification": "Use of 422 on this line of src/app/main.py: status_code=422,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_sessions.py",
+      "value": 500,
+      "context": "raise HTTPException(status_code=500, detail=\"Failed to create the negotiation session.\") from exc",
+      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Failed to create the negotiation session.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_sessions.py",
+      "value": 409,
+      "context": "raise HTTPException(status_code=409, detail=str(exc)) from exc",
+      "justification": "Use of 409 on this line of src/app/main.py: raise HTTPException(status_code=409, detail=str(exc)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_sessions.py",
+      "value": 500,
+      "context": "moq=int(sess.spec.moq or 500),",
+      "justification": "Use of 500 on this line of src/app/main.py: moq=int(sess.spec.moq or 500),. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_round.py",
+      "value": 10000,
+      "context": "opponent_raw_text: Optional[str] = Field(default=None, max_length=10_000)",
+      "justification": "Use of 10000 on this line of src/app/main.py: opponent_raw_text: Optional[str] = Field(default=None, max_length=10_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_round.py",
+      "value": 10000,
+      "context": "supplier_text: Optional[str] = Field(default=None, max_length=10_000)",
+      "justification": "Use of 10000 on this line of src/app/main.py: supplier_text: Optional[str] = Field(default=None, max_length=10_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_round.py",
+      "value": 100,
+      "context": "round_index: Optional[int] = Field(default=None, ge=1, le=100)",
+      "justification": "Use of 100 on this line of src/app/main.py: round_index: Optional[int] = Field(default=None, ge=1, le=100). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_round.py",
+      "value": 3650,
+      "context": "offered_lead_days: Optional[int] = Field(default=None, ge=1, le=3650)",
+      "justification": "Use of 3650 on this line of src/app/main.py: offered_lead_days: Optional[int] = Field(default=None, ge=1, le=3650). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_round.py",
+      "value": 10000000,
+      "context": "offered_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)",
+      "justification": "Use of 10000000 on this line of src/app/main.py: offered_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_round.py",
+      "value": 422,
+      "context": "status_code=422,",
+      "justification": "Use of 422 on this line of src/app/main.py: status_code=422,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_round.py",
+      "value": 404,
+      "context": "status_code=404,",
+      "justification": "Use of 404 on this line of src/app/main.py: status_code=404,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_round.py",
+      "value": 409,
+      "context": "status_code=409,",
+      "justification": "Use of 409 on this line of src/app/main.py: status_code=409,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_round.py",
+      "value": 409,
+      "context": "raise HTTPException(status_code=409, detail=str(exc)) from exc",
+      "justification": "Use of 409 on this line of src/app/main.py: raise HTTPException(status_code=409, detail=str(exc)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_analysis.py",
+      "value": 3650,
+      "context": "baseline_lead_days: Optional[int] = Field(default=None, ge=1, le=3650)",
+      "justification": "Use of 3650 on this line of src/app/main.py: baseline_lead_days: Optional[int] = Field(default=None, ge=1, le=3650). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_analysis.py",
+      "value": 3650,
+      "context": "offered_lead_days: Optional[int] = Field(default=None, ge=1, le=3650)",
+      "justification": "Use of 3650 on this line of src/app/main.py: offered_lead_days: Optional[int] = Field(default=None, ge=1, le=3650). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_analysis.py",
+      "value": 10000000,
+      "context": "baseline_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)",
+      "justification": "Use of 10000000 on this line of src/app/main.py: baseline_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_analysis.py",
+      "value": 10000000,
+      "context": "offered_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)",
+      "justification": "Use of 10000000 on this line of src/app/main.py: offered_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_analysis.py",
+      "value": 10000,
+      "context": "text: str = Field(..., max_length=10_000)",
+      "justification": "Use of 10000 on this line of src/app/main.py: text: str = Field(..., max_length=10_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_analysis.py",
+      "value": 10000,
+      "context": "text: str = Field(default=\"\", max_length=10_000)",
+      "justification": "Use of 10000 on this line of src/app/main.py: text: str = Field(default=\"\", max_length=10_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_analysis.py",
+      "value": 1500000,
+      "context": "image_base64: Optional[str] = Field(default=None, max_length=1_500_000)",
+      "justification": "Use of 1500000 on this line of src/app/main.py: image_base64: Optional[str] = Field(default=None, max_length=1_500_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_analysis.py",
+      "value": 64,
+      "context": "sample_id: Optional[str] = Field(default=None, max_length=64)",
+      "justification": "Use of 64 on this line of src/app/main.py: sample_id: Optional[str] = Field(default=None, max_length=64). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 256,
+      "context": "name: str = Field(..., min_length=1, max_length=256)",
+      "justification": "Use of 256 on this line of src/app/main.py: name: str = Field(..., min_length=1, max_length=256). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 128,
+      "context": "profile: Optional[str] = Field(default=\"Standard\", max_length=128)",
+      "justification": "Use of 128 on this line of src/app/main.py: profile: Optional[str] = Field(default=\"Standard\", max_length=128). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 8,
+      "context": "currency: Optional[str] = Field(default=None, max_length=8)",
+      "justification": "Use of 8 on this line of src/app/main.py: currency: Optional[str] = Field(default=None, max_length=8). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 10000000,
+      "context": "moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)",
+      "justification": "Use of 10000000 on this line of src/app/main.py: moq: Optional[int] = Field(default=None, ge=1, le=10_000_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 20000,
+      "context": "n_samples: int = Field(default=20000, ge=1, le=50_000)",
+      "justification": "Use of 20000 on this line of src/app/main.py: n_samples: int = Field(default=20000, ge=1, le=50_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 50000,
+      "context": "n_samples: int = Field(default=20000, ge=1, le=50_000)",
+      "justification": "Use of 50000 on this line of src/app/main.py: n_samples: int = Field(default=20000, ge=1, le=50_000). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 3,
+      "context": "n_rounds: int = Field(default=3, ge=1, le=10)",
+      "justification": "Use of 3 on this line of src/app/main.py: n_rounds: int = Field(default=3, ge=1, le=10). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 10,
+      "context": "n_rounds: int = Field(default=3, ge=1, le=10)",
+      "justification": "Use of 10 on this line of src/app/main.py: n_rounds: int = Field(default=3, ge=1, le=10). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 32,
+      "context": "suppliers: Optional[List[MultiAuctionSupplierInput]] = Field(default=None, max_length=32)",
+      "justification": "Use of 32 on this line of src/app/main.py: suppliers: Optional[List[MultiAuctionSupplierInput]] = Field(default=None, max_length=32). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 10,
+      "context": "rounds_quotes: Optional[List[List[float]]] = Field(default=None, max_length=10)",
+      "justification": "Use of 10 on this line of src/app/main.py: rounds_quotes: Optional[List[List[float]]] = Field(default=None, max_length=10). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 512,
+      "context": "product_name: Optional[str] = Field(default=None, max_length=512)",
+      "justification": "Use of 512 on this line of src/app/main.py: product_name: Optional[str] = Field(default=None, max_length=512). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 3,
+      "context": "base_currency: str = Field(default=\"CNY\", min_length=3, max_length=8)",
+      "justification": "Use of 3 on this line of src/app/main.py: base_currency: str = Field(default=\"CNY\", min_length=3, max_length=8). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 8,
+      "context": "base_currency: str = Field(default=\"CNY\", min_length=3, max_length=8)",
+      "justification": "Use of 8 on this line of src/app/main.py: base_currency: str = Field(default=\"CNY\", min_length=3, max_length=8). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 10,
+      "context": "round_outcomes: Optional[List[List[Optional[str]]]] = Field(default=None, max_length=10)",
+      "justification": "Use of 10 on this line of src/app/main.py: round_outcomes: Optional[List[List[Optional[str]]]] = Field(default=None, max_length=10). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 10,
+      "context": "if len(v) > 10:",
+      "justification": "Use of 10 on this line of src/app/main.py: if len(v) > 10:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 32,
+      "context": "if len(quotes) > 32:",
+      "justification": "Use of 32 on this line of src/app/main.py: if len(quotes) > 32:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 32,
+      "context": "if len(row) > 32:",
+      "justification": "Use of 32 on this line of src/app/main.py: if len(row) > 32:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 1000000.0,
+      "context": "if not (0.0 < fq <= 1_000_000.0):",
+      "justification": "Use of 1000000.0 on this line of src/app/main.py: if not (0.0 < fq <= 1_000_000.0):. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 422,
+      "context": "status_code=422,",
+      "justification": "Use of 422 on this line of src/app/main.py: status_code=422,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 422,
+      "context": "raise HTTPException(status_code=422, detail=str(exc)) from exc",
+      "justification": "Use of 422 on this line of src/app/main.py: raise HTTPException(status_code=422, detail=str(exc)) from exc. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/routes_auction.py",
+      "value": 500,
+      "context": "raise HTTPException(status_code=500, detail=\"Reverse auction simulation failed.\") from None",
+      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Reverse auction simulation failed.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 8,
+      "context": "def wait_for_free_port(host: str, port: int, attempts: int = 8, pause=None) -> None:",
+      "justification": "Use of 8 on this line of src/app/main.py: def wait_for_free_port(host: str, port: int, attempts: int = 8, pause=None) -> None:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 65536,
+      "context": "if not 0 < _port < 65536:",
+      "justification": "Use of 65536 on this line of src/app/main.py: if not 0 < _port < 65536:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 48,
+      "context": "if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:",
+      "justification": "Use of 48 on this line of src/app/main.py: if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 98,
+      "context": "if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:",
+      "justification": "Use of 98 on this line of src/app/main.py: if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 10048,
+      "context": "if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:",
+      "justification": "Use of 10048 on this line of src/app/main.py: if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:. A different line that repeats the digits is not covered."
+    },
+    {
       "file": "src/legacy/coupled.py",
       "value": 1e-08,
       "context": "return bool(np.max(np.abs(worst - float(ceiling))) <= span * 1e-8)",
@@ -1913,402 +2363,6 @@
       "justification": "Use of 2000 on this line of src/app/orchestrator.py: rob = _ROBUSTNESS_CACHE.get((float(target), 2000)) or _robustness_placeholder(float(target)). A different line that repeats the digits is not covered."
     },
     {
-      "file": "src/app/main.py",
-      "value": 128,
-      "context": "_SOLVE_CACHE_MAX = 128",
-      "justification": "Use of 128 on this line of src/app/main.py: _SOLVE_CACHE_MAX = 128. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 8,
-      "context": "def wait_for_free_port(host: str, port: int, attempts: int = 8, pause=None) -> None:",
-      "justification": "Use of 8 on this line of src/app/main.py: def wait_for_free_port(host: str, port: int, attempts: int = 8, pause=None) -> None:. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 422,
-      "context": "status_code=422,",
-      "justification": "Use of 422 on this line of src/app/main.py: status_code=422,. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 512,
-      "context": "product: str = Field(default=\"\", max_length=512)",
-      "justification": "Use of 512 on this line of src/app/main.py: product: str = Field(default=\"\", max_length=512). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10000000,
-      "context": "moq: int | None = Field(default=None, ge=1, le=10_000_000)",
-      "justification": "Use of 10000000 on this line of src/app/main.py: moq: int | None = Field(default=None, ge=1, le=10_000_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 100,
-      "context": "rounds: int = Field(default=model.ROUNDS, ge=1, le=100)",
-      "justification": "Use of 100 on this line of src/app/main.py: rounds: int = Field(default=model.ROUNDS, ge=1, le=100). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 2000,
-      "context": "n_samples: int = Field(default=2000, ge=1, le=50_000)",
-      "justification": "Use of 2000 on this line of src/app/main.py: n_samples: int = Field(default=2000, ge=1, le=50_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 50000,
-      "context": "n_samples: int = Field(default=2000, ge=1, le=50_000)",
-      "justification": "Use of 50000 on this line of src/app/main.py: n_samples: int = Field(default=2000, ge=1, le=50_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 20000,
-      "context": "n_samples: Optional[int] = Field(default=None, ge=1, le=20_000)",
-      "justification": "Use of 20000 on this line of src/app/main.py: n_samples: Optional[int] = Field(default=None, ge=1, le=20_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 20000,
-      "context": "email_body: Optional[str] = Field(default=None, max_length=20_000)",
-      "justification": "Use of 20000 on this line of src/app/main.py: email_body: Optional[str] = Field(default=None, max_length=20_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 512,
-      "context": "command: Optional[str] = Field(default=None, max_length=512)",
-      "justification": "Use of 512 on this line of src/app/main.py: command: Optional[str] = Field(default=None, max_length=512). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 512,
-      "context": "command_text: Optional[str] = Field(default=None, max_length=512)",
-      "justification": "Use of 512 on this line of src/app/main.py: command_text: Optional[str] = Field(default=None, max_length=512). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 64,
-      "context": "source: str = Field(default=\"mobile\", max_length=64)",
-      "justification": "Use of 64 on this line of src/app/main.py: source: str = Field(default=\"mobile\", max_length=64). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10000,
-      "context": "opponent_raw_text: Optional[str] = Field(default=None, max_length=10_000)",
-      "justification": "Use of 10000 on this line of src/app/main.py: opponent_raw_text: Optional[str] = Field(default=None, max_length=10_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10000,
-      "context": "supplier_text: Optional[str] = Field(default=None, max_length=10_000)",
-      "justification": "Use of 10000 on this line of src/app/main.py: supplier_text: Optional[str] = Field(default=None, max_length=10_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 100,
-      "context": "round_index: Optional[int] = Field(default=None, ge=1, le=100)",
-      "justification": "Use of 100 on this line of src/app/main.py: round_index: Optional[int] = Field(default=None, ge=1, le=100). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 3650,
-      "context": "offered_lead_days: Optional[int] = Field(default=None, ge=1, le=3650)",
-      "justification": "Use of 3650 on this line of src/app/main.py: offered_lead_days: Optional[int] = Field(default=None, ge=1, le=3650). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10000000,
-      "context": "offered_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)",
-      "justification": "Use of 10000000 on this line of src/app/main.py: offered_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10000,
-      "context": "custom_reply_text: Optional[str] = Field(default=None, max_length=10_000)",
-      "justification": "Use of 10000 on this line of src/app/main.py: custom_reply_text: Optional[str] = Field(default=None, max_length=10_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 2000,
-      "context": "tactical_rationale: Optional[str] = Field(default=None, max_length=2_000)",
-      "justification": "Use of 2000 on this line of src/app/main.py: tactical_rationale: Optional[str] = Field(default=None, max_length=2_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 3650,
-      "context": "baseline_lead_days: Optional[int] = Field(default=None, ge=1, le=3650)",
-      "justification": "Use of 3650 on this line of src/app/main.py: baseline_lead_days: Optional[int] = Field(default=None, ge=1, le=3650). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10000000,
-      "context": "baseline_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)",
-      "justification": "Use of 10000000 on this line of src/app/main.py: baseline_moq: Optional[int] = Field(default=None, ge=1, le=10_000_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10000,
-      "context": "text: str = Field(..., max_length=10_000)",
-      "justification": "Use of 10000 on this line of src/app/main.py: text: str = Field(..., max_length=10_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 256,
-      "context": "name: str = Field(..., min_length=1, max_length=256)",
-      "justification": "Use of 256 on this line of src/app/main.py: name: str = Field(..., min_length=1, max_length=256). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 128,
-      "context": "profile: Optional[str] = Field(default=\"Standard\", max_length=128)",
-      "justification": "Use of 128 on this line of src/app/main.py: profile: Optional[str] = Field(default=\"Standard\", max_length=128). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 8,
-      "context": "currency: Optional[str] = Field(default=None, max_length=8)",
-      "justification": "Use of 8 on this line of src/app/main.py: currency: Optional[str] = Field(default=None, max_length=8). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10000000,
-      "context": "moq: Optional[int] = Field(default=None, ge=1, le=10_000_000)",
-      "justification": "Use of 10000000 on this line of src/app/main.py: moq: Optional[int] = Field(default=None, ge=1, le=10_000_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 20000,
-      "context": "n_samples: int = Field(default=20000, ge=1, le=50_000)",
-      "justification": "Use of 20000 on this line of src/app/main.py: n_samples: int = Field(default=20000, ge=1, le=50_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 50000,
-      "context": "n_samples: int = Field(default=20000, ge=1, le=50_000)",
-      "justification": "Use of 50000 on this line of src/app/main.py: n_samples: int = Field(default=20000, ge=1, le=50_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 3,
-      "context": "n_rounds: int = Field(default=3, ge=1, le=10)",
-      "justification": "Use of 3 on this line of src/app/main.py: n_rounds: int = Field(default=3, ge=1, le=10). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10,
-      "context": "n_rounds: int = Field(default=3, ge=1, le=10)",
-      "justification": "Use of 10 on this line of src/app/main.py: n_rounds: int = Field(default=3, ge=1, le=10). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 32,
-      "context": "suppliers: Optional[List[MultiAuctionSupplierInput]] = Field(default=None, max_length=32)",
-      "justification": "Use of 32 on this line of src/app/main.py: suppliers: Optional[List[MultiAuctionSupplierInput]] = Field(default=None, max_length=32). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10,
-      "context": "rounds_quotes: Optional[List[List[float]]] = Field(default=None, max_length=10)",
-      "justification": "Use of 10 on this line of src/app/main.py: rounds_quotes: Optional[List[List[float]]] = Field(default=None, max_length=10). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 512,
-      "context": "product_name: Optional[str] = Field(default=None, max_length=512)",
-      "justification": "Use of 512 on this line of src/app/main.py: product_name: Optional[str] = Field(default=None, max_length=512). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 3,
-      "context": "base_currency: str = Field(default=\"CNY\", min_length=3, max_length=8)",
-      "justification": "Use of 3 on this line of src/app/main.py: base_currency: str = Field(default=\"CNY\", min_length=3, max_length=8). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 8,
-      "context": "base_currency: str = Field(default=\"CNY\", min_length=3, max_length=8)",
-      "justification": "Use of 8 on this line of src/app/main.py: base_currency: str = Field(default=\"CNY\", min_length=3, max_length=8). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10,
-      "context": "round_outcomes: Optional[List[List[Optional[str]]]] = Field(default=None, max_length=10)",
-      "justification": "Use of 10 on this line of src/app/main.py: round_outcomes: Optional[List[List[Optional[str]]]] = Field(default=None, max_length=10). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10,
-      "context": "if len(v) > 10:",
-      "justification": "Use of 10 on this line of src/app/main.py: if len(v) > 10:. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10000,
-      "context": "text: str = Field(default=\"\", max_length=10_000)",
-      "justification": "Use of 10000 on this line of src/app/main.py: text: str = Field(default=\"\", max_length=10_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 1500000,
-      "context": "image_base64: Optional[str] = Field(default=None, max_length=1_500_000)",
-      "justification": "Use of 1500000 on this line of src/app/main.py: image_base64: Optional[str] = Field(default=None, max_length=1_500_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 64,
-      "context": "sample_id: Optional[str] = Field(default=None, max_length=64)",
-      "justification": "Use of 64 on this line of src/app/main.py: sample_id: Optional[str] = Field(default=None, max_length=64). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 65536,
-      "context": "if not 0 < _port < 65536:",
-      "justification": "Use of 65536 on this line of src/app/main.py: if not 0 < _port < 65536:. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 422,
-      "context": "raise HTTPException(status_code=422, detail=\"A supplier quote is required.\")",
-      "justification": "Use of 422 on this line of src/app/main.py: raise HTTPException(status_code=422, detail=\"A supplier quote is required.\"). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 422,
-      "context": "raise HTTPException(status_code=422, detail=\"The ceiling must be at or above the target.\")",
-      "justification": "Use of 422 on this line of src/app/main.py: raise HTTPException(status_code=422, detail=\"The ceiling must be at or above the target.\"). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 400,
-      "context": "raise HTTPException(status_code=400, detail=\"Missing command in payload.\")",
-      "justification": "Use of 400 on this line of src/app/main.py: raise HTTPException(status_code=400, detail=\"Missing command in payload.\"). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 400,
-      "context": "raise HTTPException(status_code=400, detail=\"Missing command.\")",
-      "justification": "Use of 400 on this line of src/app/main.py: raise HTTPException(status_code=400, detail=\"Missing command.\"). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 32,
-      "context": "if len(quotes) > 32:",
-      "justification": "Use of 32 on this line of src/app/main.py: if len(quotes) > 32:. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 32,
-      "context": "if len(row) > 32:",
-      "justification": "Use of 32 on this line of src/app/main.py: if len(row) > 32:. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 404,
-      "context": "raise HTTPException(status_code=404, detail=\"Session not found.\")",
-      "justification": "Use of 404 on this line of src/app/main.py: raise HTTPException(status_code=404, detail=\"Session not found.\"). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 409,
-      "context": "status_code=409,",
-      "justification": "Use of 409 on this line of src/app/main.py: status_code=409,. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 409,
-      "context": "raise HTTPException(status_code=409, detail=not_waiting)",
-      "justification": "Use of 409 on this line of src/app/main.py: raise HTTPException(status_code=409, detail=not_waiting). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 404,
-      "context": "status_code=404,",
-      "justification": "Use of 404 on this line of src/app/main.py: status_code=404,. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 500,
-      "context": "raise HTTPException(status_code=500, detail=\"Engine failure while solving the negotiation.\")",
-      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Engine failure while solving the negotiation.\"). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 422,
-      "context": "raise HTTPException(status_code=422, detail=str(exc)) from exc",
-      "justification": "Use of 422 on this line of src/app/main.py: raise HTTPException(status_code=422, detail=str(exc)) from exc. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 500,
-      "context": "raise HTTPException(status_code=500, detail=\"Webhook processing failed.\")",
-      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Webhook processing failed.\"). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 1e-09,
-      "context": "if custom_price is not None and custom_price < min_authorized_price - 1e-9:",
-      "justification": "Use of 1e-09 on this line of src/app/main.py: if custom_price is not None and custom_price < min_authorized_price - 1e-9:. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 400,
-      "context": "raise HTTPException(status_code=400, detail=str(e))",
-      "justification": "Use of 400 on this line of src/app/main.py: raise HTTPException(status_code=400, detail=str(e)). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 500,
-      "context": "raise HTTPException(status_code=500, detail=\"Failed to create the negotiation session.\")",
-      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Failed to create the negotiation session.\"). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 409,
-      "context": "raise HTTPException(status_code=409, detail=str(exc))",
-      "justification": "Use of 409 on this line of src/app/main.py: raise HTTPException(status_code=409, detail=str(exc)). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 500,
-      "context": "raise HTTPException(status_code=500, detail=\"Reverse auction simulation failed.\")",
-      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Reverse auction simulation failed.\"). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 48,
-      "context": "if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:",
-      "justification": "Use of 48 on this line of src/app/main.py: if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 98,
-      "context": "if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:",
-      "justification": "Use of 98 on this line of src/app/main.py: if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 10048,
-      "context": "if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:",
-      "justification": "Use of 10048 on this line of src/app/main.py: if exc.errno in {errno.EADDRINUSE, 48, 98, 10048}:. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 400,
-      "context": "raise HTTPException(status_code=400, detail=\"Invalid request body format.\")",
-      "justification": "Use of 400 on this line of src/app/main.py: raise HTTPException(status_code=400, detail=\"Invalid request body format.\"). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 1000000.0,
-      "context": "if not (0.0 < fq <= 1_000_000.0):",
-      "justification": "Use of 1000000.0 on this line of src/app/main.py: if not (0.0 < fq <= 1_000_000.0):. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/main.py",
-      "value": 500,
-      "context": "moq=int(sess.spec.moq or 500),",
-      "justification": "Use of 500 on this line of src/app/main.py: moq=int(sess.spec.moq or 500),. A different line that repeats the digits is not covered."
-    },
-    {
       "file": "src/engine/quote_read.py",
       "value": 90,
       "context": "if value > 90:",
@@ -2967,6 +3021,18 @@
       "value": 8,
       "context": "mailbox_queue: queue.Queue = self._queue.Queue(maxsize=8)",
       "justification": "Subscriber queue depth for the in-process snapshot fan-out, unchanged when DeskBus moved to its own module. A full queue drops the oldest snapshot rather than blocking the writer on the request path."
+    },
+    {
+      "file": "src/app/routes_command.py",
+      "value": 400,
+      "context": "raise HTTPException(status_code=400, detail=str(e)) from e",
+      "justification": "Use of 400 on this line of src/app/main.py: raise HTTPException(status_code=400, detail=str(e)). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 422,
+      "context": "status_code=422,",
+      "justification": "Use of 422 on this line of src/app/main.py: status_code=422,. A different line that repeats the digits is not covered."
     }
   ]
 }

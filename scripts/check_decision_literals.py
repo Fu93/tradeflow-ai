@@ -137,7 +137,20 @@ def _decision_files() -> list[str]:
             found.append(path.relative_to(ROOT).as_posix())
     for path in sorted((ROOT / "src" / "legacy").glob("*.py")):
         found.append(path.relative_to(ROOT).as_posix())
-    for extra in ("src/app/main.py", "src/app/orchestrator.py"):
+    # [ARCHITECTURE 2026-10-24] main.py's handlers moved to these modules;
+    # their API-bound literals are decision surface and stay registered here.
+    for extra in (
+        "src/app/main.py",
+        "src/app/orchestrator.py",
+        "src/app/state.py",
+        "src/app/routes_meta.py",
+        "src/app/routes_negotiate.py",
+        "src/app/routes_command.py",
+        "src/app/routes_sessions.py",
+        "src/app/routes_round.py",
+        "src/app/routes_analysis.py",
+        "src/app/routes_auction.py",
+    ):
         if extra not in found:
             found.append(extra)
     return found

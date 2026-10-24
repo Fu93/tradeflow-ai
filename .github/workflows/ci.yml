@@ -30,11 +30,25 @@ jobs:
           actionlint .github/workflows/*.yml
 
       # Phase-1 modules only. ruff (F, E, W, B) then mypy, then the suite.
+      # [ARCHITECTURE 2026-10-24] The app-layer split moved main.py's handlers
+      # into routes_*.py + state.py; those new modules join the quality gates.
+      # main.py itself (assembly) joins them in Phase 4 of
+      # docs/internal/UPGRADE_PLAN_2026-10-24.md.
       - name: Ruff phase-1 modules
-        run: python -m ruff check src/desk src/engine/decision.py src/engine/reserve.py src/engine/hazard_fit.py
+        run: >
+          python -m ruff check src/desk src/engine/decision.py src/engine/reserve.py
+          src/engine/hazard_fit.py src/app/state.py src/app/routes_meta.py
+          src/app/routes_negotiate.py src/app/routes_command.py
+          src/app/routes_sessions.py src/app/routes_round.py
+          src/app/routes_analysis.py src/app/routes_auction.py
 
       - name: Mypy phase-1 modules
-        run: python -m mypy src/desk src/engine/decision.py src/engine/reserve.py src/engine/hazard_fit.py
+        run: >
+          python -m mypy src/desk src/engine/decision.py src/engine/reserve.py
+          src/engine/hazard_fit.py src/app/state.py src/app/routes_meta.py
+          src/app/routes_negotiate.py src/app/routes_command.py
+          src/app/routes_sessions.py src/app/routes_round.py
+          src/app/routes_analysis.py src/app/routes_auction.py
 
       # tests/test_dashboard_prior_chart.py renders the real dashboard in
       # Chromium. Without the binary those 3 assertions fail with "Executable

@@ -257,7 +257,8 @@ MUTANTS = [
         "tests/steps/test_reverify_blockers.py::test_create_rolls_back_when_the_chain_write_fails",
     ),
     (
-        "src/app/main.py",
+        # [ARCHITECTURE 2026-10-24] /health moved from main.py to routes_meta.py.
+        "src/app/routes_meta.py",
         "if not chain_key_configured():",
         "if False:",
         "tests/steps/test_reverify_blockers.py::test_health_and_create_report_a_missing_chain_key",
