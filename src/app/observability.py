@@ -94,6 +94,24 @@ def _clean_incoming(value: bytes | None) -> str:
     return text
 
 
+def _clean_path(value: str) -> str:
+    """A loggable request path: percent-decoded, so newlines and control
+    characters must not survive into the access line (log forging), but the
+    structural characters of a path — slash, dash, dot, underscore — stay.
+
+    [SECURITY 2026-10-24] ``/api/v1%2Fx`` style targets used to reach the
+    logger verbatim after decoding; a ``%0A`` could start a forged line.
+    Anything not path-shaped collapses to a space, and the result is capped
+    at the same length as a request id.
+    """
+    text = str(value or "?").strip()
+    cleaned = "".join(
+        char if (char.isalnum() or char in "/-_.,=&%?") else " " for char in text
+    )
+    cleaned = cleaned.strip() or "?"
+    return cleaned[:512]
+
+
 class RequestContextMiddleware:
     """Assign a request id, time the request, and emit one access line."""
 
@@ -132,11 +150,15 @@ class RequestContextMiddleware:
             # The id goes in the message as well as in ``extra``: a formatter the
             # host did not configure for ``%(request_id)s`` would otherwise drop
             # the one field that makes the line correlatable.
+            # [SECURITY 2026-10-24] The raw path is %-decoded by the server, so
+            # a %0A in the request target could forge extra log lines. The
+            # request id is already clean; the path gets a path-shaped version
+            # of the same treatment (slash kept, everything else boring).
             logger.info(
                 "[%s] %s %s -> %s in %.1f ms",
                 request_id,
-                scope.get("method", "?"),
-                scope.get("path", "?"),
+                str(scope.get("method", "?"))[:16],
+                _clean_path(str(scope.get("path", "?"))),
                 status_holder["status"],
                 elapsed_ms,
                 extra={"request_id": request_id, "status": status_holder["status"]},

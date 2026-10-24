@@ -55,6 +55,21 @@ def actor_from_chain_context() -> str:
     return current_actor.get()
 
 
+def _clean_label(label: str) -> str:
+    """A label is printed in operator terminals and stored in chain payloads.
+
+    [SECURITY 2026-10-24] Unrestricted labels meant an issuer could put
+    ANSI escapes into ``manage_users.py list`` output or inject line breaks
+    into the actor string that lands inside signed chain entries. One
+    printable, line-free line, capped at a sane length — a label names a
+    person, it is not an essay.
+    """
+    import re
+
+    cleaned = re.sub(r"[\x00-\x1f\x7f]+", " ", str(label or "")).strip()
+    return cleaned[:64]
+
+
 def issue(conn: sqlite3.Connection, label: str) -> dict[str, str | int]:
     """Mint one named key. The raw secret is in the return value only.
 
@@ -62,7 +77,7 @@ def issue(conn: sqlite3.Connection, label: str) -> dict[str, str | int]:
     the hash and a display prefix, and nothing else — a database holder
     cannot recover a usable key from a row.
     """
-    cleaned = (label or "").strip()
+    cleaned = _clean_label(label)
     if not cleaned:
         raise ValueError("A desk user needs a non-empty label.")
     raw = "tf_" + secrets.token_hex(_KEY_BYTES)

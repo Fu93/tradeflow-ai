@@ -43,6 +43,8 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 APP_JS = os.path.join(ROOT, "src", "web", "static", "js", "app.js")
+DESK_JS = os.path.join(ROOT, "src", "web", "static", "js", "desk.js")
+MARKET_JS = os.path.join(ROOT, "src", "web", "static", "js", "market_intel.js")
 INDEX_HTML = os.path.join(ROOT, "src", "web", "templates", "index.html")
 CONTENT_JS = os.path.join(ROOT, "extension", "content.js")
 SIDEPANEL_JS = os.path.join(ROOT, "extension", "sidepanel.js")
@@ -50,7 +52,10 @@ BACKGROUND_JS = os.path.join(ROOT, "extension", "background.js")
 MANIFEST_JSON = os.path.join(ROOT, "extension", "manifest.json")
 
 # Every HTML-rendering JS file in scope.
-JS_FILES = [APP_JS, CONTENT_JS, SIDEPANEL_JS, BACKGROUND_JS]
+# [AUDIT 2026-10-24] desk.js and market_intel.js render server data too
+# (drafts, quotes, market cards); they were verified safe by hand but were
+# never in this list, so a regression there could not be caught.
+JS_FILES = [APP_JS, DESK_JS, MARKET_JS, CONTENT_JS, SIDEPANEL_JS, BACKGROUND_JS]
 
 # Extension entry points that persist/inspect the tab registry, read the chat
 # DOM, or copy to the clipboard.

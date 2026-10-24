@@ -298,7 +298,11 @@ app.include_router(web_open_router)
 # 之後定義的路由完全沒被覆蓋。這裡在 import 時就驗證「每一條 /api/v1 路由都
 # 真的掛到了 require_api_key」，未來任何人新增 /api/v1 路由卻忘了掛依賴，
 # 都會在啟動/測試時直接失敗，而不是靜默裸奔。
-_EXEMPT_API_V1_PATHS = {"/api/v1/stream/session"}
+# [SECURITY 2026-10-24] 這個集合現在是空的：曾經豁免的 /api/v1/stream/session
+# 已在 routes_web.py 掛上 require_api_key(沙盒 fail-open 保留儀表板 demo,
+# 生產 fail-closed 擋住未認證的底價串流)。若未來要豁免某條路由,豁免必須
+# 同時給出書面理由 —— 空集合是預設,也是審計的立場。
+_EXEMPT_API_V1_PATHS: set[str] = set()
 
 
 def _iter_api_routes(routes=None):

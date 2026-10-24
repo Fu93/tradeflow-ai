@@ -2,18 +2,19 @@
 
 Mounts at / and provides:
   GET  /                         -> dark FinTech dashboard HTML
-  GET  /api/v1/stream/session    -> SSE live session feed (deliberately open; see below)
+  GET  /api/v1/stream/session    -> SSE live session feed
   GET  /api/v1/config/telemetry  -> read current telemetry config
   POST /api/v1/config/telemetry  -> write + hot-reload telemetry config
   POST /api/v1/telemetry/test-push -> fire a one-off test notification
 
 [SECURITY] The /api/v1 surface here is served by `api_v1`, an APIRouter created with
 `dependencies=[Depends(require_api_key)]` (imported from src.app.main). Every route
-on it is authenticated. The one deliberate exception is `GET /api/v1/stream/session`:
-a browser `EventSource` cannot attach custom headers, so gating it would silently
-break the live dashboard feed. It is registered on the open `router` (the dashboard
-HTML and /static are open for the same reason) and is explicitly listed in
-main.py's `_EXEMPT_API_V1_PATHS` route audit.
+on it is authenticated. `GET /api/v1/stream/session` carries the same dependency on
+its own decorator: a browser `EventSource` cannot attach custom headers, and
+`require_api_key` is fail-open in the sandbox demo — so the dashboard feed keeps
+working there — while production, where target prices and walk-away ceilings must
+not stream to whoever reaches the port, refuses unauthenticated subscribers.
+main.py's route audit no longer exempts it.
 """
 from __future__ import annotations
 
@@ -161,7 +162,10 @@ async def _session_event_generator(request: Request, max_seconds: float | None =
                 # 絕不吞錯：記錄 + 明確標示此幀失敗，讓操作者能區分
                 # 「真的沒有會話」與「讀取失敗」。
                 logger.exception("SSE session snapshot collection failed")
-                stream_error = f"{type(exc).__name__}: {exc}"
+                # [SECURITY 2026-10-24] The type name is enough for an operator
+                # with the logs; the message text can carry internal paths and
+                # this frame reaches unauthenticated subscribers.
+                stream_error = f"{type(exc).__name__} (see server logs)"
 
             payload_obj: Dict[str, Any] = {"ts": time.time(), "sessions": sessions}
             if stream_error:
@@ -173,7 +177,12 @@ async def _session_event_generator(request: Request, max_seconds: float | None =
         logger.debug("SSE session stream closed after %.1fs", time.monotonic() - started)
 
 
-@router.get("/api/v1/stream/session")
+# [SECURITY 2026-10-24] The stream is gated by require_api_key, which is the
+# same split every /api/v1 route uses: fail-open with a loud warning in the
+# sandbox demo (where the open dashboard needs it and EventSource cannot
+# attach headers), fail-closed in production — where target prices, walk-away
+# ceilings and posteriors must not stream to anyone who can reach the port.
+@router.get("/api/v1/stream/session", dependencies=[Depends(require_api_key)])
 async def stream_session(request: Request):
     return StreamingResponse(
         _session_event_generator(request),
@@ -201,6 +210,20 @@ def _read_env_config() -> Dict[str, str]:
     return cfg
 
 
+def _sanitize_env_value(value: str) -> str:
+    """One .env line per key, no exceptions.
+
+    [SECURITY 2026-10-24] A value containing a newline used to be written
+    verbatim, so ``{"TELEGRAM_CHAT_ID": "x\\nTRADEFLOW_API_KEY=owned"}`` grew
+    the .env file a brand-new key — and python-dotenv's last-occurrence-wins
+    turned that into a full credential takeover on the next start. Values are
+    restricted to printable, line-free characters; anything else is dropped
+    character by character, so an injected line becomes part of the same line
+    (or nothing) and can never start a new one.
+    """
+    return "".join(ch for ch in str(value) if ch.isprintable() and ch not in "\r\n\\\\").strip()
+
+
 def _write_env_config(updates: Dict[str, str]) -> None:
     """Atomically merge updates into .env (creates file if absent).
 
@@ -209,7 +232,12 @@ def _write_env_config(updates: Dict[str, str]) -> None:
     """
     env_path = _env_path()
     cfg = _read_env_config()
-    cfg.update({k: v for k, v in updates.items() if v != ""})
+    safe_updates = {
+        k: _sanitize_env_value(v)
+        for k, v in updates.items()
+        if _sanitize_env_value(v) != ""
+    }
+    cfg.update(safe_updates)
     lines = [f"{k}={v}" for k, v in sorted(cfg.items())]
     tmp = env_path.with_suffix(env_path.suffix + ".tmp")
     tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -354,9 +382,16 @@ async def market_reference(
 
 @api_v1.post("/telemetry/test-push")
 async def test_push(request: Request):
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"status": "error", "detail": "Invalid JSON body."})
+    if not isinstance(body, dict):
+        return JSONResponse(status_code=400, content={"status": "error", "detail": "Expected a JSON object."})
     channel = body.get("channel", "all")
-    message = body.get("message", "TradeFlow connectivity test — system nominal.")
+    # The message rides a paid notification channel; cap it like every other
+    # caller-supplied text so a test push cannot relay a book through it.
+    message = str(body.get("message") or "TradeFlow connectivity test — system nominal.")[:500]
     results: Dict[str, Any] = {}
     try:
         import src.app.main as _main  # type: ignore

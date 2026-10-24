@@ -90,6 +90,9 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_revoke(args)
         if args.cmd == "list":
             return _cmd_list(args)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     finally:
         args.store.close()
     return 2

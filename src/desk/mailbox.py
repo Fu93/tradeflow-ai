@@ -15,12 +15,15 @@ import email
 import email.utils
 import imaplib
 import json
+import logging
 import os
 import re
 import ssl
 import urllib.parse
 import urllib.request
 from typing import Any
+
+logger = logging.getLogger("tradeflow.desk.mailbox")
 
 
 class MailboxError(RuntimeError):
@@ -68,6 +71,16 @@ def gmail_drafts_enabled() -> bool:
     return os.environ.get("GMAIL_DRAFTS", "").strip() == "1" and gmail_configured()
 
 
+def loopback(host: str) -> bool:
+    """True for the loopback addresses only.
+
+    Public so the poller can draw the fixture-trust boundary: IMAP_SSL=0 is
+    accepted exclusively for loopback (the labelled test fixture server),
+    which is exactly the mailbox whose X-TradeFlow-Fixture marker is trusted.
+    """
+    return _loopback(host)
+
+
 def _loopback(host: str) -> bool:
     return host.strip().lower() in {"127.0.0.1", "localhost", "::1"}
 
@@ -93,23 +106,46 @@ def parse_rfc822(raw: bytes) -> dict[str, Any]:
     }
 
 
+MAX_MAIL_BODY_CHARS = 20_000
+
+
+def _decode_part(message: email.message.Message) -> str:
+    """Decode one MIME part, capping the text and refusing poison charsets.
+
+    [SECURITY 2026-10-24] Two defects lived here. An attacker-chosen
+    ``charset="x-nope"`` raised ``LookupError`` out of the whole mailbox
+    pull — one poison email stalled ingestion of everything behind it,
+    every poll, forever. And a multi-megabyte text part was decoded and
+    stored whole, with no cap, because the HTTP body limit never sees
+    IMAP or Gmail. Now: an unknown charset is replaced with utf-8, and the
+    decoded text is capped at ``MAX_MAIL_BODY_CHARS`` — the same ceiling
+    the paste API applies — with the truncation recorded by the caller.
+    """
+    payload = message.get_payload(decode=True)
+    if isinstance(payload, bytes):
+        charset = message.get_content_charset() or "utf-8"
+        try:
+            text = payload.decode(charset, errors="replace")
+        except LookupError:
+            text = payload.decode("utf-8", errors="replace")
+        if len(text) > MAX_MAIL_BODY_CHARS:
+            return text[:MAX_MAIL_BODY_CHARS]
+        return text
+    raw_payload = message.get_payload()
+    if isinstance(raw_payload, str):
+        return raw_payload[:MAX_MAIL_BODY_CHARS]
+    return ""
+
+
 def _body(message: email.message.Message) -> str:
     if message.is_multipart():
         for part in message.walk():
             disposition = str(part.get("Content-Disposition") or "")
             if part.get_content_type() != "text/plain" or "attachment" in disposition:
                 continue
-            payload = part.get_payload(decode=True)
-            if isinstance(payload, bytes):
-                charset = part.get_content_charset() or "utf-8"
-                return payload.decode(charset, errors="replace")
+            return _decode_part(part)
         return ""
-    payload = message.get_payload(decode=True)
-    if isinstance(payload, bytes):
-        charset = message.get_content_charset() or "utf-8"
-        return payload.decode(charset, errors="replace")
-    text = message.get_payload()
-    return text if isinstance(text, str) else ""
+    return _decode_part(message)
 
 
 def _rfc822_from_fetch(payload: list) -> bytes | None:
@@ -197,7 +233,30 @@ def pull_window(
                 raw = _rfc822_from_fetch(payload or [])
                 if raw is None:
                     continue
-                item = parse_rfc822(raw)
+                # [SECURITY 2026-10-24] One unparseable email used to unwind
+                # the whole window: the poison message was never marked seen,
+                # so every poll re-failed on it and every message behind it
+                # in the lookback window was never ingested — a permanent,
+                # silent stall caused by one inbound mail. A parse failure is
+                # deterministic, so the item is marked poison and the caller
+                # records it as seen; the fetch itself stays outside the
+                # guard, because a connection failure SHOULD abort the poll
+                # and be retried.
+                try:
+                    item = parse_rfc822(raw)
+                except Exception as exc:  # noqa: BLE001 - one poison mail must not stall the pipeline
+                    logger.warning(
+                        "Unparseable message skipped (uid=%s): %s", uid_text, type(exc).__name__
+                    )
+                    found.append(
+                        {
+                            "poison": True,
+                            "external_id": uid_key,
+                            "uid": uid_text,
+                            "uidvalidity": uidvalidity,
+                        }
+                    )
+                    continue
                 item["raw"] = raw
                 item["uid"] = uid_text
                 item["uidvalidity"] = uidvalidity
@@ -329,7 +388,16 @@ def pull_gmail_window(opener, skip_ids: set[str] | None = None) -> list[dict[str
         if marker in known:
             continue
         raw = gmail_get_raw(opener, token, message_id)
-        item = parse_rfc822(raw)
+        # Same poison guard as the IMAP path: one unparseable Gmail message
+        # must be skipped and recorded as seen, not stall the whole window.
+        try:
+            item = parse_rfc822(raw)
+        except Exception as exc:  # noqa: BLE001 - one poison mail must not stall the pipeline
+            logger.warning(
+                "Unparseable Gmail message skipped (id=%s): %s", message_id, type(exc).__name__
+            )
+            found.append({"poison": True, "external_id": marker, "gmail_id": message_id})
+            continue
         item["raw"] = raw
         item["gmail_id"] = message_id
         if not item["message_id"]:

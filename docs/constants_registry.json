@@ -3045,6 +3045,18 @@
       "value": 12,
       "context": "KEY_PREFIX_DISPLAY_LEN = 12",
       "justification": "A named key is displayed as its first 12 characters: enough to tell issued keys apart in scripts/manage_users.py list output, far short of the 48-character secret, so the display can never stand in for the key."
+    },
+    {
+      "file": "src/desk/mailbox.py",
+      "value": 20000,
+      "context": "MAX_MAIL_BODY_CHARS = 20_000",
+      "justification": "The mail body cap matches the paste API's raw_text ceiling (20,000 chars): the HTTP body limit never sees IMAP or Gmail, so this is the intake-side bound on what an untrusted email can deposit into quote_events.raw_text."
+    },
+    {
+      "file": "src/desk/users.py",
+      "value": 64,
+      "context": "return cleaned[:64]",
+      "justification": "A desk-user label names a person; 64 characters is the cap. The label lands in operator terminal output and inside signed chain entries, so it must stay one short line (control characters are already stripped by _clean_label)."
     }
   ]
 }

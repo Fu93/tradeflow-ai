@@ -503,6 +503,54 @@ backup schedule, the restore drill, the daily anchor cron, and the honest
 Render note: the starter plan's disk is ephemeral, persistence there needs a
 paid instance type.
 
+## Deep-debug pass (2026-10-24, after the five phases)
+
+Two adversarial audits (web/middleware surface; concurrency/mailbox surface)
+found fifteen issues. Eleven were real and are fixed, each pinned by
+`tests/test_deep_debug_2026_10_24.py`:
+
+- **HIGH: .env newline injection** — a telemetry value carrying a newline
+  could mint a brand-new key into `.env`, and dotenv's last-occurrence-wins
+  made that a credential takeover at next start. Values are now sanitized to
+  one printable line (routes_web.py).
+- **HIGH: unbounded limiter memory** — every request with a fresh random
+  `X-API-Key` inserted a permanent entry before auth ran; the pruning claim
+  in the docstring was false. Both limiters now sweep aged keys and evict
+  least-recently-active ones past a hard cap (rate_limit.py); a legitimate
+  key's budget survives the sweep (pinned).
+- **HIGH: unauthenticated SSE** — `/api/v1/stream/session` streamed target
+  prices, walk-away ceilings and posteriors to anyone who could reach the
+  port. It now carries `require_api_key` (sandbox demo unaffected:
+  fail-open there; production fail-closed), the audit exemption set is
+  empty, and error frames carry the exception type, not the message.
+- **Mailbox poison isolation** — one unparseable email (unknown charset
+  raised LookupError) stalled every future poll behind it, forever. Parse
+  failures are now per-message: skipped, counted, marked seen for every
+  deal; unknown charsets fall back to utf-8; bodies are capped at the same
+  20,000 chars as the paste API (mailbox.py, service.py).
+- **Provenance forgery closed** — a supplier typing `X-TradeFlow-Fixture`
+  into a real email had it stored as fixture origin in the audit chain. The
+  marker is now honoured only from channels this process controls: paste,
+  and the loopback non-TLS fixture mailbox (IMAP_SSL=0 is refused for any
+  other host). Remote mailboxes and Gmail classify live (service.py,
+  classify_origin trusted_channel).
+- **Operator hygiene** — named-key labels are stripped of control
+  characters and capped at 64 (no ANSI injection into `manage_users list`,
+  no forged lines inside chain actor strings); the access-log path is
+  cleaned path-shaped (a `%0A` in the request target can no longer forge
+  log lines); `telemetry/test-push` answers 400 to a malformed body and
+  caps the message; the static XSS scan now covers desk.js and
+  market_intel.js (38 checks, clean).
+- Verified safe by the same audits (no change needed): the set_policy
+  f-string SQL is a closed key set with parameterised values; the deal-lock
+  discipline is sound; named-key lookup leaks nothing by timing; the
+  address regexes have no catastrophic backtracking; BodySizeLimit counts
+  chunked bodies correctly; desk.js/app.js escaping holds.
+
+Local battery after the pass: 1081 passed / 3 documented Windows platform
+failures, coverage 91% (gate 90%), verify_all six pillars, mutation 73
+killed / 0 survived, ruff + mypy (37 files) clean, decision registry ok.
+
 ## Next steps
 
 - **The remaining gate on "actually usable" is a live pilot**:

@@ -90,18 +90,32 @@ EVENT_TRANSITIONS = {
 }
 
 
-def classify_origin(raw_text: str, extra: dict | None) -> dict[str, Any]:
+def classify_origin(raw_text: str, extra: dict | None, *, trusted_channel: bool = True) -> dict[str, Any]:
     """Fixture and simulated are decided here.
 
     A client ``simulated: true`` is a downgrade and is kept. The page URL
     or title can still upgrade a live flag to simulated. A client true is
     never stored as live.
+
+    [SECURITY 2026-10-24] ``trusted_channel`` draws the fixture boundary.
+    The fixture marker exists so a labelled test sample can never be stored
+    as a live supplier quote. An inbound email is an untrusted channel: the
+    sender controls the header *and* the body, so anyone could type
+    ``X-TradeFlow-Fixture`` into a message and have a real supplier quote
+    recorded as fixture origin in a tamper-evident chain. The marker is
+    therefore honoured only from channels this process controls (paste,
+    the API, the import harness); from the mailbox polls it is dropped and
+    the message is classified live, where the human-confirm gate still
+    applies before any number is believed.
     """
     fields = dict(extra or {})
     client_simulated = bool(fields.pop("simulated", False))
-    header = str(fields.get("fixture") or "").strip()
+    header = str(fields.get("fixture") or "").strip() if trusted_channel else ""
     text = raw_text or ""
-    fixture = bool(header) or ("X-TradeFlow-Fixture" in text)
+    fixture = bool(header) or ("X-TradeFlow-Fixture" in text and trusted_channel)
+    if not trusted_channel:
+        # Drop the untrusted marker entirely rather than storing a falsified one.
+        fields.pop("fixture", None)
     page_url = str(fields.get("page_url") or "")
     page_title = str(fields.get("page_title") or "")
     simulated = client_simulated or ("mock_chat.html" in page_url.lower()) or ("simulated" in page_title.lower())
@@ -291,6 +305,7 @@ def ingest_message(
     fees: float | None = None,
     external_id: str | None = None,
     provenance_extra: dict | None = None,
+    trusted_channel: bool = True,
 ) -> dict[str, Any]:
     if source not in SOURCES:
         raise DeskRejected("Quote source must be email, chat-import, or paste.")
@@ -317,6 +332,7 @@ def ingest_message(
             external_id=external_id,
             provenance_extra=provenance_extra,
             prepared=prepared,
+            trusted_channel=trusted_channel,
         )
     _schedule_extractor(store, deal_id, raw_text, prepared, stored)
     return stored
@@ -442,6 +458,7 @@ def _ingest_locked(
     external_id: str | None,
     provenance_extra: dict | None,
     prepared: dict[str, Any] | None = None,
+    trusted_channel: bool = True,
 ) -> dict[str, Any]:
     deal = store.get_deal(deal_id)
     if deal is None:
@@ -484,7 +501,7 @@ def _ingest_locked(
         parsed["fees"] = float(fees)
     if sender:
         provenance["sender"] = sender
-    provenance.update(classify_origin(raw_text, provenance_extra))
+    provenance.update(classify_origin(raw_text, provenance_extra, trusted_channel=trusted_channel))
     simulated = bool(provenance.get("simulated"))
     fixture = provenance.get("origin") == "fixture"
     try:
@@ -1607,10 +1624,22 @@ def ingest_mailbox_items(
     deal_id: str | None,
     channel: str,
     mailbox_key: str | None = None,
+    trusted_channel: bool = False,
 ) -> dict[str, Any]:
-    counts: dict[str, Any] = {"ingested": 0, "review": 0, "duplicates": 0, "ignored": 0}
+    counts: dict[str, Any] = {"ingested": 0, "review": 0, "duplicates": 0, "ignored": 0, "poison": 0}
     for item in items:
         external = item.get("external_id") or _external_id(item)
+        # [SECURITY 2026-10-24] The mailbox layer marks an unparseable message
+        # poison. It is recorded as seen for every current deal — so it can
+        # never reappear at the head of the window and stall the pipeline —
+        # but nothing of it is ingested, because there is nothing trustworthy
+        # in it to store.
+        if item.get("poison"):
+            counts["poison"] += 1
+            if mailbox_key:
+                for deal in [deal_id] if deal_id else [row["id"] for row in store.list_deals()]:
+                    store.remember_mailbox(_seen_key(mailbox_key, deal), external)
+            continue
         targets = _route_deals(store, item.get("sender") or "", deal_id)
         if not targets:
             counts["ignored"] += 1
@@ -1631,6 +1660,7 @@ def ingest_mailbox_items(
                 sender=item.get("sender") or "",
                 external_id=_external_id(item),
                 provenance_extra=extra,
+                trusted_channel=trusted_channel,
             )
             if result.get("duplicate"):
                 counts["duplicates"] += 1
@@ -1665,6 +1695,14 @@ def poll_imap_once(
     if deal_id is None and not desk.list_deals():
         return {"status": "no-deals", "ingested": 0, "review": 0, "duplicates": 0, "ignored": 0}
     mailbox_key = f"imap:{settings['host']}:{settings['username']}"
+    # [SECURITY 2026-10-24] The fixture marker is honoured only from a
+    # mailbox this process controls: the loopback, non-TLS fixture server
+    # (IMAP_SSL=0 is refused for any other host, see _open_imap). A real
+    # remote mailbox is sender-controlled, so a typed "X-TradeFlow-Fixture"
+    # line there stays a live quote and the human-confirm gate applies.
+    trusted_fixture_channel = (not bool(settings["use_ssl"])) and mailbox.loopback(
+        str(settings["host"])
+    )
     items, _uidvalidity = mailbox.pull_window(
         host=settings["host"],
         port=int(settings["port"]),
@@ -1679,6 +1717,7 @@ def poll_imap_once(
         deal_id=deal_id,
         channel="imap",
         mailbox_key=mailbox_key,
+        trusted_channel=trusted_fixture_channel,
     )
     counts["status"] = "ok"
     return counts

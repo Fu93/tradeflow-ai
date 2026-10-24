@@ -42,6 +42,11 @@ PER_HOUR = 30
 MINUTE_SECONDS = 60
 HOUR_SECONDS = 3600
 
+# [MEMORY 2026-10-24] Cap on tracked limiter keys (see SlidingWindowLimiter):
+# once the table runs past this, fully-aged keys are swept and the
+# least-recently-active keys are evicted on the next check.
+_MAX_TRACKED_KEYS = 10_000
+
 # Defaults for the write limiter. Chosen to be far above anything a human desk
 # produces (a busy buyer confirms a handful of quotes a minute) and far below
 # what a loop can generate, so it never fires on real use.
@@ -87,6 +92,22 @@ class AmdRateLimiter:
             recent_all.append(now)
             self._by_ip[ip] = recent_ip
             self._global = recent_all
+            # [MEMORY 2026-10-24] The socket IP is caller-chosen only up to the
+            # internet's patience, but a proxy farm can still mint many of
+            # them; sweep fully-aged entries once the table runs past its cap
+            # so the table cannot grow without limit.
+            if len(self._by_ip) > _MAX_TRACKED_KEYS:
+                aged = {
+                    tracked: stamps
+                    for tracked, stamps in self._by_ip.items()
+                    if stamps and now - stamps[-1] < HOUR_SECONDS
+                }
+                if len(aged) > _MAX_TRACKED_KEYS:
+                    keep = sorted(
+                        aged.items(), key=lambda item: item[1][-1], reverse=True
+                    )[:_MAX_TRACKED_KEYS]
+                    aged = dict(keep)
+                self._by_ip = aged
 
 
 amd_rate_limiter = AmdRateLimiter()
@@ -95,13 +116,19 @@ amd_rate_limiter = AmdRateLimiter()
 class SlidingWindowLimiter:
     """A sliding window over two horizons, keyed by an opaque string.
 
-    Memory is bounded by pruning on every check and by dropping keys whose
-    entries have all aged out, so a rotating client address cannot grow the
-    table without limit. That pruning is the reason this is a sliding window
-    rather than a fixed bucket: a fixed bucket lets a caller send ``limit``
-    requests at the end of one window and ``limit`` again at the start of the
-    next, which is twice the intended rate at the boundary.
+    Memory is bounded: per-key stamps are pruned on every check, and once the
+    key table itself runs past its cap, keys whose every stamp has aged out
+    of the hour window are swept. That matters because the key for an
+    unauthenticated caller is client-chosen (a hashed header value), so
+    without the sweep one random header per request would grow the table
+    without limit — a memory DoS that no rate limit ever fires to stop.
+    The sweep is the reason this is a sliding window rather than a fixed
+    bucket: a fixed bucket lets a caller send ``limit`` requests at the end
+    of one window and ``limit`` again at the start of the next, which is
+    twice the intended rate at the boundary.
     """
+
+    _MAX_TRACKED_KEYS = 10_000
 
     def __init__(self, per_minute: int, per_hour: int) -> None:
         self._per_minute = int(per_minute)
@@ -155,6 +182,24 @@ class SlidingWindowLimiter:
                 )
             stamps.append(now)
             self._by_key[key] = stamps
+            if len(self._by_key) > self._MAX_TRACKED_KEYS:
+                # First sweep fully-aged keys; then — a burst can mint more
+                # fresh keys than the age sweep frees — evict the
+                # least-recently-active keys until the table fits. A rotated
+                # key loses nothing it was entitled to (rotation already
+                # starts a fresh window); a legitimate single key never
+                # reaches this path.
+                aged = {
+                    tracked: stamps
+                    for tracked, stamps in self._by_key.items()
+                    if stamps and now - stamps[-1] < HOUR_SECONDS
+                }
+                if len(aged) > self._MAX_TRACKED_KEYS:
+                    keep = sorted(
+                        aged.items(), key=lambda item: item[1][-1], reverse=True
+                    )[: self._MAX_TRACKED_KEYS]
+                    aged = dict(keep)
+                self._by_key = aged
 
 
 def _env_int(name: str, default: int) -> int:
