@@ -96,6 +96,17 @@ v1-only 部署的失敗登錄不會意外創建數據庫文件。
 
 **驗收**:compose 起服務→寫數據→重建容器→數據仍在;備份/恢復演練通過;鏈驗證一致。
 
+**實施結果(2026-10-24)**:完成。`docker-compose.yml` 掛載命名卷
+`desk-data:/app/data` 並釘住 `TRADEFLOW_DESK_DB=/app/data/desk.db`(重建容器
+數據仍在;`down -v` 仍會刪除,卷不是備份)。`scripts/backup_desk_db.py`:
+SQLite backup API 在線備份 → 打開副本逐 deal `verify_rows` → 斷鏈的備份文件
+直接刪除而非留著假裝可靠;`restore --yes` 恢復後同樣先驗鏈;拒絕無
+`--yes` 覆蓋在用數據庫。`GET /version`(只讀、免門禁、無機密):app 版本、
+schema 版本、`TRADEFLOW_GIT_SHA`(部署管線蓋章,未設則 `unknown`)。
+`docs/deploy.md` 新增持久化/備份/恢復演練/anchor cron/Render 誠實說明
+(starter 盤為 ephemeral,持久盤需付費方案)。測試
+`tests/test_deployment_surface.py`(版本面無機密 + 備份/恢復演練/拒絕覆蓋)。
+
 ## 階段四:測試範圍擴大
 
 - `bilingual.py` 納入覆蓋率門:先實測,補分支測試到 ≥90% 再進 fail-under。

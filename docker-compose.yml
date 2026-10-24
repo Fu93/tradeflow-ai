@@ -3,6 +3,12 @@ services:
     build: .
     ports:
       - "8000:8000"
+    # [OPS 2026-10-24] SQLite persistence. Without this volume a container
+    # rebuild throws the desk database, the session store, and with them the
+    # audit chain away. The desk DB path is pinned into the volume so the
+    # backup drill (scripts/backup_desk_db.py) has one canonical location.
+    volumes:
+      - desk-data:/app/data
     # Optional. A checkout with no .env still starts: the process defaults
     # to TRADEFLOW_ENV=sandbox and TRADEFLOW_SOLVER_BACKEND=numpy.
     # `environment` below overrides env_file, so only PORT is forced.
@@ -12,6 +18,8 @@ services:
     environment:
       # The published port is 8000. The process also honours PORT.
       PORT: "8000"
+      # Inside the mounted volume above: survives rebuilds, not host-erased.
+      TRADEFLOW_DESK_DB: /app/data/desk.db
     # The decision engine runs in this container on NumPy unless the image
     # actually has CuPy/ROCm and TRADEFLOW_SOLVER_BACKEND=cupy. This compose
     # file does not attach a GPU and does not run the solver on MI300X.
@@ -32,3 +40,9 @@ services:
       retries: 8
       start_period: 25s
     command: python -m src.app.main
+
+# The named volume survives container rebuilds and image upgrades on this
+# host. It does NOT survive `docker compose down -v`, and it is not a backup:
+# run scripts/backup_desk_db.py on a schedule (see docs/deploy.md).
+volumes:
+  desk-data:

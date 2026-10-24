@@ -489,6 +489,20 @@ audit chain could prove *that* a human approved but not *which* human.
   hygiene, CLI round-trip); `tests/test_migrations.py` now expects the
   version-2 transition. `.env.example` documents the surface.
 
+## Phase 3 — deployment hardening (2026-10-24)
+
+The compose volume (`desk-data:/app/data`) keeps the desk database and the
+audit chain across container rebuilds; `docker compose down -v` still
+destroys it, which is why the volume is not called a backup.
+`scripts/backup_desk_db.py` takes an online backup with SQLite's backup API,
+then verifies every deal's chain in the copy — a broken backup is deleted,
+not left behind looking reliable — and `restore --yes` re-verifies after
+copying. `GET /version` reports the build (app version, schema version,
+`TRADEFLOW_GIT_SHA`) with no secret material. `docs/deploy.md` gained the
+backup schedule, the restore drill, the daily anchor cron, and the honest
+Render note: the starter plan's disk is ephemeral, persistence there needs a
+paid instance type.
+
 ## Next steps
 
 - **The remaining gate on "actually usable" is a live pilot**:

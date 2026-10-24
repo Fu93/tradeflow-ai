@@ -4,6 +4,7 @@
 app (no /api/v1 gate): a probe that needs a key cannot answer a load balancer.
 """
 from __future__ import annotations
+import os
 from typing import Any
 
 from fastapi.responses import JSONResponse
@@ -93,5 +94,28 @@ def register_meta_routes(app) -> None:
         if blocking:
             return JSONResponse(status_code=HTTP_UNAVAILABLE, content=body)
         return body
+
+    @app.get("/version")
+    def version():
+        """Build identity, read-only. Answers "what am I talking to".
+
+        [OPS 2026-10-24] Health answers "is it up"; this answers "which build".
+        A dashboard masthead, a bug report, or a post-restore check can pin the
+        exact code and schema without shell access. ``git_sha`` comes from the
+        TRADEFLOW_GIT_SHA environment variable — a container does not carry the
+        git history, so the deploy pipeline stamps it (and prints "unknown"
+        when nobody did). No secret material: the schema version and the build
+        tag are public facts about a public service.
+        """
+        import sys
+
+        from src.desk.migrations import CURRENT_SCHEMA_VERSION
+
+        return {
+            "version": "0.4.0",
+            "schema_version": int(CURRENT_SCHEMA_VERSION),
+            "git_sha": os.environ.get("TRADEFLOW_GIT_SHA", "unknown").strip() or "unknown",
+            "python": sys.version.split()[0],
+        }
 
 
