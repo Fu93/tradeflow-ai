@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.config.heuristics import DEAL_CURRENCY
-from src.desk import audit_chain, migrations
+from src.desk import audit_chain, migrations, users
 
 
 class DeskRejected(ValueError):
@@ -642,6 +642,19 @@ class DeskStore:
         *,
         commit: bool = True,
     ) -> dict[str, Any]:
+        """Append one signed chain entry, naming the actor when there is one.
+
+        [SECURITY 2026-10-24] The authentication dependency resolves who is
+        making this request — the shared env key or a named operator key —
+        into a context variable. When it is set, the actor is recorded inside
+        the signed payload, so the keyed MAC makes the attribution as
+        tamper-evident as the rest of the entry. Writes with no request
+        behind them (the mailbox poller, CLI tools) simply omit the field,
+        which keeps every pre-existing entry shape unchanged.
+        """
+        actor = users.actor_from_chain_context()
+        if actor:
+            payload = {**payload, "actor": actor}
         with self._lock:
             row = audit_chain.append(self.conn, deal_id, type_, _now(), payload)
             if commit:

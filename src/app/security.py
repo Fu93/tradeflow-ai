@@ -98,7 +98,10 @@ def require_api_key(supplied: Optional[str] = Depends(api_key_header)):
             )
             return supplied or SANDBOX_DEMO_AUTH
         provided = (supplied or "").strip()
-        if not provided or not _same_secret(provided, configured):
+        # [SECURITY 2026-10-24] The shared env key and named operator keys are
+        # peers here, exactly as on the desk routes; _resolve_credential also
+        # sets the chain actor for named keys.
+        if not provided or _resolve_credential(provided) is None:
             raise HTTPException(
                 status_code=401,
                 detail="Unauthorized: Invalid X-API-Key header in sandbox mode. Access denied.",
@@ -115,7 +118,7 @@ def require_api_key(supplied: Optional[str] = Depends(api_key_header)):
             ),
         )
     provided = (supplied or "").strip()
-    if not provided or not _same_secret(provided, configured):
+    if not provided or _resolve_credential(provided) is None:
         raise HTTPException(
             status_code=401,
             detail="Unauthorized: Invalid or missing X-API-Key header in production mode. Access denied.",
@@ -156,7 +159,10 @@ def require_webhook_token(supplied: Optional[str] = Depends(webhook_auth_header)
     if not configured:
         raise HTTPException(
             status_code=401,
-            detail="Security Violation: system is in production mode but TRADEFLOW_WEBHOOK_TOKEN is not configured (Fail-Closed).",
+            detail=(
+                "Security Violation: system is in production mode but TRADEFLOW_WEBHOOK_TOKEN "
+                "is not configured (Fail-Closed)."
+            ),
         )
     if not supplied or not hmac.compare_digest(supplied.strip(), configured.strip()):
         raise HTTPException(
@@ -166,22 +172,81 @@ def require_webhook_token(supplied: Optional[str] = Depends(webhook_auth_header)
     return supplied
 
 
-def require_desk_mutation(supplied: Optional[str] = Depends(api_key_header)):
-    """Every desk route needs the API key in every mode, including reads.
+def _named_key_actor(provided: str) -> Optional[str]:
+    """Resolve a named operator key to its chain-facing actor, or ``None``.
+
+    Lookup runs only when an explicit desk database is configured — a v1-only
+    deployment must not have a failed login create one as a side effect. Any
+    storage problem resolves to ``None``: an authentication failure is a 401,
+    never a 500.
+    """
+    if not provided or not os.environ.get("TRADEFLOW_DESK_DB", "").strip():
+        return None
+    try:
+        from src.desk import users
+        from src.desk.store import get_store
+
+        resolved = users.resolve(get_store().conn, provided)
+    except Exception:  # noqa: BLE001 - a broken store must not turn 401 into 500
+        logger.warning("Desk user lookup failed; treating the key as unknown.", exc_info=True)
+        return None
+    if resolved is None:
+        return None
+    return users.actor_label(resolved)
+
+
+def _resolve_credential(provided: str) -> Optional[str]:
+    """The actor behind a presented key: the shared env key or a named user.
+
+    ``"env-key"`` is the shared ``TRADEFLOW_API_KEY`` — it authenticates but
+    names nobody. A named operator key resolves to ``user:<id>:<label>`` and
+    is what makes the audit chain's actor attribution possible. ``None``
+    means the credential is not accepted.
+    """
+    configured = (os.getenv("TRADEFLOW_API_KEY") or "").strip()
+    if configured and provided and len(provided) == len(configured) and hmac.compare_digest(provided, configured):
+        return "env-key"
+    return _named_key_actor(provided)
+
+
+async def require_desk_mutation(supplied: Optional[str] = Depends(api_key_header)):
+    """Every desk route needs a valid credential in every mode, including reads.
 
     The rest of the sandbox API stays open for the demo. The published
     sandbox demo token is not accepted here, so it cannot read supplier mail.
+
+    Credentials, in resolution order (Phase 2, 2026-10-24):
+
+    1. The configured ``TRADEFLOW_API_KEY`` — the server key, unchanged. Its
+       actor is recorded as ``env-key``: it is shared, so it names nobody.
+    2. A named operator key issued via ``scripts/manage_users.py`` — stored
+       only as a SHA-256 hash in the desk database. Its actor is recorded as
+       ``user:<id>:<label>`` and lands inside the audit chain entry, so the
+       chain now answers *who* acted, not only *that* someone did.
+
+    A revoked key resolves to nothing at all, exactly like an unknown one —
+    revocation cannot be probed by comparing error messages. With no valid
+    credential the answer is 401, unchanged; named keys add a way in, they
+    do not open one.
+
+    The dependency is async so the actor is set on the request's own context
+    (a sync dependency would set it in a worker thread whose context is
+    discarded); the endpoint then inherits it whether it runs on the loop or
+    in the threadpool, which is what carries the actor into ``append_chain``.
     """
-    configured = os.getenv("TRADEFLOW_API_KEY", "").strip()
-    if not configured:
-        raise HTTPException(
-            status_code=401,
-            detail="The desk needs TRADEFLOW_API_KEY on the server.",
-        )
     provided = (supplied or "").strip()
-    if len(provided) != len(configured) or not hmac.compare_digest(provided, configured):
+    if provided:
+        actor = _resolve_credential(provided)
+        if actor is not None:
+            from src.desk.users import set_current_actor
+
+            set_current_actor(actor)
+            return supplied
         raise HTTPException(
             status_code=401,
             detail="The desk needs a valid X-API-Key.",
         )
-    return supplied
+    raise HTTPException(
+        status_code=401,
+        detail="The desk needs TRADEFLOW_API_KEY on the server.",
+    )

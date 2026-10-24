@@ -3033,6 +3033,18 @@
       "value": 422,
       "context": "status_code=422,",
       "justification": "Use of 422 on this line of src/app/main.py: status_code=422,. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/users.py",
+      "value": 24,
+      "context": "_KEY_BYTES = 24  # 48 hex characters",
+      "justification": "Named keys are minted from 24 random bytes (48 hex characters, prefixed with tf_): the same unguessability bar as MIN_API_KEY_LEN in security.py, enforced by construction instead of validated after the fact."
+    },
+    {
+      "file": "src/desk/users.py",
+      "value": 12,
+      "context": "KEY_PREFIX_DISPLAY_LEN = 12",
+      "justification": "A named key is displayed as its first 12 characters: enough to tell issued keys apart in scripts/manage_users.py list output, far short of the 48-character secret, so the display can never stand in for the key."
     }
   ]
 }

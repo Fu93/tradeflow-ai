@@ -21,7 +21,7 @@ def test_a_fresh_database_is_stamped_with_the_current_version(tmp_path):
     store = DeskStore(str(tmp_path / "desk.db"))
     try:
         assert user_version(store.conn) == CURRENT_SCHEMA_VERSION
-        assert store.schema["applied"] == ["baseline"]
+        assert store.schema["applied"] == ["baseline", "desk_users"]
         assert store.schema["from_version"] == 0
     finally:
         store.close()
@@ -60,7 +60,7 @@ def test_a_database_from_before_versioning_is_adopted_not_rebuilt(tmp_path):
 
     store = DeskStore(path)
     try:
-        assert store.schema["applied"] == ["baseline"]
+        assert store.schema["applied"] == ["baseline", "desk_users"]
         assert user_version(store.conn) == CURRENT_SCHEMA_VERSION
         # The row survived the adoption.
         assert store.get_deal("legacy-deal") is not None
@@ -87,7 +87,7 @@ def test_apply_all_reports_the_transition(tmp_path):
         record = apply_all(conn)
         assert record["to_version"] == CURRENT_SCHEMA_VERSION
         assert record["current_version"] == CURRENT_SCHEMA_VERSION
-        assert record["applied"] == ["baseline"]
+        assert record["applied"] == ["baseline", "desk_users"]
         # Second call is a no-op.
         assert apply_all(conn)["applied"] == []
     finally:

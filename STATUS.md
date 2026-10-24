@@ -462,6 +462,33 @@ What the round-2 pass removed from this list is not repeated here. What remains:
   rewrites the whole chain consistently cannot rewrite the committed
   anchor without rewriting public history. One line a day, or cron.
 
+## Phase 2 — named operator keys and the chain actor (2026-10-24)
+
+The desk had exactly one credential — `TRADEFLOW_API_KEY`, shared by every
+buyer — so revoking one person meant rotating the key for everyone, and the
+audit chain could prove *that* a human approved but not *which* human.
+
+- **Named keys** (`src/desk/users.py`, schema version 2, table `desk_users`):
+  issued via `scripts/manage_users.py issue --label …`; the raw secret is
+  printed exactly once and stored only as a SHA-256 hash plus a 12-character
+  display prefix. `revoke --id N` takes effect on the next request without
+  touching anyone else's access; `list` shows no secret material.
+- **Authentication** (`require_desk_mutation`, and `require_api_key` on the
+  same surface): the shared env key works exactly as before and records the
+  actor `env-key` — it is shared, so it names nobody. A named key is a peer
+  credential and records `user:<id>:<label>`. A revoked key is refused
+  exactly like an unknown one, so revocation cannot be probed by comparing
+  error messages. Production's fail-closed 500 without a configured env key
+  is unchanged; named keys add a way in, they do not open one.
+- **The chain records the actor**: `DeskStore.append_chain` stamps the
+  authenticated actor inside the signed payload when a request is behind the
+  write, so the keyed MAC makes the attribution as tamper-evident as the
+  rest of the entry. Writes with no request behind them (the mailbox
+  poller, CLI tools) omit the field, keeping every pre-existing entry shape.
+- Tests: `tests/test_desk_users.py` (matrix, actor attribution, storage
+  hygiene, CLI round-trip); `tests/test_migrations.py` now expects the
+  version-2 transition. `.env.example` documents the surface.
+
 ## Next steps
 
 - **The remaining gate on "actually usable" is a live pilot**:

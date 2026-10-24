@@ -74,6 +74,20 @@
 
 **驗收**:認證矩陣測試全綠;既有單鍵部署零改動可用;migrations 升級與回滾測試。
 
+**實施結果(2026-10-24)**:完成。`src/desk/users.py` + schema version 2
+(`desk_users` 表:sha256 hash、12 字符顯示前綴、label、revoked_at;明文密鑰
+只在簽發時輸出一次)。`require_desk_mutation` 與 `require_api_key` 共用
+`_resolve_credential`:環境鍵照舊(actor 記為 `env-key`),命名鍵為對等憑據
+(actor 記為 `user:<id>:<label>`);吊銷鍵與未知鍵一律 401,無法以錯誤信息
+探測吊銷狀態;production 無環境鍵的 fail-closed 500 不變。鏈條目由
+`DeskStore.append_chain` 在有請求上下文時把 actor 寫入**被 MAC 簽名的
+payload**(防篡改與條目其餘部分同級);無請求寫入(poller/CLI)不寫 actor,
+既有條目形狀不變。`scripts/manage_users.py` issue/revoke/list。測試
+`tests/test_desk_users.py`(矩陣 + actor + 存儲衛生 + CLI)。構建期決策:
+actor 經 contextvar 傳遞,認證依賴改 async(同步依賴在 worker 線程 set
+contextvar 會被丟棄);命名鍵查找僅在 TRADEFLOW_DESK_DB 顯式配置時進行,
+v1-only 部署的失敗登錄不會意外創建數據庫文件。
+
 ## 階段三:部署與運維加固
 
 - docker-compose 增加 `volumes:`,SQLite 落宿主機;文檔化 Render 持久磁盤需付費方案。

@@ -48,7 +48,7 @@ logger = logging.getLogger("tradeflow.desk.migrations")
 # The version this code expects. A database at a *higher* version was written by
 # a newer build; opening it read-write risks corrupting rows this code cannot
 # interpret, so that case is refused rather than silently tolerated.
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 # Identifiers that may appear in the DDL this module builds by string
 # formatting. ``ALTER TABLE`` cannot be parameterised, so the names are checked
@@ -66,6 +66,7 @@ _ALLOWED_TABLES = frozenset(
         "hazard_outcomes",
         "desk_chain",
         "desk_chain_legacy",
+        "desk_users",
     }
 )
 
@@ -267,6 +268,29 @@ def _baseline(conn: sqlite3.Connection) -> None:
     _indexes(conn)
 
 
+def _desk_users(conn: sqlite3.Connection) -> None:
+    """Named operator keys, added 2026-10-24 (Phase 2 of the upgrade plan).
+
+    The desk had exactly one credential — ``TRADEFLOW_API_KEY``, shared by
+    every buyer in the organisation — so the audit chain could not say who
+    acted and revoking one person meant rotating the key for everyone. This
+    table stores named keys as SHA-256 hashes only; the raw secret is shown
+    once at issue time and never persisted.
+    """
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS desk_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key_hash TEXT NOT NULL UNIQUE,
+            key_prefix TEXT NOT NULL,
+            label TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            revoked_at TEXT
+        );
+        """
+    )
+
+
 @dataclass(frozen=True)
 class Migration:
     version: int
@@ -278,6 +302,7 @@ class Migration:
 # its version.
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(version=1, name="baseline", apply=_baseline),
+    Migration(version=2, name="desk_users", apply=_desk_users),
 )
 
 

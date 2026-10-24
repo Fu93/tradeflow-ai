@@ -311,14 +311,23 @@ def _link_or_copy(src: Path, dest: Path, *, directory: bool = False) -> None:
     semantically identical for a throwaway staging tree: the staged sources are
     read-only inputs to a subprocess run and are never written back to the
     worktree, which is the property the worktree-untouched test pins.
+
+    A source that vanishes between the directory listing and the copy — the
+    ``-shm``/``-wal`` sidecars of a live SQLite database are created and
+    deleted by the engine in real time — is simply skipped: the staged run
+    never needed that transient file, and its stable sibling (the database
+    itself) is what gets staged.
     """
     try:
         dest.symlink_to(src, target_is_directory=directory)
     except OSError:
-        if directory:
-            shutil.copytree(src, dest)
-        else:
-            shutil.copyfile(src, dest)
+        try:
+            if directory:
+                shutil.copytree(src, dest)
+            else:
+                shutil.copyfile(src, dest)
+        except FileNotFoundError:
+            pass
 
 
 def stage_mutant(path: Path, mutated: str) -> Path:
