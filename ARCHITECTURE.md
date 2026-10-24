@@ -54,6 +54,7 @@ compatibility surface only, not an internal dependency, which is what makes
 | `src/engine/<name>.py` (10 files) | Compatibility shims → `src/legacy/` |
 | `src/engine/decision.py`, `reserve.py`, `hazard_fit.py` | v2 phase-1 verified decision core (real files, no shims) |
 | `src/desk/` | v2 phase-1 persistent live desk: quote intake (IMAP/Gmail/chat import) → SQLite → belief update → coupled solver; drafts approved by a human; HMAC-SHA256 keyed audit chain (`audit_chain.py`) |
+| `src/desk/ingest.py` | [2026-10-24] Quote intake: parse → provenance → chain event → extractor scheduling, the IMAP/Gmail pollers, and the per-deal lock table. Extracted verbatim from `service.py` (1,782 → 1,102 lines); `service.py` re-exports every moved name. Imports `store`/`mailbox`/`snapshot`; never `service` (one lazy call-site import for Gmail reply drafting, documented in place). |
 | `src/desk/verify.py` | The send gate: every predicate a draft must pass before mail leaves. Imports `errors`, `snapshot`, `store`, `record`, `recompute`, `decide`; never `service`. |
 | `src/desk/migrations.py` | Numbered schema migrations + `PRAGMA user_version`. The only place DDL lives. |
 | `src/desk/errors.py` | `SendRefused`, `DraftStale`. Below everything, so a caller can catch them without the service layer. |

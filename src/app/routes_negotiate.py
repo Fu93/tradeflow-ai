@@ -14,7 +14,7 @@ from src.config.heuristics import API_EXTRACTED_PRICE_CAP, API_MARKUP_CAP, API_N
 from src.app.heuristics_view import public_payload as heuristics_payload
 from src.app.security import require_webhook_token
 from . import orchestrator
-from .state import HazardBelief, _legacy_route, logger, model, one_step_counter
+from .state import _legacy_route, logger, model
 
 
 # ---- 既有端點 (向後相容) ----
@@ -111,77 +111,6 @@ def register_negotiate_routes(app, api_v1) -> None:
                 "on the desk. " + audit_line(unconfirmed_prices)
             ),
         )
-        currency_ask = float(spec.observed_offer) * float(spec.target_price)
-        if currency_ask > float(spec.ceiling_price):
-            return {
-                "opening_offer_price": None,
-                "blocked": True,
-                "counter_relation": "withheld",
-                "reserve_source": "ceiling",
-                "markup_applied": False,
-                "markup_identified": False,
-                "posterior_reserve_mean": None,
-                "posterior_reserve_std": None,
-                "solver": "one-dimensional expected landed saving minus incremental walk risk",
-                "reason": "The quote is above the ceiling, so no counter is issued.",
-            }
-        from src.engine.hazard_fit import load_hazard_fit
-        from src.engine.reserve import ReserveState
-
-        fit = load_hazard_fit()
-        # [CORRECTNESS 2026-10-23] ``prior_reserve_mean`` / ``prior_reserve_std``
-        # were accepted by this endpoint and then silently ignored: the belief was
-        # always ``ReserveState.policy()`` while the response echoed a posterior
-        # derived from it, so a caller who set a prior saw no change and no warning.
-        # They are now honoured when supplied, as D = reserve / observed offer
-        # (a fraction in (0, 1), the same meaning the desk uses). Omitting them keeps
-        # the previous behaviour exactly, so existing callers are unaffected.
-        if spec.prior_reserve_mean is not None:
-            if not (0.0 < float(spec.prior_reserve_mean) < 1.0):
-                raise HTTPException(
-                    status_code=422,
-                    detail="prior_reserve_mean is D = reserve / observed offer, so it must be between 0 and 1.",
-                )
-            state = ReserveState.from_moments(
-                float(spec.prior_reserve_mean),
-                None if spec.prior_reserve_std is None else float(spec.prior_reserve_std),
-            )
-            prior_applied = True
-        else:
-            state = ReserveState.policy()
-            prior_applied = False
-        post_mean = float(spec.observed_offer) * float(state.mean())
-        post_std = float(spec.observed_offer) * float(state.std())
-        belief = HazardBelief(
-            intercept=float(fit.intercept if spec.hazard_intercept is None else spec.hazard_intercept),
-            tau=spec.hazard_tau,
-            quote_gap_coef=float(fit.gap_coef if spec.hazard_quote_gap is None else spec.hazard_quote_gap),
-            reserve_gap_coef=0.0,
-        )
-        try:
-            rec = one_step_counter(
-                quote=currency_ask,
-                target=float(spec.target_price),
-                ceiling=float(spec.ceiling_price),
-                mean=float(post_mean),
-                std=float(post_std),
-                n_samples=spec.n_samples,
-                round_index=float(spec.rounds),
-                lambda_break=float(spec.lambda_break),
-                belief=belief,
-                credible_alpha=spec.hazard_credible_alpha,
-                state=state,
-            )
-        except Exception as exc:
-            logger.exception("POST /negotiate failed")
-            raise HTTPException(status_code=500, detail="Engine failure while solving the negotiation.") from exc
-        rec["posterior_reserve_mean"] = float(post_mean)
-        rec["posterior_reserve_std"] = float(post_std)
-        rec["markup_identified"] = False
-        rec["markup_applied"] = False
-        rec["reserve_source"] = state.source
-        rec["prior_applied"] = prior_applied
-        return rec
 
 
     @_legacy_route(app.post)("/webhook/evolus", dependencies=[Depends(require_webhook_token)])

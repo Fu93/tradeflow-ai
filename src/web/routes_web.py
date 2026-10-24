@@ -146,7 +146,13 @@ async def _session_event_generator(request: Request, max_seconds: float | None =
             sessions = []
             stream_error = None
             try:
-                for s in mgr.list_sessions():
+                # [PERF 2026-10-24] list_sessions() is synchronous SQLite.
+                # Calling it on the event loop every second meant N open
+                # dashboards blocked EVERY request for the duration of each
+                # read; to_thread keeps the loop responsive. The fixture
+                # SessionManager used in tests is equally safe to call from
+                # a worker thread (its own connection per call).
+                for s in await asyncio.to_thread(mgr.list_sessions):
                     if s:
                         sessions.append({
                             "session_id": s.spec.session_id,

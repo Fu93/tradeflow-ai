@@ -1068,21 +1068,9 @@
     },
     {
       "file": "src/app/routes_negotiate.py",
-      "value": 500,
-      "context": "raise HTTPException(status_code=500, detail=\"Engine failure while solving the negotiation.\") from exc",
-      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Engine failure while solving the negotiation.\"). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/routes_negotiate.py",
       "value": 422,
       "context": "raise HTTPException(status_code=422, detail=str(exc)) from exc",
       "justification": "Use of 422 on this line of src/app/main.py: raise HTTPException(status_code=422, detail=str(exc)) from exc. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/routes_negotiate.py",
-      "value": 500,
-      "context": "raise HTTPException(status_code=500, detail=\"Webhook processing failed.\") from exc",
-      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Webhook processing failed.\"). A different line that repeats the digits is not covered."
     },
     {
       "file": "src/app/routes_command.py",
@@ -1233,12 +1221,6 @@
       "value": 409,
       "context": "status_code=409,",
       "justification": "Use of 409 on this line of src/app/main.py: status_code=409,. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/routes_round.py",
-      "value": 409,
-      "context": "raise HTTPException(status_code=409, detail=str(exc)) from exc",
-      "justification": "Use of 409 on this line of src/app/main.py: raise HTTPException(status_code=409, detail=str(exc)). A different line that repeats the digits is not covered."
     },
     {
       "file": "src/app/routes_analysis.py",
@@ -1997,7 +1979,7 @@
       "justification": "Use of 5 on this line of src/desk/service.py: if not 4 <= len(suppliers) <= 5:. A different line that repeats the digits is not covered."
     },
     {
-      "file": "src/desk/service.py",
+      "file": "src/desk/ingest.py",
       "value": 60,
       "context": "return 60",
       "justification": "Use of 60 on this line of src/desk/service.py: return 60. A different line that repeats the digits is not covered."
@@ -2975,13 +2957,13 @@
       "justification": "Use of 12 on this line of src/desk/parse.py: head = text[max(0, start - 12):start]. A different line that repeats the digits is not covered."
     },
     {
-      "file": "src/desk/service.py",
+      "file": "src/desk/ingest.py",
       "value": 8,
       "context": "tail = raw_text[match.end():match.end() + 8]",
       "justification": "Use of 8 on this line of src/desk/service.py: tail = raw_text[match.end():match.end() + 8]. A different line that repeats the digits is not covered."
     },
     {
-      "file": "src/desk/service.py",
+      "file": "src/desk/ingest.py",
       "value": 12,
       "context": "head = raw_text[max(0, match.start() - 12):match.start()]",
       "justification": "Use of 12 on this line of src/desk/service.py: head = raw_text[max(0, match.start() - 12):match.start()]. A different line that repeats the digits is not covered."
@@ -3057,6 +3039,12 @@
       "value": 64,
       "context": "return cleaned[:64]",
       "justification": "A desk-user label names a person; 64 characters is the cap. The label lands in operator terminal output and inside signed chain entries, so it must stay one short line (control characters are already stripped by _clean_label)."
+    },
+    {
+      "file": "src/app/routes_negotiate.py",
+      "value": 500,
+      "context": "raise HTTPException(status_code=500, detail=\"Webhook processing failed.\") from exc",
+      "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Webhook processing failed.\"). A different line that repeats the digits is not covered."
     }
   ]
 }

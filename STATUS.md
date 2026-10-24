@@ -551,6 +551,32 @@ Local battery after the pass: 1081 passed / 3 documented Windows platform
 failures, coverage 91% (gate 90%), verify_all six pillars, mutation 73
 killed / 0 survived, ruff + mypy (37 files) clean, decision registry ok.
 
+## Product-grade construction pass (2026-10-24, after the debug pass)
+
+Three constructions, one per axis, each behind the full battery:
+
+- **Logic**: the unreachable engine paths behind the "A posted price is not
+  a confirmation" gates in /round and /negotiate are gone — 843 lines of
+  code that could never execute (the raise IS the behaviour; deleting it
+  was the recorded Phase-4 decision). routes_round.py 1,001 → 218 lines,
+  routes_negotiate.py 209 → 138. Three registry rows followed the deleted
+  lines; one live row was kept.
+- **Performance**: the SSE session stream ran synchronous SQLite
+  (`list_sessions`) on the event loop every second, so N open dashboards
+  blocked every request N times a second; the read now runs in a worker
+  thread (`asyncio.to_thread`).
+- **Architecture**: service.py is 1,102 lines (was 1,782). The intake
+  pipeline — classify_origin, ingest_message, the extractor pool, the
+  mailbox pollers, the per-deal lock table — moved verbatim to
+  `src/desk/ingest.py` (830 lines) on the verify.py pattern: service.py
+  re-exports every moved name, the module graph stays acyclic (one
+  documented lazy import for Gmail reply drafting), and the mutation
+  harness needle followed the code.
+
+Battery: 1083 passed / 3 documented Windows platform failures, coverage
+91% (gate 90%), verify_all six pillars, verify_live end-to-end, mutation
+73 killed / 0 survived, ruff + mypy (38 files) clean, decision registry ok.
+
 ## Next steps
 
 - **The remaining gate on "actually usable" is a live pilot**:

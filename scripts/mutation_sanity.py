@@ -270,7 +270,8 @@ MUTANTS = [
         "tests/steps/test_extractor_failover.py::test_queue_wait_is_part_of_the_hop_deadline",
     ),
     (
-        "src/desk/service.py",
+        # [ARCHITECTURE 2026-10-24] The extractor pool moved to ingest.py.
+        "src/desk/ingest.py",
         "max_workers=int(EXTRACTOR_MAX_IN_FLIGHT)",
         "max_workers=None",
         "tests/steps/test_extractor_failover.py::test_extractor_workers_stay_bounded",
