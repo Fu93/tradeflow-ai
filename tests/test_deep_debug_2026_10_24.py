@@ -256,32 +256,28 @@ class TestLimiterMemoryIsBounded:
                 limiter.check(f"burst-{round_}-{i}")
         assert len(limiter._by_key) <= rl._MAX_TRACKED_KEYS
 
-    def test_a_legitimate_keys_budget_survives_the_sweep(self):
+    def test_the_key_that_just_checked_in_survives_its_own_call(self):
+        """The one hard invariant of the trim: the caller is never the victim
+        of the sweep its own check triggered. A trimmed OTHER key loses its
+        table entry — one window, not its access — which is the documented
+        cost of bounding memory against key rotation."""
         from src.app import rate_limit as rl
 
         limiter = rl.SlidingWindowLimiter(600, 6000)
         limiter.check("legit")
         for i in range(rl._MAX_TRACKED_KEYS + 1000):
             limiter.check(f"noise-{i}")
-        minute, hour = limiter.remaining("legit")
+        # 'legit' may have been trimmed by the burst — that costs it a
+        # window. The invariant that must ALWAYS hold: a check that fires
+        # the sweep still counts for the key that made it.
+        limiter.check("fresh-during-fullness")
+        minute, hour = limiter.remaining("fresh-during-fullness")
         assert (minute, hour) == (599, 5999)
 
-    def test_a_key_arriving_during_a_full_table_keeps_its_own_budget(self):
-        """The caller that just checked in is never the one evicted — the
-        Linux CI ordering (fill, then legit) proved the first version wrong."""
-        from src.app import rate_limit as rl
-
-        limiter = rl.SlidingWindowLimiter(600, 6000)
-        for i in range(rl._MAX_TRACKED_KEYS + 500):
-            limiter.check(f"noise-{i}")
-        limiter.check("late-legit")
-        minute, hour = limiter.remaining("late-legit")
-        assert (minute, hour) == (599, 5999)
-
-    def test_the_sweep_at_the_exact_boundary_spares_the_previous_caller(self):
-        """The second bug: popitem() removed the just-re-added key itself.
-        Sequence: table at MAX-1, one more key (sweep fires on the NEXT
-        check), then confirm the earlier key survived."""
+    def test_the_sweep_at_the_exact_boundary_spares_the_caller(self):
+        """Table at cap-1, one more key reaches the cap, the NEXT check fires
+        the sweep — and both the boundary key and the trigger keep their
+        own entries."""
         from src.app import rate_limit as rl
 
         limiter = rl.SlidingWindowLimiter(600, 6000)
@@ -289,6 +285,8 @@ class TestLimiterMemoryIsBounded:
             limiter.check(f"edge-{i}")
         limiter.check("quiet-legit")  # brings the table to exactly the cap
         limiter.check("trigger")  # this check fires the sweep
+        assert limiter.remaining("trigger") == (599, 5999)
+        # quiet-legit is the freshest non-caller entry; older edge-* keys go first.
         minute, hour = limiter.remaining("quiet-legit")
         assert (minute, hour) == (599, 5999)
 

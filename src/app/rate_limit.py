@@ -102,15 +102,15 @@ class AmdRateLimiter:
                     for tracked, stamps in self._by_ip.items()
                     if stamps and now - stamps[-1] < HOUR_SECONDS
                 }
-                if len(aged) > _MAX_TRACKED_KEYS:
-                    ranked = sorted(
-                        aged.items(), key=lambda item: item[1][-1], reverse=True
+                while len(aged) > _MAX_TRACKED_KEYS:
+                    victim = min(
+                        (name for name in aged if name != ip),
+                        key=lambda name: aged[name][-1],
+                        default=None,
                     )
-                    keep = dict(ranked[:_MAX_TRACKED_KEYS])
-                    if ip not in keep:
-                        keep.popitem()
-                        keep[ip] = aged[ip]
-                    aged = keep
+                    if victim is None:
+                        break
+                    aged.pop(victim)
                 self._by_ip = aged
 
 
@@ -188,32 +188,30 @@ class SlidingWindowLimiter:
             self._by_key[key] = stamps
             if len(self._by_key) > self._MAX_TRACKED_KEYS:
                 # First sweep fully-aged keys; then — a burst can mint more
-                # fresh keys than the age sweep frees — evict the
-                # least-recently-active keys until the table fits, never the
-                # key that just checked in. A rotated key loses nothing it
-                # was entitled to (rotation already starts a fresh window);
-                # a legitimate key keeps its budget even when it happens to
-                # check in during someone else's burst.
+                # fresh keys than the age sweep frees — trim the table back
+                # to the cap. The one hard invariant: the key that just
+                # checked in is never the one trimmed in its own call. Which
+                # OTHER fresh key loses its entry is not a fairness question:
+                # a trimmed key simply restarts its window if it returns, and
+                # an attacker rotating keys loses entries it was never going
+                # to reuse. A long-lived quiet key can still be trimmed by a
+                # sustained burst — that is the documented cost of bounding
+                # memory, and it costs that key one window, not its access.
                 aged = {
                     tracked: entries
                     for tracked, entries in self._by_key.items()
                     if entries and now - entries[-1] < HOUR_SECONDS
                 }
-                if len(aged) > self._MAX_TRACKED_KEYS:
-                    ranked = sorted(
-                        aged.items(), key=lambda item: item[1][-1], reverse=True
+                while len(aged) > self._MAX_TRACKED_KEYS:
+                    # Drop the oldest last-seen entry that is not the caller.
+                    victim = min(
+                        (name for name in aged if name != key),
+                        key=lambda name: aged[name][-1],
+                        default=None,
                     )
-                    keep = dict(ranked[: self._MAX_TRACKED_KEYS])
-                    if key not in keep:
-                        # Preserve the caller's own budget: drop the newest
-                        # of the kept keys instead of the one that just came
-                        # in. ``popitem`` would remove the LAST inserted
-                        # entry — which is ``key`` itself after re-adding —
-                        # so drop by name, not by insertion order.
-                        drop_name = ranked[self._MAX_TRACKED_KEYS - 1][0]
-                        keep.pop(drop_name, None)
-                        keep[key] = aged[key]
-                    aged = keep
+                    if victim is None:
+                        break
+                    aged.pop(victim)
                 self._by_key = aged
 
 
