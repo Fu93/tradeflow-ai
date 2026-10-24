@@ -15,6 +15,18 @@ files = [
     "src/engine/decision.py",
     "src/engine/reserve.py",
     "src/engine/hazard_fit.py",
+    # [ARCHITECTURE 2026-10-24] The app-layer modules from the main.py split.
+    # The shims (src/engine/*.py, src/session/*) carry .pyi stubs that
+    # re-export the real src.legacy surface, which is what makes these names
+    # statically resolvable; src/legacy itself stays follow_imports-silent.
+    "src/app/state.py",
+    "src/app/routes_meta.py",
+    "src/app/routes_negotiate.py",
+    "src/app/routes_command.py",
+    "src/app/routes_sessions.py",
+    "src/app/routes_round.py",
+    "src/app/routes_analysis.py",
+    "src/app/routes_auction.py",
 ]
 
 [tool.coverage.run]

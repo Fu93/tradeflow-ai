@@ -219,7 +219,7 @@ app.add_middleware(RequestContextMiddleware)
 # —— README 記載的啟動指令 —— 會在 import 期直接 ImportError 崩潰）。
 # 這裡以同名 re-export 維持既有公開介面：`from src.app.main import require_api_key`
 # 等既有寫法（含測試）完全不受影響。
-from .security import (  # noqa: E402  (刻意放在此處以保留原檔案結構)
+from .security import (  # noqa: E402,F401  (刻意放在此處以保留原檔案結構; F401 = 重導出)
     api_key_header,
     webhook_auth_header,
     SANDBOX_DEMO_AUTH,
@@ -252,13 +252,13 @@ api_v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_api_key)])
 
 
 # ---- 路由模組註冊（保持 main.py 原本的註冊順序）----
-from src.app.routes_meta import register_meta_routes
-from src.app.routes_negotiate import register_negotiate_routes
-from src.app.routes_command import register_command_routes
-from src.app.routes_sessions import register_sessions_routes
-from src.app.routes_round import register_round_routes
-from src.app.routes_analysis import register_analysis_routes
-from src.app.routes_auction import register_auction_routes
+from src.app.routes_meta import register_meta_routes  # noqa: E402
+from src.app.routes_negotiate import register_negotiate_routes  # noqa: E402
+from src.app.routes_command import register_command_routes  # noqa: E402
+from src.app.routes_sessions import register_sessions_routes  # noqa: E402
+from src.app.routes_round import register_round_routes  # noqa: E402
+from src.app.routes_analysis import register_analysis_routes  # noqa: E402
+from src.app.routes_auction import register_auction_routes  # noqa: E402
 
 register_meta_routes(app)
 register_negotiate_routes(app, api_v1)
@@ -270,13 +270,11 @@ register_auction_routes(api_v1)
 
 
 # ---- Web Portal & 多供應商逆向拍賣模擬端點 ----
-from pathlib import Path
-from fastapi.staticfiles import StaticFiles
-from ..web.routes_web import api_v1 as web_api_v1_router, router as web_open_router
-# Not part of the retired v1 session surface: this is the labelled
-# self-play simulator behind the dashboard's "Run auction" button, and it
-# mounts on the default boot (see the route decorator below).
-from ..engine.multi_solver import simulate_reverse_auction
+from pathlib import Path  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+from ..web.routes_web import api_v1 as web_api_v1_router, router as web_open_router  # noqa: E402
+# The labelled self-play simulator behind the dashboard's "Run auction" button
+# lives in routes_auction.py; main.py only mounts the routers.
 
 static_path = Path(__file__).parent.parent / "web" / "static"
 if static_path.exists():
@@ -285,7 +283,7 @@ if static_path.exists():
 # 先把 /api/v1 認證 router 註冊進 app，再掛上 web 的 /api/v1 子路由。
 # [REGRESSION] 舊版逐條端點掛門禁，因此 routes_web.py 內的四條 /api/v1 路由
 # （stream / config / test-push）完全沒被 gate。現在全部由帶依賴的 router 承接。
-from src.desk.routes import register_desk_routes
+from src.desk.routes import register_desk_routes  # noqa: E402
 
 register_desk_routes(api_v1)
 app.include_router(api_v1)
@@ -445,12 +443,12 @@ if __name__ == "__main__":
     _raw_port = os.environ.get("PORT", "8000")
     try:
         _port = int(_raw_port)
-    except ValueError:
+    except ValueError as exc:
         print(
             f"PORT={_raw_port!r} is not an integer. Example: PORT=8001 python3 -m src.app.main",
             file=sys.stderr,
         )
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
     if not 0 < _port < 65536:
         print(
             f"PORT={_port} is outside 1-65535. Example: PORT=8001 python3 -m src.app.main",
@@ -465,7 +463,7 @@ if __name__ == "__main__":
 # 路由處理器本身（health/negotiate/process_negotiation_round 等）已隨模組
 # 拆分移入 routes_*.py 的 register 函數內；歷史上沒有任何呼叫端從 main
 # 直接導入它們（呼叫端走 HTTP 表面），故不在此重導出。
-from src.app import state as _state
+from src.app import state as _state  # noqa: E402
 one_step_counter = _state.one_step_counter  # noqa: F401
 robust_location = _state.robust_location  # noqa: F401
 HazardBelief = _state.HazardBelief  # noqa: F401

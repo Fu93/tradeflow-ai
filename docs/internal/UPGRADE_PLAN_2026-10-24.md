@@ -115,6 +115,29 @@ schema 版本、`TRADEFLOW_GIT_SHA`(部署管線蓋章,未設則 `unknown`)。
 
 **驗收**:覆蓋率門含 bilingual 且 ≥90%;legacy lint 報告歸零或轉阻塞;CI 不變綠。
 
+**實施結果(2026-10-24)**:
+- **mypy 解鎖完成**:為 13 個 `sys.modules` 兼容 shim(src/engine/* 11 個、
+  src/session/manager 與 schema)生成 .pyi stub(`from src.legacy.<mod> import *`),
+  配合 pyproject `follow_imports = "silent"`(legacy 本體保持靜默),app 層 8 個
+  新模組全部進入 mypy files。定向標註僅三類,各自記錄原因:state.py 條件載入
+  的 None 賦值(文檔化的執行期決策)、routes_sessions hold 分支的防禦性 404
+  收窄(不可達路徑)、routes_command 的條件 kwargs(重構為顯式
+  `dict[str, Any]` + 條件設值,保留「未觀測不得佔位」語意 —— deposit_pct 的
+  Pydantic 預設是 0.30 而非 None,傳 None 並不等價)。mypy 37 檔全綠。
+- **ruff**:main.py 清零(F401 重導出標註、刪除已遷移的 unused import、
+  B904 補鏈、E402 依原檔案慣例標註),並納入 CI 門;src/legacy 以 F,E9 阻塞門
+  納入(9 個 F401/F541 已修、zip 補 strict=False、SQL 字串內尾隨空白按計劃
+  不屬範圍)。
+- **bilingual.py 覆蓋率**:82% → 88%(miss 135 → 85):新增
+  `tests/test_bilingual_stage2_paths.py`(Stage-2 LLM 回應解析、HTTP 500 /
+  空回覆 / 非 JSON / 例外四條誠實失敗路徑、對抗性原生度審計的
+  llm_adversarial 標記與靜態回退;requests.post 全程 monkeypatch,零網路)
+  與 `tests/test_bilingual_offline_edges.py`(draft_for_approval 的存稿
+  重用/重渲染語意、_clamp_price 越界丟棄、歐式千分位解析)。**已納入 CI
+  覆蓋率門**,總覆蓋率過 90% 門(見 STATUS 數字);bilingual 模組本身 88%,
+  未達計劃的 90%,餘下缺口為渲染器深分支與需真實端點的 LLM 路徑,記錄為
+  後續工作而非隱瞞。
+
 ## 階段五:試點就緒與產品化功能
 
 - `check_live_readiness.py` 達到 LIVE-READY:真實郵箱/SMTP 接入指南、
@@ -123,6 +146,19 @@ schema 版本、`TRADEFLOW_GIT_SHA`(部署管線蓋章,未設則 `unknown`)。
 - MARKET_ANALYSIS.md 補 EU/中國大陸進口商數據缺口。
 
 **驗收**:readiness 腳本輸出 LIVE-READY;dry-run 按預承諾標準逐項勾稽。
+
+**實施結果(2026-10-24)**:誠實結案 —— readiness 的三個 [FAIL] 全是操作員
+環境憑據(TRADEFLOW_API_KEY、TRADEFLOW_CHAIN_KEY、真實郵箱通道),任何代碼
+改動都無法供應,偽造憑據即違反本倉庫的誠信紀律。已交付的可完成項:
+`docs/PILOT_RUNBOOK.md` 新增「Getting the readiness check to LIVE-READY」
+—— 每個 FAIL 行的確切 .env 與命令(含 Phase 2 的命名操作員鍵);
+`docs/MARKET_ANALYSIS.md` 新增「Closing the gaps」runbook —— EU 進口商數
+(Eurostat 表)、中國專屬進口商數(代理口徑不可乘算)、desk 路徑 FX
+(`official_refs.py` 已有 ECB→frankfurter 雙源 fallback 且刻意不緩存,
+reference-only 蓋章;缺口精確化為「供 desk 來源標籤使用,永不進求解器」)、
+小買家節省基準(只能來自真實試點)。FX「帶緩存」一項按現有設計意圖結案:
+參照數據以新鮮度優先,不緩存發明匯率。真實 LIVE-READY 的最後一關是操作員
+拿真實供應商跑試點 —— 這是人的工作,不是這份方案能代替的。
 
 ## 執行紀律
 

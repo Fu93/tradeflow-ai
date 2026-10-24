@@ -10,7 +10,7 @@ from __future__ import annotations
 import ast
 import re
 from enum import Enum
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Tuple
 from pydantic import BaseModel, Field, model_validator
 
 from src.config.heuristics import (
@@ -325,7 +325,7 @@ class BuyerScriptGenerator:
                 if mold_waiver_grounded
                 else ""
             )
-            + f"This represents our executive mandate for today's PO sign-off. Please confirm so we can release the payment immediately."
+            + "This represents our executive mandate for today's PO sign-off. Please confirm so we can release the payment immediately."
         )
 
         return zh_script, en_script

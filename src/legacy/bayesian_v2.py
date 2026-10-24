@@ -12,7 +12,7 @@ markup is zero unless the user sets it or a closed deal supplies a price.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -128,8 +128,8 @@ def robust_location(
             z = (item - loc) / scale
             weights.append((nu + 1.0) / (nu + z * z))
         total = sum(weights)
-        loc = sum(weight * item for weight, item in zip(weights, clean)) / total
-        variance = sum(weight * (item - loc) ** 2 for weight, item in zip(weights, clean))
+        loc = sum(weight * item for weight, item in zip(weights, clean, strict=False)) / total
+        variance = sum(weight * (item - loc) ** 2 for weight, item in zip(weights, clean, strict=False))
         scale = math.sqrt(max(variance / max(len(clean), 1), 1e-12))
         scale = max(scale, floor)
     return loc, scale

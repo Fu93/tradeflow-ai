@@ -22,12 +22,10 @@ from src.config.heuristics import (
     CVAR_TAIL_FRACTION,
     DEFAULT_SOLVER_SEED,
     DESK_N_GRID,
-    HAZARD_CREDIBLE_ALPHA,
     OFFER_GRID_FLOOR,
     ROUND_N_SAMPLES,
     SEARCH_MESH_CAP,
     SEARCH_STEP,
-    STUDENT_T_DF,
     OFFER_TIE_BREAK,
     SHARED_FACTOR_RHO,
     TACTIC_PRICE_TIE,
@@ -36,7 +34,6 @@ from src.config.heuristics import (
     WEITZMAN_BRACKET_SIGMAS,
     WEITZMAN_SEARCH_COST,
 )
-from src.legacy.bayesian_v2 import student_t_cdf
 from src.engine.decision import HEURISTIC_NOTE, choose_offer
 from src.legacy.hazard import (
     PROVENANCE,

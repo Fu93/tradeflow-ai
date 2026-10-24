@@ -13,8 +13,7 @@ import sqlite3
 import tempfile
 import time
 import logging
-from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 from datetime import datetime, timezone
 from pydantic import ValidationError
 
@@ -25,7 +24,6 @@ from .schema import (
     SessionSpec,
     NegotiationTurn,
     AutopilotState,
-    RemoteAuthCommand,
 )
 
 # 測試/多實例隔離用的環境變數覆寫。
@@ -369,7 +367,9 @@ class SessionManager:
             cursor = conn.execute(
                 """
                 UPDATE sessions 
+
                 SET current_round = ?, version = version + 1, updated_at = ? 
+
                 WHERE session_id = ? AND version = ?;
                 """,
                 (new_round, now.isoformat(), session_id, expected),
@@ -413,7 +413,7 @@ class SessionManager:
                 "successful turn append."
             )
 
-        # [P0 FIX — Dashboard Decision panel requires these fields] 
+        # [P0 FIX — Dashboard Decision panel requires these fields]
         # GET /api/v1/sessions returns NegotiationSession with latest_*_offer.
         # But append_turn never touched those — they stayed None for every round.
         # So the dashboard's "Engine Decision" panel has nothing to show after refresh.
@@ -478,7 +478,9 @@ class SessionManager:
             cursor = conn.execute(
                 """
                 UPDATE sessions 
+
                 SET state = ?, trip_reason = ?, version = version + 1, updated_at = ? 
+
                 WHERE session_id = ? AND state = ? AND version = ?;
                 """,
                 (new_state.value, reason, now.isoformat(), session_id, current_state.value, target_version),
@@ -516,6 +518,7 @@ class SessionManager:
     def rebuild_json_snapshot(self, session_id: str) -> Optional[str]:
         """從唯一真相源 (SQLite WAL) 重建受損或遺失的 JSON 快照快取。
         
+
         解決跨系統雙寫非原子性：SQLite 為單一真相源 (SSOT)，JSON 為可重建的導出快照。
         """
         sess = self.get_session(session_id)

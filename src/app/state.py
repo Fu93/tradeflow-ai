@@ -34,17 +34,21 @@ if _LEGACY_ON:
         TCOEngine,
     )
 else:
+    # [ARCHITECTURE] The v1 engines are deliberately absent on a default boot:
+    # every name above exists so imports keep resolving, and the routes that
+    # would call them are legacy-gated off. The type-ignores document that
+    # runtime decision; they are not a request to weaken the check elsewhere.
     import types
 
-    one_step_counter = None
-    robust_location = None
-    HazardBelief = None
-    compute_belief_confidence = None
-    proposal = None
-    robust_bayes_update = None
-    BayesianBeliefState = None
-    TCOEngine = None
-    model = types.SimpleNamespace(ROUNDS=int("5"))
+    one_step_counter = None  # type: ignore[assignment]
+    robust_location = None  # type: ignore[assignment]
+    HazardBelief = None  # type: ignore[assignment,misc]
+    compute_belief_confidence = None  # type: ignore[assignment]
+    proposal = None  # type: ignore[assignment]
+    robust_bayes_update = None  # type: ignore[assignment]
+    BayesianBeliefState = None  # type: ignore[assignment,misc]
+    TCOEngine = None  # type: ignore[assignment,misc]
+    model = types.SimpleNamespace(ROUNDS=int("5"))  # type: ignore[assignment]
 
 logger = logging.getLogger("tradeflow.app")
 

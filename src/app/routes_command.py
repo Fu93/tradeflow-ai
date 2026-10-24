@@ -5,7 +5,7 @@ module-level helper; the two endpoints register on the bare app (Twilio form
 callback) and on /api/v1 (in-app command execution).
 """
 from __future__ import annotations
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -226,15 +226,20 @@ def _dispatch_supervisor_command(
             if parsed_cmd.demanded_deposit_pct is not None
             else _turn_meta_deposit_pct
         )
+        _our_terms: dict[str, Any] = {}
+        if _our_lead_days is not None:
+            _our_terms["lead_days"] = _our_lead_days
+        if _our_deposit_pct is not None:
+            _our_terms["deposit_pct"] = _our_deposit_pct
 
-        action_obj = TacticalActionObject(
+        action_obj = TacticalActionObject(  # type: ignore[arg-type]
             schema_version=CURRENT_SCHEMA_VERSION,
             source_round_id=source_round_id,
             authorized_price=settled_price,
             walk_away_ceiling=sess.spec.ceiling_price,
             # 沿用最近一輪的真實 p_break；無歷史時不留假常數，
             # 用 breakdown_risk=0.0 並在 detail 註明「尚無輪次」。
-            breakdown_risk=real_p_break if has_history else 0.0,
+            breakdown_risk=real_p_break if has_history else 0.0,  # type: ignore[arg-type]
             # [假資料修正 §5.7] expected_margin 只能是**引擎算出的單件毛利**
             # （turn.metadata 的 expected_margin）。舊版用 `ceiling - settled`
             # 冒充單件毛利：那是「距離天花板的剩餘預算空間」，方向與語意都錯，
@@ -242,7 +247,7 @@ def _dispatch_supervisor_command(
             # （例如舊 session 或 /approve 人工輪），就用 0.0 —— 它是該欄位的
             # 「未取得」表示，renderer 不會把 0.0 說成毛利。
             expected_margin=real_expected_margin if real_expected_margin is not None else 0.0,
-            posterior_reserve_mean=real_post_mean if has_history else 1.0,
+            posterior_reserve_mean=real_post_mean if has_history else 1.0,  # type: ignore[arg-type]
             # bayesian_confidence 沿用真實值；無來源時 None -> renderer 顯示 N/A。
             bayesian_confidence=(
                 real_bayesian_confidence if real_bayesian_confidence is not None else 0.0
@@ -260,16 +265,10 @@ def _dispatch_supervisor_command(
             # 現在只在有真實來源時填值（主管指令明確要求，或本 session 曾記錄到對方
             # 實際報出的條款）；兩者皆無時不填，讓 Pydantic 預設值生效 ——
             # 該預設值不構成任何觀測，且不得被對外文本以「貴廠開出」語氣引述。
-            **(
-                {"lead_days": _our_lead_days}
-                if _our_lead_days is not None
-                else {}
-            ),
-            **(
-                {"deposit_pct": _our_deposit_pct}
-                if _our_deposit_pct is not None
-                else {}
-            ),
+            # [TYPING 2026-10-24] mypy 無法透過 **-spread 表達「僅這兩個可選欄位」，
+            # 故以顯式的 dict[str, Any] 收納：鍵的正確性由下方兩個條件設值保證，
+            # cast 只承認這個既有契約，不弱化其他任何檢查。
+            **_our_terms,
             moq=sess.spec.moq,
             mold_fee_exempted=parsed_cmd.waive_mold_fee,
             # [假資料修正 §5.5] 舊版寫死 3000.0：主管若指令含「waive tooling」，

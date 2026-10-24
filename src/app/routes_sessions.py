@@ -166,6 +166,8 @@ def register_sessions_routes(api_v1) -> None:
                 },
             )
             sess = session_mgr.get_session(session_id)
+            if sess is None:  # defensive: the session existed at the gate above
+                raise HTTPException(status_code=404, detail="Session not found.")
             return {
                 "status": "held",
                 "action": "hold",
