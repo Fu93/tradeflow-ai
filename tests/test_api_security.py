@@ -917,7 +917,11 @@ class TestSseErrorSurfacing(_IsolatedCase):
             "error", frame,
             "a session read failure must be surfaced in the SSE payload, not swallowed",
         )
-        self.assertIn("simulated store read failure", frame["error"])
+        # [SECURITY 2026-10-24] The error surface names the exception type and
+        # points at the logs; the message text (paths, DB details) no longer
+        # reaches subscribers.
+        self.assertIn("RuntimeError", frame["error"])
+        self.assertNotIn("simulated store read failure", frame["error"])
         self.assertEqual(frame["sessions"], [])
 
 

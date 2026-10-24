@@ -266,6 +266,18 @@ class TestLimiterMemoryIsBounded:
         minute, hour = limiter.remaining("legit")
         assert (minute, hour) == (599, 5999)
 
+    def test_a_key_arriving_during_a_full_table_keeps_its_own_budget(self):
+        """The caller that just checked in is never the one evicted — the
+        Linux CI ordering (fill, then legit) proved the first version wrong."""
+        from src.app import rate_limit as rl
+
+        limiter = rl.SlidingWindowLimiter(600, 6000)
+        for i in range(rl._MAX_TRACKED_KEYS + 500):
+            limiter.check(f"noise-{i}")
+        limiter.check("late-legit")
+        minute, hour = limiter.remaining("late-legit")
+        assert (minute, hour) == (599, 5999)
+
 
 class TestUserLabelHygiene:
     def test_control_characters_and_length_are_capped(self, desk_env):

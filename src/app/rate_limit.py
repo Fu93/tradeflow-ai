@@ -103,10 +103,14 @@ class AmdRateLimiter:
                     if stamps and now - stamps[-1] < HOUR_SECONDS
                 }
                 if len(aged) > _MAX_TRACKED_KEYS:
-                    keep = sorted(
+                    ranked = sorted(
                         aged.items(), key=lambda item: item[1][-1], reverse=True
-                    )[:_MAX_TRACKED_KEYS]
-                    aged = dict(keep)
+                    )
+                    keep = dict(ranked[:_MAX_TRACKED_KEYS])
+                    if ip not in keep:
+                        keep.popitem()
+                        keep[ip] = aged[ip]
+                    aged = keep
                 self._by_ip = aged
 
 
@@ -185,20 +189,27 @@ class SlidingWindowLimiter:
             if len(self._by_key) > self._MAX_TRACKED_KEYS:
                 # First sweep fully-aged keys; then — a burst can mint more
                 # fresh keys than the age sweep frees — evict the
-                # least-recently-active keys until the table fits. A rotated
-                # key loses nothing it was entitled to (rotation already
-                # starts a fresh window); a legitimate single key never
-                # reaches this path.
+                # least-recently-active keys until the table fits, never the
+                # key that just checked in. A rotated key loses nothing it
+                # was entitled to (rotation already starts a fresh window);
+                # a legitimate key keeps its budget even when it happens to
+                # check in during someone else's burst.
                 aged = {
-                    tracked: stamps
-                    for tracked, stamps in self._by_key.items()
-                    if stamps and now - stamps[-1] < HOUR_SECONDS
+                    tracked: entries
+                    for tracked, entries in self._by_key.items()
+                    if entries and now - entries[-1] < HOUR_SECONDS
                 }
                 if len(aged) > self._MAX_TRACKED_KEYS:
-                    keep = sorted(
+                    ranked = sorted(
                         aged.items(), key=lambda item: item[1][-1], reverse=True
-                    )[: self._MAX_TRACKED_KEYS]
-                    aged = dict(keep)
+                    )
+                    keep = dict(ranked[: self._MAX_TRACKED_KEYS])
+                    if key not in keep:
+                        # Preserve the caller's own budget: drop the newest
+                        # of the kept keys instead of the one that just came in.
+                        keep.popitem()
+                        keep[key] = aged[key]
+                    aged = keep
                 self._by_key = aged
 
 
