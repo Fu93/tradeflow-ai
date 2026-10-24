@@ -278,6 +278,20 @@ class TestLimiterMemoryIsBounded:
         minute, hour = limiter.remaining("late-legit")
         assert (minute, hour) == (599, 5999)
 
+    def test_the_sweep_at_the_exact_boundary_spares_the_previous_caller(self):
+        """The second bug: popitem() removed the just-re-added key itself.
+        Sequence: table at MAX-1, one more key (sweep fires on the NEXT
+        check), then confirm the earlier key survived."""
+        from src.app import rate_limit as rl
+
+        limiter = rl.SlidingWindowLimiter(600, 6000)
+        for i in range(rl._MAX_TRACKED_KEYS - 1):
+            limiter.check(f"edge-{i}")
+        limiter.check("quiet-legit")  # brings the table to exactly the cap
+        limiter.check("trigger")  # this check fires the sweep
+        minute, hour = limiter.remaining("quiet-legit")
+        assert (minute, hour) == (599, 5999)
+
 
 class TestUserLabelHygiene:
     def test_control_characters_and_length_are_capped(self, desk_env):

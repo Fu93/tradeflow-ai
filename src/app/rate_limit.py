@@ -206,8 +206,12 @@ class SlidingWindowLimiter:
                     keep = dict(ranked[: self._MAX_TRACKED_KEYS])
                     if key not in keep:
                         # Preserve the caller's own budget: drop the newest
-                        # of the kept keys instead of the one that just came in.
-                        keep.popitem()
+                        # of the kept keys instead of the one that just came
+                        # in. ``popitem`` would remove the LAST inserted
+                        # entry — which is ``key`` itself after re-adding —
+                        # so drop by name, not by insertion order.
+                        drop_name = ranked[self._MAX_TRACKED_KEYS - 1][0]
+                        keep.pop(drop_name, None)
                         keep[key] = aged[key]
                     aged = keep
                 self._by_key = aged
