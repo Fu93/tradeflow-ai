@@ -651,6 +651,29 @@ Battery after the fix: 1124 passed / 3 documented Windows platform
 failures, coverage gate passed, verify_all six pillars, mutation 73
 killed / 0 survived, ruff + mypy clean, registry ok.
 
+## Extension availability pass (2026-10-25)
+
+The extension's live usability was verified end to end on Windows, and one
+real cross-platform defect plus one environment trap were fixed:
+
+- **`localhost` → `::1` defect (cross-platform, real)**: the extension
+  hard-coded `http://localhost:8000`. On Windows, `localhost` can resolve
+  to `::1` first while the local server binds IPv4 only — every desk call
+  died with net::ERR_FAILED before auth even ran. All four entry points
+  (background.js, sidepanel.js, content.js, desk_panel.js) now use the
+  unambiguous IPv4 loopback, overridable per deployment via
+  `chrome.storage.local.tfApiBase`.
+- **Environment trap (e2e hardening)**: `tests/test_extension_e2e.py`
+  used to silently REUSE whatever answered on :8000. A foreign backend on
+  that port let the session register and then failed six checks mid-flow
+  with "Open a desk deal and save its id" — indistinguishable from a code
+  regression. The e2e now probes the health payload's TradeFlow shape and
+  fails fast with instructions when the port is held by a stranger.
+- Verified live: the extension e2e (real Chromium, real MV3 service
+  worker, real backend) reports 63/63 checks passed on Windows after the
+  fixes; the full desk flow — HUD import, confirm button, desk target on
+  the side panel, approval gate — is exercised by the same run.
+
 ## Next steps
 
 - **The remaining gate on "actually usable" is a live pilot**:

@@ -6,7 +6,18 @@
 
 import { matchSuppliers } from "./desk_match.js";
 
-const API_BASE_URL = "http://localhost:8000";
+// [FIX 2026-10-25] 127.0.0.1, not localhost: on Windows, `localhost` can
+// resolve to ::1 first, the local server binds IPv4 only, and every desk
+// call dies with net::ERR_FAILED (the e2e run caught this — 6 checks red on
+// Windows, green on Linux CI where localhost is 127.0.0.1). The IPv4
+// loopback is unambiguous everywhere. A deployment on another host sets
+// tfApiBase in chrome.storage.local; the SW reads it on boot.
+const API_BASE_URL_DEFAULT = "http://127.0.0.1:8000";
+let API_BASE_URL = API_BASE_URL_DEFAULT;
+chrome.storage?.local?.get(["tfApiBase"], (stored) => {
+  const override = (stored && stored.tfApiBase || "").trim();
+  if (override) API_BASE_URL = override.replace(/\/+$/, "");
+});
 
 // ---------------------------------------------------------------------------
 // Security: outbound auth (H9)

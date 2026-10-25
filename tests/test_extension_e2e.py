@@ -147,7 +147,34 @@ def main() -> int:
     try:
         # ---------------------------------------------------------------- setup
         print("\n[0] Environment")
+        # [FIX 2026-10-25] Fail fast when :8000 is held by a FOREIGN process.
+        # The e2e used to "reuse" whatever answered on the port; a foreign
+        # backend (different DB, different auth) let the extension load and
+        # the session register, then every desk call died with
+        # "Open a desk deal and save its id" — six red checks that looked
+        # like a code regression but were environment pollution. Probe for
+        # the TradeFlow health identity before trusting the port.
         if port_open(BACKEND_PORT):
+            foreign = False
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{BACKEND_PORT}/health", timeout=5
+                ) as health:
+                    body = json.loads(health.read().decode())
+                foreign = not (
+                    isinstance(body, dict)
+                    and body.get("status") == "ok"
+                    and "solver" in body  # TradeFlow's health payload shape
+                )
+            except Exception:
+                foreign = True
+            if foreign:
+                print(
+                    f"    FATAL: :{BACKEND_PORT} is held by a non-TradeFlow "
+                    "process. Stop it and re-run (this run would otherwise "
+                    "test against a stranger's backend and fail mid-flow)."
+                )
+                return 1
             print(f"    backend already on :{BACKEND_PORT} -- reusing it")
         else:
             backend, backend_tmp, backend_log = start_backend(api_key="copilot-extension-e2e-key")
@@ -304,9 +331,12 @@ def main() -> int:
                             await chrome.storage.local.set({
                               tfApiKey: key, tfDeskDeal: deal, tfDeskSupplier: supplier,
                             });
+                            const check = await chrome.storage.local.get(['tfDeskDeal']);
+                            console.log('[e2e] storage now has tfDeskDeal =', check.tfDeskDeal);
                         }""",
                         {"key": copilot_key, "deal": copilot_deal, "supplier": copilot_supplier},
                     )
+                    print(f"    wrote storage for deal {copilot_deal[:8]}")
                 page.click("#btn-sim-quote")
                 status_text = ""
                 cards = 0
@@ -337,6 +367,10 @@ def main() -> int:
                     time.sleep(0.5)
 
                 print(f"    HUD status: {status_text.strip()[:160]}")
+                # [DEBUG 2026-10-25] dump the SW console around the import so a
+                # local-only ENGINE ERROR names itself instead of hiding.
+                for _line in sw_errors[-12:]:
+                    print(f"    SW: {_line[:200]}")
                 check("engine reached a confirm step (not stuck solving, not HTTP 404)",
                       "SOLVING" not in status_text.upper() and "404" not in status_text,
                       status_text.strip()[:120])

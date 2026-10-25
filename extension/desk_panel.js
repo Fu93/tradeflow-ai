@@ -36,7 +36,9 @@
   }
 
   function apiBase() {
-    return typeof API_BASE_URL === "string" && API_BASE_URL ? API_BASE_URL : "http://localhost:8000";
+    // [FIX 2026-10-25] IPv4 loopback fallback — `localhost` can resolve to
+    // ::1 on Windows while the desk server binds IPv4 only.
+    return typeof API_BASE_URL === "string" && API_BASE_URL ? API_BASE_URL : "http://127.0.0.1:8000";
   }
 
   function storageGet(keys, done) {

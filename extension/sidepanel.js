@@ -6,7 +6,19 @@
  * human decision controls; this page never fills or sends a chat message.
  */
 
-const API_BASE_URL = "http://localhost:8000";
+// [FIX 2026-10-25] IPv4 loopback, not localhost: on Windows `localhost` can
+// resolve to ::1 first while the local server binds IPv4 only, and every
+// panel fetch dies. Overridable per deployment via tfApiBase in storage.
+const API_BASE_URL_DEFAULT = "http://127.0.0.1:8000";
+let API_BASE_URL = API_BASE_URL_DEFAULT;
+try {
+  chrome.storage.local.get(["tfApiBase"], (stored) => {
+    const override = ((stored && stored.tfApiBase) || "").trim();
+    if (override) API_BASE_URL = override.replace(/\/+$/, "");
+  });
+} catch (err) {
+  /* storage unavailable outside the extension context — keep the default */
+}
 let tfHeuristics = null;
 
 function tfTrip() {
