@@ -996,12 +996,6 @@
   "inline": [
     {
       "file": "src/app/state.py",
-      "value": 128,
-      "context": "_SOLVE_CACHE_MAX = 128",
-      "justification": "Use of 128 on this line of src/app/main.py: _SOLVE_CACHE_MAX = 128. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/app/state.py",
       "value": 422,
       "context": "status_code=422,",
       "justification": "Use of 422 on this line of src/app/main.py: status_code=422,. A different line that repeats the digits is not covered."
@@ -3045,6 +3039,24 @@
       "value": 500,
       "context": "raise HTTPException(status_code=500, detail=\"Webhook processing failed.\") from exc",
       "justification": "Use of 500 on this line of src/app/main.py: raise HTTPException(status_code=500, detail=\"Webhook processing failed.\"). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 8,
+      "context": "m = _BASIS_AFTER.search(clause[max(0, amount_at - 2) : amount_at + len(token) + 8])",
+      "justification": "Window (chars) after the amount where a basis marker (/打, per dozen) may sit. Same order as the existing head/tail windows (12/8) in this file: wide enough to clear a currency suffix, narrow enough not to reach a neighbouring clause."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 6,
+      "context": "head = clause[max(0, amount_at - 6) : amount_at]",
+      "justification": "Window (chars) before the amount where an 每-measure head (每打, 每吨) may sit; matches the scale of the measure words it must contain."
+    },
+    {
+      "file": "src/desk/parse.py",
+      "value": 8,
+      "context": "tail = clause[amount_at + len(token) : amount_at + len(token) + 8]",
+      "justification": "Window (chars) after the amount token where a basis marker suffix (/打, /吨) may sit before the clause ends; same order as the file's existing head/tail windows."
     }
   ]
 }

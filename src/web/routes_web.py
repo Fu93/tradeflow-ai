@@ -28,7 +28,6 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 
 # [P0 REGRESSION] 這裡原本是 `from ..app.main import require_api_key`，與
 # main.py 檔尾的 `from ..web.routes_web import ...` 形成互相 import 的循環。
@@ -317,7 +316,6 @@ async def update_telemetry_config(request: Request):
 
     # Hot-reload TelemetryNotifier in-place
     try:
-        from src.transport.telemetry import TelemetryNotifier  # type: ignore
         import src.app.main as _main  # type: ignore
         cfg = _read_env_config()
         # [修正] 舊版傳了 notifier 不認識的參數（callmebot_phone/pushplus_token/

@@ -69,6 +69,35 @@ def register_meta_routes(app) -> None:
             store_detail = f"store probe failed: {type(exc).__name__}"
         checks["desk_store"] = {"ok": store_ok, "detail": store_detail, "required": True}
 
+        # [OPS 2026-10-25] A database written by a NEWER build must stop this
+        # process from serving: migrations refuse to run against a newer
+        # schema, and a stale binary reading newer rows would corrupt them.
+        # Readiness reports the mismatch instead of discovering it on a write.
+        schema_ok = False
+        schema_detail = "not probed"
+        try:
+            import sqlite3
+
+            from src.desk.migrations import CURRENT_SCHEMA_VERSION, user_version
+            from src.desk.store import db_path
+
+            conn = sqlite3.connect(str(db_path()))
+            try:
+                version = user_version(conn)
+            finally:
+                conn.close()
+            if version > CURRENT_SCHEMA_VERSION:
+                schema_detail = (
+                    f"database schema {version} is newer than this build "
+                    f"({CURRENT_SCHEMA_VERSION}); deploy the newer build"
+                )
+            else:
+                schema_ok = True
+                schema_detail = f"schema {version} <= build {CURRENT_SCHEMA_VERSION}"
+        except Exception as exc:  # pragma: no cover - defensive: probe must not 500
+            schema_detail = f"schema probe failed: {type(exc).__name__}"
+        checks["desk_schema"] = {"ok": schema_ok, "detail": schema_detail, "required": True}
+
         policy = approval_policy()
         pubkey_present = required_approval_pubkey() is not None
         approval_ok = policy != "required" or pubkey_present

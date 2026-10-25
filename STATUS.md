@@ -577,6 +577,46 @@ Battery: 1083 passed / 3 documented Windows platform failures, coverage
 91% (gate 90%), verify_all six pillars, verify_live end-to-end, mutation
 73 killed / 0 survived, ruff + mypy (38 files) clean, decision registry ok.
 
+## Gap pass: capabilities that were specified but never built (2026-10-25)
+
+Audited the repo for "declared but not actually built": PR#15 (the CNY
+unit-basis reading feature, drafted 2026-10-20, 38 files, never merged —
+master had moved too far for a textual merge) was probed case by case
+against its own contract. Four real gaps, two of them correctness defects:
+
+- **Fee lines poisoned the single-price check** (correctness noise): "运费
+  3 元，单价 20 元" read as "more than one price" because the fee amount
+  survived in `competing`. A fee amount now leaves candidacy entirely; the
+  one goods price reads. The corpus rows that pinned the old behaviour were
+  updated with the contract cited.
+- **A non-piece basis could confirm as per-piece** (correctness defect):
+  "单价 20 元/打" accepted 20 as the per-piece price — a 12x overpay on
+  confirmation. Measure words (打/吨/克/码/米/张/片…) now mark the amount a
+  unit-basis mismatch: review, no prefill, person decides.
+- **Surcharge words read as the goods price** (correctness defect): "加价
+  2 元每件" accepted 2. 加价/加收/差价 joined the delta vocabulary.
+- **References were confirmable**: "我们上周买的单价是 12 元" (past
+  purchase) accepted as an offer. Past/rival/market cues now label the
+  amount a reference; the supplier's own price in the same message still
+  reads.
+- **Minor currency units** (分/毛/角/厘): deliberately NOT auto-converted —
+  the divergence from PR#15 is documented in the tests: silent scaling
+  inside the confirm span risks a 10x/100x error at approval. They gate to
+  review with an explicit reason.
+
+Pinned by `tests/test_quote_reading_gaps.py` (25 tests).
+
+Also closed: the `/version` build stamp the docs promised but no pipeline
+performed — the Dockerfile takes `--build-arg GIT_SHA` and compose forwards
+`GIT_SHA` (unstamped builds say "unknown", honestly); `/ready` now refuses
+a database whose schema is newer than the build (the rollback case
+migrations refuse to touch); the retired solve-cache table and two dead
+imports left the tree.
+
+Battery: 1108 passed / 3 documented Windows platform failures, coverage
+gate passed (90% floor), verify_all six pillars, mutation 73 killed /
+0 survived, ruff + mypy clean, decision registry ok.
+
 ## Next steps
 
 - **The remaining gate on "actually usable" is a live pilot**:

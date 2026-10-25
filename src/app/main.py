@@ -44,8 +44,6 @@ from ..transport.webhook_hub import hub  # noqa: F401
 from ..transport.telemetry import notifier  # noqa: F401
 from src.app.state import (  # noqa: F401  (re-exports: the public surface of the old main.py)
     _LEGACY_ON,
-    _SOLVE_CACHE,
-    _SOLVE_CACHE_MAX,
     SafeJSONResponse,
     _extract_mold_fee,
     _latest_recommended_price,

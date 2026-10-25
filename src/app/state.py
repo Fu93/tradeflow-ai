@@ -10,13 +10,11 @@ so every existing import path keeps working.
 from __future__ import annotations
 import logging
 import os
-from collections import OrderedDict
 from typing import Any, Optional
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
-from ..engine.backend import resolve_use_gpu
 from ..session.manager import SessionManager
 
 # V1 engines stay unloaded unless this process is asked to mount them.
@@ -87,26 +85,15 @@ class SafeJSONResponse(JSONResponse):
 
 
 # ---------------------------------------------------------------------------
-# [PERF] /round 求解結果快取（有界 LRU）
-# 同一會話每輪 /round 都以相同輸入重解 20,000 樣本（≈1.1-1.7s）。solve() 為
-# 確定性函數（固定 seed 20261013，見 src/engine/solver.py），故以「完整輸入」
-# 為鍵的快取不會回傳過期建議：任何輸入（樣本數、後驗均值/標準差、GPU 旗標）
-# 不同必不命中。僅快取 solve() 的昂貴輸出；recommend() 只讀不改（已核實）。
-_SOLVE_CACHE_MAX = 128
-_SOLVE_CACHE: "OrderedDict[tuple, Any]" = OrderedDict()
+# [RETIRED 2026-10-23] The legacy /round solve cache. Kept only as this
+# explanation and the function below: /round no longer solves a legacy grid
+# at all, so there is nothing to cache. The cache table itself was dead on
+# arrival (nothing could ever insert into it) and has been removed.
 
 
 def _solve_round_cached(n_opp_samples: int, use_gpu: bool | None, reserve_mean: float, reserve_std: float):
-    resolved = resolve_use_gpu(use_gpu)
-    key = (int(n_opp_samples), bool(resolved), float(reserve_mean), float(reserve_std))
-    cached = _SOLVE_CACHE.get(key)
-    if cached is not None:
-        _SOLVE_CACHE.move_to_end(key)
-        return cached
-    # [RETIRED 2026-10-23] The lines that followed this raise in the original
-    # main.py referenced an undefined ``result`` and could never execute;
-    # ruff F821 now catches what was dead on arrival. The raise is the whole
-    # behaviour, and the raise is what the tests assert.
+    # Signature preserved for the two historical callers; the answer is the
+    # retirement error, which is exactly what the tests assert.
     raise RuntimeError(
         "The legacy round cache is retired. /round maximises expected surplus of the one-step accept-or-reject model."
     )

@@ -28,6 +28,12 @@ sys.exit(1 if missing else 0)"
 # Unbuffered stdout so container logs appear immediately.
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONIOENCODING=utf-8
+# [OPS 2026-10-25] Build identity for GET /version. Stamp at build time:
+#   docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) .
+#   compose: GIT_SHA=$(git rev-parse --short HEAD) docker compose up --build
+# Unstamped builds report "unknown" — honest, not fabricated.
+ARG GIT_SHA=unknown
+ENV TRADEFLOW_GIT_SHA=${GIT_SHA}
 # Render and other hosts inject PORT. Compose publishes 8000.
 # This image starts one process (`python -m src.app.main`). Do not add a
 # second server command. The process reads $PORT and binds 0.0.0.0:$PORT.

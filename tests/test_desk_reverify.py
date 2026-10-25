@@ -19,7 +19,9 @@ FIXTURES = ROOT / "tests" / "fixtures" / "desk_emails"
 HELD_OUT = [
     ("gbp", "Unit price GBP 3.10 per piece.", None),
     ("zh_short", "报价 28.40 元。", 28.40),
-    ("fee_and_unit", "运费 3 元，单价 20 元。", None),
+    # [GAP-FIX 2026-10-25] fee lines no longer poison the single-price check
+    # (PR#15 fee-line contract); the one goods price is the expectation.
+    ("fee_and_unit", "运费 3 元，单价 20 元。", 20.0),
     ("question_we", "Can we do 18 CNY?", None),
     ("echo_zh", "您报的 19.00 元我们看到了。", None),
     ("usd_or_cny", "USD 10 or 70 CNY, please confirm.", None),

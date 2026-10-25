@@ -1,6 +1,11 @@
 services:
   tradeflow:
-    build: .
+    build:
+      context: .
+      # [OPS 2026-10-25] Stamp the build identity read by GET /version:
+      #   GIT_SHA=$(git rev-parse --short HEAD) docker compose up --build
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
     ports:
       - "8000:8000"
     # [OPS 2026-10-24] SQLite persistence. Without this volume a container

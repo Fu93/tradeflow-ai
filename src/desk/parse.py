@@ -89,8 +89,62 @@ _DELTA = re.compile(
     r"\bcut\b.{0,24}\bby\b|减(?!税)|減(?!稅))"
 )
 _ADDON = re.compile(
-    r"(?i)(?:\badds?\b|\bmore\b|\bplus\b|\bupgrade\b|另加|另收|附加|加收|\+\s*\d)"
+    r"(?i)(?:\badds?\b|\bmore\b|\bplus\b|\bupgrade\b|另加|另收|附加|加收|加价|加價|差价|差價|surcharge|add-?on|\+\s*\d)"
 )
+
+# [GAP 2026-10-25] Non-piece measure words. A price divided or multiplied by
+# one of these is quoted per that measure, not per piece — the PR#15 unit
+# basis contract, implemented at the point of candidacy.
+_NON_PIECE_MEASURE = re.compile(
+    r"(?:打|吨|噸|克|千克|公斤|码|碼|米|平方米|张|張|片|套|盒|箱|包|立方|dozen|ton|gram|kg|yard|meter|sq\.?m)"
+)
+_BASIS_AFTER = re.compile(r"(?i)(?:/|每|per\s*)(打|吨|噸|克|千克|公斤|码|碼|米|平方米|张|張|片|dozen|ton|kg|yard)")
+_EACH_BEFORE = re.compile(r"(?i)每(打|吨|噸|克|千克|公斤|码|碼|米|平方米|张|張|片)")
+# [GAP 2026-10-25] Minor currency units. Deliberately NOT auto-converted:
+# a silent 分→yuan scaling inside the confirm span risks a 10x/100x price
+# error at the moment a human approves. They are gated to review with an
+# explicit reason so the yuan amount is entered by a person.
+_MINOR_UNIT = re.compile(r"(?:分|毛|角|厘)")
+_MINOR_PRICE = re.compile(r"(?:单价|單價|报价|報價|价格|價格)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:分|毛|角|厘)\b")
+# [GAP 2026-10-25] Reference lines: someone else's number, or a number from
+# the past, is context — not this supplier's offer.
+_REFERENCE_LINE = re.compile(
+    r"(?i)(?:上次|上一次|上周|上週|上月|去年|以前|之前|先前|历史|歷史|采购价|採購價|进价|進價|"
+    r"购入|購入|市场价|市場價|同行|对手|對手|参考价|參考價|别的厂|別的廠|其他厂|其他廠|"
+    r"previous(?:ly)?|last\s+(?:time|year|month|order)|market\s+(?:price|rate)|competitor|"
+    r"rival|other\s+suppliers?)"
+)
+_PURCHASE_OR_RIVAL = re.compile(r"(?i)(?:买|買|购|購|进|進|订|訂|报价|報價|quote|price|paid|bought)")
+
+
+def _non_piece_basis(clause: str, amount_at: int, token: str) -> str | None:
+    """The measure word when this amount is quoted per a non-piece unit."""
+    tail = clause[amount_at + len(token) : amount_at + len(token) + 8]
+    m = _BASIS_AFTER.search(tail)
+    if m:
+        return m.group(1)
+    head = clause[max(0, amount_at - 6) : amount_at]
+    m = _EACH_BEFORE.search(head)
+    if m:
+        return m.group(1)
+    # "每X ... N 元" with the measure anywhere in the clause
+    m = _EACH_BEFORE.search(clause)
+    if m:
+        return m.group(1)
+    m = _BASIS_AFTER.search(clause[max(0, amount_at - 2) : amount_at + len(token) + 8])
+    if m:
+        return m.group(1)
+    return None
+
+
+def _fee_line(window: str, amount_at: int) -> bool:
+    """A fee word heads this amount's window (role already refused)."""
+    return _fee_before(window, amount_at)
+
+
+def _reference_line(window: str) -> bool:
+    """True when the window talks about another actor's or another time's price."""
+    return bool(_REFERENCE_LINE.search(window) and _PURCHASE_OR_RIVAL.search(window))
 _AT_TIER = re.compile(
     r"(?i)\bat\s+\d+(?:\.\d+)?\s*(?:k|pcs|pc|pieces|件|个|個|只)\b"
 )
@@ -702,8 +756,29 @@ def _collect(
         if _INSTRUCTION.search(window):
             review_tokens.append(item)
             continue
+        # [GAP 2026-10-25] A non-piece measure word on this amount (元/打,
+        # 每吨…元, 元/码) means the number is NOT a per-piece price even when
+        # a 单价 label sits on the clause. Confirming it as per-piece would
+        # multiply the real price by the pack count — a 12x overpay on 打.
+        basis = _non_piece_basis(clause, amount_at, token)
+        if basis is not None:
+            item["unit"] = f"non_piece:{basis}"
+            review_tokens.append(item)
+            continue
+        # [GAP 2026-10-25] A past purchase, a rival's number, or a market
+        # reference is evidence about the world, not this supplier's offer.
+        if _reference_line(window):
+            item["reference"] = True
+            review_tokens.append(item)
+            continue
         ok, breakpoint = _slots_ok(clause, amount_at, value)
         item["breakpoint"] = breakpoint
+        # [GAP 2026-10-25] A fee amount excluded from the unit role used to
+        # stay in `competing`, where it turned "freight 3, price 20" into
+        # "more than one price". A fee line is not money competing with the
+        # goods price at all: it leaves candidacy entirely.
+        if not ok and _fee_line(window, amount_at):
+            continue
         review_tokens.append(item)
         if not ok:
             competing.append(item)
@@ -863,6 +938,11 @@ def parse_quote(
         reason = "more than one price"
     else:
         reason = "no currency-anchored price"
+    if unit_price is None and _MINOR_PRICE.search(visible):
+        # [GAP 2026-10-25] A 分/毛/角/厘 amount is real money but never a
+        # safe prefill: scaling it silently inside the confirm span risks a
+        # 10x/100x error at approval. It goes to a person, with the reason.
+        reason = "minor currency unit (fen/jiao/li): enter the yuan amount on the desk"
     if chosen is not None:
         settled = _settled(chosen["token"])
         if settled is not None and chosen["token"] in text:
