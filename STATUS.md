@@ -617,6 +617,40 @@ Battery: 1108 passed / 3 documented Windows platform failures, coverage
 gate passed (90% floor), verify_all six pillars, mutation 73 killed /
 0 survived, ruff + mypy clean, decision registry ok.
 
+## Rigor pass: property tests, fuzz, live stress, durability (2026-10-25)
+
+- **Property tests** (`tests/test_rigor_money_properties.py`): the money
+  choke point over seeded-random spaces — cap safety at minor precision,
+  idempotence, minor-unit round-trip, half-away-from-zero at every
+  midpoint, monotonicity (16 checks, all hold).
+- **Adversarial fuzz** (`tests/test_rigor_parser_fuzz.py`): 800-case
+  seeded corpus (unicode soup, injections, measure traps, bidi, repeated
+  patterns, oversized blobs). Found and fixed a REAL ReDoS: `_TIER_QTY`'s
+  plain `\d+` backtracked quadratically over long digit runs — one pasted
+  quote of 20k digits burned seconds, 100k burned a minute. Fixed twice
+  over: a possessive `\d++` (no backtracking) AND a unit-word prefilter
+  (finditer's start scan cannot go quadratic on digit runs at all).
+  200k-digit input now parses in 1.3s (was: minutes). Semantics pinned:
+  tier rows still read, English tier at 5000 pcs unchanged; the
+  "N件以内" Chinese ladder shape was already unsupported on HEAD (checked,
+  not a regression). Injection contract pinned precisely: a payload alone
+  never accepts; beside a real price on another clause the real price
+  reads and the planted number never wins.
+- **Live stress** (real server, real HTTP): 10 threads, 410 mixed ops
+  (ingest/verify/create) in 7.5s — zero 5xx, zero connection errors; the
+  hammered deal's 405-entry chain verifies. Same-digest double-send race:
+  outcomes [200, 422] — exactly one approval.
+- **Durability**: server SIGKILLed mid-write — WAL recovery kept all 11
+  committed deals and the chain verifies after restart; a database rolled
+  back to schema version 1 boots forward to 2 (migration idempotence,
+  live-proven via /ready).
+- **Perf research**: verify_chain is linear — 10.6/11.0/13.5 µs per entry
+  at 500/2000/5000 entries (67ms at 5k). No O(n²) hiding anywhere.
+
+Battery after the fix: 1124 passed / 3 documented Windows platform
+failures, coverage gate passed, verify_all six pillars, mutation 73
+killed / 0 survived, ruff + mypy clean, registry ok.
+
 ## Next steps
 
 - **The remaining gate on "actually usable" is a live pilot**:

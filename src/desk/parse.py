@@ -165,7 +165,10 @@ _INSTRUCTION = re.compile(
     r"update\s+your\s+records|agreed\s+price\s+is)"
 )
 _TIER_QTY = re.compile(
-    r"(?i)(\d+(?:\.\d+)?)\s*(k|万|萬|pcs|pc|pieces|件|个|個|只)\b"
+    # [REDoS 2026-10-25] Possessive \d++: a 20,000-digit run made the plain
+    # \d+ backtrack across every split position before failing — minutes of
+    # CPU from one pasted quote (fuzz-found; see test_rigor_parser_fuzz).
+    r"(?i)(\d++(?:\.\d+)?)\s*(k|万|萬|pcs|pc|pieces|件|个|個|只)\b"
 )
 _THOUSAND = 1000
 _WAN = 10000
@@ -555,7 +558,18 @@ def _other_speaker(clause: str) -> bool:
     return False
 
 
+# [REDoS 2026-10-25] Prefilter for _tier_breakpoint: the full pattern
+# requires one of these unit words, so a clause without any of them can have
+# no tier row. Without this gate, finditer's start-position scan over a long
+# digit run is quadratic even with the possessive quantifier (each start
+# consumes the whole remaining run before failing) — a 20k-digit paste cost
+# seconds, 100k cost a minute (fuzz-found; test_rigor_parser_fuzz).
+_TIER_UNIT_HINT = re.compile(r"(?i)k|万|萬|pcs|pc|pieces|件|个|個|只")
+
+
 def _tier_breakpoint(clause: str, price: float) -> float | None:
+    if not _TIER_UNIT_HINT.search(clause):
+        return None
     found: list[float] = []
     for match in _TIER_QTY.finditer(clause):
         raw = _number(match.group(1))
