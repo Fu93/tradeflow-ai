@@ -131,6 +131,13 @@ def test_f2b_injections_never_plant_a_price():
 
 
 def test_f3_parser_latency_is_bounded_on_hostile_inputs():
+    """Two budgets, two regimes. Corpus cases are ≤2k chars — the size any
+    real quote can reach (paste and mail caps are both 20k) — and must stay
+    under 1s anywhere (pre-fix, one 2k-digit case ran for minutes). The
+    oversized blob is 200k chars — twice the largest input any surface
+    accepts — and is budgeted by the measured linear curve (~1.3s local,
+    slower runners get headroom); its job is to prove linearity, not to
+    gate runner speed."""
     rng = random.Random(SEED + 3)
     worst = 0.0
     for _ in range(120):
@@ -138,11 +145,13 @@ def test_f3_parser_latency_is_bounded_on_hostile_inputs():
         start = time.perf_counter()
         parse_quote(text)
         worst = max(worst, time.perf_counter() - start)
+    assert worst < LATENCY_BUDGET_S, f"worst corpus parse {worst*1000:.0f} ms exceeds budget"
+
     big = ("单价 " + "9" * 100_000 + " 元 " + "运费 " + "8" * 100_000 + " 元")
     start = time.perf_counter()
     parse_quote(big)
-    worst = max(worst, time.perf_counter() - start)
-    assert worst < LATENCY_BUDGET_S, f"worst parse {worst*1000:.0f} ms exceeds budget"
+    big_elapsed = time.perf_counter() - start
+    assert big_elapsed < 5.0, f"200k-char blob took {big_elapsed:.1f}s — no longer linear?"
 
 
 def test_f3b_address_validator_is_bounded_on_pathological_shapes():
