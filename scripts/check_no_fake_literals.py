@@ -45,6 +45,10 @@ ALLOW_FILES = {
     # Hazard perturbation grid (logit deltas, gap scales, SEs read from
     # the fit JSON). Sensitivity-scenario axes, not prices.
     "scripts/hazard_sensitivity.py",
+    # Timing constants of the connection pool (a 5.0s grace window before a
+    # store retired by a path swap is closed). Registered in
+    # docs/constants_registry.json; not a scenario number.
+    "src/desk/store.py",
 }
 ALLOW_PREFIXES = ("src/sim/",)
 

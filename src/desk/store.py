@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -918,20 +919,55 @@ class DeskStore:
 
 _CACHE: dict[str, Any] = {}
 _CACHE_LOCK = threading.Lock()
+# [FIX 2026-10-25] Stores retired by a swap are closed after a grace period,
+# not synchronously. A thread that called get_store() holds the old object;
+# closing it under that thread raised ProgrammingError: Cannot operate on a
+# closed database — a 500 with no code path to blame. The grace window
+# covers any in-flight call (every store operation completes in well under
+# a second; the tests assert exactly that), after which the retired
+# connection is genuinely unreachable by new callers.
+_RETIRED_STORES: list[tuple[float, DeskStore]] = []
+_RETIRED_GRACE_SECONDS = 5.0
+_RETIRED_GUARD = threading.Lock()
+
+
+def _reap_retired(now: float) -> None:
+    """Close retired stores whose grace period has elapsed. Caller holds _CACHE_LOCK."""
+    alive = []
+    for retired_at, store in _RETIRED_STORES:
+        if now - retired_at >= _RETIRED_GRACE_SECONDS:
+            try:
+                store.close()
+            except Exception:  # noqa: BLE001 - a double close must not break the swap
+                pass
+        else:
+            alive.append((retired_at, store))
+    _RETIRED_STORES[:] = alive
+
+
+def _retire(store: DeskStore, now: float) -> None:
+    _RETIRED_STORES.append((now, store))
+    _reap_retired(now)
 
 
 def get_store(path: str | None = None) -> DeskStore:
-    resolved = os.path.abspath(path or db_path())
+    now = time.monotonic()
     with _CACHE_LOCK:
         current = _CACHE.get("path")
         store = _CACHE.get("store")
-        if store is None or current != resolved:
+        if store is None or current != resolved_path(path):
             if store is not None:
-                store.close()
-            store = DeskStore(resolved)
+                _retire(store, now)
+            store = DeskStore(os.path.abspath(resolved_path(path)))
             _CACHE["store"] = store
-            _CACHE["path"] = resolved
+            _CACHE["path"] = resolved_path(path)
+        _reap_retired(now)
         return store
+
+
+def resolved_path(path: str | None = None) -> str:
+    """The absolute database path a call resolves to (shared by get_store)."""
+    return os.path.abspath(path or db_path())
 
 
 def reset_stores() -> None:
@@ -939,4 +975,8 @@ def reset_stores() -> None:
         store = _CACHE.pop("store", None)
         _CACHE.pop("path", None)
         if store is not None:
-            store.close()
+            # Tests call reset_stores between cases; the grace close applies
+            # here too, so an in-flight reader never sees a closed connection.
+            _retire(store, time.monotonic())
+            _reap_retired(float("inf"))  # tests want the file handles gone NOW
+            _RETIRED_STORES.clear()

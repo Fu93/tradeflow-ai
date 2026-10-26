@@ -3057,6 +3057,12 @@
       "value": 8,
       "context": "tail = clause[amount_at + len(token) : amount_at + len(token) + 8]",
       "justification": "Window (chars) after the amount token where a basis marker suffix (/打, /吨) may sit before the clause ends; same order as the file's existing head/tail windows."
+    },
+    {
+      "file": "src/desk/store.py",
+      "value": 5.0,
+      "context": "_RETIRED_GRACE_SECONDS = 5.0",
+      "justification": "Grace window before a store retired by a path swap is closed. Every desk operation completes in well under a second, so five seconds covers any in-flight call after the swap while freeing the retired connection soon enough to avoid a handle leak."
     }
   ]
 }
