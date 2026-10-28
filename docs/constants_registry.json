@@ -1001,6 +1001,26 @@
       "value": 2048,
       "category": "n",
       "justification": "Byte cap on the optional address-change signature block carried by the supplier-address route. A real Ed25519 block is well under 200 bytes; the cap stops a caller padding the field without changing any decision."
+    },
+    "DAYS_PER_WEEK": {
+      "value": 7,
+      "category": "c",
+      "justification": "Calendar identity: days in a week, to turn a stated validity in weeks into a date."
+    },
+    "MONTHS_PER_YEAR": {
+      "value": 12,
+      "category": "c",
+      "justification": "Calendar identity: months in a year, to add a stated validity in months to a date."
+    },
+    "QUOTE_VALIDITY_MAX_DAYS": {
+      "value": 366,
+      "category": "n",
+      "justification": "A stated quote validity further out than a year is treated as a misreading and not shown. Display only; it never moves a price."
+    },
+    "QUOTE_VALIDITY_YEAR_ROLL_DAYS": {
+      "value": 183,
+      "category": "n",
+      "justification": "A validity date with no year that falls more than about half a year before the message arrived is read as next year's date. Display only; it never moves a price."
     }
   },
   "inline": [
@@ -3073,6 +3093,12 @@
       "value": 5.0,
       "context": "_RETIRED_GRACE_SECONDS = 5.0",
       "justification": "Grace window before a store retired by a path swap is closed. Every desk operation completes in well under a second, so five seconds covers any in-flight call after the swap while freeing the retired connection soon enough to avoid a handle leak."
+    },
+    {
+      "file": "src/desk/validity.py",
+      "value": 10,
+      "context": "_CN_TEN_VALUE = 10",
+      "justification": "The value of the Chinese numeral 十 (ten), to read counts such as 十五天. A different line that repeats the digits is not covered."
     }
   ]
 }

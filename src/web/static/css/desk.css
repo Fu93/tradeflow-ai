@@ -79,3 +79,6 @@
 .desk-landed { display: grid; gap: 6px; margin: 0; padding: 8px 12px; border: 1px solid var(--rule, #ddd2c2); border-radius: 12px; min-width: 0; }
 .desk-landed legend { padding: 0 4px; font-size: 0.9em; color: var(--ink-soft, #3e463f); }
 .desk-landed input { width: 100%; max-width: 12em; box-sizing: border-box; }
+
+.desk-validity { margin: 0; font-size: 0.9em; }
+.desk-warn { color: var(--warn, #8a3b00); font-weight: 600; }
