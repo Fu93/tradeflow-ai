@@ -25,7 +25,7 @@ def test_cap_counts_per_day_and_env_overrides(monkeypatch):
     assert llm_config.take_model_call() is True
     assert llm_config.take_model_call() is True
     assert llm_config.take_model_call() is False
-    assert llm_config.model_calls_today() == {"used": 2, "cap": 2}
+    assert llm_config.model_calls_today() == {"used": 2, "cap": 2, "paused": None}
     monkeypatch.setattr(llm_config, "_today", lambda: "2099-01-01")
     assert llm_config.take_model_call() is True
 

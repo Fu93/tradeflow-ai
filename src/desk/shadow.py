@@ -69,9 +69,32 @@ def _mention_agrees(
     high: float,
     currency: str,
 ) -> float | None:
-    if mention.get("class") != "own_unit_offer":
+    """The gate's test: an own-offer span whose amount equals the rules' amount."""
+    found = _own_offer_amount(mention, message, low, high, currency)
+    if found is None:
         return None
-    if mention.get("class") == "instruction":
+    amount, _span = found
+    if amount != float(rule_value):
+        return None
+    return amount
+
+
+def _own_offer_amount(
+    mention: dict[str, Any],
+    message: str,
+    low: float,
+    high: float,
+    currency: str,
+) -> tuple[float, str] | None:
+    """The amount in a span the model calls the supplier's own unit offer.
+
+    The gate and the second opinion share these tests, so they cannot drift
+    apart: the class, speaker, polarity, the span verbatim in the message, a
+    currency and a per-piece mark, no total or fee words, and the deal's
+    sanity band. The amount is read by code from the span; the model never
+    supplies it.
+    """
+    if mention.get("class") != "own_unit_offer":
         return None
     if str(mention.get("speaker") or "") != "supplier":
         return None
@@ -92,11 +115,57 @@ def _mention_agrees(
     if str(mention.get("unit") or "") != "per_piece" and not (per_piece_marked(span) or per_piece_marked(nearby)):
         return None
     amount = read_one(span)
-    if amount is None or amount != float(rule_value):
+    if amount is None or amount < float(low) or amount > float(high):
         return None
-    if amount < float(low) or amount > float(high):
+    return float(amount), span
+
+
+def model_offer_token(
+    message: str,
+    mentions: list[dict[str, Any]] | None,
+    candidates: list[str] | None,
+    *,
+    low: float,
+    high: float,
+    currency: str = DEAL_CURRENCY,
+) -> dict[str, Any] | None:
+    """Which of the rule reader's candidate figures the model calls the supplier's own offer.
+
+    Returns ``{"token", "span"}`` only when every own-offer span the model
+    labelled reads to one amount, and exactly one candidate token sits inside
+    those spans with that amount. Otherwise None. It only chooses among the
+    rule reader's own candidates, so it cannot introduce a number, and a
+    person still confirms the figure.
+    """
+    instructed = {
+        str(mention.get("evidence_span") or "")
+        for mention in mentions or []
+        if mention.get("class") == "instruction"
+    }
+    readings = []
+    for mention in mentions or []:
+        if str(mention.get("evidence_span") or "") in instructed:
+            continue
+        found = _own_offer_amount(mention, message, low, high, currency)
+        if found is not None:
+            readings.append(found)
+    amounts = {amount for amount, _span in readings}
+    if len(amounts) != 1:
         return None
-    return amount
+    amount = amounts.pop()
+    matched = []
+    for token in candidates or []:
+        token = str(token)
+        if not token:
+            continue
+        spans = [span for value, span in readings if token in span]
+        if not spans or read_one(token) != amount:
+            continue
+        matched.append((token, spans[0]))
+    if len({token for token, _span in matched}) != 1:
+        return None
+    token, span = matched[0]
+    return {"token": token, "span": span}
 
 
 def evaluate_shadow(
@@ -166,6 +235,14 @@ def shadow_from_message(
     decision["prompt_sha256"] = extracted.get("prompt_sha256") or ""
     decision["response_sha256"] = extracted.get("response_sha256") or ""
     decision["attempts"] = list(extracted.get("attempts") or [])
+    decision["model_offer"] = model_offer_token(
+        message,
+        decision["mentions"],
+        list((reading.get("provenance") or {}).get("candidates") or []),
+        low=low,
+        high=high,
+        currency=currency,
+    )
     if extracted.get("error"):
         decision["error"] = extracted["error"]
     return decision

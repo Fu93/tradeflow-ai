@@ -559,6 +559,16 @@
     if (provenance.extractor_error === "extractor_daily_cap") {
       return "Today's model budget on this server is spent. Read by the rule reader only.";
     }
+    if (provenance.extractor_error === "extractor_paused") {
+      return "Model calls are paused: the model service refused this server's key or its credit is spent. " +
+        "Read by the rule reader only.";
+    }
+    if (provenance.extractor_error === "extractor_account") {
+      const refused = (provenance.extractor_attempts || []).map((a) => a && a.status).filter(Boolean).pop() || "";
+      return "The model service refused this server's key or its credit is spent" +
+        (refused ? " (" + refused.replace("http_", "HTTP ") + ")" : "") +
+        ". Model calls pause for a while; read by the rule reader only.";
+    }
     const attempts = provenance.extractor_attempts || [];
     let used = null;
     attempts.forEach((attempt) => { if (attempt && attempt.status === "ok") used = attempt; });
@@ -626,10 +636,39 @@
         : (provenance.tokens || []);
       const suggested = provenance.suggested_token || "";
       const currency = provenance.currency || "CNY";
-      let chosen = saved.token || suggested || "";
+      // A figure the person picked stays. A pre-selection they did not touch
+      // follows the latest suggestion, so a model result that arrives after
+      // the first draw can still point at the supplier's own offer.
+      let chosen = (saved.token && !saved.auto) ? saved.token : (suggested || saved.token || "");
       if (chosen && tokens.indexOf(chosen) < 0) chosen = "";
-      if (chosen && !saved.token) {
-        reviewChoice.set(item.id, { supplierId: item.supplier_id || saved.supplierId || "", token: chosen });
+      if (chosen && (!saved.token || saved.auto)) {
+        reviewChoice.set(item.id, {
+          supplierId: saved.supplierId || item.supplier_id || "", token: chosen, auto: true,
+        });
+      }
+      const tier = provenance.tier_pick;
+      if (tier && tier.token && tokens.indexOf(tier.token) >= 0) {
+        const qty = Number(tier.quantity);
+        const units = Number.isFinite(qty) ? qty.toLocaleString() : "your quantity";
+        const tierText = tier.below_smallest
+          ? "Tier table: your order (" + units + ") is below the smallest row, \u201c" + tier.row +
+            "\u201d. Check the MOQ with the supplier before you accept " + tier.token + "."
+          : "Tier table: for " + units + " the row is \u201c" + tier.row + "\u201d, so " + tier.token +
+            " is pre-selected. You confirm it.";
+        line(block, tierText).className = tier.below_smallest ? "desk-model-hint desk-disagree" : "desk-model-hint";
+      }
+      const modelToken = provenance.model_offer_token || "";
+      if (modelToken && tokens.indexOf(modelToken) >= 0) {
+        const said = provenance.model_offer_span ? " (\u201c" + provenance.model_offer_span + "\u201d)" : "";
+        const hint = provenance.model_disagrees
+          ? "The model calls " + modelToken + " the supplier's own offer" + said +
+            ", but the rules read " + suggested + ". Check before you accept."
+          : provenance.suggested_by === "model"
+            ? "Pre-selected " + modelToken + ": the model labelled it the supplier's own offer" + said +
+              ". The rules did not pick one. You confirm it."
+            : "The model agrees: it labelled " + modelToken + " the supplier's own offer" + said + ".";
+        const hintLine = line(block, hint);
+        hintLine.className = provenance.model_disagrees ? "desk-model-hint desk-disagree" : "desk-model-hint";
       }
       const note = document.createElement("p");
       function lineContaining(raw, token) {
@@ -664,7 +703,12 @@
           const pick = document.createElement("button");
           pick.type = "button";
           pick.textContent = token;
+          if (token === modelToken) {
+            pick.dataset.model = "own_unit_offer";
+            pick.title = "The model labelled this figure the supplier's own offer";
+          }
           if (token === chosen) pick.disabled = true;
+          pick.setAttribute("aria-pressed", token === chosen ? "true" : "false");
           pick.addEventListener("click", () => {
             chosen = token;
             reviewChoice.set(item.id, { supplierId: select.value, token: token });
@@ -672,6 +716,7 @@
             button.disabled = !chosen;
             Array.prototype.forEach.call(picks.children, (node) => {
               node.disabled = node === pick;
+              node.setAttribute("aria-pressed", node === pick ? "true" : "false");
             });
           });
           picks.appendChild(pick);
@@ -693,7 +738,7 @@
       if (saved.supplierId) select.value = saved.supplierId;
       select.addEventListener("change", () => {
         const prev = reviewChoice.get(item.id) || {};
-        reviewChoice.set(item.id, { supplierId: select.value, token: prev.token || chosen });
+        reviewChoice.set(item.id, { supplierId: select.value, token: prev.token || chosen, auto: Boolean(prev.auto) });
       });
       const actions = document.createElement("div");
       actions.className = "desk-actions";

@@ -763,6 +763,20 @@
       "category": "d",
       "justification": "Most paid model calls one server process makes per UTC day (desk reader, dashboard reader, Stage-2). A small Token Factory balance must last the judging window; past the cap the rule reader carries on and the reason is shown. TRADEFLOW_LLM_DAILY_CALLS overrides it; 0 turns paid calls off."
     },
+    "LLM_ACCOUNT_REFUSAL_STATUSES": {
+      "value": [
+        401,
+        402,
+        403
+      ],
+      "category": "c",
+      "justification": "HTTP status identities for an account-level refusal: 401 Unauthorized, 402 Payment Required, 403 Forbidden. Retrying the same key cannot succeed."
+    },
+    "LLM_ACCOUNT_PAUSE_SECONDS": {
+      "value": 1800,
+      "category": "d",
+      "justification": "Seconds paid model calls pause after an account refusal, so a judge is not kept waiting on refused calls and a topped-up balance is used again within half an hour. A restart clears it."
+    },
     "EXTRACTOR_BASE_URL": {
       "value": "https://api.tokenfactory.nebius.com/v1",
       "category": "d",
