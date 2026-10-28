@@ -166,3 +166,14 @@ def test_an_interrupt_keeps_what_finished():
                          transport_for=interrupting)
     assert report["complete"] is False
     assert report["stopped"] == "fake/model: interrupted after 2 of 40 messages"
+
+
+def test_a_model_run_records_the_prompt_it_used(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRADEFLOW_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(ev, "evaluate", lambda rows, models, **_k: {
+        "complete": True, "stopped": None, "rows": len(rows), "readers": {}, "per_message": {}})
+    out = tmp_path / "run.json"
+    assert ev.main(["--models", "fake/model", "--out", str(out)]) == 0
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["prompt_sha256"] == ev.extract.prompt_sha256()
+    assert "test-key" not in out.read_text(encoding="utf-8")
