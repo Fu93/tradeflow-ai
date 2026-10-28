@@ -5,7 +5,7 @@ Written for the feedback requirement of the Nebius x NVIDIA Global AI Hackathon.
 ## What we used
 
 - **Nebius Token Factory**, the OpenAI-compatible `chat/completions` API at `https://api.tokenfactory.nebius.com/v1`. It is called with the Python standard library (`urllib`), with no vendor SDK. Code: `src/desk/extract.py`.
-- **NVIDIA Nemotron** open models: `nvidia/Nemotron-3-Ultra-550b-a55b` (hop 1) and `nvidia/nemotron-3-super-120b-a12b` (hop 2) on Token Factory, plus the same Super model on NVIDIA's hosted endpoint (`https://integrate.api.nvidia.com/v1`) as an optional third hop.
+- **NVIDIA Nemotron** open models: `nvidia/Nemotron-3-Ultra-550b-a55b` (hop 1) and `nvidia/nemotron-3-super-120b-a12b` (hop 2), both on Token Factory. The code has an optional third hop that needs a separate key and is not enabled in the demo or in this entry; the entry calls only Token Factory.
 - **Tavily Search API** for the Web evidence card (the bonus category). Code: `src/market/web_evidence.py`.
 
 ## How the integration is built
@@ -21,18 +21,18 @@ These are recorded as rationales next to the constants in `src/config/heuristics
 
 1. **Truncated output on long messages.** Leaving the provider's default completion cap in place truncated the answer for a long supplier message. We size `max_tokens` from the message length, and a truncated answer fails closed even when the partial JSON looks valid (`tests/steps/test_extractor_failover.py`).
 2. **Reasoning tokens share the completion budget.** The reasoning cap has to leave room for the JSON answer inside the output limit, so the two are set together.
-3. **The Ultra model is not on the NVIDIA-hosted hop.** Failover to that host changes the model as well as the provider, so the third hop is the Super model.
+3. **The Ultra model is not on NVIDIA's own endpoint.** This was a design-time consideration, not a path that runs: failing over to that host would change the model as well as the provider, so the optional third hop in the code is the Super model. It is not enabled in the demo or in this entry.
 
 ## Suggestions
 
 These are drafted from the points above. Please edit them against your own experience before submitting.
 
-- A per-endpoint table of which Nemotron models are available where (Token Factory versus NVIDIA's hosted endpoint) would make a cross-provider failover design much easier to plan.
+- A per-endpoint table of which Nemotron models are available where (Token Factory versus NVIDIA's own endpoint) would make failover design much easier to plan. This is a documentation request; this entry calls only Token Factory.
 - Documentation that states how `max_tokens` and a reasoning budget interact for each Nemotron model would remove the trial and error that produced the sizing rule above.
 - Error bodies that distinguish "rate limited" from "temporarily out of capacity" would let a client choose between waiting and failing over, if they do not already.
 
 ## Open: needs a live run before this is final
 
 - Accuracy and latency of the Nemotron chain on real supplier messages. No measurement is committed under `results/`; the committed latency log is for a different endpoint.
-- Whether each model honours `reasoning_budget` on Token Factory and on the NVIDIA-hosted endpoint. The code sends it on every hop, and this repository has no live test of how each model treats it.
+- Whether each model honours `reasoning_budget` on Token Factory. The code sends it on every hop, and this repository has no live test of how each model treats it.
 - Tavily: no live call has been made from the development workspace yet. After the first real run, add the status codes seen for plan limits and how well results rank for Chinese-language supplier names.
