@@ -494,8 +494,13 @@ def test_extension_posts_raw_text_and_does_not_default_the_supplier():
     background = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
     assert 'quote["raw_" + "text"]' not in background
     assert "raw_text: resp.text" in background
-    start = background.find("async function importLatestVisible")
+    # Manual and automatic import share importPayloadToDesk; the checks cover it
+    # and both callers that follow it.
+    start = background.find("async function importPayloadToDesk")
+    assert start >= 0
     block = background[start:]
+    manual = background[background.find("async function importLatestVisible"):]
+    assert "importPayloadToDesk(" in manual
     assert "suppliers[0]" not in block
     assert "matchSuppliers(" in block
     assert "confirmPage" in block
