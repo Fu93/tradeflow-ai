@@ -99,7 +99,7 @@
 
   // Fictional suppliers on a reserved test domain. Nothing here is a real company.
   const SAMPLE_DEAL = {
-    product: "carbon umbrella",
+    product: "碳纤维伞 / carbon umbrella",
     quantity: 1000,
     target_price: 12,
     ceiling_price: 16,
@@ -149,6 +149,14 @@
     const signature = JSON.stringify(snapshot);
     if (signature === lastDrawn) return;
     lastDrawn = signature;
+    try {
+      const waiting = (snapshot.review || []).length;
+      if (globalThis.chrome && chrome.action && chrome.action.setBadgeText) {
+        chrome.action.setBadgeText({ text: waiting > 0 ? String(waiting) : "" });
+      }
+    } catch (err) {
+      /* outside the extension */
+    }
     dealProduct = String((snapshot.deal && snapshot.deal.product) || "");
     const ranking = document.getElementById("desk-ranking");
     const counters = document.getElementById("desk-counters");
@@ -344,8 +352,37 @@
         setStatus("Desk is offline.");
       }
     });
+    const auto = document.getElementById("desk-auto-import");
+    if (auto) {
+      storageGet(["tfAutoImport"], (stored) => { auto.checked = !!stored.tfAutoImport; });
+      auto.addEventListener("change", () => {
+        storageSet({ tfAutoImport: auto.checked });
+        setStatus(auto.checked
+          ? "Reading new supplier messages automatically. Each one waits here for you to confirm the price."
+          : "Automatic reading is off.");
+      });
+    }
+    if (globalThis.chrome && chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== "local" || !changes.tfAutoLast) return;
+        const last = changes.tfAutoLast.newValue || {};
+        const who = last.shop ? " from " + last.shop : "";
+        if (last.ok && !last.duplicate) {
+          setStatus("New message" + who + " is waiting for you below.");
+        } else if (last.reason === "ambiguous" || last.reason === "unmapped") {
+          askedPage = last.page || "";
+          setStatus("A new message" + who + " matches " + (last.reason === "ambiguous" ? "more than one supplier" : "no supplier") +
+            ". Choose this chat's supplier once; later messages from this chat then go in by themselves.");
+        } else if (last.reason === "api-key") {
+          setStatus("The API key was rejected. Enter the key this server expects.");
+        }
+        lastDrawn = "";
+        refresh();
+      });
+    }
     if (select) select.addEventListener("change", () => {
       rememberSupplier(true);
+      if (askedPage) storageSet({ tfConfirmedPage: askedPage });
       confirmPage = askedPage;
       lastDrawn = "";
       refresh();

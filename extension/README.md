@@ -36,7 +36,12 @@ Open the side panel's **Live desk** tab.
    manifest allows (`host_permissions` and the page CSP `connect-src`); another
    host needs both edited.
 2. Enter the API key and the deal id from `/desk`.
-3. On a supplier chat, press **Import visible message**. The desk reads it.
+3. On a supplier chat, press **Import visible message**, or tick **Read new supplier
+   messages automatically**: each new bubble the page marks as received then goes to
+   the desk by itself (the same message twice is one quote; the toolbar badge counts
+   what waits). When a chat matches no supplier, or several, choose its supplier once
+   in the panel. The automatic read was tested on `mock_chat.html`; the 1688, Alibaba,
+   WhatsApp and WeChat page structures have not been tested.
 4. Under **Waiting for you**, pick the figure, check the quoted line, choose the
    supplier, and press **Accept**. Nothing is accepted for you.
    Each waiting item says which model read the message (for example a Nemotron

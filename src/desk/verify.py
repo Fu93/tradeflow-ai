@@ -344,7 +344,7 @@ def _recompute_from_chain(
 ) -> dict[str, Any]:
     """The counter the chained confirmations and the chained ceiling issue."""
     from src.desk.record import constants_snapshot
-    from src.desk.recompute import _landed_consistent_rivals, counter_of, decision_for_supplier, quoting_supplier_ids
+    from src.desk.recompute import _landed_consistent_rivals, decision_for_supplier, quoting_supplier_ids
     from src.engine.landed import landed_unit_cost, ranking_basis
 
     opened = _deal_opened(entries)
@@ -418,7 +418,10 @@ def _recompute_from_chain(
         risk_cap=float(opened.get("risk_tolerance") or 0.0),
     )
     choice = None if built is None else built[1]
-    fresh = counter_of(choice, float(ceiling), float(asks[supplier_id]))
+    from src.desk.decide import issued_offer, offer_modes
+
+    mode = offer_modes(entries).get(supplier_id, "default")
+    fresh, _how = issued_offer(choice, float(ceiling), float(asks[supplier_id]), mode)
     held = record.get("held_previous_counter")
     if fresh is not None and held is not None and float(held) < fresh:
         fresh = float(held)
@@ -494,7 +497,15 @@ def _fresh_counter(record: dict[str, Any]) -> float:
     )
     if choice.blocked or str(choice.counter_relation) == "withheld":
         raise SendRefused("The recomputed decision withholds the counter.")
-    fresh = min(float(choice.default_counter), float(record["ceiling"]), float(record["ask"]))
+    if str(record.get("offer_mode") or "default") == "push":
+        from src.desk.decide import issued_offer
+
+        pushed, how = issued_offer(choice, float(record["ceiling"]), float(record["ask"]), "push")
+        if how != "push_lower" or pushed is None:
+            raise SendRefused("The record carries the push-lower figure, but a fresh decision withholds the push.")
+        fresh = float(pushed)
+    else:
+        fresh = min(float(choice.default_counter), float(record["ceiling"]), float(record["ask"]))
     previous = record.get("held_previous_counter")
     if previous is not None and float(previous) < fresh:
         return float(previous)

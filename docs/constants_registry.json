@@ -769,9 +769,9 @@
       "justification": "Default OpenAI-compatible base for the desk span extractor on Nebius Token Factory. An unset URL uses this. A key is still required before any call."
     },
     "EXTRACTOR_MODEL": {
-      "value": "nvidia/Nemotron-3-Ultra-550b-a55b",
+      "value": "nvidia/nemotron-3-super-120b-a12b",
       "category": "d",
-      "justification": "Default chat model for the desk span extractor. It names evidence spans and does not set a price. Temperature stays zero."
+      "justification": "Default chat model for the desk span extractor. It names evidence spans and does not set a price. Temperature stays zero. Super, not Ultra, since 2026-10-28 for cost (owner decision); TRADEFLOW_LLM_MODEL selects Ultra."
     },
     "EXTRACTOR_FALLBACK_MODEL": {
       "value": "nvidia/nemotron-3-super-120b-a12b",

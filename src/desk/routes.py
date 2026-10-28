@@ -45,6 +45,7 @@ from src.desk.service import (
     recover_anchor_history,
     reopen_supplier,
     set_assumptions,
+    set_offer_mode,
     poll_gmail_once,
     poll_imap_once,
     publish,
@@ -197,6 +198,12 @@ class ReanchorIn(BaseModel):
 
 class ReopenIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    human_confirmed: StrictBool
+
+
+class OfferModeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["default", "push"]
     human_confirmed: StrictBool
 
 
@@ -474,6 +481,28 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 get_store(),
                 deal_id,
                 supplier_id,
+                human_confirmed=body.human_confirmed,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="No such deal") from exc
+        except DeskRejected as exc:
+            raise _rejected(exc) from exc
+
+    @api_v1.post("/desk/deals/{deal_id}/suppliers/{supplier_id}/offer-mode")
+    def post_offer_mode(
+        deal_id: str,
+        supplier_id: str,
+        body: OfferModeIn,
+        _: str = Depends(require_desk_mutation),
+    ):
+        _ident(deal_id)
+        _ident(supplier_id)
+        try:
+            return set_offer_mode(
+                get_store(),
+                deal_id,
+                supplier_id,
+                body.mode,
                 human_confirmed=body.human_confirmed,
             )
         except KeyError as exc:

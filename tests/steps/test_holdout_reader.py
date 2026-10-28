@@ -260,7 +260,8 @@ def test_default_model_is_nemotron_and_a_fallback_is_tried(monkeypatch):
     monkeypatch.delenv("TRADEFLOW_LLM_MODEL", raising=False)
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
     assert EXTRACTOR_BASE_URL == "https://api.tokenfactory.nebius.com/v1"
-    assert EXTRACTOR_MODEL == "nvidia/Nemotron-3-Ultra-550b-a55b"
+    # Super by default since 2026-10-28 (cost); Ultra stays one env var away.
+    assert EXTRACTOR_MODEL == "nvidia/nemotron-3-super-120b-a12b"
     assert EXTRACTOR_FALLBACK_MODEL == "nvidia/nemotron-3-super-120b-a12b"
     assert endpoint() == EXTRACTOR_BASE_URL
     assert model_name() == EXTRACTOR_MODEL
@@ -294,7 +295,8 @@ def test_default_model_is_nemotron_and_a_fallback_is_tried(monkeypatch):
     def _urlopen(request, timeout=0):
         body = json.loads(request.data.decode("utf-8"))
         calls.append(body["model"])
-        if body["model"] == EXTRACTOR_MODEL:
+        # The first hop is down; the second answers. Both name Super by default.
+        if len(calls) == 1:
             raise urllib.error.URLError("primary down")
 
         class _Ok:
