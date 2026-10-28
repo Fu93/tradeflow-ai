@@ -104,3 +104,65 @@ def test_live_run_without_a_key_refuses(monkeypatch, tmp_path):
     monkeypatch.delenv("TRADEFLOW_LLM_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     assert ev.main(["--out", str(tmp_path / "x.json")]) == 2
+
+
+def test_a_refused_key_stops_the_run_and_marks_it_partial():
+    import io
+    import urllib.error
+
+    rows, _sha = ev.load()
+    seen = []
+
+    def refused_for(model, usage):
+        def send(_body):
+            raise urllib.error.HTTPError("http://fake.invalid", 402, "no credit", {}, io.BytesIO(b"{}"))
+
+        return send
+
+    report = ev.evaluate(rows, ["fake/model"], base="http://fake.invalid", target=30, ceiling=40,
+                         transport_for=refused_for, progress=lambda *args: seen.append(args[1]))
+    assert report["complete"] is False
+    assert "HTTP 402" in report["stopped"] and "after 1 of 40" in report["stopped"]
+    assert report["readers"]["fake/model"]["scored"] == 1
+    assert seen == [1]
+
+
+def test_progress_is_reported_for_every_message():
+    rows, _sha = ev.load()
+    seen = []
+    report = ev.evaluate(rows[:5], ["fake/model"], base="http://fake.invalid", target=30, ceiling=40,
+                         transport_for=_fake_transport_for, progress=lambda m, done, total, item: seen.append(
+                             (done, total, item["id"])))
+    assert report["complete"] is True and report["stopped"] is None
+    assert [item[0] for item in seen] == [1, 2, 3, 4, 5]
+    assert {item[1] for item in seen} == {5}
+
+
+def test_a_limited_run_goes_to_the_smoke_file_and_says_so(tmp_path, monkeypatch):
+    monkeypatch.setattr(ev, "SMOKE_OUT", tmp_path / "smoke.json")
+    monkeypatch.setattr(ev, "OUT", tmp_path / "full.json")
+    assert ev.main(["--offline", "--limit", "3"]) == 0
+    report = json.loads((tmp_path / "smoke.json").read_text(encoding="utf-8"))
+    assert report["subset"] == 3 and report["rows"] == 3
+    assert "not a result" in report["note"]
+    assert not (tmp_path / "full.json").exists()
+    assert ev.main(["--offline", "--limit", "0"]) == 2
+
+
+def test_an_interrupt_keeps_what_finished():
+    rows, _sha = ev.load()
+    calls = {"n": 0}
+
+    def interrupting(model, usage):
+        def send(_body):
+            calls["n"] += 1
+            if calls["n"] == 3:
+                raise KeyboardInterrupt
+            return _chat({"mentions": []})
+
+        return send
+
+    report = ev.evaluate(rows, ["fake/model"], base="http://fake.invalid", target=30, ceiling=40,
+                         transport_for=interrupting)
+    assert report["complete"] is False
+    assert report["stopped"] == "fake/model: interrupted after 2 of 40 messages"

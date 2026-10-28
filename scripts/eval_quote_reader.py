@@ -25,6 +25,13 @@ the output. Usage::
     python scripts/eval_quote_reader.py --offline           # rules only, no network
     TRADEFLOW_LLM_API_KEY=... python scripts/eval_quote_reader.py
     python scripts/eval_quote_reader.py --models nvidia/nemotron-3-super-120b-a12b
+    python scripts/eval_quote_reader.py --limit 3          # a paid smoke test of 3 messages
+
+Each message prints a progress line. The run stops at the first HTTP 401, 402
+or 403 (key refused, or no credit): repeating it cannot succeed. What finished
+is written with ``"complete": false``; a partial file is not a result. A
+``--limit`` run writes ``results/quote_reader_eval_smoke.json`` so it never
+replaces the full result.
 
 The API key is read from the environment and never written to the output.
 """
@@ -58,6 +65,8 @@ from src.desk.span_read import read_one, span_in_message  # noqa: E402
 
 DATA = ROOT / "data" / "eval" / "quote_reader_holdout.jsonl"
 OUT = ROOT / "results" / "quote_reader_eval.json"
+SMOKE_OUT = ROOT / "results" / "quote_reader_eval_smoke.json"
+REFUSED = {"http_401", "http_402", "http_403"}
 CURRENCY = "CNY"
 KEYS = ("TRADEFLOW_LLM_API_KEY", "OPENAI_API_KEY")
 OUTCOMES = ("correct", "wrong", "missed", "held")
@@ -66,6 +75,16 @@ OUTCOMES = ("correct", "wrong", "missed", "held")
 EXPOSED = ("zh_rival_then_own", "en_rival_then_own")
 
 Transport = Callable[[dict[str, Any]], Any]
+Progress = Callable[[str, int, int, dict[str, Any]], None]
+
+
+class Stopped(Exception):
+    """The run cannot go on (the key was refused, or a person interrupted it)."""
+
+    def __init__(self, reason: str, scored: list[dict[str, Any]]) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.scored = scored
 
 
 def load(path: Path = DATA) -> tuple[list[dict[str, Any]], str]:
@@ -146,40 +165,63 @@ def run_model(
     low: float,
     high: float,
     transport_for: Callable[[str, dict[str, Any]], Transport] | None = None,
+    progress: Progress | None = None,
 ) -> list[dict[str, Any]]:
     timeout = float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS)
-    out = []
+    out: list[dict[str, Any]] = []
     for row in rows:
-        usage: dict[str, Any] = {}
-        transport = (
-            transport_for(model, usage) if transport_for else http_transport(model, base, timeout, usage)
-        )
-        hop = {"provider": "nebius", "model": model, "base": base, "keys": KEYS, "timeout": timeout}
-        started = time.perf_counter()
-        result, status, _latency, _digest = extract._execute_hop(row["text"], hop, transport, timeout)
-        latency = time.perf_counter() - started
-        mentions = result.get("mentions") or [] if status == "ok" else []
-        alone = in_band(model_value(row["text"], mentions), low, high)
-        reading = rule_reading(row["text"])
-        gate = evaluate_shadow(
-            row["text"], reading, low=low, high=high, mentions=mentions,
-            extractor_configured=status == "ok", currency=CURRENCY,
-        )
-        gate_value = rule_value(reading) if gate.get("would_accept") else None
-        out.append({
-            "id": row["id"],
-            "status": status,
-            "latency_s": round(latency, 3),
-            "prompt_tokens": usage.get("prompt_tokens"),
-            "completion_tokens": usage.get("completion_tokens"),
-            "numeric_field_discarded": bool(result.get("numeric_field_discarded")),
-            "classes": sorted({str(m.get("class")) for m in mentions}),
-            "alone": alone,
-            "alone_outcome": outcome(alone, row["own_offer"]),
-            "gate": gate_value,
-            "gate_outcome": outcome(gate_value, row["own_offer"]),
-        })
+        try:
+            item = _score_one(row, model, base=base, low=low, high=high, timeout=timeout,
+                              transport_for=transport_for)
+        except KeyboardInterrupt as exc:
+            raise Stopped("interrupted", out) from exc
+        out.append(item)
+        if progress is not None:
+            progress(model, len(out), len(rows), item)
+        if item["status"] in REFUSED:
+            raise Stopped(item["status"].replace("http_", "HTTP ") + " (key refused or no credit)", out)
     return out
+
+
+def _score_one(
+    row: dict[str, Any],
+    model: str,
+    *,
+    base: str,
+    low: float,
+    high: float,
+    timeout: float,
+    transport_for: Callable[[str, dict[str, Any]], Transport] | None,
+) -> dict[str, Any]:
+    usage: dict[str, Any] = {}
+    transport = (
+        transport_for(model, usage) if transport_for else http_transport(model, base, timeout, usage)
+    )
+    hop = {"provider": "nebius", "model": model, "base": base, "keys": KEYS, "timeout": timeout}
+    started = time.perf_counter()
+    result, status, _latency, _digest = extract._execute_hop(row["text"], hop, transport, timeout)
+    latency = time.perf_counter() - started
+    mentions = result.get("mentions") or [] if status == "ok" else []
+    alone = in_band(model_value(row["text"], mentions), low, high)
+    reading = rule_reading(row["text"])
+    gate = evaluate_shadow(
+        row["text"], reading, low=low, high=high, mentions=mentions,
+        extractor_configured=status == "ok", currency=CURRENCY,
+    )
+    gate_value = rule_value(reading) if gate.get("would_accept") else None
+    return {
+        "id": row["id"],
+        "status": status,
+        "latency_s": round(latency, 3),
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "completion_tokens": usage.get("completion_tokens"),
+        "numeric_field_discarded": bool(result.get("numeric_field_discarded")),
+        "classes": sorted({str(m.get("class")) for m in mentions}),
+        "alone": alone,
+        "alone_outcome": outcome(alone, row["own_offer"]),
+        "gate": gate_value,
+        "gate_outcome": outcome(gate_value, row["own_offer"]),
+    }
 
 
 def tally(outcomes: list[str]) -> dict[str, int]:
@@ -200,6 +242,7 @@ def evaluate(
     target: float,
     ceiling: float,
     transport_for: Callable[[str, dict[str, Any]], Transport] | None = None,
+    progress: Progress | None = None,
 ) -> dict[str, Any]:
     low, high = bounds(target, ceiling)
     rules = []
@@ -208,8 +251,14 @@ def evaluate(
         rules.append({"id": row["id"], "value": value, "outcome": outcome(value, row["own_offer"])})
     readers: dict[str, Any] = {"rules": {"tally": tally([item["outcome"] for item in rules])}}
     per_model: dict[str, Any] = {}
+    stopped: str | None = None
     for model in models:
-        scored = run_model(rows, model, base=base, low=low, high=high, transport_for=transport_for)
+        try:
+            scored = run_model(rows, model, base=base, low=low, high=high, transport_for=transport_for,
+                               progress=progress)
+        except Stopped as halt:
+            scored = halt.scored
+            stopped = f"{model}: {halt.reason} after {len(scored)} of {len(rows)} messages"
         per_model[model] = scored
         ok = [item for item in scored if item["status"] == "ok"]
         tokens_in = [item["prompt_tokens"] for item in ok if isinstance(item["prompt_tokens"], int)]
@@ -230,7 +279,13 @@ def evaluate(
             "tally": tally([item["gate_outcome"] for item in scored]),
             "tally_clean": tally([item["gate_outcome"] for item in scored if item["id"] not in EXPOSED]),
         }
+        readers[model]["scored"] = len(scored)
+        readers["gate:" + model]["scored"] = len(scored)
+        if stopped is not None:
+            break
     return {
+        "complete": stopped is None,
+        "stopped": stopped,
         "exposed": [row["id"] for row in rows if row["id"] in EXPOSED],
         "rows": len(rows),
         "labelled_offers": sum(1 for row in rows if row["own_offer"] is not None),
@@ -267,15 +322,36 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base", default=EXTRACTOR_BASE_URL)
     parser.add_argument("--target", type=float, default=30)
     parser.add_argument("--ceiling", type=float, default=40)
-    parser.add_argument("--out", type=Path, default=OUT)
+    parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument(
+        "--limit", type=int, default=None,
+        help="score only the first N messages (a smoke test; written to a separate file)",
+    )
     args = parser.parse_args(argv)
 
     rows, sha = load()
+    subset = None
+    if args.limit is not None:
+        if args.limit <= 0:
+            print("--limit must be a positive number of messages.", file=sys.stderr)
+            return 2
+        subset = min(args.limit, len(rows))
+        rows = rows[:subset]
+    out_path = args.out or (SMOKE_OUT if subset is not None else OUT)
     models = [] if args.offline else list(args.models)
     if models and not extract._env(*KEYS):
         print("Set TRADEFLOW_LLM_API_KEY, or pass --offline.", file=sys.stderr)
         return 2
-    report = evaluate(rows, models, base=args.base, target=args.target, ceiling=args.ceiling)
+
+    def show(model: str, done: int, total: int, item: dict[str, Any]) -> None:
+        print(
+            f"[{model} {done}/{total}] {item['id']}: {item['status']}, {item['latency_s']:.1f} s, "
+            f"alone {item['alone_outcome']}, gate {item['gate_outcome']}",
+            file=sys.stderr, flush=True,
+        )
+
+    report = evaluate(rows, models, base=args.base, target=args.target, ceiling=args.ceiling,
+                      progress=show if models else None)
     report = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "dataset": str(DATA.relative_to(ROOT)),
@@ -284,12 +360,19 @@ def main(argv: list[str] | None = None) -> int:
         "models": models,
         "note": "Held-out set written on 2026-10-28 before any model run. Labels are the "
                 "author-side reading of each message, not supplier ground truth.",
+        "subset": subset,
         **report,
     }
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if subset is not None:
+        report["note"] += f" Smoke test of the first {subset} messages only; not a result."
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(markdown(report))
-    print(f"\nWrote {args.out.relative_to(ROOT) if args.out.is_relative_to(ROOT) else args.out}")
+    print(f"\nWrote {out_path.relative_to(ROOT) if out_path.is_relative_to(ROOT) else out_path}")
+    if not report["complete"]:
+        print(f"Stopped: {report['stopped']}. The file is partial and is not an evaluation result.",
+              file=sys.stderr)
+        return 3
     return 0
 
 
