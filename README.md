@@ -2,17 +2,40 @@
 
 [![CI](https://github.com/Fu93/tradeflow-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Fu93/tradeflow-ai/actions/workflows/ci.yml)
 
+## Nebius x NVIDIA Global AI Hackathon entry
+
+TradeFlow AI is a one-person supplier-negotiation desk for small cross-border sellers. It is entered in the **Nebius x NVIDIA Global AI Hackathon** (submission deadline Friday 30 October 2026, 17:00 London), track **Best Apps and Agents**, with an entry for the Best Use of Tavily bonus. The Devpost text, the judge testing steps and the demo script are in [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md); feedback on the tools is in [docs/NEBIUS_NVIDIA_FEEDBACK.md](docs/NEBIUS_NVIDIA_FEEDBACK.md). License: MIT.
+
+**How the three services are used.** Nebius Token Factory serves NVIDIA Nemotron models that read a supplier's free-text message and name the evidence spans in it (an offer, a fee, a deposit, a rival's price). Tavily supplies a reference-only "Web evidence" card with cited public pages. Details, code paths and tests are in [How this project uses Nebius, NVIDIA and Tavily](#how-this-project-uses-nebius-nvidia-and-tavily) below.
+
+**What the language model may and may not do.**
+
+- It **may** read a quote and point at wording: it names a span and a class. It may optionally phrase a reply.
+- It **may not** set, change or suggest a price. A price field in its answer is discarded.
+- The Bayesian reserve-price belief and the expected-surplus optimiser (a one-step lookahead) decide every counter, from quotes a person has confirmed.
+- A human approves every send. The Chrome extension cannot press Send.
+- Search results (Tavily) are shown as text beside the quote. No decision module reads them.
+
+**Proven and not yet proven (2026-10-28).**
+
+- *Proven in this repository:* the decision core, the audit chain, the fail-closed quote-reading gates and the Tavily card are covered by tests that run offline or with fakes (see "What is proven" below). The request path to Token Factory and the Nemotron failover chain are in code and tested with fake endpoints.
+- *Not yet proven:* a live Token Factory/Nemotron run and a Tavily run; the hosted demo may still run the earlier AMD build until redeployed. No accuracy or latency figure for the Nemotron chain is committed, and none is claimed here. No factory has closed a deal through this prototype.
+
+<!-- TODO(owner): fill after the live run: date, model id, HTTP status, latency, commit -->
+Live-run results (Nebius Token Factory / Nemotron and Tavily): **not recorded yet.** Date: _pending_. Model id: _pending_. HTTP status: _pending_. Latency: _pending_. Commit: _pending_.
+<!-- end TODO(owner) -->
+
 ## Status (2026-10-28)
 
-Built for the **Nebius x NVIDIA Global AI Hackathon** (submission deadline Friday 30 October 2026, 17:00 London), track **Best Apps and Agents**, with an entry for the Best Use of Tavily bonus. The repository began on 13 October 2026 as an entry for the AMD Developer Hackathon ACT III, which has concluded (online phase 12–18 October 2026). No lablab submission record for this project has been located. The AMD sections further down document that earlier target and stay because `scripts/check_claims.py` checks their figures against source files. This is a **research prototype**: no factory has closed a deal through it. Current state and decision lines: [STATUS.md](STATUS.md). Where the code actually lives (including the `src/legacy/` naming inversion): [ARCHITECTURE.md](ARCHITECTURE.md).
+The repository began on 13 October 2026 as an entry for the AMD Developer Hackathon ACT III, which has concluded (online phase 12–18 October 2026). No lablab submission record for this project has been located. The AMD-era material is kept, not deleted, under [Earlier AMD Developer Hackathon build](#earlier-amd-developer-hackathon-build) near the end of this file, because `scripts/check_claims.py` checks its figures against source files. This is a **research prototype**: no factory has closed a deal through it. Current state and decision lines: [STATUS.md](STATUS.md). Where the code actually lives (including the `src/legacy/` naming inversion): [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 30-second pitch
 
 Small cross-border sellers lose procurement margin when they negotiate factory quotes alone, often across a language gap, or pay a sourcing agent a commission. TradeFlow is a one-person desk for that problem: expected surplus of a one-step accept-or-reject model chooses the next price, an optional language model only reads and phrases the offer, and a human sends it. No factory has closed a deal through this prototype.
 
-The formulas, and the registry for every constant the decision code is allowed to use, are in [docs/MATH.md](docs/MATH.md). Benchmark numbers below come from this repository's CPU runs or from a parameterised simulator. The full boundary note is [docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md). The claim-by-claim check is [docs/DATA_INTEGRITY.md](docs/DATA_INTEGRITY.md).
+The formulas, and the registry for every constant the decision code is allowed to use, are in [docs/MATH.md](docs/MATH.md). Benchmark numbers in this file come from this repository's CPU runs or from a parameterised simulator. The full boundary note is [docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md). The claim-by-claim check is [docs/DATA_INTEGRITY.md](docs/DATA_INTEGRITY.md).
 
-License: MIT. The submission text and demo script are in [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md). Feedback on the Nebius and NVIDIA tools is in [docs/NEBIUS_NVIDIA_FEEDBACK.md](docs/NEBIUS_NVIDIA_FEEDBACK.md).
+The hackathon text and demo script are in [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md).
 
 ## How this project uses Nebius, NVIDIA and Tavily
 
@@ -105,13 +128,13 @@ python -m src.cli            # one-supplier walkthrough
 python -m src.cli --multi    # four-supplier auction
 ```
 
-Recording clicks and narration: [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md). Form fields: [docs/LABLAB_FORM.md](docs/LABLAB_FORM.md). The slide deck is [results/pitch.pptx](results/pitch.pptx) and [results/pitch.pdf](results/pitch.pdf) (nine slides, rebuilt from the SUBMISSION.md outline).
+Recording clicks and narration: [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md). Form fields for the earlier lablab (AMD) entry: [docs/LABLAB_FORM.md](docs/LABLAB_FORM.md). The slide deck, built for that earlier entry, is [results/pitch.pptx](results/pitch.pptx) and [results/pitch.pdf](results/pitch.pdf) (nine slides, rebuilt from the SUBMISSION.md outline).
 
 ![Pitch cover for TradeFlow AI](results/cover_1280x720.png)
 
 ## Human + AI workflow
 
-Hybrid desk. The workflow is written for the Hybrid, Becreatives, and Vibe Generation criteria. The model reads a supplier message and may phrase a reply. The solver sets every number. The human copies the draft and sends it. The Chrome extension cannot press Send.
+Hybrid desk. The model reads a supplier message and may phrase a reply. The solver sets every number. The human copies the draft and sends it. The Chrome extension cannot press Send.
 
 ## Market and business
 
@@ -125,13 +148,11 @@ Revenue model, proposed and not earned: a desk subscription, or a share of savin
 
 Competitors with a public price: Accio and Alibaba RFQ (free for buyers). Pactum, Keelvar, Fairmarkit, Jaggaer, Zycus, and Globality are quote-based.
 
-Roadmap: deploy the offline demo, turn on AMD live mode only when `VLLM_API_KEY` is a real secret, publish extraction accuracy only after a logged Gemma run, and keep the human on the send button.
-
 ## Public demo
 
 [render.yaml](render.yaml) matches the live Docker web service `tradeflow-ai-demo` in Frankfurt (`https://tradeflow-ai-demo.onrender.com`), instance type 0.5 CPU / 512 MB, health check `GET /health`, offline by default. `WEB_CONCURRENCY` is `1`. `TRADEFLOW_ENV` is `production`, so webhooks fail closed when `TRADEFLOW_WEBHOOK_TOKEN` is unset. `TRADEFLOW_LEGACY` is `0`. `TRADEFLOW_CHAIN_ANCHOR`, `TRADEFLOW_DESK_DB`, and `TRADEFLOW_CHAIN_KEYS` are listed with `sync: false` (blank until set in the dashboard). Other secrets are `sync: false` so a Blueprint sync does not overwrite them: `VLLM_API_KEY`, `EVOLUS_API_KEY`, `EVOLUS_APP_ID`, `TRADEFLOW_API_KEY`, `TRADEFLOW_CHAIN_KEY`, `TRADEFLOW_CHAIN_KEY_ID`, `TRADEFLOW_WEBHOOK_TOKEN`, `TRADEFLOW_LLM_API_KEY`, `NVIDIA_API_KEY`, and `TAVILY_API_KEY`. The file does not set `PORT`; Render injects it and the process binds `0.0.0.0:$PORT`. The filesystem is ephemeral, so `TRADEFLOW_DESK_DB` and a file anchor do not survive a restart unless a disk is attached.
 
-Routes that can call the AMD endpoint (`POST /api/v1/quotes/read` with AMD live mode, and `POST /api/v1/classify/semantic` when stage 2 is requested) are capped in-process at 8 requests a minute per client address and 30 an hour for the whole process. A 429 does not echo the quote or any credential. With no real `VLLM_API_KEY`, those routes stay on the offline reader and the cap is not consumed.
+The hosted demo may still run the earlier AMD build (the AMD tokenfactory and `Gemma-4-31B-IT` path described in the AMD section below) until the service is redeployed with the Nebius and Tavily keys. The Nemotron/Token Factory and Tavily paths are not shown to be live on it yet.
 
 ## Interface
 
@@ -179,6 +200,8 @@ flowchart LR
 
 The solver updates a reserve-price belief and searches opening prices and concession curves. The Chrome extension shows a decision card. The buyer copies and sends. Nothing in the extension clicks Send.
 
+The "Optional phrasing call" box in this diagram is the earlier AMD-era endpoint. The Nemotron quote reader that this hackathon entry is about runs in desk intake (`src/desk/extract.py`) and only names evidence spans; it is not drawn here.
+
 ## Live supplier desk
 
 A deal keeps four or five supplier threads in SQLite (`TRADEFLOW_DESK_DB`, or `desk.db` under `TRADEFLOW_STORE_DIR`, or `data/desk.db`). Each quote stores its source (`email`, `chat-import`, or `paste`), the raw text, the parsed fields, the time, and provenance. An accepted quote updates that supplier's reserve belief from the full accepted history and runs the coupled solver again. The page at `/desk` polls the snapshot. The same snapshot is available as a server-sent stream for a client that can send the API key.
@@ -203,7 +226,31 @@ Tests cover an in-process IMAP server, the mock chat import, the price and appro
 
 On Render's free plan the disk is ephemeral, so `TRADEFLOW_DESK_DB` does not survive spin-down unless a disk is attached. The desk is built to stay inside the same 512 MB instance as the rest of the app.
 
-## AMD integration
+## Honest limits
+
+- No closed-loop purchase. Supplier lines in the stress transcript are a script.
+- Synthetic self-play ([results/self_play_benchmark.md](results/self_play_benchmark.md), 20 matches × 5 archetypes, seed 42) is a parameterised simulator. Engine savings in that table run from **8.8% to 20.0%** versus the walk-away ceiling used by that table. Against the Hard-Bargainer the engine's 8.8% is behind the fixed 5%-per-round baseline's 9.2%. Seed 42 reproduces that table; it is not a variance estimate. It is not the auction headline.
+- The real-model log in the AMD section below is a different experiment. Against a Bluffing Hardliner the recorded deal rate is 61.11%, with 0 budget violations in 94 completed matches.
+- Held-out accuracy of the on-device intent model on the synthetic set is **63.08%** (195 of 500 held out). An older 92% figure was a training-set score.
+- Stage-2 is off the synchronous round path by default because the recorded AMD calls average 16.81 s. AMD live mode is a separate request with a timeout and an offline fallback label. No committed Gemma latency.
+- What was checked, and what was not: [docs/VERIFICATION.md](docs/VERIFICATION.md). `python scripts/check_claims.py` fails if a number in this file or in SUBMISSION.md drifts from its source, and if a doc states an MI300X figure that is not in `results/mi300x_roofline.json`.
+- The Evolus client is an optional email-draft adapter. The Evolus workflow was not created. This submission is not a second hackathon track.
+
+Hackathon text, demo script and judge steps: [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md). The earlier lablab (AMD) submission copy, a 3–5 minute demo script and a slide outline: [SUBMISSION.md](SUBMISSION.md).
+
+## Earlier AMD Developer Hackathon build
+
+Everything in this section describes the earlier target of this repository, the AMD Developer Hackathon ACT III (online phase 12–18 October 2026, concluded). It is kept for the record and because `scripts/check_claims.py` checks its figures. It is **not** the Nebius x NVIDIA entry: the AMD tokenfactory, `Gemma-4-31B-IT` and `Qwen3.8-Flash-Next` named here are not the Token Factory and Nemotron path described at the top of this file. No lablab submission record for this project has been located, and no prize or placement is claimed.
+
+### Earlier roadmap (AMD era)
+
+Roadmap: deploy the offline demo, turn on AMD live mode only when `VLLM_API_KEY` is a real secret, publish extraction accuracy only after a logged Gemma run, and keep the human on the send button.
+
+### Earlier AMD-endpoint rate cap on the demo
+
+Routes that can call the AMD endpoint (`POST /api/v1/quotes/read` with AMD live mode, and `POST /api/v1/classify/semantic` when stage 2 is requested) are capped in-process at 8 requests a minute per client address and 30 an hour for the whole process. A 429 does not echo the quote or any credential. With no real `VLLM_API_KEY`, those routes stay on the offline reader and the cap is not consumed.
+
+### AMD integration
 
 Three buckets. They are not interchangeable.
 
@@ -225,20 +272,8 @@ What is wired in code:
 
    The same command runs on CPU. Read `ran_on_amd_gpu` as printed. The HBM3 column it prints is the theoretical roofline lower-bound estimate, not measured.
 
-## Offline comparison
+### Offline comparison
 
 `python scripts/compare_llm_vs_tradeflow.py` writes [results/llm_vs_tradeflow.json](results/llm_vs_tradeflow.json). Fixed seed 42, 24 episodes, solver sample count in the file. `ran_on_amd` is false. The stand-in is `offline_accept_opening` (not an AMD call). TradeFlow budget-violation rate 0.00%, deal rate 50.00%, average savings versus the supplier opening 22.24% over deals only. The stand-in budget-violation rate is 100.00%, deal rate 100.00%, average savings 0.00%. That 22.24% is not the auction headline and not the secondary walk-away ceiling figure. `--live` still does not spend a multi-episode AMD run. One real chat is `python scripts/verify_amd_endpoint.py`.
-
-## Honest limits
-
-- No closed-loop purchase. Supplier lines in the stress transcript are a script.
-- Synthetic self-play ([results/self_play_benchmark.md](results/self_play_benchmark.md), 20 matches × 5 archetypes, seed 42) is a parameterised simulator. Engine savings in that table run from **8.8% to 20.0%** versus the walk-away ceiling used by that table. Against the Hard-Bargainer the engine's 8.8% is behind the fixed 5%-per-round baseline's 9.2%. Seed 42 reproduces that table; it is not a variance estimate. It is not the auction headline.
-- The real-model log above is a different experiment. Against a Bluffing Hardliner the recorded deal rate is 61.11%, with 0 budget violations in 94 completed matches.
-- Held-out accuracy of the on-device intent model on the synthetic set is **63.08%** (195 of 500 held out). An older 92% figure was a training-set score.
-- Stage-2 is off the synchronous round path by default because the recorded AMD calls average 16.81 s. AMD live mode is a separate request with a timeout and an offline fallback label. No committed Gemma latency.
-- What was checked, and what was not: [docs/VERIFICATION.md](docs/VERIFICATION.md). `python scripts/check_claims.py` fails if a number in this file or in SUBMISSION.md drifts from its source, and if a doc states an MI300X figure that is not in `results/mi300x_roofline.json`.
-- The Evolus client is an optional email-draft adapter. The Evolus workflow was not created. This submission is not a second hackathon track.
-
-Submission copy, a 3–5 minute demo script, and a slide outline: [SUBMISSION.md](SUBMISSION.md).
 
 License: MIT.
