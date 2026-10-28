@@ -1614,8 +1614,9 @@ function paintAmdAvailability() {
       if (ver) ver.textContent = body && body.version ? `API ${body.version}` : "—";
       if (!body || !body.llm) return;
       const model = body.llm.default_model || body.llm.model || "the configured model";
-      if (body.llm.amd_live_available) {
-        hint.textContent = `AMD live mode can call ${model}. It stays off until you turn it on. The solver still sets every price.`;
+      if (body.llm.live_available || body.llm.amd_live_available) {
+        const where = body.llm.provider_label ? ` on ${body.llm.provider_label}` : "";
+        hint.textContent = `Live reading can call ${body.llm.model || model}${where}. It stays off until you turn it on. The solver still sets every price.`;
       } else {
         hint.textContent = `Live reading is off on this server. Turning the switch on still uses the offline reader until a live model key is configured. The solver still sets every price.`;
       }
@@ -1673,12 +1674,14 @@ function paintQuoteReading(payload) {
     callout.hidden = false;
     const status = payload && payload.status;
     let text = (payload && payload.display) || "No reading returned.";
-    const liveLine = typeof text === "string" && text.indexOf("AMD GPU Cloud ·") === 0;
+    // A reading counts as live only when its line names the provider that served it.
+    const liveLine = typeof text === "string" &&
+      (text.indexOf("Nebius Token Factory · ") === 0 || text.indexOf("AMD GPU Cloud · ") === 0);
     const liveOk = status === "ok" && liveLine;
     if (status === "ok" && !liveLine) {
-      text = "AMD reading was not applied. The response was not a confirmed live call.";
+      text = "Live reading was not applied. The response was not a confirmed live call.";
     } else if (status !== "ok" && liveLine) {
-      text = "AMD live call failed. The offline fallback is shown instead.";
+      text = "Live model call failed. The offline fallback is shown instead.";
     }
     // The health line already says live reading is off, and the sample note
     // already says the pictures are simulations. Don't repeat either here.
@@ -1735,7 +1738,7 @@ async function readSupplierQuote() {
   const sid = currentSessionId || (document.getElementById("cmdSessionId") || {}).value || "";
   if (callout) {
     callout.hidden = false;
-    callout.textContent = live ? "Asking AMD GPU Cloud…" : "Reading with the offline extractor…";
+    callout.textContent = live ? "Asking the live model…" : "Reading with the offline extractor…";
     tfTone(callout, "");
   }
   const readBody = { text: text, amd_live: live };
@@ -1752,7 +1755,7 @@ async function readSupplierQuote() {
     try { payload = await res.json(); } catch (_) { payload = null; }
     if (!res.ok) {
       const detail = (payload && payload.detail) || res.statusText || "request rejected";
-      if (callout) callout.textContent = `AMD reading was not applied (HTTP ${res.status}): ${detail}`;
+      if (callout) callout.textContent = `Live reading was not applied (HTTP ${res.status}): ${detail}`;
       return;
     }
     paintQuoteReading(payload);
@@ -1760,7 +1763,7 @@ async function readSupplierQuote() {
       // keep the reading display; there was no solver round
     }
   } catch (err) {
-    if (callout) callout.textContent = `AMD reading failed: ${err.message || "request failed"}`;
+    if (callout) callout.textContent = `Live reading failed: ${err.message || "request failed"}`;
   }
 }
 
