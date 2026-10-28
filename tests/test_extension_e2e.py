@@ -1029,6 +1029,11 @@ def main() -> int:
                             "the waiting item shows the supplier's message",
                             len(item.locator(".desk-review-text").inner_text().strip()) > 0,
                         )
+                        check(
+                            "the waiting item says which reader read it",
+                            item.locator(".desk-review-model").inner_text().startswith("Read by"),
+                            item.locator(".desk-review-model").inner_text(),
+                        )
                         picks = item.locator(".desk-review-picks button")
                         check("candidate figures are offered", picks.count() >= 1, f"n={picks.count()}")
                         accept = item.locator(".desk-review-actions button", has_text="Accept")
@@ -1054,6 +1059,36 @@ def main() -> int:
                         with urllib.request.urlopen(quoted, timeout=30) as response:
                             after = json.loads(response.read().decode())
                         check("the desk records the accepted figure", not (after.get("review") or []))
+
+                        print("\n[10] Sample deal and the web check")
+                        sp.locator("#desk-deal-id").fill("")
+                        sp.evaluate("() => document.getElementById('btn-desk-sample').click()")
+                        for _wait in range(40):
+                            if sp.locator("#desk-deal-id").input_value():
+                                break
+                            time.sleep(0.25)
+                        sample_id = sp.locator("#desk-deal-id").input_value()
+                        check(
+                            "the sample deal button fills the deal id",
+                            bool(sample_id) and sample_id != deal_id,
+                            sample_id or sp.locator("#desk-import-status").inner_text(),
+                        )
+                        sp.locator("#desk-counters .desk-evidence button").first.wait_for(timeout=10000)
+                        check(
+                            "every supplier row has a web check",
+                            sp.locator("#desk-counters .desk-evidence button").count() == 4,
+                        )
+                        sp.evaluate("() => document.querySelector('#desk-counters .desk-evidence button').click()")
+                        state = sp.locator("#desk-counters .desk-evidence-state").first
+                        for _wait in range(40):
+                            if state.inner_text().strip() and "Searching" not in state.inner_text():
+                                break
+                            time.sleep(0.25)
+                        check("the web check answers in the panel", bool(state.inner_text().strip()), state.inner_text())
+                        check(
+                            "the web check never shows a price figure",
+                            not any(ch in sp.locator("#desk-counters .desk-evidence").first.inner_text() for ch in "$\u00a5\u20ac%"),
+                        )
 
             finally:
                 ctx.close()

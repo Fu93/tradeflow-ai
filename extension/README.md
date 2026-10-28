@@ -30,6 +30,7 @@
 
 Open the side panel's **Live desk** tab.
 
+0. No deal yet? Press **Start a sample deal** (four fictional suppliers on a test domain).
 1. Pick the **Desk server**: this computer (`127.0.0.1:8000`) or the hosted demo
    (`https://tradeflow-ai-demo.onrender.com`). Those are the only two hosts the
    manifest allows (`host_permissions` and the page CSP `connect-src`); another
@@ -38,7 +39,11 @@ Open the side panel's **Live desk** tab.
 3. On a supplier chat, press **Import visible message**. The desk reads it.
 4. Under **Waiting for you**, pick the figure, check the quoted line, choose the
    supplier, and press **Accept**. Nothing is accepted for you.
-5. The counter and the draft appear below. Copy the draft and paste it yourself.
+   Each waiting item says which model read the message (for example a Nemotron
+   model on Nebius) or that only the rule reader did.
+5. Each supplier row has **Check supplier on the web** (Tavily). Its results are
+   reference only and never change a counter.
+6. The counter and the draft appear below. Copy the draft and paste it yourself.
    The extension never types into the chat or presses send.
 
 ## 30-second setup

@@ -31,10 +31,86 @@
     return currency ? text + " " + currency : text;
   }
 
+  const evidence = new Map();
+  let dealProduct = "";
+
+  function paintEvidence(wrap, entry) {
+    const lib = globalThis.TradeFlowWebEvidence;
+    const button = wrap.querySelector("button");
+    const parts = {
+      list: wrap.querySelector("ul"),
+      state: wrap.querySelector(".desk-evidence-state"),
+      prov: wrap.querySelector(".desk-evidence-prov"),
+    };
+    if (!lib) {
+      parts.state.textContent = "Web evidence is not loaded.";
+      button.disabled = true;
+      return;
+    }
+    button.disabled = !!(entry && entry.loading);
+    if (entry && entry.loading) lib.loading(parts);
+    else lib.paintInto(parts, entry.payload);
+  }
+
+  function repaintEvidence(supplierId) {
+    document.querySelectorAll(".desk-evidence").forEach((wrap) => {
+      if (wrap.dataset.evidence === supplierId) paintEvidence(wrap, evidence.get(supplierId));
+    });
+  }
+
+  function evidenceBlock(supplier) {
+    const id = String(supplier.id || "");
+    const wrap = document.createElement("div");
+    wrap.className = "desk-evidence";
+    wrap.dataset.evidence = id;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Check supplier on the web";
+    const state = document.createElement("p");
+    state.className = "desk-evidence-state";
+    state.setAttribute("role", "status");
+    const list = document.createElement("ul");
+    list.className = "web-evidence-list";
+    const prov = document.createElement("p");
+    prov.className = "desk-evidence-prov";
+    [button, state, list, prov].forEach((node) => wrap.appendChild(node));
+    button.addEventListener("click", async () => {
+      const lib = globalThis.TradeFlowWebEvidence;
+      if (!lib) return;
+      evidence.set(id, { loading: true, payload: null });
+      repaintEvidence(id);
+      const payload = await lib.lookup({
+        kind: "supplier",
+        product: dealProduct,
+        supplier: String(supplier.name || ""),
+        endpoint: apiBase() + "/api/v1/market/evidence",
+        headers: () => headers(),
+      });
+      evidence.set(id, { loading: false, payload: payload });
+      repaintEvidence(id);
+    });
+    if (evidence.has(id)) paintEvidence(wrap, evidence.get(id));
+    return wrap;
+  }
+
   function clear(node) {
     while (node && node.firstChild) node.removeChild(node.firstChild);
   }
 
+  // Fictional suppliers on a reserved test domain. Nothing here is a real company.
+  const SAMPLE_DEAL = {
+    product: "carbon umbrella",
+    quantity: 1000,
+    target_price: 12,
+    ceiling_price: 16,
+    risk_tolerance: 0.5,
+    suppliers: [
+      { name: "Sample Supplier A", address: "supplier-a@example.test" },
+      { name: "Sample Supplier B", address: "supplier-b@example.test" },
+      { name: "Sample Supplier C", address: "supplier-c@example.test" },
+      { name: "Sample Supplier D", address: "supplier-d@example.test" },
+    ],
+  };
   const LOCAL_BASE = "http://127.0.0.1:8000";
   let serverBase = "";
 
@@ -66,7 +142,15 @@
     if (node) node.textContent = text;
   }
 
+  let lastDrawn = "";
+
   function render(snapshot) {
+    // The poll runs every two seconds. Redrawing an unchanged desk would replace the
+    // buttons under a person's cursor, so an identical snapshot draws nothing.
+    const signature = JSON.stringify(snapshot);
+    if (signature === lastDrawn) return;
+    lastDrawn = signature;
+    dealProduct = String((snapshot.deal && snapshot.deal.product) || "");
     const ranking = document.getElementById("desk-ranking");
     const counters = document.getElementById("desk-counters");
     const draft = document.getElementById("desk-draft");
@@ -112,6 +196,7 @@
         part.style.display = "block";
         row.appendChild(part);
       });
+      row.appendChild(evidenceBlock(supplier));
       counters.appendChild(row);
     });
     const current = select.value;
@@ -187,7 +272,11 @@
       }
       render(await response.json());
       window.tfDeskLinked = true;
-      setStatus("Desk linked");
+      const status = document.getElementById("desk-import-status");
+      const shown = status ? status.textContent : "";
+      if (!shown || shown === "Desk linked" || shown === "Desk is offline." || shown.indexOf("Connecting") === 0) {
+        setStatus("Desk linked");
+      }
     } catch (err) {
       setStatus("Desk is offline.");
     }
@@ -197,6 +286,7 @@
     const input = document.getElementById("desk-deal-id");
     const keyInput = document.getElementById("desk-api-key");
     const button = document.getElementById("btn-desk-import");
+    const sample = document.getElementById("btn-desk-sample");
     const copy = document.getElementById("btn-desk-copy");
     const select = document.getElementById("desk-supplier");
     if (!input || !button) return;
@@ -217,10 +307,12 @@
       try { API_BASE_URL = serverBase || LOCAL_BASE; } catch (err) { /* panel script not loaded */ }
       storageSet({ tfApiBase: serverBase });
       setStatus("Connecting\u2026");
+      lastDrawn = "";
       refresh();
     });
     input.addEventListener("change", () => {
       storageSet({ tfDeskDeal: input.value.trim() });
+      lastDrawn = "";
       refresh();
     });
     if (keyInput) {
@@ -228,9 +320,35 @@
       keyInput.addEventListener("change", saveKey);
       keyInput.addEventListener("input", saveKey);
     }
+    if (sample) sample.addEventListener("click", async () => {
+      setStatus("Creating a sample deal\u2026");
+      try {
+        const response = await fetch(apiBase() + "/api/v1/desk/deals", {
+          method: "POST",
+          headers: headers(),
+          body: JSON.stringify(SAMPLE_DEAL),
+        });
+        if (response.status === 401) {
+          setStatus("The API key was rejected. Enter the key this server expects.");
+          return;
+        }
+        if (!response.ok) {
+          setStatus("The desk did not create the sample deal (" + response.status + ").");
+          return;
+        }
+        const created = await response.json();
+        input.value = created.deal.id;
+        storageSet({ tfDeskDeal: input.value, tfApiKey: keyInput ? keyInput.value.trim() : "" });
+        await refresh();
+        setStatus("Sample deal ready. Open a supplier chat and import its message.");
+      } catch (err) {
+        setStatus("Desk is offline.");
+      }
+    });
     if (select) select.addEventListener("change", () => {
       rememberSupplier(true);
       confirmPage = askedPage;
+      lastDrawn = "";
       refresh();
     });
     button.addEventListener("click", () => {

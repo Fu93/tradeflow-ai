@@ -1291,3 +1291,14 @@ button:focus, .party:focus, .source-badge:focus {
 .desk-review-picks, .desk-review-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .desk-review-picks button[aria-pressed="true"] { font-weight: 600; outline: 2px solid currentColor; }
 .desk-review-confirm { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+
+/* Web evidence (Tavily) inside a supplier row. Reference only, never a price. */
+.desk-evidence { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.desk-evidence-state, .desk-evidence-prov { margin: 0; font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.desk-evidence-state:empty, .desk-evidence-prov:empty, .desk-evidence .web-evidence-list:empty { display: none; }
+.web-evidence-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.web-evidence-item { min-width: 0; padding: 6px; border: 1px solid var(--line, #d6d3cb); border-radius: 8px; }
+.web-evidence-link { font-weight: 500; overflow-wrap: anywhere; }
+.web-evidence-meta { display: block; font-size: 11px; color: var(--ink-2); overflow-wrap: anywhere; }
+.web-evidence-snippet { margin: 4px 0 0; font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.desk-review-model { margin: 0; font-size: 11px; color: var(--ink-2); overflow-wrap: anywhere; }

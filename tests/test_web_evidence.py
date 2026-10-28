@@ -343,3 +343,13 @@ def test_route_is_rate_limited_per_caller(monkeypatch):
     assert limited.status_code == 429
     assert limited.headers.get("Retry-After") == "60"
     assert "Tavily" not in limited.text and SECRET not in limited.text
+
+
+def test_extension_copy_of_the_web_evidence_script_is_identical():
+    """The extension cannot load files outside its folder, so it carries a copy."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    site = (root / "src/web/static/js/web_evidence.js").read_bytes()
+    packed = (root / "extension/web_evidence.js").read_bytes()
+    assert packed == site, "run: cp src/web/static/js/web_evidence.js extension/web_evidence.js"

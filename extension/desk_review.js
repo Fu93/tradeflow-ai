@@ -27,6 +27,19 @@
     return "";
   }
 
+  // Which model read this message, from the attempts the desk recorded.
+  function readBy(provenance) {
+    const attempts = provenance.extractor_attempts || [];
+    let used = null;
+    attempts.forEach((attempt) => { if (attempt && attempt.status === "ok") used = attempt; });
+    if (!used) return attempts.length
+      ? "The model reader did not answer. Rule reader only."
+      : "Read by the rule reader only.";
+    const seconds = Number(used.latency_s);
+    const took = Number.isFinite(seconds) ? " in " + seconds.toFixed(1) + " s" : "";
+    return "Read by " + String(used.model || "a model") + " on " + String(used.provider || "?") + took + ".";
+  }
+
   function tokensOf(provenance) {
     if (provenance.candidates && provenance.candidates.length) return provenance.candidates;
     return provenance.tokens || [];
@@ -45,6 +58,7 @@
     const reason = provenance.review_reason || item.confidence || "review";
     block.appendChild(el("p", "desk-note", (item.source || "quote") + " · " + reason));
     block.appendChild(el("pre", "desk-review-text", item.raw_text || ""));
+    block.appendChild(el("p", "desk-review-model", readBy(provenance)));
 
     const confirm = el("p", "desk-review-confirm");
     const accept = el("button", null, "Accept");
