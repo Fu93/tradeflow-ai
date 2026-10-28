@@ -53,6 +53,14 @@ Every reader is limited to the desk's unit-sanity band around the deal's target 
 
 We have not fixed either defect yet. Fixing the parser after seeing this set would stop it being held-out for the rules, so the fix waits until the Nemotron run below is recorded, and both results will be kept.
 
+## A change to the reader before the Nemotron run (2026-10-28)
+
+The first live call of the demo read the sample message (a rival's 24 and the supplier's own 27.80). Nemotron Super labelled the 24 correctly as a rival's price, but labelled the supplier's own 27.80 as `our_price_echo`. The rules then sent the quote to review because it holds two prices. No draft was produced.
+
+The reader's prompt had named the classes without saying what each one means. It now defines every class in general terms. The prompt hash changes, and every result file records it.
+
+That sample message is close to two held-out items, `zh_rival_then_own` and `en_rival_then_own`. Those two are therefore no longer clean for the model, and a report should list them apart. The other 38 items were not looked at for this change. The rules were not changed.
+
 ## The two parser defects, fixed after the baseline
 
 Both are fixed in `src/desk/parse.py` and `src/desk/span_read.py`, with tests in `tests/test_parse_fullwidth_and_forward.py`:

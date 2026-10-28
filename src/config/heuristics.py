@@ -521,22 +521,25 @@ EXTRACTOR_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 # The Ultra model on this host is not called.
 EXTRACTOR_NVIDIA_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 
-# Rationale: seconds allowed for the Nebius Ultra extractor hop. A longer
-# wait does not start; the desk moves to the next hop or to human review.
-EXTRACTOR_TIMEOUT_ULTRA_SECONDS = 12
+# Rationale: seconds allowed for the first Nebius extractor hop (the default
+# model, Super, since 2026-10-28; the name is kept for its env override). The
+# first live Super call timed out at the old 12 s and its retry took 11.2 s; a
+# timed-out call is still billed, so a tight limit pays twice. A longer wait
+# does not start; the desk moves to the next hop or to human review.
+EXTRACTOR_TIMEOUT_ULTRA_SECONDS = 30
 
-# Rationale: seconds allowed for the Nebius Super extractor hop. This is
-# the second hop, after Ultra, and it is a policy limit rather than a price.
-EXTRACTOR_TIMEOUT_SUPER_SECONDS = 15
+# Rationale: seconds allowed for the second Nebius extractor hop (a retry of
+# the default model). It is a policy limit rather than a price.
+EXTRACTOR_TIMEOUT_SUPER_SECONDS = 20
 
 # Rationale: seconds allowed for the NVIDIA Super extractor hop. This hop
 # runs only after Nebius itself fails, and only inside the overall budget.
 EXTRACTOR_TIMEOUT_NVIDIA_SECONDS = 30
 
 # Rationale: overall seconds one quote may spend in the extractor chain.
-# It equals the Ultra, Super, and NVIDIA hop limits added together, so a
+# It equals the first, second, and NVIDIA hop limits added together, so a
 # quote cannot wait longer than the whole chain.
-EXTRACTOR_TIMEOUT_BUDGET_SECONDS = 57
+EXTRACTOR_TIMEOUT_BUDGET_SECONDS = 80
 
 # Rationale: maximum completion tokens sent on every extractor hop. A long
 # supplier message was truncated when the provider default was left in place.

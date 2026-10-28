@@ -129,3 +129,28 @@ def test_dashboard_copy_does_not_name_amd_for_the_live_switch():
     assert "AMD live mode" not in page
     assert "Asking AMD GPU Cloud" not in script
     assert 'text.indexOf("Nebius Token Factory · ") === 0' in script
+
+
+def test_reader_prompt_defines_every_class():
+    """The model gets a meaning for each class, not just its name (a live call
+    labelled the supplier's own offer as our_price_echo with names only)."""
+    from src.desk.extract import _SYSTEM, CLASSES
+
+    for name in CLASSES:
+        assert f"{name} is " in _SYSTEM, name
+    assert "including one stated right after another seller's price" in _SYSTEM
+    assert "Do not include a price, amount, value, or number field." in _SYSTEM
+
+
+def test_extractor_budget_is_the_sum_of_its_hops():
+    from src.config.heuristics import (
+        EXTRACTOR_TIMEOUT_BUDGET_SECONDS,
+        EXTRACTOR_TIMEOUT_NVIDIA_SECONDS,
+        EXTRACTOR_TIMEOUT_SUPER_SECONDS,
+        EXTRACTOR_TIMEOUT_ULTRA_SECONDS,
+    )
+
+    hops = EXTRACTOR_TIMEOUT_ULTRA_SECONDS + EXTRACTOR_TIMEOUT_SUPER_SECONDS + EXTRACTOR_TIMEOUT_NVIDIA_SECONDS
+    assert EXTRACTOR_TIMEOUT_BUDGET_SECONDS == hops
+    # The first hop is longer than the 11.2 s the first live Super read took.
+    assert EXTRACTOR_TIMEOUT_ULTRA_SECONDS >= 2 * 12
