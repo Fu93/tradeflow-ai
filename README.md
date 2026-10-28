@@ -2,35 +2,89 @@
 
 [![CI](https://github.com/Fu93/tradeflow-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Fu93/tradeflow-ai/actions/workflows/ci.yml)
 
+## Nebius x NVIDIA Global AI Hackathon entry
+
+TradeFlow AI is a one-person supplier-negotiation desk for small cross-border sellers, entered in the **Nebius x NVIDIA Global AI Hackathon** (track Best Apps and Agents, plus the Best Use of Tavily bonus): a Nemotron model on Nebius Token Factory reads factory quotes, deterministic math prices the counter, and a person sends it.
+
+Links: [Devpost text, judge steps and demo script](docs/DEVPOST_SUBMISSION.md) · [feedback on the tools](docs/NEBIUS_NVIDIA_FEEDBACK.md) · [public demo](#public-demo) · License: MIT <!-- DEMO_URL: final public demo URL --> <!-- VIDEO_URL: public YouTube link, 3 minutes or less -->
+
+**How the three services are used.**
+
+- **Nebius Token Factory** is the inference API (`api.tokenfactory.nebius.com/v1`) that serves the quote reader.
+- **NVIDIA Nemotron** (Super by default; after any failed attempt the same model is tried once more; Ultra optional; all on Token Factory; an optional NVIDIA-hosted third hop is off in the demo) reads a supplier's free-text message and names the evidence spans in it: an offer, a fee, a deposit, a rival's price. The desk shows those spans and the model that read them.
+- **Tavily** supplies a reference-only "Web evidence" card with cited public pages about a product or a supplier.
+
+Code paths and tests are in [How this project uses Nebius, NVIDIA and Tavily](#how-this-project-uses-nebius-nvidia-and-tavily) below.
+
+**Try it in two minutes** on the demo's `/desk` page:
+
+1. **Fill a sample deal**, enter the API key (the judge key is in the Devpost testing instructions), **Open desk**. Four fictional suppliers.
+2. **Use a sample message**, then **Add quote**. The waiting item shows which Nemotron model read it and the spans it labelled.
+3. Pick the figure and **Accept**. Every confirmed quote recomputes all suppliers: ranking, default counter, push-lower counter, walk-away hazard. The paste form can also take freight, other fees and import duty per quote; the ranking then uses landed cost (see "Live supplier desk"). The sample message has none, so its ranking is by unit price.
+4. **Use push lower in the draft** on a card, and **Check supplier on the web** (Tavily).
+5. With the Chrome extension, tick **Read new supplier messages automatically**: new supplier messages on an open chat reach the desk by themselves.
+
+**What the language model may and may not do.**
+
+- It **may** read a quote and point at wording: it names a span and a class. It may optionally phrase a reply. As a second opinion it may point at one of the rule reader's own candidate figures as the supplier's offer; the desk pre-selects it only when the rules pre-selected none, and a person confirms.
+- It **may not** supply a number, set, or change a price, or confirm a figure. A price field in its answer is discarded.
+- The Bayesian reserve-price belief and the expected-surplus optimiser (a one-step lookahead) decide every counter, from quotes a person has confirmed.
+- A human approves every send. The Chrome extension cannot press Send.
+- Search results (Tavily) are shown as text beside the quote. No decision module reads them.
+
 ## Status (2026-10-28)
 
-Built for the **Nebius x NVIDIA Global AI Hackathon** (submission deadline Friday 30 October 2026, 17:00 London), track **Best Apps and Agents**, with an entry for the Best Use of Tavily bonus. The repository began on 13 October 2026 as an entry for the AMD Developer Hackathon ACT III, which has concluded (online phase 12–18 October 2026). No lablab submission record for this project has been located. The AMD sections further down document that earlier target and stay because `scripts/check_claims.py` checks their figures against source files. This is a **research prototype**: no factory has closed a deal through it. Current state and decision lines: [STATUS.md](STATUS.md). Where the code actually lives (including the `src/legacy/` naming inversion): [ARCHITECTURE.md](ARCHITECTURE.md).
+The repository began on 13 October 2026 as an entry for the AMD Developer Hackathon ACT III, which has concluded (online phase 12–18 October 2026). No lablab submission record for this project has been located. The AMD-era material is kept, not deleted, under [Earlier AMD Developer Hackathon build](#earlier-amd-developer-hackathon-build) near the end of this file, because `scripts/check_claims.py` checks its figures against source files. This is a **research prototype**: no factory has closed a deal through it. Current state and decision lines: [STATUS.md](STATUS.md). Where the code actually lives (including the `src/legacy/` naming inversion): [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 30-second pitch
 
 Small cross-border sellers lose procurement margin when they negotiate factory quotes alone, often across a language gap, or pay a sourcing agent a commission. TradeFlow is a one-person desk for that problem: expected surplus of a one-step accept-or-reject model chooses the next price, an optional language model only reads and phrases the offer, and a human sends it. No factory has closed a deal through this prototype.
 
-The formulas, and the registry for every constant the decision code is allowed to use, are in [docs/MATH.md](docs/MATH.md). Benchmark numbers below come from this repository's CPU runs or from a parameterised simulator. The full boundary note is [docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md). The claim-by-claim check is [docs/DATA_INTEGRITY.md](docs/DATA_INTEGRITY.md).
+The formulas, and the registry for every constant the decision code is allowed to use, are in [docs/MATH.md](docs/MATH.md). Benchmark numbers in this file come from this repository's CPU runs or from a parameterised simulator. The full boundary note is [docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md). The claim-by-claim check is [docs/DATA_INTEGRITY.md](docs/DATA_INTEGRITY.md).
 
-License: MIT. The submission text and demo script are in [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md). Feedback on the Nebius and NVIDIA tools is in [docs/NEBIUS_NVIDIA_FEEDBACK.md](docs/NEBIUS_NVIDIA_FEEDBACK.md).
+The hackathon text and demo script are in [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md).
 
 ## How this project uses Nebius, NVIDIA and Tavily
 
 | Piece | Role at runtime | Code | Tests |
 |---|---|---|---|
 | **Nebius Token Factory** (`api.tokenfactory.nebius.com/v1`) | The OpenAI-compatible inference API that serves the quote reader | `src/desk/extract.py`, constants with rationales in `src/config/heuristics.py` | `tests/steps/test_extractor_failover.py`, `tests/steps/test_holdout_reader.py` |
-| **NVIDIA Nemotron** (open models) | Reads a supplier message and names evidence spans with a class. Hop 1 is `nvidia/Nemotron-3-Ultra-550b-a55b`, hop 2 is `nvidia/nemotron-3-super-120b-a12b`, both on Token Factory. A third hop on NVIDIA's hosted endpoint opens only after Nebius itself fails (timeout, connection error, HTTP 429, HTTP 5xx, or a malformed body) and only when `NVIDIA_API_KEY` is set. Each hop has its own timeout and the chain stops at a fixed budget | same | same |
+| **NVIDIA Nemotron** (open models) | Reads a supplier message and names evidence spans with a class. The default is `nvidia/nemotron-3-super-120b-a12b` on Token Factory, with one retry of the same model; `TRADEFLOW_LLM_MODEL` selects another, such as `nvidia/Nemotron-3-Ultra-550b-a55b`. The dashboard's live reader (`src/engine/quote_read.py`) uses the same key and the Super model. Paid calls are capped per UTC day (`TRADEFLOW_LLM_DAILY_CALLS`, default from `LLM_DAILY_CALL_CAP`). A third hop on NVIDIA's hosted endpoint is **optional and off in the demo**: it opens only after Nebius itself fails (timeout, connection error, HTTP 429, HTTP 5xx, or a malformed body) and only when `NVIDIA_API_KEY` is set. Each hop has its own timeout (first hop 30 s, retry 20 s, optional NVIDIA hop 30 s) and the chain stops at a budget of 80 s (`src/config/heuristics.py`) | same | same |
 | **Tavily Search API** | The "Web evidence" card on the dashboard: cited public pages about a product's wholesale prices and MOQ (`Market prices`) or about a supplier's reviews and complaints (`Check supplier`) | `src/market/web_evidence.py`, `GET /api/v1/market/evidence`, `src/web/static/js/web_evidence.js` | `tests/test_web_evidence.py` |
 
-**How the model and the search are kept away from the price.** A price field in the model's answer is discarded. The amount is read by deterministic code from a span that occurs verbatim in the message, a second rule reader must agree before the shadow gate would accept anything, and a person confirms every number before it enters a decision. Search results are never read by a decision module: nothing in `src/engine`, `src/desk` or `src/legacy` imports the Tavily module, and `tests/test_web_evidence.py` fails if one does. Every Tavily payload is stamped `reference_only` and `influences_solver: false`, snippets are cleaned and shown as text only, and a search outage returns an explicit "unavailable" reason instead of an error. Lookups are cached and rate-limited per caller and per process to protect the search credits.
+**How the model and the search are kept away from the price.** A price field in the model's answer is discarded. The amount is read by deterministic code from a span that occurs verbatim in the message, a second rule reader must agree before the shadow gate would accept anything, and a person confirms every number before it enters a decision. The model's second opinion can only point at one of the rule reader's own candidates. Search results are never read by a decision module: nothing in `src/engine`, `src/desk` or `src/legacy` imports the Tavily module, and `tests/test_web_evidence.py` fails if one does. Every Tavily payload is stamped `reference_only` and `influences_solver: false`, snippets are cleaned and shown as text only, and a search outage returns an explicit "unavailable" reason instead of an error. Lookups are cached and rate-limited per caller and per process to protect the search credits.
 
-**Environment.** `TRADEFLOW_LLM_API_KEY` (the Nebius Token Factory key), `NVIDIA_API_KEY` (optional third hop), `TAVILY_API_KEY`. With all three unset the app still runs offline: the rule reader prefills, nothing is accepted automatically, and the Web evidence card says it is not configured. `TRADEFLOW_WEB_EVIDENCE_OFFLINE=1` switches the card off even when a key is set.
+**Environment.** `TRADEFLOW_LLM_API_KEY` (the Nebius Token Factory key), `TRADEFLOW_LLM_MODEL` (optional model override), `TRADEFLOW_LLM_DAILY_CALLS` (paid calls per UTC day per server process, default 40; `0` turns them off), `NVIDIA_API_KEY` (optional third hop; off in the demo), `TAVILY_API_KEY`. With `TRADEFLOW_LLM_API_KEY`, `NVIDIA_API_KEY` and `TAVILY_API_KEY` all unset the app still runs offline: the rule reader prefills, nothing is accepted automatically, and the Web evidence card says it is not configured. `TRADEFLOW_WEB_EVIDENCE_OFFLINE=1` switches the card off even when a key is set.
 
-**Not claimed.** No accuracy or latency measurement of the Nemotron chain is committed under `results/`; the committed latency log is for the AMD endpoint. The Tavily card shows what public pages say. It does not verify a supplier and it does not validate a price.
+**Not claimed.** No accuracy or latency measurement of the Nemotron chain is committed yet. The held-out evaluation, its protocol and its rules-only baseline are in [docs/QUOTE_READER_EVAL.md](docs/QUOTE_READER_EVAL.md); the Nemotron run is pending. The committed latency log is for the AMD endpoint. The Tavily card shows what public pages say. It does not verify a supplier and it does not validate a price.
 
 ## What changed during the submission period
 
-The first commit in this repository is dated 13 October 2026, after the submission period opened on 26 August. Through 26 October there were 124 commits, summarised round by round in [STATUS.md](STATUS.md): a keyed audit chain with signed human approval, named operator keys, deployment hardening, parser fuzzing with a ReDoS fix, and the split of the app layer. On 28 October one isolated feature was added for this hackathon: the Tavily web-evidence card.
+The first commit in this repository is dated 13 October 2026, after the submission period opened on 26 August. Through 26 October there were 124 commits, summarised round by round in [STATUS.md](STATUS.md): a keyed audit chain with signed human approval, named operator keys, deployment hardening, parser fuzzing with a ReDoS fix, and the split of the app layer. On 28 October, for this hackathon:
+
+- the Tavily web-evidence card;
+- the dashboard reader on Nemotron and Token Factory, with Super as the default model;
+- a held-out quote-reader evaluation;
+- the desk showing which model read each quote and the spans it labelled;
+- the buyer's choice of the push-lower counter for a draft;
+- a sample deal and a sample message;
+- drafts that use the product name in the supplier's language;
+- a daily cap on paid model calls;
+- the reader's first-hop timeout (30 s) and a prompt that defines each label category (PR #31);
+- freight, fees and duty fields on the desk's paste form, so the ranking can use landed cost (PR #32);
+- the card shows the quote validity the supplier stated and flags an expired quote; it never moves the rank, counter or draft (PR #34). Not live-tested. A validity given in working days is shown as written and not turned into a date, and two contradictory validity statements are flagged as a conflict;
+- when the model service refuses the key or the credit (HTTP 401, 402 or 403) the reader stops without a retry, pauses paid calls for 30 minutes (a restart clears the pause) and the desk says so and reads with the rules only (PR #35). Not live-tested;
+- a model second opinion: when the model's own-offer label points at exactly one of the rule reader's candidate figures, the desk shows that the model agrees, or a disagreement if the rules read another figure. It pre-selects that figure only when the rules pre-selected none, it cannot add a number, and a person confirms every figure (PR #35). Not live-tested;
+- a supplier's tier table: the desk pre-selects the row for your quantity, or warns when your order is below the smallest row; a person confirms (PR #35). Not live-tested;
+- shows minimum order and lead time; flags a minimum order above your order without moving the ranking (PR #36). Not live-tested. Conflicting statements are shown as a conflict, and a lead time in working days is shown without a day count;
+- a New deal button (PR #36). The button is present on the deployed `/desk` page; its behaviour is not live-tested;
+- technical working lines (prior, reserve, sensitivity) are folded under "How these figures were worked out", and a landed-cost line appears only when it is complete (PR #36). Not live-tested;
+- in the Chrome extension, a server choice, review inside the side panel, one key for every call, and the automatic read of new supplier messages.
+
+The pull requests are #18 to #36.
+
+**AI assistance.** The project's design, direction and trade-offs are the author's; AI coding tools (Cursor, Codebuff, Claude) assisted with writing code.
+<!-- TODO(owner): confirm that you reviewed the decision logic and tests before keeping the sentence "all decision logic and tests were reviewed by the author" -->
 
 ## What is proven
 
@@ -57,7 +111,7 @@ Each desk step has a guard, a test, and a chain record. A failed check withholds
 | Fixture | `data/hazard_ebay_bi.json` is the fitted walk-away file. The reserve prior is labelled policy until this supplier has enough of their own responses. |
 | Not claimed | No factory has closed a deal through this prototype. The eBay fit is not a Chinese factory rate. `/round`, `/negotiate`, and the v1 engines stay in `src/legacy/` and mount only when `TRADEFLOW_LEGACY=1`. |
 
-Code freeze after 27 Oct 2026. From 28 Oct through 30 Oct, commits are fixes only, with one owner-approved exception on 28 Oct: the isolated Tavily web-evidence card (one new module, one route, one dashboard card, and their tests; no decision-path file changed).
+Code freeze after 27 Oct 2026 for the decision formula: `src/engine/decision.py`, `src/engine/reserve.py` and `src/engine/hazard_fit.py` are unchanged since 26 Oct (checked with `git diff` against commit `dbf8298`). On 28 Oct, owner-approved hackathon features were added around it: the Tavily web-evidence card, the Nemotron readers and their trace on the desk, a sample deal and message, a daily cap on paid model calls, drafts in the supplier's language, the extension's automatic read, and a desk feature where a person picks which figure goes into a draft (the default or the push-lower counter). That choice is a human event on the audit chain, and the send guard re-derives the figure from the chain at send time (`src/desk/decide.py`, `recompute.py`, `verify.py`, `service.py`). The desk card's `hazard_upper` now shows the hazard at the push-lower figure.
 
 Internal notes, filming guides, and older audits are indexed in [docs/internal/README.md](docs/internal/README.md).
 
@@ -105,13 +159,13 @@ python -m src.cli            # one-supplier walkthrough
 python -m src.cli --multi    # four-supplier auction
 ```
 
-Recording clicks and narration: [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md). Form fields: [docs/LABLAB_FORM.md](docs/LABLAB_FORM.md). The slide deck is [results/pitch.pptx](results/pitch.pptx) and [results/pitch.pdf](results/pitch.pdf) (nine slides, rebuilt from the SUBMISSION.md outline).
+The video script for this hackathon is in [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md). [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md) is the click-and-narration script written for the earlier AMD-era build and is not updated for this entry. Form fields for the earlier lablab (AMD) entry: [docs/LABLAB_FORM.md](docs/LABLAB_FORM.md). The slide deck, built for that earlier entry, is [results/pitch.pptx](results/pitch.pptx) and [results/pitch.pdf](results/pitch.pdf) (nine slides, rebuilt from the SUBMISSION.md outline).
 
 ![Pitch cover for TradeFlow AI](results/cover_1280x720.png)
 
 ## Human + AI workflow
 
-Hybrid desk. The workflow is written for the Hybrid, Becreatives, and Vibe Generation criteria. The model reads a supplier message and may phrase a reply. The solver sets every number. The human copies the draft and sends it. The Chrome extension cannot press Send.
+Hybrid desk. The model reads a supplier message and may phrase a reply. The solver sets every number. The human copies the draft and sends it. The Chrome extension cannot press Send.
 
 ## Market and business
 
@@ -125,13 +179,11 @@ Revenue model, proposed and not earned: a desk subscription, or a share of savin
 
 Competitors with a public price: Accio and Alibaba RFQ (free for buyers). Pactum, Keelvar, Fairmarkit, Jaggaer, Zycus, and Globality are quote-based.
 
-Roadmap: deploy the offline demo, turn on AMD live mode only when `VLLM_API_KEY` is a real secret, publish extraction accuracy only after a logged Gemma run, and keep the human on the send button.
-
 ## Public demo
 
 [render.yaml](render.yaml) matches the live Docker web service `tradeflow-ai-demo` in Frankfurt (`https://tradeflow-ai-demo.onrender.com`), instance type 0.5 CPU / 512 MB, health check `GET /health`, offline by default. `WEB_CONCURRENCY` is `1`. `TRADEFLOW_ENV` is `production`, so webhooks fail closed when `TRADEFLOW_WEBHOOK_TOKEN` is unset. `TRADEFLOW_LEGACY` is `0`. `TRADEFLOW_CHAIN_ANCHOR`, `TRADEFLOW_DESK_DB`, and `TRADEFLOW_CHAIN_KEYS` are listed with `sync: false` (blank until set in the dashboard). Other secrets are `sync: false` so a Blueprint sync does not overwrite them: `VLLM_API_KEY`, `EVOLUS_API_KEY`, `EVOLUS_APP_ID`, `TRADEFLOW_API_KEY`, `TRADEFLOW_CHAIN_KEY`, `TRADEFLOW_CHAIN_KEY_ID`, `TRADEFLOW_WEBHOOK_TOKEN`, `TRADEFLOW_LLM_API_KEY`, `NVIDIA_API_KEY`, and `TAVILY_API_KEY`. The file does not set `PORT`; Render injects it and the process binds `0.0.0.0:$PORT`. The filesystem is ephemeral, so `TRADEFLOW_DESK_DB` and a file anchor do not survive a restart unless a disk is attached.
 
-Routes that can call the AMD endpoint (`POST /api/v1/quotes/read` with AMD live mode, and `POST /api/v1/classify/semantic` when stage 2 is requested) are capped in-process at 8 requests a minute per client address and 30 an hour for the whole process. A 429 does not echo the quote or any credential. With no real `VLLM_API_KEY`, those routes stay on the offline reader and the cap is not consumed.
+**Approval and sending on the demo.** On 2026-10-28, with the owner's approval, the demo service got `TRADEFLOW_REQUIRE_SIGNED_APPROVAL=0` in the Render dashboard (the only variable changed; `render.yaml` does not set it, and `/ready` now reports `signed_approval: policy=optional`). The live demo therefore accepts an unsigned **Approve and send** click. No SMTP is configured on the demo, so no email is ever sent: an approved draft shows status approved and `transmitted: 0`. One single check on master `14df25a` (one observation, not a benchmark): approve returned HTTP 200 unsigned, the draft was approved, transmitted was 0, and the audit chain verified with 14 entries. That check predates PRs #35 and #36. Real use requires a pinned approver public key, signing with `python -m src.desk.approval_signing`, and an SMTP configuration. The price is always confirmed by a person, and the model's labels are a second opinion only. The chain is verified from the audit line, from `GET /api/v1/desk/deals/{id}/audit/verify` on `/docs`, or with `scripts/desk_verify.py` (there is no verify button).
 
 ## Interface
 
@@ -179,9 +231,13 @@ flowchart LR
 
 The solver updates a reserve-price belief and searches opening prices and concession curves. The Chrome extension shows a decision card. The buyer copies and sends. Nothing in the extension clicks Send.
 
+The "Optional phrasing call" box in this diagram is the earlier AMD-era endpoint. The Nemotron quote reader that this hackathon entry is about runs in desk intake (`src/desk/extract.py`) and only names evidence spans; it is not drawn here.
+
 ## Live supplier desk
 
 A deal keeps four or five supplier threads in SQLite (`TRADEFLOW_DESK_DB`, or `desk.db` under `TRADEFLOW_STORE_DIR`, or `data/desk.db`). Each quote stores its source (`email`, `chat-import`, or `paste`), the raw text, the parsed fields, the time, and provenance. An accepted quote updates that supplier's reserve belief from the full accepted history and runs the coupled solver again. The page at `/desk` polls the snapshot. The same snapshot is available as a server-sent stream for a client that can send the API key.
+
+The paste form on `/desk` has optional freight, other fees and import duty fields (freight and fees per unit in the deal currency; duty as a percent). They go in together or not at all: all three filled (0 counts as a value) or all three blank, and a partly filled set is refused by the form. A blank is "no data", never zero. When every quoted supplier has all three, the ranking uses landed cost instead of the unit price (`ranking_basis` is `landed_cost`, otherwise `unit_price`), and the send-time check recomputes the counter the same way. This is covered by unit tests and CI (`tests/test_desk_landed_inputs.py`); the form has not been tried live with a real quote.
 
 Mailbox intake leaves the seen flag alone. IMAP opens the inbox with EXAMINE and reads with BODY.PEEK. `IMAP_LOOKBACK_DAYS` (14) is the window, including mail that is already read. A message is remembered only after it is stored on a deal, keyed by that deal plus UID and Message-ID, so a wiped database can scan the window again. Mail that matches no deal, and a quote that arrives before its deal exists, stays in the window for a later poll. A poll for one deal does not hide another deal's mail. Mail whose sender is not a supplier on the deal is not stored.
 
@@ -203,7 +259,51 @@ Tests cover an in-process IMAP server, the mock chat import, the price and appro
 
 On Render's free plan the disk is ephemeral, so `TRADEFLOW_DESK_DB` does not survive spin-down unless a disk is attached. The desk is built to stay inside the same 512 MB instance as the rest of the app.
 
-## AMD integration
+## Honest limits
+
+- *Proven in this repository (2026-10-28):* the decision core, the audit chain, the fail-closed quote-reading gates and the Tavily card are covered by tests that run offline or with fakes (see "What is proven" above). The request path to Token Factory and the Nemotron failover chain are in code and tested with fake endpoints.
+- *Checked live, three times, one quote read each (not benchmarks):* on 2026-10-28 (1) the Token Factory quote reader and the Tavily call were each exercised once on the demo with the Ultra default of that time; (2) one sample message was read on Super (`nvidia/nemotron-3-super-120b-a12b`) before any prompt change: the first attempt timed out at the then 12.0 s limit, the retry succeeded in 11.2 s, and the model labelled the supplier's own "我们正品单价 27.80 元/把" as `our_price_echo`, not `own_unit_offer` (a mislabel; its "隔壁厂给你 24 元那是次料" as `rival_price` was right); (3) after PR #31, the same sample message was read once more on Super with exactly one attempt (12.26 s, status ok, no timeout or retry), and this time 27.80 was labelled `own_unit_offer`. In every run the quote went to human review ("more than one price", a reason from the deterministic rule reader seeing two prices, not from a model label), no draft or counter was created, and the amount comes from the deterministic reader. What changed between (2) and (3): the extraction prompt now defines each label category (including that a price said right after a rival's price is the supplier's own offer), and the first-hop timeout is 30 s, the retry 20 s and the chain budget 80 s (were 12 s, 15 s and 57 s). Only this one sample was re-checked. The sample resembles two held-out evaluation items that the change exposed, so (3) is not a held-out result; it is one observation, not an accuracy or latency measurement. Details: "Single live check" in [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md).
+- *Not yet proven:* the accuracy of the quote reader (the Super run of the held-out evaluation is still pending), latency beyond these single calls, and that the label is stable across messages. No accuracy or latency benchmark is committed, and none is claimed here. No factory has closed a deal through this prototype.
+<!-- Live run 1 (single check, Ultra, not a benchmark): 2026-10-28 about 12:17 London (UTC), live demo https://tradeflow-ai-demo.onrender.com running master commit 5c0321830e5cadb7a4571fbe9ca46fe510017895. Nebius Token Factory: one sample quote (fictional example.test suppliers); recorded extractor attempt: provider nebius, model nvidia/Nemotron-3-Ultra-550b-a55b, status ok, latency 1.83 s (one call). That run used Ultra because it was the default of master 5c03218 at the time. Tavily: GET /api/v1/market/evidence?kind=market&product=... returned HTTP 200, status ok, 5 results, about 2.3 s (one call). -->
+<!-- Live run 2 (single check, Super, before the prompt change, not a benchmark): 2026-10-28, demo on master 10868aa, one sample deal and one pasted sample message to supplier A. Provider Nebius Token Factory, model nvidia/nemotron-3-super-120b-a12b; first attempt timed out at 12.0 s, retry of the same model succeeded in 11.2 s. Labels: rival_price (correct) and our_price_echo for the supplier's own offer (a mislabel). Quote went to review ("more than one price"); llm_price_ignored true; audit verify ok (8 entries); /health llm.model_calls_today 0 -> 1 of cap 40. Token usage not measured. -->
+<!-- Live run 3 (single check, Super, after PR #31, not a benchmark and not a held-out result): 2026-10-28, demo on master 1b4dc05, one sample deal and one pasted (source paste) sample message. Provider Nebius Token Factory, model nvidia/nemotron-3-super-120b-a12b, exactly one attempt, status ok, latency 12.26 s; no timeout, retry or failover. Total time 12.3 to 20.8 s (snapshot pending at 10.4 s, finished at the 20.8 s poll). Labels: "隔壁厂给你 24 元" rival_price; "我们正品单价 27.80 元/把" own_unit_offer (correct this time; last time our_price_echo); "起订 1000 把" other; "15 天出货" other. Quote still went to human review, reason "more than one price" (from the deterministic rule reader), suggested token 27.80, candidates 27.80 and 24; no draft or counter until a person confirms; llm_price_ignored true; audit verify ok (8 entries, no broken sequence); /health llm.model_calls_today 0 -> 1 of cap 40. One sample after the prompt was changed in response to run 2's mislabel; it resembles the two exposed held-out items. The Super eval run is still pending. -->
+**Limits for real use** (each checked against the code on master `120873e`):
+
+- The desk page has no currency choice. Deals are opened in CNY and most figures on it are labelled CNY (the API accepts CNY, USD or EUR).
+- Each supplier is entered as an email address.
+- Quotes are ranked on the confirmed unit price. Landed cost is used only when freight, fees and duty are entered for every quoted supplier. Tax-included or tax-excluded status is not compared. A minimum order and a lead time are read from the message and shown with the words they came from, and a minimum order above your order is flagged, but neither changes the ranking, the counter or the draft (PR #36).
+- A person confirms a figure that is already in the supplier's message. There is no manual price entry.
+- The rule reader still has known misreads (held-out set, [docs/QUOTE_READER_EVAL.md](docs/QUOTE_READER_EVAL.md)). Full-width digits such as `２８．５０元` were read as 50, and a price under a Chinese forward marker was taken as the current offer; both still happen in a local check on 2026-10-28. The desk shows the figure and a person confirms it, but a person can miss a wrong one.
+- A tier table is read only when every priced line has a quantity, every row has one price in the deal's currency and the rows do not overlap. Then the row for your quantity is pre-selected and a person confirms it. Any other table keeps the rule reader's pre-selection, which is the first row.
+- With one confirmed quote, the default draft equals that supplier's own ask, unless the person picks the push-lower counter.
+- The model is a second opinion. It can only point at one of the rule reader's own candidate figures. The desk pre-selects that figure only when the rules pre-selected none, and otherwise shows a disagreement. It never supplies a number, never confirms one, and the counter and draft come only from figures a person confirmed.
+- Paid model calls are capped at 40 per UTC day, counted in memory per server process; a restart resets the count. If the model service refuses the key or the credit (HTTP 401, 402 or 403), paid calls pause for 30 minutes and the desk reads with the rules only.
+- Deals live in the demo database on an ephemeral disk, so a restart or a cold start of the demo service loses them. The New deal button only leaves the current deal; the deal stays in the database until a restart.
+- Technical wording (prior, reserve, sensitivity) is folded under "How these figures were worked out", not removed or rewritten.
+- Approval on the live demo is unsigned (see "Approval and sending on the demo"). Real use needs a pinned approver public key (`TRADEFLOW_APPROVAL_PUBKEY`), signing with `python -m src.desk.approval_signing`, and an SMTP configuration (`DESK_SMTP_SEND=1`, `SMTP_HOST`, `EMAIL_USERNAME`, `EMAIL_PASSWORD`).
+- No closed-loop purchase. Supplier lines in the stress transcript are a script.
+- Synthetic self-play ([results/self_play_benchmark.md](results/self_play_benchmark.md), 20 matches × 5 archetypes, seed 42) is a parameterised simulator. Engine savings in that table run from **8.8% to 20.0%** versus the walk-away ceiling used by that table. Against the Hard-Bargainer the engine's 8.8% is behind the fixed 5%-per-round baseline's 9.2%. Seed 42 reproduces that table; it is not a variance estimate. It is not the auction headline.
+- The real-model log in the AMD section below is a different experiment. Against a Bluffing Hardliner the recorded deal rate is 61.11%, with 0 budget violations in 94 completed matches.
+- Held-out accuracy of the on-device intent model on the synthetic set is **63.08%** (195 of 500 held out). An older 92% figure was a training-set score.
+- Stage-2 is off the synchronous round path by default because the recorded AMD calls average 16.81 s. AMD live mode is a separate request with a timeout and an offline fallback label. No committed Gemma latency.
+- What was checked, and what was not: [docs/VERIFICATION.md](docs/VERIFICATION.md). `python scripts/check_claims.py` fails if a number in this file or in SUBMISSION.md drifts from its source, and if a doc states an MI300X figure that is not in `results/mi300x_roofline.json`.
+- The Evolus client is an optional email-draft adapter. The Evolus workflow was not created. This submission is not a second hackathon track.
+
+Hackathon text, demo script and judge steps: [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md). The earlier lablab (AMD) submission copy, a 3–5 minute demo script and a slide outline: [SUBMISSION.md](SUBMISSION.md).
+
+## Earlier AMD Developer Hackathon build
+
+Everything in this section describes the earlier target of this repository, the AMD Developer Hackathon ACT III (online phase 12–18 October 2026, concluded). It is kept for the record and because `scripts/check_claims.py` checks its figures. It is **not** the Nebius x NVIDIA entry: the AMD tokenfactory, `Gemma-4-31B-IT` and `Qwen3.8-Flash-Next` named here are not the Token Factory and Nemotron path described at the top of this file. No lablab submission record for this project has been located, and no prize or placement is claimed.
+
+### Earlier roadmap (AMD era)
+
+Roadmap: deploy the offline demo, turn on AMD live mode only when `VLLM_API_KEY` is a real secret, publish extraction accuracy only after a logged Gemma run, and keep the human on the send button.
+
+### Earlier AMD-endpoint rate cap on the demo
+
+Routes that can call the AMD endpoint (`POST /api/v1/quotes/read` with AMD live mode, and `POST /api/v1/classify/semantic` when stage 2 is requested) are capped in-process at 8 requests a minute per client address and 30 an hour for the whole process. A 429 does not echo the quote or any credential. With no real `VLLM_API_KEY`, those routes stay on the offline reader and the cap is not consumed.
+
+### AMD integration
 
 Three buckets. They are not interchangeable.
 
@@ -225,20 +325,8 @@ What is wired in code:
 
    The same command runs on CPU. Read `ran_on_amd_gpu` as printed. The HBM3 column it prints is the theoretical roofline lower-bound estimate, not measured.
 
-## Offline comparison
+### Offline comparison
 
 `python scripts/compare_llm_vs_tradeflow.py` writes [results/llm_vs_tradeflow.json](results/llm_vs_tradeflow.json). Fixed seed 42, 24 episodes, solver sample count in the file. `ran_on_amd` is false. The stand-in is `offline_accept_opening` (not an AMD call). TradeFlow budget-violation rate 0.00%, deal rate 50.00%, average savings versus the supplier opening 22.24% over deals only. The stand-in budget-violation rate is 100.00%, deal rate 100.00%, average savings 0.00%. That 22.24% is not the auction headline and not the secondary walk-away ceiling figure. `--live` still does not spend a multi-episode AMD run. One real chat is `python scripts/verify_amd_endpoint.py`.
-
-## Honest limits
-
-- No closed-loop purchase. Supplier lines in the stress transcript are a script.
-- Synthetic self-play ([results/self_play_benchmark.md](results/self_play_benchmark.md), 20 matches × 5 archetypes, seed 42) is a parameterised simulator. Engine savings in that table run from **8.8% to 20.0%** versus the walk-away ceiling used by that table. Against the Hard-Bargainer the engine's 8.8% is behind the fixed 5%-per-round baseline's 9.2%. Seed 42 reproduces that table; it is not a variance estimate. It is not the auction headline.
-- The real-model log above is a different experiment. Against a Bluffing Hardliner the recorded deal rate is 61.11%, with 0 budget violations in 94 completed matches.
-- Held-out accuracy of the on-device intent model on the synthetic set is **63.08%** (195 of 500 held out). An older 92% figure was a training-set score.
-- Stage-2 is off the synchronous round path by default because the recorded AMD calls average 16.81 s. AMD live mode is a separate request with a timeout and an offline fallback label. No committed Gemma latency.
-- What was checked, and what was not: [docs/VERIFICATION.md](docs/VERIFICATION.md). `python scripts/check_claims.py` fails if a number in this file or in SUBMISSION.md drifts from its source, and if a doc states an MI300X figure that is not in `results/mi300x_roofline.json`.
-- The Evolus client is an optional email-draft adapter. The Evolus workflow was not created. This submission is not a second hackathon track.
-
-Submission copy, a 3–5 minute demo script, and a slide outline: [SUBMISSION.md](SUBMISSION.md).
 
 License: MIT.

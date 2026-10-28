@@ -1,6 +1,8 @@
 (function () {
   const POLL_MS = 2000;
   const reviewChoice = new Map();
+  // Supplier cards whose "How these figures were worked out" section is open.
+  const workingsOpen = new Set();
   // Web evidence (Tavily) per supplier. The desk redraws every card on each poll, so a
   // result lives here, keyed by supplier id, and is painted into whichever card is on
   // screen. It is reference text: the counter is computed on the server from confirmed
@@ -45,6 +47,49 @@
     p.textContent = text;
     parent.appendChild(p);
     return p;
+  }
+
+  // The supplier's stated quote validity. It is shown, never used to rank or
+  // price: the send guard re-derives the counter from the chain, and a figure
+  // that depended on today's date would not re-derive.
+  function localDay(now) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+  }
+
+  function daysSince(iso, now) {
+    const then = Date.parse(iso || "");
+    if (Number.isNaN(then)) return null;
+    return Math.max(0, Math.floor((now.getTime() - then) / 86400000));
+  }
+
+  function validityText(supplier, now) {
+    const v = supplier.quote_validity;
+    const quoted = (spans) => spans.map((span) => "\u201c" + span + "\u201d").join(" / ");
+    if (!v) {
+      const age = daysSince(supplier.quote_received_at, now);
+      return {
+        warn: false,
+        text: "No validity stated" + (
+          age == null ? "." : age === 0 ? "; received today." : "; received " + age + (age === 1 ? " day" : " days") + " ago."
+        ),
+      };
+    }
+    if (v.status === "conflict") {
+      return { warn: true, text: "The message gives more than one validity: " + quoted(v.spans || []) + ". Check which one stands." };
+    }
+    if (v.status === "working_days") {
+      return { warn: false, text: "Validity is in working days: " + quoted([v.span]) + ". Check the end date with the supplier." };
+    }
+    const from = v.counted_from === "received" ? ", counted from when the desk received the message" : "";
+    if (localDay(now) > v.valid_until) {
+      return {
+        warn: true,
+        text: "Quote expired on " + v.valid_until + " (" + quoted([v.span]) + from + "). " +
+          "Ask the supplier to confirm the price still stands before you send. It is still ranked.",
+      };
+    }
+    return { warn: false, text: "Valid until " + v.valid_until + " (" + quoted([v.span]) + from + ")." };
   }
 
   function detailMessage(body) {
@@ -121,6 +166,20 @@
     } catch (err) {
       formError.textContent = err.message;
     }
+  });
+
+  // Leave this deal (it stays in the desk database) and show the form again.
+  document.getElementById("new-deal").addEventListener("click", () => {
+    if (timer) window.clearInterval(timer);
+    timer = 0;
+    dealId = "";
+    sessionStorage.removeItem("tfDeskDeal");
+    reviewChoice.clear();
+    workingsOpen.clear();
+    board.hidden = true;
+    formError.textContent = "";
+    form.hidden = false;
+    form.scrollIntoView({ block: "start" });
   });
 
   function start() {
@@ -300,6 +359,32 @@
     });
   }
 
+  // Minimum order and lead time, with the words they came from. Shown only:
+  // they never rank or price. An MOQ above the order is flagged.
+  function termsLines(card, supplier) {
+    const quoted = (spans) => spans.map((span) => "\u201c" + span + "\u201d").join(" / ");
+    const moq = supplier.supplier_moq;
+    if (moq && moq.status === "conflict") {
+      line(card, "Minimum order: the message gives more than one (" + quoted(moq.spans || []) + ").").className =
+        "desk-validity desk-warn";
+    } else if (moq) {
+      const amount = Number(moq.quantity).toLocaleString();
+      const text = supplier.moq_above_order
+        ? "Minimum order " + amount + " (" + quoted([moq.span]) + ") is above your order. It is still ranked."
+        : "Minimum order: " + amount + " (" + quoted([moq.span]) + ").";
+      line(card, text).className = supplier.moq_above_order ? "desk-validity desk-warn" : "desk-validity";
+    }
+    const lead = supplier.supplier_lead_time;
+    if (lead && lead.status === "conflict") {
+      line(card, "Lead time: the message gives more than one (" + quoted(lead.spans || []) + ").").className =
+        "desk-validity desk-warn";
+    } else if (lead && lead.status === "working_days") {
+      line(card, "Lead time in working days: " + quoted([lead.span]) + ".").className = "desk-validity";
+    } else if (lead) {
+      line(card, "Lead time: " + lead.days + " days (" + quoted([lead.span]) + ").").className = "desk-validity";
+    }
+  }
+
   function renderCards(suppliers) {
     const root = document.getElementById("cards");
     clear(root);
@@ -319,19 +404,24 @@
       const quote = supplier.latest_quote == null
         ? "no quote"
         : money(supplier.latest_quote, supplier.currency || "CNY");
-      line(card, "Record: " + (supplier.origin || "live"));
+      const origin = supplier.origin || "live";
+      // A live record is the normal case; only say so when it is not.
+      if (origin !== "live") line(card, "Record: " + origin);
       line(card, "Latest quote: " + quote);
+      if (supplier.latest_quote != null) {
+        const validity = validityText(supplier, new Date());
+        const validityLine = line(card, validity.text);
+        validityLine.className = validity.warn ? "desk-validity desk-warn" : "desk-validity";
+        termsLines(card, supplier);
+      }
       if (supplier.quote_confirmed === false) {
         line(card, "This quote is not confirmed.");
       }
-      const landed = supplier.landed_status === "complete" && supplier.landed_cost != null
-        ? money(supplier.landed_cost, "CNY")
-        : "no data";
-      line(card, "Landed cost: " + landed);
+      if (supplier.landed_status === "complete" && supplier.landed_cost != null) {
+        line(card, "Landed cost: " + money(supplier.landed_cost, "CNY"));
+      }
       const priorMean = supplier.d_prior_mean == null ? "labelled policy" : String(supplier.d_prior_mean);
       const priorStrength = supplier.d_prior_strength == null ? "labelled policy" : String(supplier.d_prior_strength);
-      line(card, "D prior (user policy): mean " + priorMean + ", strength " + priorStrength);
-      line(card, "Reserve: " + (supplier.reserve_note || supplier.belief_label || "no data"));
       if (supplier.needs_keep_confirmation) {
         line(card, "This supplier was not on the chain before migration. Confirm to keep them.");
         const keptAddress = document.createElement("input");
@@ -406,9 +496,25 @@
         chooseRow.appendChild(choose);
         card.appendChild(chooseRow);
       }
-      line(card, "At half the prior strength: " + half);
-      line(card, "At double the prior strength: " + doubled);
       line(card, "Walk-away hazard: " + hazardText(supplier));
+      // The model's working, for whoever wants it. Closed by default; stays
+      // open across the redraw on every poll once a person opens it.
+      const workings = document.createElement("details");
+      workings.className = "desk-workings";
+      workings.open = workingsOpen.has(supplier.id);
+      workings.addEventListener("toggle", () => {
+        if (workings.open) workingsOpen.add(supplier.id);
+        else workingsOpen.delete(supplier.id);
+      });
+      const summary = document.createElement("summary");
+      summary.textContent = "How these figures were worked out";
+      workings.appendChild(summary);
+      if (origin === "live") line(workings, "Record: live");
+      line(workings, "D prior (user policy): mean " + priorMean + ", strength " + priorStrength);
+      line(workings, "Reserve: " + (supplier.reserve_note || supplier.belief_label || "no data"));
+      line(workings, "At half the prior strength: " + half);
+      line(workings, "At double the prior strength: " + doubled);
+      card.appendChild(workings);
       if (supplier.excluded_from_decision) {
         line(card, "Excluded from the decision until you include unverified quotes.");
       }
@@ -511,6 +617,16 @@
     if (provenance.extractor_error === "extractor_daily_cap") {
       return "Today's model budget on this server is spent. Read by the rule reader only.";
     }
+    if (provenance.extractor_error === "extractor_paused") {
+      return "Model calls are paused: the model service refused this server's key or its credit is spent. " +
+        "Read by the rule reader only.";
+    }
+    if (provenance.extractor_error === "extractor_account") {
+      const refused = (provenance.extractor_attempts || []).map((a) => a && a.status).filter(Boolean).pop() || "";
+      return "The model service refused this server's key or its credit is spent" +
+        (refused ? " (" + refused.replace("http_", "HTTP ") + ")" : "") +
+        ". Model calls pause for a while; read by the rule reader only.";
+    }
     const attempts = provenance.extractor_attempts || [];
     let used = null;
     attempts.forEach((attempt) => { if (attempt && attempt.status === "ok") used = attempt; });
@@ -578,10 +694,39 @@
         : (provenance.tokens || []);
       const suggested = provenance.suggested_token || "";
       const currency = provenance.currency || "CNY";
-      let chosen = saved.token || suggested || "";
+      // A figure the person picked stays. A pre-selection they did not touch
+      // follows the latest suggestion, so a model result that arrives after
+      // the first draw can still point at the supplier's own offer.
+      let chosen = (saved.token && !saved.auto) ? saved.token : (suggested || saved.token || "");
       if (chosen && tokens.indexOf(chosen) < 0) chosen = "";
-      if (chosen && !saved.token) {
-        reviewChoice.set(item.id, { supplierId: item.supplier_id || saved.supplierId || "", token: chosen });
+      if (chosen && (!saved.token || saved.auto)) {
+        reviewChoice.set(item.id, {
+          supplierId: saved.supplierId || item.supplier_id || "", token: chosen, auto: true,
+        });
+      }
+      const tier = provenance.tier_pick;
+      if (tier && tier.token && tokens.indexOf(tier.token) >= 0) {
+        const qty = Number(tier.quantity);
+        const units = Number.isFinite(qty) ? qty.toLocaleString() : "your quantity";
+        const tierText = tier.below_smallest
+          ? "Tier table: your order (" + units + ") is below the smallest row, \u201c" + tier.row +
+            "\u201d. Check the MOQ with the supplier before you accept " + tier.token + "."
+          : "Tier table: for " + units + " the row is \u201c" + tier.row + "\u201d, so " + tier.token +
+            " is pre-selected. You confirm it.";
+        line(block, tierText).className = tier.below_smallest ? "desk-model-hint desk-disagree" : "desk-model-hint";
+      }
+      const modelToken = provenance.model_offer_token || "";
+      if (modelToken && tokens.indexOf(modelToken) >= 0) {
+        const said = provenance.model_offer_span ? " (\u201c" + provenance.model_offer_span + "\u201d)" : "";
+        const hint = provenance.model_disagrees
+          ? "The model calls " + modelToken + " the supplier's own offer" + said +
+            ", but the rules read " + suggested + ". Check before you accept."
+          : provenance.suggested_by === "model"
+            ? "Pre-selected " + modelToken + ": the model labelled it the supplier's own offer" + said +
+              ". The rules did not pick one. You confirm it."
+            : "The model agrees: it labelled " + modelToken + " the supplier's own offer" + said + ".";
+        const hintLine = line(block, hint);
+        hintLine.className = provenance.model_disagrees ? "desk-model-hint desk-disagree" : "desk-model-hint";
       }
       const note = document.createElement("p");
       function lineContaining(raw, token) {
@@ -616,7 +761,12 @@
           const pick = document.createElement("button");
           pick.type = "button";
           pick.textContent = token;
+          if (token === modelToken) {
+            pick.dataset.model = "own_unit_offer";
+            pick.title = "The model labelled this figure the supplier's own offer";
+          }
           if (token === chosen) pick.disabled = true;
+          pick.setAttribute("aria-pressed", token === chosen ? "true" : "false");
           pick.addEventListener("click", () => {
             chosen = token;
             reviewChoice.set(item.id, { supplierId: select.value, token: token });
@@ -624,6 +774,7 @@
             button.disabled = !chosen;
             Array.prototype.forEach.call(picks.children, (node) => {
               node.disabled = node === pick;
+              node.setAttribute("aria-pressed", node === pick ? "true" : "false");
             });
           });
           picks.appendChild(pick);
@@ -645,7 +796,7 @@
       if (saved.supplierId) select.value = saved.supplierId;
       select.addEventListener("change", () => {
         const prev = reviewChoice.get(item.id) || {};
-        reviewChoice.set(item.id, { supplierId: select.value, token: prev.token || chosen });
+        reviewChoice.set(item.id, { supplierId: select.value, token: prev.token || chosen, auto: Boolean(prev.auto) });
       });
       const actions = document.createElement("div");
       actions.className = "desk-actions";
@@ -852,6 +1003,29 @@
     }
   });
 
+  // Freight, fees and duty go in together or not at all. A blank is "no data",
+  // never zero, so a partly filled set would silently rank on the unit price.
+  function landedInputs() {
+    const ids = ["paste-freight", "paste-fees", "paste-duty"];
+    const raw = ids.map((id) => {
+      const el = document.getElementById(id);
+      return el ? el.value.trim() : "";
+    });
+    const filled = raw.filter((value) => value !== "").length;
+    if (filled === 0) return { values: null };
+    if (filled < raw.length) return { error: "Fill freight, fees and duty together (0 counts), or leave all three blank." };
+    const numbers = raw.map(Number);
+    if (numbers.some((value) => !Number.isFinite(value) || value < 0)) return { error: "Freight, fees and duty must be zero or more." };
+    return { values: { freight: numbers[0], fees: numbers[1], duty_rate: numbers[2] / 100 } };
+  }
+
+  function clearLandedInputs() {
+    ["paste-freight", "paste-fees", "paste-duty"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+  }
+
   document.getElementById("paste-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const error = document.getElementById("paste-error");
@@ -863,6 +1037,12 @@
       raw_text: area.value,
       supplier_id: document.getElementById("paste-supplier").value,
     };
+    const landed = landedInputs();
+    if (landed.error) {
+      error.textContent = landed.error;
+      return;
+    }
+    if (landed.values) Object.assign(payload, landed.values);
     if (isSample) {
       // Treated like any paste so the desk computes a counter. The record names
       // its source; the deal's suppliers are fictional example.test addresses.
@@ -875,6 +1055,7 @@
         body: JSON.stringify(payload),
       });
       area.value = "";
+      clearLandedInputs();
       delete area.dataset.sample;
       showNote("paste-sample-note", "");
       if (result.snapshot) show(result.snapshot);

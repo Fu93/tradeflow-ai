@@ -12,6 +12,20 @@
     return value;
   }
 
+  // The supplier's stated validity. Shown only; it never ranks or prices.
+  function validityText(supplier) {
+    const v = supplier.quote_validity;
+    if (supplier.latest_quote == null || !v) return "";
+    if (v.status === "conflict") return "Validity: more than one statement; check the message.";
+    if (v.status === "working_days") return "Validity in working days: \u201c" + v.span + "\u201d.";
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const today = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+    return today > v.valid_until
+      ? "Quote expired on " + v.valid_until + ". Confirm the price still stands before you send."
+      : "Valid until " + v.valid_until + ".";
+  }
+
   function hazardText(supplier) {
     if (supplier.hazard == null || supplier.hazard !== supplier.hazard) return "no data";
     const atDefault = (Math.round(Number(supplier.hazard) * 1000) / 10).toFixed(1);
@@ -189,7 +203,11 @@
       const priorMean = supplier.d_prior_mean == null ? "labelled policy" : String(supplier.d_prior_mean);
       const priorStrength = supplier.d_prior_strength == null ? "labelled policy" : String(supplier.d_prior_strength);
       row.appendChild(document.createTextNode(supplier.name));
-      ["Default counter: " + counter,
+      [validityText(supplier),
+        supplier.moq_above_order && supplier.supplier_moq
+          ? "Minimum order " + Number(supplier.supplier_moq.quantity).toLocaleString() + " is above your order."
+          : "",
+        "Default counter: " + counter,
         "Push lower: " + push,
         supplier.push_note || "",
         "D prior (user policy): mean " + priorMean + ", strength " + priorStrength,

@@ -364,6 +364,7 @@ _STATUS_FROM_ERROR = {
     "extractor_too_large": "too_large",
     "extractor_unreachable": "unreachable",
     "extractor_failed": "failed",
+    "extractor_account": "account_refused",
 }
 
 
@@ -381,6 +382,13 @@ def _result_status(result: dict[str, Any]) -> str:
     if not error:
         return "ok"
     return _STATUS_FROM_ERROR.get(str(error), "failed")
+
+
+def _account_refusal(status: str) -> bool:
+    """HTTP 401, 402 or 403 from the model service: the account itself is refused."""
+    from src.config.heuristics import LLM_ACCOUNT_REFUSAL_STATUSES
+
+    return status in {"http_" + str(int(code)) for code in LLM_ACCOUNT_REFUSAL_STATUSES}
 
 
 def _arms_nvidia(status: str) -> bool:
@@ -603,14 +611,22 @@ def extract_mentions(
     Nebius Super, then one Super retry. ``TRADEFLOW_LLM_MODEL`` replaces the first
     hop's model. NVIDIA Super runs only after Nebius itself fails with a timeout, a
     connection error, HTTP 429, HTTP 5xx, or a malformed body, and only when
-    ``NVIDIA_API_KEY`` is set. Any other 4xx does not open NVIDIA. The whole
-    chain stops at the budget. Every hop is recorded.
+    ``NVIDIA_API_KEY`` is set. Any other 4xx does not open NVIDIA. HTTP 401, 402
+    or 403 (key refused, no credit) stops the chain with no retry and pauses
+    paid calls for a while. The whole chain stops at the budget. Every hop is
+    recorded.
     """
     if not configured() and transport is None:
         return {"mentions": [], "numeric_field_discarded": False, "configured": False}
     if transport is None:
-        from src.engine.llm_config import take_model_call
+        from src.engine.llm_config import model_calls_paused, take_model_call
 
+        if model_calls_paused() is not None:
+            # The service refused the account a short while ago (no credit, or
+            # the key was refused). Calling again cannot succeed.
+            paused = _empty("extractor_paused")
+            paused["attempts"] = []
+            return paused
         if not take_model_call():
             # Today's paid-call cap is spent: the rule reader carries on, and
             # the quote says why it was not read by the model.
@@ -640,6 +656,17 @@ def extract_mentions(
         if status == "ok":
             last["attempts"] = list(attempts)
             return last
+        if _account_refusal(status):
+            # 401, 402 or 403: the key is refused or the balance is spent. The
+            # same key cannot succeed on a retry, so the chain stops here and
+            # paid calls pause. Only the real service pauses the budget.
+            if transport is None:
+                from src.engine.llm_config import note_model_refusal
+
+                note_model_refusal(int(status.split("_", 1)[1]))
+            last = _empty("extractor_account")
+            stopped = True
+            break
         if _arms_nvidia(status):
             provider_failed = True
     if not stopped and provider_failed and _env("NVIDIA_API_KEY"):
