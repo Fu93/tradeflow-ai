@@ -39,7 +39,8 @@ def _letter_run_after(text: str, index: int) -> tuple[str, int]:
 
 
 def _is_digit(char: str) -> bool:
-    return "0" <= char <= "9"
+    # ASCII and full-width digits; float() reads both.
+    return "0" <= char <= "9" or "０" <= char <= "９"
 
 
 def _group_is_thousands(text: str, index: int) -> bool:
@@ -79,7 +80,7 @@ def read_amounts(text: str) -> list[float]:
             if char == "," and not saw_decimal and _group_is_thousands(raw, index + 1):
                 index += 1
                 continue
-            if char in {",", "."} and not saw_decimal:
+            if char in {",", ".", "．"} and not saw_decimal:
                 saw_decimal = True
                 index += 1
                 continue

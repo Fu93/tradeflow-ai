@@ -14,17 +14,24 @@ from typing import Any
 from src.engine.bilingual import InboundIntentClassifier
 from src.engine.quote_fields import price_the_solver_may_use
 
+# A full-width full stop (U+FF0E) is a decimal mark too: "２８．５０元" is 28.50.
+# Without it the digits split into "２８" and "５０" and the reader took 50.
+# The token stays as written, so a confirmation still quotes the message.
 _NUM = (
-    r"(?<![\d.,])(?:"
+    r"(?<![\d.,．])(?:"
     r"\d{1,3}(?:\.\d{3})+,\d+|"
     r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|"
-    r"\d+(?:[.,]\d+)?"
-    r")(?![\d.]|,(?=\d))"
+    r"\d+(?:[.,．]\d+)?"
+    r")(?![\d.．]|,(?=\d))"
 )
 _TOKEN = re.compile(_NUM)
 _PRICE_KEYS = ("price", "unit_price", "mentioned_price", "quoted_amount", "cny_amount")
+# Forwarded history starts at one of these lines. A dash rule around 转发 or
+# 轉發 (any of - — – = and spaces, with or without 邮件/郵件/消息/訊息) counts,
+# so "—— 转发 ——" ends the supplier's own words like "----- 转发邮件 -----" does.
 _QUOTE_SPLIT = re.compile(
     r"(?im)^(?:-----original message-----|-----\s*转发邮件\s*-----|----\s*转发邮件\s*----|"
+    r"[-—–=\s]{2,}(?:转发|轉發)(?:邮件|郵件|消息|訊息)?[-—–=\s]{2,}|"
     r"-{6,}\s*forwarded message\s*-{6,}|原始邮件|发件人\s*[:：]|from\s*:|on .+wrote:\s*)$"
 )
 _DATE = re.compile(r"(?:19|20)\d{2}[-/.]\d{1,2}(?:[-/.]\d{1,2})?")
@@ -215,7 +222,7 @@ def numeric_tokens(text: str) -> list[tuple[str, float]]:
 
 
 def _number(token: str) -> float | None:
-    text = token.strip()
+    text = token.strip().replace("．", ".")
     if re.fullmatch(r"\d{1,3}(?:\.\d{3})+,\d+", text):
         text = text.replace(".", "").replace(",", ".")
     elif re.fullmatch(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?", text):
@@ -691,8 +698,13 @@ def _inside(span: tuple[int, int], ranges: list[tuple[int, int]]) -> bool:
     return any(not (end <= left or start >= right) for left, right in ranges)
 
 
+# Full-width digits and the full-width full stop, as ASCII, for the second
+# reader (bilingual.extract_quoted_price), which reads ASCII digits only.
+_ASCII_DIGITS = str.maketrans("０１２３４５６７８９．", "0123456789.")
+
+
 def _settled(token: str) -> float | None:
-    settled = InboundIntentClassifier.extract_quoted_price("单价 " + token + " 元")
+    settled = InboundIntentClassifier.extract_quoted_price("单价 " + token.translate(_ASCII_DIGITS) + " 元")
     if settled.cny_amount is None:
         return None
     value = _number(token)

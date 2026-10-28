@@ -51,7 +51,7 @@ Every reader is limited to the desk's unit-sanity band around the deal's target 
 - a price derived from a discount
 - a WeChat-style message split over several lines
 
-We have not fixed either defect yet. Fixing the parser after seeing this set would stop it being held-out for the rules, so the fix waits until the Nemotron run below is recorded, and both results will be kept.
+Fixing the parser after seeing this set stops it being held-out for the rules. So the fix (below) is merged only after the Nemotron run is recorded, and both results are kept.
 
 ## A change to the reader before the Nemotron run (2026-10-28)
 
@@ -110,6 +110,23 @@ One call per message took a median of 3.9 s and at most 8.3 s. The run used 14,1
 - **The gate is conservative by design.** It can only accept what the rules accept, so it cannot be right more often than the rules. Here it is right 14 times with one wrong read, where the rules alone had two.
 - **"Super alone" here is looser than the desk.** This script reads the amount from any span the model calls the supplier's own offer. On the desk, the model's pick must also pass the gate's currency and per-piece tests (PR #35). So `Best price 27.5 per piece.` (`en_no_currency`), which has no currency, would not be pre-selected there. How often the desk's stricter test keeps the six correct reads was not measured.
 - **On the desk the model is a second opinion.** In four of the six messages Super read correctly, the rules pre-selected no figure; the model's figure fills that gap when it passes those tests. In the two exposed messages, the rules already pre-selected the right figure and the model agrees. A person confirms every figure, and the gate never accepts on its own (`auto_accept` stays off).
+
+## The two parser defects, fixed after the Nemotron run
+
+Both are fixed in `src/desk/parse.py` and `src/desk/span_read.py`, with tests in `tests/test_parse_fullwidth_and_forward.py`:
+
+- A full-width full stop is now a decimal mark, so `２８．５０元` reads as 28.50. The token stays as written, so a person's confirmation still quotes the message.
+- A dash rule around 转发 or 轉發 now starts forwarded history, like `----- 转发邮件 -----` already did.
+
+[`results/quote_reader_eval_rules_after_fix.json`](../results/quote_reader_eval_rules_after_fix.json) is the rules run after the fix:
+
+| Reader | Correct | Wrong | Missed | Held for a person |
+|---|---|---|---|---|
+| rules, after the fix | 15 | 0 | 7 | 18 |
+
+**This run is not held-out.** The two fixes were made after looking at two items in this set. The held-out figure for the rules is the baseline above (14 correct, 2 wrong). Both files are kept.
+
+After the fix, `zh_forward_old` is held for a person by the rules. The gate only accepts a figure the rules accept, so the gate's one wrong read in the Nemotron run (above) becomes held too. The model alone still reads the forwarded 31.00; on the desk a person confirms. `zh_fullwidth_digits` now reads 28.50 by the rules; the model had left it for a person. These are deductions from the code, not a new model run.
 
 ## How to run it
 
