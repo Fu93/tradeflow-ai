@@ -69,32 +69,12 @@ def _mention_agrees(
     high: float,
     currency: str,
 ) -> float | None:
-    if mention.get("class") != "own_unit_offer":
+    """The gate's test: an own-offer span whose amount equals the rules' amount."""
+    found = _own_offer_amount(mention, message, low, high, currency)
+    if found is None:
         return None
-    if mention.get("class") == "instruction":
-        return None
-    if str(mention.get("speaker") or "") != "supplier":
-        return None
-    if str(mention.get("polarity") or "") != "affirmative":
-        return None
-    if bool(mention.get("is_question")):
-        return None
-    span = str(mention.get("evidence_span") or "")
-    if not span_in_message(span, message):
-        return None
-    if _NOT_UNIT_GOODS.search(span):
-        return None
-    nearby = _neighborhood(message, span)
-    if str(mention.get("currency") or "") != currency:
-        return None
-    if not (currency_marked(span, currency) or currency_marked(nearby, currency)):
-        return None
-    if str(mention.get("unit") or "") != "per_piece" and not (per_piece_marked(span) or per_piece_marked(nearby)):
-        return None
-    amount = read_one(span)
-    if amount is None or amount != float(rule_value):
-        return None
-    if amount < float(low) or amount > float(high):
+    amount, _span = found
+    if amount != float(rule_value):
         return None
     return amount
 
@@ -108,19 +88,24 @@ def _own_offer_amount(
 ) -> tuple[float, str] | None:
     """The amount in a span the model calls the supplier's own unit offer.
 
-    The same tests as the gate, except agreement with the rules: the class,
-    speaker, polarity, the span verbatim in the message, a currency and a
-    per-piece mark, no total or fee words, and the deal's sanity band. The
-    amount is read by code from the span; the model never supplies it.
+    The gate and the second opinion share these tests, so they cannot drift
+    apart: the class, speaker, polarity, the span verbatim in the message, a
+    currency and a per-piece mark, no total or fee words, and the deal's
+    sanity band. The amount is read by code from the span; the model never
+    supplies it.
     """
     if mention.get("class") != "own_unit_offer":
         return None
     if str(mention.get("speaker") or "") != "supplier":
         return None
-    if str(mention.get("polarity") or "") != "affirmative" or bool(mention.get("is_question")):
+    if str(mention.get("polarity") or "") != "affirmative":
+        return None
+    if bool(mention.get("is_question")):
         return None
     span = str(mention.get("evidence_span") or "")
-    if not span or not span_in_message(span, message) or _NOT_UNIT_GOODS.search(span):
+    if not span_in_message(span, message):
+        return None
+    if _NOT_UNIT_GOODS.search(span):
         return None
     nearby = _neighborhood(message, span)
     if str(mention.get("currency") or "") != currency:
