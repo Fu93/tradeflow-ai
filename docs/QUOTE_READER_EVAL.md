@@ -51,7 +51,7 @@ Every reader is limited to the desk's unit-sanity band around the deal's target 
 - a price derived from a discount
 - a WeChat-style message split over several lines
 
-We have not fixed either defect yet. Fixing the parser after seeing this set would stop it being held-out for the rules, so the fix waits until the Nemotron run below is recorded, and both results will be kept.
+Fixing the parser after seeing this set stops it being held-out for the rules. So the fix (below) is merged only after the Nemotron run is recorded, and both results are kept.
 
 ## A change to the reader before the Nemotron run (2026-10-28)
 
