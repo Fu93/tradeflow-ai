@@ -63,3 +63,13 @@
   .cards { grid-template-columns: 1fr 1fr; }
   .desk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
 }
+
+/* Reader trace: which model read the message and the spans it labelled. */
+.desk-trace { display: grid; gap: 4px; margin: 6px 0; font-size: 0.9em; }
+.desk-trace p { margin: 0; }
+.desk-trace-head { color: var(--ink-soft, #3e463f); }
+.desk-trace-spans { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.desk-trace-spans li { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: baseline; max-width: 100%; padding: 2px 8px; border: 1px solid var(--rule, #ddd2c2); border-radius: 999px; overflow-wrap: anywhere; }
+.desk-trace-spans li[data-span-class="own_unit_offer"] { border-color: currentColor; font-weight: 600; }
+.desk-trace-label { color: var(--ink-soft, #3e463f); font-size: 0.85em; }
+.desk-trace-agree { font-weight: 600; }

@@ -298,6 +298,33 @@ def _prepare_reading(raw_text: str, deal: dict[str, Any], *, llm_fields: dict | 
     reading["provenance"] = provenance
     return {"reading": reading, "shadow": shadow, "low": low, "high": high}
 
+def _mention_trace(raw_text: str, shadow: dict[str, Any]) -> list[dict[str, Any]]:
+    """What the model labelled, for a person to read: class and verbatim span only.
+
+    A span that is not in the message is dropped, so the desk never shows text
+    the supplier did not write. No amount is kept; amounts come from the rules
+    and from the person who confirms one.
+    """
+    from src.config.heuristics import DESK_TRACE_MAX_MENTIONS
+    from src.desk.span_read import span_in_message
+
+    rows: list[dict[str, Any]] = []
+    for mention in shadow.get("mentions") or []:
+        if len(rows) >= int(DESK_TRACE_MAX_MENTIONS):
+            break
+        span = str(mention.get("evidence_span") or "")
+        if not span or not span_in_message(span, raw_text):
+            continue
+        rows.append({
+            "class": str(mention.get("class") or "other"),
+            "span": span,
+            "speaker": str(mention.get("speaker") or "other"),
+            "polarity": str(mention.get("polarity") or "affirmative"),
+            "is_question": bool(mention.get("is_question")),
+        })
+    return rows
+
+
 def _quantity_token(raw_text: str, token: str) -> bool:
     """A MOQ or a quantity unit is not a unit price, even when it sits near one."""
     if not token or token not in (raw_text or ""):
@@ -361,6 +388,8 @@ def _ingest_locked(
         provenance["extractor_error"] = shadow["error"]
     if shadow.get("attempts"):
         provenance["extractor_attempts"] = list(shadow["attempts"])
+    if shadow.get("mentions"):
+        provenance["extractor_mentions"] = _mention_trace(raw_text, shadow)
     if shadow.get("extractor_pending"):
         provenance["extractor_pending"] = True
     if freight is not None:
@@ -511,6 +540,7 @@ def _apply_extractor_result(
         if shadow.get("error"):
             provenance["extractor_error"] = shadow["error"]
         provenance["extractor_attempts"] = list(shadow.get("attempts") or [])
+        provenance["extractor_mentions"] = _mention_trace(str(event.get("raw_text") or ""), shadow)
         store.set_event_status(
             event_id,
             status=str(event.get("status") or "review"),
@@ -546,6 +576,7 @@ def _apply_extractor_result(
     if shadow.get("error"):
         provenance["extractor_error"] = shadow["error"]
     provenance["extractor_attempts"] = list(shadow.get("attempts") or [])
+    provenance["extractor_mentions"] = _mention_trace(str(event.get("raw_text") or ""), shadow)
     parsed = dict(event.get("parsed") or {})
     if event.get("status") == "review":
         parsed["unit_price"] = None

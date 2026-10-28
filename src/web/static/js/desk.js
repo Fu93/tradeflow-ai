@@ -456,6 +456,67 @@
     return match[1] + " " + match[2] + " UTC";
   }
 
+  // What the model did with a message: which model, how long, and the spans it
+  // labelled. Spans are verbatim supplier text; no amount comes from the model.
+  const SPAN_LABELS = {
+    own_unit_offer: "Supplier's offer",
+    rival_price: "Rival's price",
+    our_price_echo: "Your figure, echoed",
+    refusal: "Refusal",
+    question: "Question",
+    discount_delta: "Discount",
+    fee: "Fee",
+    deposit: "Deposit",
+    tier_table: "Tier table",
+    instruction: "Instruction (ignored)",
+    other: "Other",
+  };
+
+  function readerSummary(provenance) {
+    if (provenance.extractor_pending) return "The model is reading this message\u2026";
+    const attempts = provenance.extractor_attempts || [];
+    let used = null;
+    attempts.forEach((attempt) => { if (attempt && attempt.status === "ok") used = attempt; });
+    if (!attempts.length) return "Read by the rule reader only.";
+    if (!used) return "The model did not answer (" + String(attempts[attempts.length - 1].status || "failed") + "). Rule reader only.";
+    const seconds = Number(used.latency_s);
+    const took = Number.isFinite(seconds) ? " in " + seconds.toFixed(1) + " s" : "";
+    const where = used.provider === "nebius" ? "Nebius Token Factory" : String(used.provider || "");
+    const tries = attempts.length > 1 ? " after " + String(attempts.length - 1) + " failed attempt" + (attempts.length > 2 ? "s" : "") : "";
+    return "Read by " + String(used.model || "a model") + " on " + where + took + tries + ".";
+  }
+
+  function readerTrace(provenance) {
+    const wrap = document.createElement("div");
+    wrap.className = "desk-trace";
+    line(wrap, readerSummary(provenance || {})).className = "desk-trace-head";
+    const mentions = (provenance && provenance.extractor_mentions) || [];
+    if (mentions.length) {
+      const list = document.createElement("ul");
+      list.className = "desk-trace-spans";
+      mentions.forEach((mention) => {
+        const item = document.createElement("li");
+        item.dataset.spanClass = String(mention.class || "other");
+        const label = document.createElement("span");
+        label.className = "desk-trace-label";
+        let text = SPAN_LABELS[mention.class] || String(mention.class || "Other");
+        if (mention.is_question) text += " (question)";
+        if (mention.polarity === "negative") text += " (negative)";
+        label.textContent = text;
+        const span = document.createElement("q");
+        span.textContent = String(mention.span || "");
+        item.appendChild(label);
+        item.appendChild(span);
+        list.appendChild(item);
+      });
+      wrap.appendChild(list);
+    }
+    if (provenance && provenance.shadow_would_accept) {
+      line(wrap, "The rules and the model agree on the amount. You still confirm it.").className = "desk-trace-agree";
+    }
+    return wrap;
+  }
+
   function renderReview(items, suppliers) {
     const root = document.getElementById("review");
     clear(root);
@@ -473,6 +534,7 @@
       const pre = document.createElement("pre");
       pre.textContent = item.raw_text || "";
       block.appendChild(pre);
+      block.appendChild(readerTrace(item.provenance || {}));
       const provenance = item.provenance || {};
       const tokens = provenance.candidates && provenance.candidates.length
         ? provenance.candidates
@@ -605,6 +667,7 @@
       const pre = document.createElement("pre");
       pre.textContent = item.raw_text || "";
       block.appendChild(pre);
+      block.appendChild(readerTrace(item.provenance || {}));
       root.appendChild(block);
     });
   }
