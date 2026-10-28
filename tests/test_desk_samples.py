@@ -1,4 +1,4 @@
-"""The desk's sample deal and sample message: fictional, valid, and stored as simulated."""
+"""The desk's sample deal and sample message: fictional, labelled, and able to drive a counter."""
 from __future__ import annotations
 
 import json
@@ -51,7 +51,7 @@ def test_sample_deal_passes_the_deal_schema():
     })
 
 
-def test_sample_message_sent_unchanged_is_stored_as_simulated(desk_env):
+def test_sample_message_drives_a_counter_and_names_its_source(desk_env):
     from fastapi.testclient import TestClient
     from src.app.main import app
 
@@ -70,14 +70,22 @@ def test_sample_message_sent_unchanged_is_stored_as_simulated(desk_env):
     # The body the page sends for an unchanged sample message.
     posted = client.post(f"/api/v1/desk/deals/{deal_id}/quotes", headers=headers, json={
         "source": "paste", "raw_text": data["message"], "supplier_id": supplier,
-        "simulated": True, "page_title": "TradeFlow sample message (simulated)",
+        "page_title": "TradeFlow sample message (fictional demo text)",
     })
     assert posted.status_code == 200, posted.text
     event = posted.json()["event"]
-    assert event["provenance"]["origin"] == "simulated"
-    assert event["provenance"]["simulated"] is True
+    assert event["provenance"]["page_title"] == "TradeFlow sample message (fictional demo text)"
     assert event["status"] == "review"
     assert event["parsed"]["unit_price"] is None
+    # A person confirms the supplier's own offer; the desk then issues a counter.
+    accepted = client.post(f"/api/v1/desk/deals/{deal_id}/review/{event['id']}", headers=headers, json={
+        "action": "accept", "supplier_id": supplier, "chosen_token": "27.80",
+    })
+    assert accepted.status_code == 200, accepted.text
+    card = next(row for row in accepted.json()["suppliers"] if row["id"] == supplier)
+    assert card["latest_quote"] == 27.8
+    assert card["counter"] is not None
+    assert card["excluded_from_decision"] is False
 
 
 def test_desk_page_wires_the_samples_without_numbers_in_code():
@@ -85,5 +93,6 @@ def test_desk_page_wires_the_samples_without_numbers_in_code():
     script = (ROOT / "src/web/static/js/desk.js").read_text(encoding="utf-8")
     assert 'id="sample-deal"' in page and 'id="sample-message"' in page
     assert '"/static/samples/desk_sample.json"' in script
-    assert "payload.simulated = true;" in script
+    assert "payload.page_title = \"TradeFlow sample message (fictional demo text)\";" in script
+    assert "simulated" not in "TradeFlow sample message (fictional demo text)"
     assert _sample()["message"] not in script

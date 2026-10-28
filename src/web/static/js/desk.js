@@ -746,7 +746,7 @@
       const area = document.getElementById("paste-text");
       area.value = String(data.message || "");
       area.dataset.sample = area.value;
-      showNote("paste-sample-note", "Sample text. It is stored as simulated, not as a live quote.");
+      showNote("paste-sample-note", "Fictional sample text. The desk treats it like a pasted quote so you can see the counter; the record says it came from this button.");
     } catch (err) {
       document.getElementById("paste-error").textContent = err.message;
     }
@@ -764,8 +764,9 @@
       supplier_id: document.getElementById("paste-supplier").value,
     };
     if (isSample) {
-      payload.simulated = true;
-      payload.page_title = "TradeFlow sample message (simulated)";
+      // Treated like any paste so the desk computes a counter. The record names
+      // its source; the deal's suppliers are fictional example.test addresses.
+      payload.page_title = "TradeFlow sample message (fictional demo text)";
     }
     try {
       const result = await request("/api/v1/desk/deals/" + dealId + "/quotes", {
