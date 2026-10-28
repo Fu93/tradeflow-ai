@@ -388,12 +388,12 @@ function tfSourceKind() {
   const amd = round.amd_live || {};
   const reading = tfReadingStatus(round);
   const failed = reading === "offline_fallback" || reading === "timeout" || reading === "failed";
-  const available = !!(tfHealth.llm && tfHealth.llm.amd_live_available === true);
+  const available = !!(tfHealth.llm && (tfHealth.llm.live_available === true || tfHealth.llm.amd_live_available === true));
   const quote = round.quote_read && typeof round.quote_read === "object" ? round.quote_read : null;
   const display = typeof (quote && quote.display) === "string"
     ? quote.display
     : (typeof round.display === "string" ? round.display : "");
-  const liveLine = display.indexOf("AMD GPU Cloud") === 0;
+  const liveLine = display.indexOf("AMD GPU Cloud") === 0 || display.indexOf("Nebius Token Factory") === 0;
   const liveRequested = amd.requested === true;
   if (amd.decides_price === true) return tfIsSimulator(round) ? "simulator" : "offline";
   if ((liveRequested && available && !failed) || (reading === "ok" && liveLine)) return "amd-live";

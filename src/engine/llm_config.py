@@ -20,6 +20,11 @@ _PLACEHOLDER_EXACT = {
 }
 
 AMD_TOKENFACTORY_BASE = "https://developer.amd.com.cn/radeon/api/v1"
+NEBIUS_PROVIDER = "nebius_token_factory"
+AMD_PROVIDER = "amd_vllm"
+# What the live quote reader says it used. The UI trusts a reading as live only
+# when its display line starts with one of these.
+PROVIDER_LABELS = {NEBIUS_PROVIDER: "Nebius Token Factory", AMD_PROVIDER: "AMD GPU Cloud"}
 EVOLUS_CHAT_BASE = "https://api.evolus.ai/v1"
 
 # New Stage-2 calls use Gemma. Qwen3.8-Flash-Next stays available by setting
@@ -52,14 +57,53 @@ def _real_url(value: str | None) -> str | None:
     return text.rstrip("/")
 
 
+def nebius_endpoint() -> dict | None:
+    """Nebius Token Factory with a Nemotron model, when its key is set.
+
+    The same key the desk quote reader uses (``TRADEFLOW_LLM_API_KEY``, or
+    ``OPENAI_API_KEY``). The model is the Super model, the desk reader's second
+    hop, because this path answers a person waiting on the dashboard.
+    """
+    from src.config.heuristics import EXTRACTOR_BASE_URL, EXTRACTOR_FALLBACK_MODEL
+
+    key = real_secret(os.getenv("TRADEFLOW_LLM_API_KEY")) or real_secret(os.getenv("OPENAI_API_KEY"))
+    if not key:
+        return None
+    base = _real_url(os.getenv("TRADEFLOW_LLM_BASE_URL")) or EXTRACTOR_BASE_URL.rstrip("/")
+    model = (os.getenv("TRADEFLOW_DASHBOARD_MODEL") or EXTRACTOR_FALLBACK_MODEL).strip() or EXTRACTOR_FALLBACK_MODEL
+    return {"base_url": base, "api_key": key, "model": model, "provider": NEBIUS_PROVIDER}
+
+
+def body_overrides(endpoint: dict | None) -> dict:
+    """Request-body fields a provider needs on top of the caller's own.
+
+    Nemotron reasons before it answers, and the reasoning shares the output
+    budget, so a small ``max_tokens`` truncates the JSON. On Nebius the desk
+    reader's output floor and reasoning cap apply. Other providers: nothing.
+    """
+    if not endpoint or endpoint.get("provider") != NEBIUS_PROVIDER:
+        return {}
+    from src.config.heuristics import EXTRACTOR_MAX_OUTPUT_TOKENS, EXTRACTOR_REASONING_BUDGET
+
+    return {
+        "max_tokens": int(EXTRACTOR_MAX_OUTPUT_TOKENS),
+        "reasoning_budget": int(EXTRACTOR_REASONING_BUDGET),
+    }
+
+
 def resolve_chat_endpoint(default_model: str = DEFAULT_STAGE2_MODEL) -> dict | None:
     """OpenAI-compatible chat target, or None when nothing usable is configured.
+
+    Nebius Token Factory wins when its key is set (this is the hackathon path).
 
     A real ``VLLM_API_KEY`` wins and is paired with ``VLLM_BASE_URL`` (the AMD
     tokenfactory default when the URL is unset). An Evolus key is used only
     when the configured base URL is absent or is an evolus.ai host. An Evolus
     key is never sent to the AMD host.
     """
+    nebius = nebius_endpoint()
+    if nebius is not None:
+        return nebius
     vllm_key = real_secret(os.getenv("VLLM_API_KEY"))
     vllm_base = _real_url(os.getenv("VLLM_BASE_URL"))
     evolus_key = real_secret(os.getenv("EVOLUS_API_KEY"))
@@ -70,7 +114,7 @@ def resolve_chat_endpoint(default_model: str = DEFAULT_STAGE2_MODEL) -> dict | N
             "base_url": vllm_base or AMD_TOKENFACTORY_BASE,
             "api_key": vllm_key,
             "model": model,
-            "provider": "amd_vllm",
+            "provider": AMD_PROVIDER,
         }
     if evolus_key and (vllm_base is None or "evolus.ai" in vllm_base):
         return {
@@ -104,5 +148,7 @@ def llm_status() -> dict:
         "model": None if chat is None else chat["model"],
         "default_model": DEFAULT_STAGE2_MODEL,
         "offline_demo": chat is None,
-        "amd_live_available": chat is not None and chat["provider"] == "amd_vllm",
+        "amd_live_available": chat is not None and chat["provider"] == AMD_PROVIDER,
+        "live_available": chat is not None,
+        "provider_label": None if chat is None else PROVIDER_LABELS.get(chat["provider"], chat["provider"]),
     }
