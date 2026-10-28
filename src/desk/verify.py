@@ -36,6 +36,7 @@ from src.config.heuristics import DEAL_CURRENCIES, DEAL_CURRENCY, OPT_TOL
 from src.desk import recompute
 from src.desk.errors import DraftStale, SendRefused
 from src.desk.parse import _confirm_span, _visible_text, parse_quote, price_from_token
+from src.desk.typed import words_state
 from src.desk.snapshot import publish
 from src.desk.store import DeskStore
 from src.desk.transmission import (
@@ -178,6 +179,11 @@ def _migrated_limits_unconfirmed(entries: list[dict[str, Any]], opened: dict[str
 
 
 def _body_currency(body: str) -> str:
+    # 美元 and 欧元 end in 元, so they are read before the yuan.
+    if "美元" in body:
+        return "USD"
+    if "欧元" in body or "歐元" in body:
+        return "EUR"
     if "元" in body:
         return str(DEAL_CURRENCY)
     padded = f" {body} "
@@ -249,10 +255,10 @@ def typed_review(review: dict[str, Any]) -> bool:
 def _typed_binds_ok(raw_text: str, review: dict[str, Any], ask: float, ingested_hash: str) -> bool:
     """A typed price binds to the message by the words it was read from.
 
-    No code can re-derive the amount, so the bind is weaker than a token's and
-    is labelled as typed everywhere: the raw message is the one ingested and
-    chained, the chained words still stand in it verbatim, the amount is
-    positive, and it is the ask being priced.
+    The raw message is the one ingested and chained, the chained words still
+    stand in it verbatim, those words state the typed amount (28塊5 states
+    28.50, so 5 is refused), the amount is positive, and it is the ask being
+    priced. It is labelled as typed everywhere.
     """
     raw_digest = hashlib.sha256((raw_text or "").encode("utf-8")).hexdigest()
     words = str(review.get("span") or "").strip()
@@ -264,7 +270,8 @@ def _typed_binds_ok(raw_text: str, review: dict[str, Any], ask: float, ingested_
     priced = abs(float(ask) - float(value)) <= within
     per_piece = str(review.get("unit") or "") == "per_piece"
     chained = str(review.get("raw_sha256") or "")
-    return raw_digest == ingested_hash and raw_digest == chained and stands and priced and per_piece
+    stated = words_state(words, float(value), within)
+    return raw_digest == ingested_hash and raw_digest == chained and stands and stated and priced and per_piece
 
 
 def _review_binds_ok(raw_text: str, review: dict[str, Any], ask: float, ingested_hash: str) -> bool:

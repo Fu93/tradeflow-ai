@@ -143,7 +143,13 @@ def register_meta_routes(app) -> None:
         return {
             "version": "0.4.0",
             "schema_version": int(CURRENT_SCHEMA_VERSION),
-            "git_sha": os.environ.get("TRADEFLOW_GIT_SHA", "unknown").strip() or "unknown",
+            # TRADEFLOW_GIT_SHA wins; Render stamps RENDER_GIT_COMMIT on every
+            # deploy, so the live demo names its commit without a manual step.
+            "git_sha": (
+                os.environ.get("TRADEFLOW_GIT_SHA", "").strip()
+                or os.environ.get("RENDER_GIT_COMMIT", "").strip()
+                or "unknown"
+            ),
             "python": sys.version.split()[0],
         }
 

@@ -496,6 +496,12 @@ LLM_TIMEOUT_SECONDS = 20
 # overrides it (0 turns paid calls off).
 LLM_DAILY_CALL_CAP = 40
 
+# Rationale: suppliers on one deal. The decision compares each supplier with
+# the others, so fewer than four gives too thin a rival set; more than five is
+# outside what the desk was built and tested for.
+DEAL_MIN_SUPPLIERS = 4
+DEAL_MAX_SUPPLIERS = 5
+
 # Rationale: HTTP statuses with which the model service refuses the account
 # itself: 401 (key not accepted), 402 (no credit), 403 (key not allowed).
 # Retrying the same key cannot succeed, so paid calls pause instead.

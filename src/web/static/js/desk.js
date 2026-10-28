@@ -100,7 +100,7 @@
     if (!body) return "Request failed";
     if (typeof body.detail === "string") return body.detail.replace(/^Value error,\s*/, "");
     if (Array.isArray(body.detail)) {
-      return body.detail.map((item) => item.msg || "invalid").join(" ");
+      return body.detail.map((item) => String(item.msg || "invalid").replace(/^Value error,\s*/, "")).join(" ");
     }
     return "Request failed";
   }

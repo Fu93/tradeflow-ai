@@ -52,9 +52,20 @@ def product_for_language(product: str, language: str) -> str:
     return text
 
 
+# How a Chinese draft names each deal currency. The send check reads the same
+# words back (src/desk/verify.py, _body_currency).
+ZH_CURRENCY_WORDS = {"CNY": "元", "USD": "美元", "EUR": "欧元"}
+
+
 def draft_body(product: str, counter: float, quantity: int, language: str, currency: str) -> str:
     product = product_for_language(product, language)
     amount = f"{counter:.2f}"
+    if language == "zh" and currency != DEAL_CURRENCY and currency in ZH_CURRENCY_WORDS:
+        # A Chinese supplier on a USD or EUR deal still gets a Chinese draft.
+        return (
+            f"您好，关于{product}，我们可以按每件 {amount} {ZH_CURRENCY_WORDS[currency]}、"
+            f"数量 {quantity} 继续。请确认是否可以安排。"
+        )
     if language == "zh" and currency == DEAL_CURRENCY:
         return (
             f"您好，关于{product}，我们可以按每件 {amount} 元、"

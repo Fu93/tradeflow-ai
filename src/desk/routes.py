@@ -20,6 +20,8 @@ from src.config.heuristics import (
     AUDIT_VERIFY_MAX_LIMIT,
     BREAKDOWN_TRIP_THRESHOLD,
     DEAL_CURRENCY,
+    DEAL_MAX_SUPPLIERS,
+    DEAL_MIN_SUPPLIERS,
     FIELD_MAX_CHARS,
     HTTP_UNAVAILABLE,
     RISK_TOLERANCE_FLOOR,
@@ -86,12 +88,24 @@ class DealIn(BaseModel):
     )
     seed: int = Field(default=11, ge=0, le=2_000_000_000)
     currency: Literal["CNY", "USD", "EUR"] = cast(Literal["CNY", "USD", "EUR"], DEAL_CURRENCY)
-    suppliers: list[SupplierIn] = Field(min_length=4, max_length=5)
+    suppliers: list[SupplierIn]
 
     @field_validator("product")
     @classmethod
     def _product(cls, value: str) -> str:
         return require_plain(value, "Product")
+
+    @field_validator("suppliers")
+    @classmethod
+    def _supplier_count(cls, value: list[SupplierIn]) -> list[SupplierIn]:
+        # The decision compares each supplier with the others, so a deal needs
+        # four or five. Say so in words rather than as a list-length error.
+        if len(value) < DEAL_MIN_SUPPLIERS or len(value) > DEAL_MAX_SUPPLIERS:
+            raise ValueError(
+                f"A deal needs {DEAL_MIN_SUPPLIERS} or {DEAL_MAX_SUPPLIERS} suppliers, one per line; "
+                f"this has {len(value)}."
+            )
+        return value
 
     @model_validator(mode="after")
     def _bounds(self):
