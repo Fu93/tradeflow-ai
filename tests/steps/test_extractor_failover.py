@@ -174,7 +174,8 @@ def test_nvidia_hop_uses_its_own_host_and_key(monkeypatch):
 
     _keys(monkeypatch, nvidia="nvidia-key")
     monkeypatch.setenv("TRADEFLOW_LLM_BASE_URL", "http://127.0.0.1:9")
-    monkeypatch.setenv("TRADEFLOW_LLM_MODEL", "nvidia/Nemotron-3-Ultra-550b-a55b")
+    ultra = "nvidia/Nemotron-3-Ultra-550b-a55b"
+    monkeypatch.setenv("TRADEFLOW_LLM_MODEL", ultra)
     clock = {"now": 0.0}
     monkeypatch.setattr("src.desk.extract.time.perf_counter", lambda: clock["now"])
     seen: list[tuple] = []
@@ -195,14 +196,14 @@ def test_nvidia_hop_uses_its_own_host_and_key(monkeypatch):
                     return False
 
             return _Ok()
-        if model == EXTRACTOR_MODEL:
+        if model == ultra:
             raise _http(503, b"ultra-down")
         clock["now"] = float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS) - float(EXTRACTOR_TIMEOUT_NVIDIA_SECONDS) + 1
         raise _http(429, b"slow-down")
 
     monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
     result = extract_mentions("unit price 18.40 USD")
-    assert [item[1] for item in seen] == [EXTRACTOR_MODEL, EXTRACTOR_FALLBACK_MODEL, EXTRACTOR_NVIDIA_MODEL]
+    assert [item[1] for item in seen] == [ultra, EXTRACTOR_FALLBACK_MODEL, EXTRACTOR_NVIDIA_MODEL]
     assert seen[0][0].startswith("http://127.0.0.1:9")
     assert seen[1][0].startswith("http://127.0.0.1:9")
     assert seen[2][0].startswith(EXTRACTOR_NVIDIA_BASE_URL)
@@ -242,7 +243,9 @@ def test_budget_stops_before_later_hops(monkeypatch):
     def _urlopen(request, timeout=0):
         model = json.loads(request.data.decode("utf-8"))["model"]
         calls.append(model)
-        if model == EXTRACTOR_FALLBACK_MODEL:
+        # The second Nebius hop spends the budget. Count calls, not model names:
+        # with the default first hop both hops name the Super model.
+        if len(calls) == 2:
             clock["now"] = float(EXTRACTOR_TIMEOUT_BUDGET_SECONDS) + 1
         raise urllib.error.URLError("down")
 

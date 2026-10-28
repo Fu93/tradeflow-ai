@@ -494,12 +494,16 @@ LLM_TIMEOUT_SECONDS = 20
 EXTRACTOR_BASE_URL = "https://api.tokenfactory.nebius.com/v1"
 
 # Rationale: default chat model for the desk span extractor. It names evidence
-# spans and does not set a price. Temperature stays zero.
-EXTRACTOR_MODEL = "nvidia/Nemotron-3-Ultra-550b-a55b"
+# spans and does not set a price. Temperature stays zero. Super, not Ultra:
+# on 2026-10-28 the Ultra model's reasoning output was most of this account's
+# Token Factory bill (owner decision). TRADEFLOW_LLM_MODEL still selects Ultra
+# (nvidia/Nemotron-3-Ultra-550b-a55b) for a run that wants it.
+EXTRACTOR_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 
-# Rationale: second Nebius chat model. The desk calls it when the Ultra hop
-# times out, gets a server or rate-limit response, or returns a body that is
-# not a mentions object. It does not set a price.
+# Rationale: second Nebius hop. The desk calls it when the first hop times out,
+# gets a server or rate-limit response, or returns a body that is not a
+# mentions object. With the default first hop it is one retry of the same
+# model. It does not set a price.
 EXTRACTOR_FALLBACK_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 
 # Rationale: NVIDIA integrate base used only after Nebius itself fails.
