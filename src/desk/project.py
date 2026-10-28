@@ -139,6 +139,9 @@ def project_open_drafts(
             hazard_gap=inputs.get("hazard_gap"),
             held_previous_counter=float(card["counter"]) if card.get("counter_held") else None,
             inputs_stored=stored_inputs,
+            # The effective figure: a chosen push that the solver withholds is
+            # issued, and recorded, as the default.
+            offer_mode="push" if card.get("counter_relation") == "push_lower" else "default",
         )
         if record.counter is None:
             card["counter"] = None
