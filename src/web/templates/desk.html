@@ -24,13 +24,22 @@
       <label>API key <input id="api-key" name="api-key" type="password" autocomplete="off" /></label>
       <label>Product <input id="product" name="product" required maxlength="200" placeholder="折叠伞 / folding umbrella" /></label>
       <p class="desk-note">Type both names as "中文 / English" and each draft uses the one in the supplier's language.</p>
+      <label>Currency of the deal
+        <select id="deal-currency" name="deal-currency">
+          <option value="CNY" selected>CNY (元, RMB)</option>
+          <option value="USD">USD</option>
+          <option value="EUR">EUR</option>
+        </select>
+      </label>
+      <p class="desk-note">Quotes in another currency go to review; the desk never converts them.</p>
       <label>Quantity <input id="quantity" name="quantity" type="number" min="1" required /></label>
       <label>Target <input id="target" name="target" type="number" min="0" step="any" required /></label>
       <label>Ceiling <input id="ceiling" name="ceiling" type="number" min="0" step="any" required /></label>
       <label>Risk tolerance <input id="risk" name="risk" type="number" min="0" step="any" placeholder="leave blank for the configured default" /></label>
-      <label>Suppliers, one per line. The last comma separates the email, so a name may contain commas.
-        <textarea id="suppliers" rows="5" required placeholder="Ningbo Co., Ltd., sales@example.test"></textarea>
+      <label>Suppliers, one per line. The last comma separates the contact, so a name may contain commas.
+        <textarea id="suppliers" rows="5" required placeholder="Ningbo Co., Ltd., sales@example.test&#10;Yiwu Umbrella, wechat:yiwu-laowang"></textarea>
       </label>
+      <p class="desk-note">A contact is an email, or a chat ID written as wechat:ID or whatsapp:number. Drafts for a chat contact are approved here and sent by you in that app.</p>
       <div class="desk-actions">
         <button type="submit">Open desk</button>
         <button type="button" id="sample-deal">Fill a sample deal</button>

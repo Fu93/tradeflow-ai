@@ -1,6 +1,9 @@
 (function () {
   const POLL_MS = 2000;
   const reviewChoice = new Map();
+  // Typed prices in progress, by waiting quote, so a poll's redraw keeps them.
+  const typedDrafts = new Map();
+  let lastReviewSig = "";
   // Supplier cards whose "How these figures were worked out" section is open.
   const workingsOpen = new Set();
   // Web evidence (Tavily) per supplier. The desk redraws every card on each poll, so a
@@ -9,6 +12,7 @@
   // quotes only and never reads it.
   const evidence = new Map();
   let dealProduct = "";
+  let dealCurrency = "CNY";
 
   function apiKey() {
     const field = document.getElementById("api-key");
@@ -128,10 +132,19 @@
     return rows.map((row) => {
       const comma = row.lastIndexOf(",");
       if (comma < 1) return null;
-      const address = row.slice(comma + 1).trim();
+      const contact = row.slice(comma + 1).trim();
       const name = row.slice(0, comma).trim();
-      if (!address || address.indexOf("@") < 1) return null;
-      return { name: name, address: address, channel: "email" };
+      if (!contact) return null;
+      // "wechat:老王" or "whatsapp:+86 138…" is a chat contact; its drafts are
+      // copied and sent by hand. Anything else must be one email address.
+      const chat = /^(wechat|weixin|微信|whatsapp|chat)\s*[:：]\s*(.+)$/i.exec(contact);
+      if (chat) {
+        const kind = chat[1].toLowerCase();
+        const channel = kind === "whatsapp" ? "whatsapp" : (kind === "chat" ? "chat" : "wechat");
+        return { name: name, address: chat[2].trim(), channel: channel };
+      }
+      if (contact.indexOf("@") < 1) return null;
+      return { name: name, address: contact, channel: "email" };
     });
   }
 
@@ -140,7 +153,7 @@
     formError.textContent = "";
     const suppliers = suppliersFrom(document.getElementById("suppliers").value);
     if (suppliers.some((item) => !item || !item.name || !item.address)) {
-      formError.textContent = "Each line needs a name and an email.";
+      formError.textContent = "Each line needs a name and an email, or a chat contact such as wechat:laowang.";
       return;
     }
     const payload = {
@@ -148,6 +161,7 @@
       quantity: Number(document.getElementById("quantity").value),
       target_price: Number(document.getElementById("target").value),
       ceiling_price: Number(document.getElementById("ceiling").value),
+      currency: document.getElementById("deal-currency").value || "CNY",
       suppliers: suppliers,
     };
     const risk = document.getElementById("risk").value.trim();
@@ -220,6 +234,7 @@
     board.hidden = false;
     const deal = snapshot.deal || {};
     dealProduct = String(deal.product || "");
+    dealCurrency = String(deal.currency || "CNY");
     document.getElementById("deal-line").textContent =
       (deal.product || "Deal") + " · " + (deal.id || "");
     document.getElementById("basis-line").textContent =
@@ -242,7 +257,7 @@
     if (headline.simulated) {
       headlineLine.textContent = "Headline: simulated. Not counted as a real closed deal.";
     } else if (headline.counted && headline.saving != null) {
-      headlineLine.textContent = "Realised landed saving versus the best first confirmed quote: " + money(headline.saving, "CNY");
+      headlineLine.textContent = "Realised landed saving versus the best first confirmed quote: " + money(headline.saving, dealCurrency);
     } else {
       headlineLine.textContent = "Headline: no real closed deal yet.";
     }
@@ -251,14 +266,26 @@
     fillAssumptions(snapshot);
     const cvar = document.getElementById("cvar-line");
     if (snapshot.mc && snapshot.mc.cvar_cost != null) {
-      let text = "CVaR " + money(snapshot.mc.cvar_cost, "CNY");
+      let text = "CVaR " + money(snapshot.mc.cvar_cost, dealCurrency);
       if (snapshot.mc.tail_saturated_at_ceiling) text += " — tail saturated at ceiling";
       cvar.textContent = text;
     } else {
       cvar.textContent = "";
     }
     renderCards(snapshot.suppliers || []);
-    renderReview(snapshot.review || [], snapshot.suppliers || []);
+    const reviewItems = snapshot.review || [];
+    const reviewSig = JSON.stringify(reviewItems.map((item) => [
+      item.id, Boolean((item.provenance || {}).extractor_pending), (item.provenance || {}).suggested_token || "",
+    ]));
+    const reviewRoot = document.getElementById("review");
+    const typing = reviewRoot.contains(document.activeElement) &&
+      ["INPUT", "SELECT", "TEXTAREA"].indexOf(document.activeElement.tagName) >= 0;
+    // Someone is typing in a waiting quote and nothing there changed: keep the
+    // fields (and the caret) instead of redrawing them under the cursor.
+    if (!(typing && reviewSig === lastReviewSig)) {
+      renderReview(reviewItems, snapshot.suppliers || []);
+      lastReviewSig = reviewSig;
+    }
     renderEvents(snapshot.events || []);
     renderDrafts(snapshot.drafts || [], snapshot.suppliers || []);
     renderPasteSuppliers(snapshot.suppliers || []);
@@ -403,11 +430,12 @@
       card.appendChild(title);
       const quote = supplier.latest_quote == null
         ? "no quote"
-        : money(supplier.latest_quote, supplier.currency || "CNY");
+        : money(supplier.latest_quote, supplier.currency || dealCurrency);
       const origin = supplier.origin || "live";
       // A live record is the normal case; only say so when it is not.
       if (origin !== "live") line(card, "Record: " + origin);
-      line(card, "Latest quote: " + quote);
+      line(card, "Latest quote: " + quote + (supplier.quote_typed_words
+        ? " (typed by you from \u201c" + supplier.quote_typed_words + "\u201d)" : ""));
       if (supplier.latest_quote != null) {
         const validity = validityText(supplier, new Date());
         const validityLine = line(card, validity.text);
@@ -418,7 +446,7 @@
         line(card, "This quote is not confirmed.");
       }
       if (supplier.landed_status === "complete" && supplier.landed_cost != null) {
-        line(card, "Landed cost: " + money(supplier.landed_cost, "CNY"));
+        line(card, "Landed cost: " + money(supplier.landed_cost, dealCurrency));
       }
       const priorMean = supplier.d_prior_mean == null ? "labelled policy" : String(supplier.d_prior_mean);
       const priorStrength = supplier.d_prior_strength == null ? "labelled policy" : String(supplier.d_prior_strength);
@@ -449,11 +477,11 @@
         card.appendChild(keptAddress);
         card.appendChild(keep);
       }
-      const half = supplier.sensitivity_half == null ? "withheld" : money(supplier.sensitivity_half, "CNY");
-      const doubled = supplier.sensitivity_double == null ? "withheld" : money(supplier.sensitivity_double, "CNY");
+      const half = supplier.sensitivity_half == null ? "withheld" : money(supplier.sensitivity_half, dealCurrency);
+      const doubled = supplier.sensitivity_double == null ? "withheld" : money(supplier.sensitivity_double, dealCurrency);
       const defaultFigure = supplier.default_counter != null ? supplier.default_counter : supplier.counter;
-      const counter = defaultFigure == null ? "withheld" : money(defaultFigure, "CNY");
-      const push = supplier.push_counter == null ? "withheld" : money(supplier.push_counter, "CNY");
+      const counter = defaultFigure == null ? "withheld" : money(defaultFigure, dealCurrency);
+      const push = supplier.push_counter == null ? "withheld" : money(supplier.push_counter, dealCurrency);
       const pushing = supplier.counter_relation === "push_lower";
       const relation = supplier.counter_relation === "at_ask"
         ? "This supplier is the cheapest confirmed quote, so the default is their ask."
@@ -465,7 +493,7 @@
       line(card, "Push lower: " + push + " (the solver's price with the highest expected surplus inside your risk cap)");
       if (supplier.push_note) line(card, supplier.push_note);
       if (supplier.counter != null) {
-        const carries = line(card, "The draft carries: " + money(supplier.counter, "CNY") +
+        const carries = line(card, "The draft carries: " + money(supplier.counter, dealCurrency) +
           (pushing ? " (push lower, chosen by you)" : " (the default)"));
         carries.className = "desk-carries";
         const choose = document.createElement("button");
@@ -639,6 +667,27 @@
     return "Read by " + String(used.model || "a model") + " on " + where + took + tries + ".";
   }
 
+  // The reader's review reasons, in words a buyer reads at a glance. The
+  // original reason stays in the line's tooltip and in the record.
+  const PLAIN_REASONS = {
+    "price range": "The message gives a price range, not one price. Pick the figure the supplier will hold, or ask them.",
+    "more than one price": "The message has more than one price (a rival's, or yours repeated back). Pick the supplier's own offer.",
+    "no currency-anchored price": "No price in the message names a currency. Check the figure is a unit price before you pick it.",
+    "no usable amount in the deal currency": "The reader found no usable unit price. Pick a figure only if it is the supplier's unit price.",
+    "the reader failed closed": "The reader could not read this message safely. Pick the figure yourself.",
+    "confirm the prefilled amount": "One price found. Check it and confirm.",
+    "shadow gate would accept; confirm the prefilled amount": "The rules and the model agree on this price. Check it and confirm.",
+  };
+
+  function plainReason(reason, currency) {
+    const text = String(reason || "");
+    if (text === "not the deal currency") {
+      return "No price is clearly marked in the deal's currency (" + (currency || "CNY") + "). " +
+        "Colloquial 块 and bare numbers land here. Check the figure is in " + (currency || "CNY") + " before you pick it.";
+    }
+    return PLAIN_REASONS[text] || text;
+  }
+
   function readerTrace(provenance) {
     const wrap = document.createElement("div");
     wrap.className = "desk-trace";
@@ -683,7 +732,8 @@
       block.className = "desk-event";
       block.dataset.event = item.id;
       const reason = (item.provenance && item.provenance.review_reason) || item.confidence || "review";
-      line(block, (item.source || "quote") + " · " + reason);
+      const reasonLine = line(block, (item.source || "quote") + " · " + plainReason(reason, dealCurrency));
+      reasonLine.title = "Reader's reason: " + reason;
       const pre = document.createElement("pre");
       pre.textContent = item.raw_text || "";
       block.appendChild(pre);
@@ -693,7 +743,7 @@
         ? provenance.candidates
         : (provenance.tokens || []);
       const suggested = provenance.suggested_token || "";
-      const currency = provenance.currency || "CNY";
+      const currency = provenance.currency || dealCurrency;
       // A figure the person picked stays. A pre-selection they did not touch
       // follows the latest suggestion, so a model result that arrives after
       // the first draw can still point at the supplier's own offer.
@@ -816,8 +866,80 @@
       actions.appendChild(button);
       actions.appendChild(reject);
       block.appendChild(actions);
+      block.appendChild(typedRow(item, select, block));
       root.appendChild(block);
     });
+  }
+
+  // When the figure is not a clean number in the message (28塊5, 二十八块五),
+  // a person types it and names the words it comes from. The desk records it
+  // as typed, and those words must stay in the message for the send check.
+  function typedRow(item, select, block) {
+    const kept = typedDrafts.get(item.id) || {};
+    const wrap = document.createElement("details");
+    wrap.className = "desk-typed";
+    wrap.open = Boolean(kept.open);
+    wrap.addEventListener("toggle", () => {
+      typedDrafts.set(item.id, Object.assign({}, typedDrafts.get(item.id) || {}, { open: wrap.open }));
+    });
+    const summary = document.createElement("summary");
+    summary.textContent = "The price is not one of these figures? Type it";
+    wrap.appendChild(summary);
+    const amount = document.createElement("input");
+    amount.type = "number";
+    amount.min = "0";
+    amount.step = "any";
+    amount.placeholder = "Unit price, as a number";
+    amount.setAttribute("aria-label", "Typed unit price");
+    const words = document.createElement("input");
+    words.type = "text";
+    words.maxLength = 80;
+    words.placeholder = "Words it comes from, e.g. 28塊5";
+    words.setAttribute("aria-label", "Words in the message the price comes from");
+    amount.value = kept.amount || "";
+    words.value = kept.words || "";
+    const keep = () => typedDrafts.set(item.id, { open: wrap.open, amount: amount.value, words: words.value });
+    amount.addEventListener("input", keep);
+    words.addEventListener("input", keep);
+    const go = document.createElement("button");
+    go.type = "button";
+    go.textContent = "Accept typed price";
+    const note = document.createElement("p");
+    note.className = "desk-note";
+    note.textContent = "Recorded as typed by you. The words must appear in the message exactly.";
+    go.addEventListener("click", async () => {
+      const value = Number(amount.value);
+      if (!(value > 0) || !words.value.trim()) {
+        note.textContent = "Type a price above zero and the words it comes from.";
+        return;
+      }
+      if (String(item.raw_text || "").indexOf(words.value.trim()) < 0) {
+        note.textContent = "Those words are not in the message. Copy them exactly.";
+        return;
+      }
+      try {
+        const snapshot = await request("/api/v1/desk/deals/" + dealId + "/review/" + item.id, {
+          method: "POST",
+          headers: headers(true),
+          body: JSON.stringify({
+            action: "accept", supplier_id: select.value || null, typed_amount: value, typed_words: words.value.trim(),
+          }),
+        });
+        reviewChoice.delete(item.id);
+        typedDrafts.delete(item.id);
+        show(snapshot);
+      } catch (err) {
+        note.textContent = err.message;
+      }
+    });
+    const row = document.createElement("div");
+    row.className = "desk-actions";
+    row.appendChild(amount);
+    row.appendChild(words);
+    row.appendChild(go);
+    wrap.appendChild(row);
+    wrap.appendChild(note);
+    return wrap;
   }
 
   async function accept(eventId, supplierId, chosenToken, reject, block) {
@@ -864,7 +986,11 @@
     const root = document.getElementById("drafts");
     clear(root);
     const names = {};
-    suppliers.forEach((supplier) => { names[supplier.id] = supplier.name; });
+    const channels = {};
+    suppliers.forEach((supplier) => {
+      names[supplier.id] = supplier.name;
+      channels[supplier.id] = supplier.channel || "email";
+    });
     const open = drafts.filter((draft) => draft.status !== "superseded");
     if (!open.length) {
       line(root, "No drafts yet.");
@@ -874,7 +1000,12 @@
       const block = document.createElement("div");
       block.className = "desk-event";
       const name = names[draft.supplier_id] || "Supplier";
-      line(block, name + " · " + draftState(draft));
+      const byHand = channels[draft.supplier_id] && channels[draft.supplier_id] !== "email";
+      const app = channels[draft.supplier_id] === "whatsapp" ? "WhatsApp"
+        : channels[draft.supplier_id] === "wechat" ? "WeChat" : "the chat app";
+      line(block, name + " · " + (byHand && draft.status === "approved"
+        ? "approved; copy the text and send it in " + app + " yourself"
+        : draftState(draft)));
       const area = document.createElement("textarea");
       area.readOnly = true;
       area.rows = 8;
@@ -888,7 +1019,7 @@
       if ((draft.status === "draft" || draft.status === "failed") && !draft.anchor_pending) {
         const send = document.createElement("button");
         send.type = "button";
-        send.textContent = "Approve and send";
+        send.textContent = byHand ? "Approve (you send it in " + app + ")" : "Approve and send";
         send.addEventListener("click", () => approve(draft.id, area.value, block));
         block.appendChild(send);
       }
@@ -982,6 +1113,7 @@
       document.getElementById("quantity").value = String(deal.quantity || "");
       document.getElementById("target").value = String(deal.target || "");
       document.getElementById("ceiling").value = String(deal.ceiling || "");
+      document.getElementById("deal-currency").value = String(deal.currency || "CNY");
       document.getElementById("suppliers").value = (deal.suppliers || [])
         .map((row) => String(row[0]) + ", " + String(row[1])).join("\n");
       showNote("sample-deal-note", String(data.label || "") + " Enter the API key, then Open desk.");

@@ -39,6 +39,26 @@ def require_address(value: str) -> str:
     return text
 
 
+# Suppliers reached in a chat app rather than by mail. Their drafts are copied
+# and sent by a person; the desk never mails them.
+CHAT_CHANNELS = ("wechat", "whatsapp", "chat")
+EMAIL_CHANNEL = "email"
+
+
+def require_contact(value: str, channel: str) -> str:
+    """An email address for the email channel; a single-line handle for a chat channel."""
+    if channel == EMAIL_CHANNEL:
+        return require_address(value)
+    if channel not in CHAT_CHANNELS:
+        raise DeskRejected("Supplier channel must be email, wechat, whatsapp or chat.")
+    text = str(value or "").strip()
+    if not text or any(not char.isprintable() for char in text):
+        raise DeskRejected("A chat contact must be one line of printable text.")
+    if any(mark in text for mark in ("<", ">", ";", ",")):
+        raise DeskRejected("A chat contact cannot contain < > ; or commas.")
+    return text
+
+
 def message_id_ok(value: str) -> bool:
     text = str(value or "").strip()
     if not text or any(not char.isprintable() for char in text):

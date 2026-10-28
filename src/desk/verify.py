@@ -241,8 +241,36 @@ def _migrated_unconfirmed(opened: dict[str, Any], review_seq: int | None) -> boo
     return int(review_seq) <= marker
 
 
+def typed_review(review: dict[str, Any]) -> bool:
+    """A price a person typed (for example from 28塊5), not a digit string read from the message."""
+    return review.get("typed") is True and not review.get("token")
+
+
+def _typed_binds_ok(raw_text: str, review: dict[str, Any], ask: float, ingested_hash: str) -> bool:
+    """A typed price binds to the message by the words it was read from.
+
+    No code can re-derive the amount, so the bind is weaker than a token's and
+    is labelled as typed everywhere: the raw message is the one ingested and
+    chained, the chained words still stand in it verbatim, the amount is
+    positive, and it is the ask being priced.
+    """
+    raw_digest = hashlib.sha256((raw_text or "").encode("utf-8")).hexdigest()
+    words = str(review.get("span") or "").strip()
+    value = review.get("value")
+    if value is None or not words or float(value) <= 0:
+        return False
+    within = float(OPT_TOL) * max(1.0, abs(float(value)), abs(float(ask)))
+    stands = words in _visible_text(raw_text)
+    priced = abs(float(ask) - float(value)) <= within
+    per_piece = str(review.get("unit") or "") == "per_piece"
+    chained = str(review.get("raw_sha256") or "")
+    return raw_digest == ingested_hash and raw_digest == chained and stands and priced and per_piece
+
+
 def _review_binds_ok(raw_text: str, review: dict[str, Any], ask: float, ingested_hash: str) -> bool:
     """The raw message, the re-derived price, and the chained review are one confirmation."""
+    if typed_review(review):
+        return _typed_binds_ok(raw_text, review, ask, ingested_hash)
     digest = hashlib.sha256((raw_text or "").encode("utf-8")).hexdigest()
     chained_raw = str(review.get("raw_sha256") or "")
     token = str(review.get("token") or "")
@@ -316,6 +344,14 @@ def _price_in_message(raw_text: str, review: dict[str, Any], currency: str) -> f
     that token, so the amount now on the line is what a bypassed bind would
     price. The bind itself is what requires the amount to equal the chain.
     """
+    if typed_review(review):
+        # A typed price stands while its words are still in the message; the
+        # bind above already required that, and the amount is the chained one.
+        words = str(review.get("span") or "").strip()
+        value = review.get("value")
+        if not words or value is None or words not in _visible_text(raw_text):
+            return None
+        return float(value)
     token = str(review.get("token") or "")
     derived = price_from_token(raw_text, token, deal_currency=currency or None)
     if derived is not None:

@@ -3113,6 +3113,12 @@
       "value": 10,
       "context": "_CN_TEN_VALUE = 10",
       "justification": "The value of the Chinese numeral 十 (ten), to read counts such as 十五天. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/routes.py",
+      "value": 80,
+      "context": "typed_words: str | None = Field(default=None, max_length=80)",
+      "justification": "Longest run of message words a person names as the source of a typed price, the same cap as a chosen token. A different line that repeats the digits is not covered."
     }
   ]
 }
