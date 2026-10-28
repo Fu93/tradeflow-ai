@@ -597,6 +597,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (type === "AUTO_IMPORT_QUOTE") {
+    autoImport(message.payload).then(sendResponse).catch(() => sendResponse({ ok: false, reason: "offline" }));
+    return true;
+  }
+
   // The page HUD asks here, so the call carries the panel's server and key.
   if (type === "GET_HEURISTICS") {
     fetch(`${API_BASE_URL}/api/v1/heuristics`, { headers: apiKeyHeader() })
@@ -622,25 +627,19 @@ async function supplierTab() {
   return pages.length ? pages[pages.length - 1] : current;
 }
 
-async function importLatestVisible(message) {
-  const stored = await new Promise((resolve) => {
+async function deskStored() {
+  return new Promise((resolve) => {
     chrome.storage.local.get(
       ["tfDeskDeal", "tfDeskSupplier", "tfApiKey"],
       (value) => resolve(value || {})
     );
   });
-  if (!stored.tfDeskDeal) return { ok: false, reason: "no-deal" };
-  const tab = await supplierTab();
-  if (!tab || !tab.id) return { ok: false, reason: "no-tab" };
-  const resp = await new Promise((resolve) => {
-    chrome.tabs.sendMessage(tab.id, { type: "IMPORT_VISIBLE_QUOTE" }, (reply) => {
-      if (chrome.runtime.lastError) {
-        resolve({ ok: false, reason: "no-page" });
-        return;
-      }
-      resolve(reply || { ok: false, reason: "empty" });
-    });
-  });
+}
+
+// One supplier message from a chat page -> one quote on the desk, in review.
+// Shared by the manual import and the automatic read, so both match the
+// supplier the same way and neither can accept a price.
+async function importPayloadToDesk(stored, resp, message, extra) {
   if (!resp || !resp.ok || !resp.text) return resp || { ok: false, reason: "empty" };
   const key = stored.tfApiKey || "";
   const dealRes = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${stored.tfDeskDeal}`, {
@@ -675,18 +674,94 @@ async function importLatestVisible(message) {
     page_title: resp.title || "",
     simulated: !!resp.simulated,
   };
+  if (extra && extra.externalId) quote.external_id = extra.externalId;
   const res = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${stored.tfDeskDeal}/quotes`, {
     method: "POST",
     headers: deskHeaders(key),
     body: JSON.stringify(quote),
   });
   if (res.status === 401) return { ok: false, reason: "api-key", status: 401 };
+  let body = null;
+  try { body = await res.json(); } catch (err) { body = null; }
+  const waiting = body && body.snapshot && Array.isArray(body.snapshot.review) ? body.snapshot.review.length : null;
   return {
     ok: res.ok,
     status: res.status,
     simulated: !!resp.simulated,
     supplierId,
+    duplicate: !!(body && body.duplicate),
+    waiting,
   };
+}
+
+async function importLatestVisible(message) {
+  const stored = await deskStored();
+  if (!stored.tfDeskDeal) return { ok: false, reason: "no-deal" };
+  const tab = await supplierTab();
+  if (!tab || !tab.id) return { ok: false, reason: "no-tab" };
+  const resp = await new Promise((resolve) => {
+    chrome.tabs.sendMessage(tab.id, { type: "IMPORT_VISIBLE_QUOTE" }, (reply) => {
+      if (chrome.runtime.lastError) {
+        resolve({ ok: false, reason: "no-page" });
+        return;
+      }
+      resolve(reply || { ok: false, reason: "empty" });
+    });
+  });
+  const result = await importPayloadToDesk(stored, resp, message, null);
+  if (result && result.ok) paintWaiting(result.waiting);
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Automatic read: a new supplier bubble on a chat page goes to the desk by itself.
+// It still lands in review; a person confirms the price there.
+// ---------------------------------------------------------------------------
+const autoSeen = new Set();
+
+async function sha256Hex(text) {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function paintWaiting(count) {
+  if (!chrome.action || !chrome.action.setBadgeText) return;
+  const text = typeof count === "number" && count > 0 ? String(count) : "";
+  chrome.action.setBadgeText({ text });
+}
+
+async function autoImport(payload) {
+  const stored = await deskStored();
+  const settings = await storageLocal(["tfAutoImport", "tfConfirmedPage"]);
+  if (!settings.tfAutoImport) return { ok: false, reason: "off" };
+  if (!stored.tfDeskDeal) return { ok: false, reason: "no-deal" };
+  if (!payload || !payload.ok || !payload.text) return payload || { ok: false, reason: "empty" };
+  let path = "";
+  try { path = new URL(payload.url || "").pathname; } catch (err) { path = ""; }
+  // The same message on the same chat page is the same quote, after a reload too:
+  // the desk drops a repeated external id.
+  const externalId = "chat:" + (await sha256Hex(stored.tfDeskDeal + "|" + path + "|" + payload.text));
+  if (autoSeen.has(externalId)) return { ok: true, duplicate: true };
+  // A page whose supplier a person chose in the panel keeps that choice; any other
+  // page needs a name match, or it waits for that choice.
+  const result = await importPayloadToDesk(stored, payload, { confirmPage: settings.tfConfirmedPage || "" }, { externalId });
+  if (result && result.ok) {
+    autoSeen.add(externalId);
+    paintWaiting(result.waiting);
+  }
+  const shop = payload.shop || payload.contact || payload.title || "";
+  chrome.storage.local.set({
+    tfAutoLast: {
+      at: Date.now(),
+      shop,
+      page: payload.url || "",
+      ok: !!(result && result.ok),
+      reason: (result && result.reason) || "",
+      duplicate: !!(result && result.duplicate),
+    },
+  });
+  return result;
 }
 
 if (chrome.commands && chrome.commands.onCommand) {

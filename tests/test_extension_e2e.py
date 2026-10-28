@@ -1105,6 +1105,74 @@ def main() -> int:
                             " | ".join(heuristic_lines)[:200],
                         )
 
+                        print("\n[12] New supplier messages reach the desk by themselves")
+
+                        def desk_review():
+                            req = urllib.request.Request(
+                                f"http://127.0.0.1:{BACKEND_PORT}/api/v1/desk/deals/{deal_id}",
+                                headers={"X-API-Key": desk_key},
+                            )
+                            with urllib.request.urlopen(req, timeout=30) as resp:
+                                return json.loads(resp.read().decode()).get("review") or []
+
+                        sp.evaluate(
+                            """(id) => { const el = document.getElementById('desk-deal-id');
+                                el.value = id; el.dispatchEvent(new Event('change')); }""",
+                            deal_id,
+                        )
+                        sp.evaluate(
+                            """() => { const box = document.getElementById('desk-auto-import');
+                                box.checked = true; box.dispatchEvent(new Event('change')); }"""
+                        )
+                        time.sleep(0.5)
+                        before = len(desk_review())
+                        page.bring_to_front()
+                        page.locator("#btn-sim-stagnant").click()
+                        landed = []
+                        for _wait in range(40):
+                            landed = [
+                                item for item in desk_review()
+                                if str(item.get("external_id") or "").startswith("chat:")
+                            ]
+                            if landed:
+                                break
+                            time.sleep(0.25)
+                        check("a new supplier bubble lands on the desk with no click", len(landed) == 1, str(len(landed)))
+                        check(
+                            "it waits in review with no price set",
+                            bool(landed) and landed[0]["status"] == "review"
+                            and (landed[0].get("parsed") or {}).get("unit_price") is None,
+                        )
+                        status = ""
+                        for _wait in range(20):
+                            status = sp.locator("#desk-import-status").inner_text()
+                            if "waiting" in status:
+                                break
+                            time.sleep(0.25)
+                        check("the panel says a new message is waiting", "waiting" in status, status)
+                        badge = sw.evaluate("async () => chrome.action.getBadgeText({})") if sw is not None else ""
+                        check("the toolbar badge counts what waits for you", badge not in ("", "0"), repr(badge))
+                        page.locator("#btn-sim-stagnant").click()
+                        time.sleep(2.0)
+                        again = [
+                            item for item in desk_review()
+                            if str(item.get("external_id") or "").startswith("chat:")
+                        ]
+                        check("the same message again is not a second quote", len(again) == 1, str(len(again)))
+                        page.evaluate(
+                            """() => { const b = document.createElement('div'); b.className = 'msg-bubble';
+                                b.textContent = 'unit price 9.99 CNY per piece';
+                                document.getElementById('messages-box').appendChild(b); }"""
+                        )
+                        time.sleep(2.0)
+                        unmarked = [item for item in desk_review() if "9.99" in str(item.get("raw_text") or "")]
+                        check("a bubble the page does not mark as received is not read", not unmarked)
+                        check("nothing else was imported", len(desk_review()) == before + 1, f"{before} -> {len(desk_review())}")
+                        sp.evaluate(
+                            """() => { const box = document.getElementById('desk-auto-import');
+                                box.checked = false; box.dispatchEvent(new Event('change')); }"""
+                        )
+
             finally:
                 ctx.close()
 
