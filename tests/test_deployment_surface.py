@@ -79,9 +79,19 @@ class TestVersionEndpoint:
 
     def test_version_defaults_to_unknown_without_a_deploy_stamp(self, monkeypatch):
         monkeypatch.delenv("TRADEFLOW_GIT_SHA", raising=False)
+        monkeypatch.delenv("RENDER_GIT_COMMIT", raising=False)
         from src.app.main import app
 
         assert TestClient(app).get("/version").json()["git_sha"] == "unknown"
+
+    def test_version_uses_the_render_deploy_commit(self, monkeypatch):
+        monkeypatch.delenv("TRADEFLOW_GIT_SHA", raising=False)
+        monkeypatch.setenv("RENDER_GIT_COMMIT", "ddc6567f00")
+        from src.app.main import app
+
+        assert TestClient(app).get("/version").json()["git_sha"] == "ddc6567f00"
+        monkeypatch.setenv("TRADEFLOW_GIT_SHA", "abc1234")
+        assert TestClient(app).get("/version").json()["git_sha"] == "abc1234"
 
 
 class TestBackupDrill:

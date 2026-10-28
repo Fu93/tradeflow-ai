@@ -11,6 +11,9 @@ from src.config.heuristics import (
     BREAKDOWN_TRIP_THRESHOLD,
     DEAL_CURRENCIES,
     DEAL_CURRENCY,
+    DEAL_MAX_SUPPLIERS,
+    DEAL_MIN_SUPPLIERS,
+    OPT_TOL,
     RISK_TOLERANCE_FLOOR,
     RISK_TOLERANCE_MAX,
 )
@@ -33,6 +36,7 @@ from src.desk.bus import BUS  # noqa: F401  (re-exported for existing callers)
 from src.desk.bus import DeskBus  # noqa: F401  (re-exported for existing callers)
 from src.desk.errors import DraftStale, SendRefused
 from src.desk.snapshot import publish
+from src.desk.typed import amounts_in_words, words_state
 from src.desk.store import DeskRejected, DeskStore, DeskUnavailable
 from src.desk.verify import _envelope, _guard_send, _send_is_new, draft_digest
 
@@ -156,8 +160,11 @@ def create_deal(
     names = [item["name"].strip() for item in suppliers]
     channels = [str(item.get("channel") or EMAIL_CHANNEL).strip().lower() or EMAIL_CHANNEL for item in suppliers]
     addresses = [require_contact(item["address"], channel) for item, channel in zip(suppliers, channels, strict=True)]
-    if not 4 <= len(suppliers) <= 5:
-        raise DeskRejected("A deal needs four or five suppliers.")
+    if not int(DEAL_MIN_SUPPLIERS) <= len(suppliers) <= int(DEAL_MAX_SUPPLIERS):
+        raise DeskRejected(
+            f"A deal needs {DEAL_MIN_SUPPLIERS} or {DEAL_MAX_SUPPLIERS} suppliers, one per line; "
+            f"this has {len(suppliers)}."
+        )
     if any(not name for name in names):
         raise DeskRejected("Each supplier needs a name.")
     if any(not address for address in addresses):
@@ -348,6 +355,10 @@ def accept_review(
                 raise DeskRejected("The typed price is not a number.") from exc
             if not price > 0 or price != price:
                 raise DeskRejected("The typed price must be above zero.")
+            stated = sorted(amounts_in_words(words))
+            if not words_state(words, price, float(OPT_TOL) * max(1.0, abs(price))):
+                said = ", ".join(f"{value:.2f}" for value in stated) or "no amount"
+                raise DeskRejected(f"The typed price is not the amount in those words (they read as {said}).")
         else:
             if not chosen_token:
                 raise DeskRejected("Accept confirms only the amount shown from the message.")

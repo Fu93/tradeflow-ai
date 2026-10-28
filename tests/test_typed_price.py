@@ -84,7 +84,8 @@ def test_a_typed_price_is_used_recorded_as_typed_and_passes_the_send_check(deal)
         ({"typed_amount": 28.5, "typed_words": ""}, "Name the words"),
         ({"typed_amount": 28.5, "typed_words": "28塊5", "chosen_token": "28"}, "not both"),
         ({"typed_amount": -1.0, "typed_words": "28塊5"}, "above zero"),
-        ({"typed_amount": 285.0, "typed_words": "28塊5"}, "plausible unit-price band"),
+        # The words state 1000 (the order size), so only the band can refuse it.
+        ({"typed_amount": 1000.0, "typed_words": "1000"}, "plausible unit-price band"),
     ],
 )
 def test_a_typed_price_is_refused_when_it_does_not_bind(deal, kwargs, message):
@@ -130,3 +131,44 @@ def test_desk_offers_a_typed_price_and_keeps_it_across_polls():
     assert "Recorded as typed by you." in script
     assert "typedDrafts.get(item.id)" in script
     assert "if (!(typing && reviewSig === lastReviewSig))" in script
+
+
+@pytest.mark.parametrize(
+    ("words", "amounts"),
+    [
+        ("28塊5", {28.5}),
+        ("28块5毛", {28.5}),
+        ("28元5角", {28.5}),
+        ("28块5毛3", {28.53}),
+        ("二十八块五", {28.5}),
+        ("二十八元", {28.0}),
+        ("一百二十块", {120.0}),
+        ("两块五", {2.5}),
+        ("２８．５０元", {28.5}),
+        ("单价 27.80 元", {27.8}),
+    ],
+)
+def test_amounts_the_words_state(words, amounts):
+    from src.desk.typed import amounts_in_words
+
+    assert amounts_in_words(words) == amounts
+
+
+def test_a_typed_amount_must_be_what_the_words_say(deal):
+    """Typing 5 against 28塊5 was accepted on the live demo (2026-10-28); now it is refused."""
+    from src.desk.service import accept_review
+    from src.desk.store import DeskRejected
+
+    store, deal_id, ids = deal
+    event = _waiting(store, deal_id, ids["Ningbo"])
+    with pytest.raises(DeskRejected, match=r"not the amount in those words \(they read as 28.50\)"):
+        accept_review(store, deal_id, event["id"], ids["Ningbo"], typed_amount=5.0, typed_words="28塊5")
+    with pytest.raises(DeskRejected, match="not the amount in those words"):
+        accept_review(store, deal_id, event["id"], ids["Ningbo"], typed_amount=28.0, typed_words="28塊5")
+    accept_review(store, deal_id, event["id"], ids["Ningbo"], typed_amount=28.5, typed_words="28塊5")
+
+
+def test_the_send_check_refuses_a_typed_amount_the_words_do_not_state():
+    digest = hashlib.sha256(MESSAGE.encode("utf-8")).hexdigest()
+    review = {"typed": True, "token": None, "value": 5.0, "span": "28塊5", "unit": "per_piece", "raw_sha256": digest}
+    assert not _bind(MESSAGE, review, 5.0, digest)

@@ -763,6 +763,16 @@
       "category": "d",
       "justification": "Most paid model calls one server process makes per UTC day (desk reader, dashboard reader, Stage-2). A small Token Factory balance must last the judging window; past the cap the rule reader carries on and the reason is shown. TRADEFLOW_LLM_DAILY_CALLS overrides it; 0 turns paid calls off."
     },
+    "DEAL_MIN_SUPPLIERS": {
+      "value": 4,
+      "category": "d",
+      "justification": "Fewest suppliers on one deal. The decision compares each supplier with the others; fewer than four gives too thin a rival set."
+    },
+    "DEAL_MAX_SUPPLIERS": {
+      "value": 5,
+      "category": "d",
+      "justification": "Most suppliers on one deal; more is outside what the desk was built and tested for."
+    },
     "LLM_ACCOUNT_REFUSAL_STATUSES": {
       "value": [
         401,
@@ -2005,18 +2015,6 @@
       "justification": "Use of 16 on this line of src/desk/parse.py: near = clause[max(0, amount_at - 16):amount_at + len(token) + 16]. A different line that repeats the digits is not covered."
     },
     {
-      "file": "src/desk/service.py",
-      "value": 4,
-      "context": "if not 4 <= len(suppliers) <= 5:",
-      "justification": "Use of 4 on this line of src/desk/service.py: if not 4 <= len(suppliers) <= 5:. A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/desk/service.py",
-      "value": 5,
-      "context": "if not 4 <= len(suppliers) <= 5:",
-      "justification": "Use of 5 on this line of src/desk/service.py: if not 4 <= len(suppliers) <= 5:. A different line that repeats the digits is not covered."
-    },
-    {
       "file": "src/desk/ingest.py",
       "value": 60,
       "context": "return 60",
@@ -2069,18 +2067,6 @@
       "value": 2000000000,
       "context": "seed: int = Field(default=11, ge=0, le=2_000_000_000)",
       "justification": "Use of 2000000000 on this line of src/desk/routes.py: seed: int = Field(default=11, ge=0, le=2_000_000_000). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/desk/routes.py",
-      "value": 4,
-      "context": "suppliers: list[SupplierIn] = Field(min_length=4, max_length=5)",
-      "justification": "Use of 4 on this line of src/desk/routes.py: suppliers: list[SupplierIn] = Field(min_length=4, max_length=5). A different line that repeats the digits is not covered."
-    },
-    {
-      "file": "src/desk/routes.py",
-      "value": 5,
-      "context": "suppliers: list[SupplierIn] = Field(min_length=4, max_length=5)",
-      "justification": "Use of 5 on this line of src/desk/routes.py: suppliers: list[SupplierIn] = Field(min_length=4, max_length=5). A different line that repeats the digits is not covered."
     },
     {
       "file": "src/desk/routes.py",
@@ -3119,6 +3105,24 @@
       "value": 80,
       "context": "typed_words: str | None = Field(default=None, max_length=80)",
       "justification": "Longest run of message words a person names as the source of a typed price, the same cap as a chosen token. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/typed.py",
+      "value": 10,
+      "context": "_TEN = 10",
+      "justification": "The value of 十 and the tenths step of 块/角 (28塊5 is 28 + 5/10). A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/typed.py",
+      "value": 100,
+      "context": "_HUNDRED = 100",
+      "justification": "The value of 百 and the hundredths step of 分. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/desk/typed.py",
+      "value": 1000,
+      "context": "_THOUSAND_UNIT = 1000",
+      "justification": "The value of 千 in a Chinese-numeral amount. A different line that repeats the digits is not covered."
     }
   ]
 }
