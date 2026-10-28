@@ -54,8 +54,13 @@
   }
 
   function tradeflowImportPayload(doc) {
+    return tradeflowPayloadFor(doc, tradeflowLatestSupplierText(doc));
+  }
+
+  // The same page facts around a message the observer just saw.
+  function tradeflowPayloadFor(doc, messageText) {
     if (tradeflowCaptchaVisible(doc)) return { ok: false, reason: "captcha" };
-    const text = tradeflowLatestSupplierText(doc);
+    const text = String(messageText || "").trim();
     if (!text) return { ok: false, reason: "empty" };
     const root = roots(doc);
     const shopNode = root.querySelector(".supplier-name, [data-shop-name]");
@@ -71,5 +76,6 @@
   globalThis.tradeflowLatestSupplierText = tradeflowLatestSupplierText;
   globalThis.tradeflowCaptchaVisible = tradeflowCaptchaVisible;
   globalThis.tradeflowImportPayload = tradeflowImportPayload;
+  globalThis.tradeflowPayloadFor = tradeflowPayloadFor;
   globalThis.tradeflowMatchSuppliers = tradeflowMatchSuppliers;
 })();

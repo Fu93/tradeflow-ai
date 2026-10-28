@@ -921,6 +921,35 @@
     return SENT_CLASS_PREFIXES.some((p) => c.startsWith(p));
   }
 
+  // Stricter than messageDirection for the automatic read: the bubble itself, the
+  // bubbles inside it, and its own wrappers' classes. It never looks at sibling
+  // bubbles, so a bubble placed next to a supplier's is not taken as received.
+  function ownDirection(node) {
+    if (!node || !node.classList) return "unknown";
+    const parts = [];
+    const collect = (el) => {
+      if (el && el.classList) parts.push(...Array.from(el.classList));
+    };
+    collect(node);
+    node.querySelectorAll?.("[class*='msg'], [class*='message'], [class*='chat-msg']").forEach(collect);
+    let el = node.parentElement;
+    for (let depth = 0; el && depth < 3; depth++) {
+      const own = Array.from(el.classList || []).map((p) => String(p).toLowerCase());
+      // A message list container is not a message wrapper.
+      if (!own.some((t) => t.includes("messages") || t.includes("chat-list"))) collect(el);
+      el = el.parentElement;
+    }
+    if (node.getAttribute && node.getAttribute("data-supplier-message") === "1") return "received";
+    const tokens = parts.map((p) => String(p).toLowerCase());
+    if (tokens.some(isSentClass)) return "sent";
+    const received = tokens.some(
+      (t) =>
+        t === "msg-received" || t === "message-in" || t === "incoming" || t === "received" ||
+        t.startsWith("msg-received-") || t.startsWith("message-in-") || t.startsWith("incoming-")
+    );
+    return received ? "received" : "unknown";
+  }
+
   function messageDirection(node) {
     if (!node || !node.classList) return "unknown";
     const parts = [];
@@ -1002,11 +1031,12 @@
                 // H6 (F13): do not ingest the buyer's own (sent) message as an
                 // inbound supplier quote.
                 if (messageDirection(node) === "sent") return;
+                const direction = ownDirection(node);
 
                 const text = (node.innerText || node.textContent || "").trim();
                 if (text && !this.lruCache.has(text)) {
                   this.lruCache.add(text);
-                  this.debouncedTrigger(text);
+                  this.debouncedTrigger(text, direction);
                 }
               }
             });
@@ -1018,12 +1048,17 @@
       console.log("[TradeFlow] Targeted ChatObserver successfully attached to container.");
     }
 
-    debouncedTrigger(text) {
+    debouncedTrigger(text, direction) {
+      // Every new bubble is kept: two supplier messages inside the settle time are
+      // two quotes, not one. They are handed over in order once the page settles.
+      this.pending = this.pending || [];
+      this.pending.push({ text, direction: direction || "unknown" });
       clearTimeout(this.debounceTimer);
       this.debounceTimer = setTimeout(() => {
-        if (!this.isDestroyed && this.onNewMessage) {
-          this.onNewMessage(text);
-        }
+        const batch = this.pending || [];
+        this.pending = [];
+        if (this.isDestroyed || !this.onNewMessage) return;
+        batch.forEach((item) => this.onNewMessage(item.text, item.direction));
       }, 350);
     }
 
@@ -1068,6 +1103,54 @@
     // 依賴 layout 的綁定在未插入狀態下執行。
     overlayEl.mount();
     document.body.appendChild(overlayEl.el);
+  }
+
+  // With "read new supplier messages automatically" on, a new supplier bubble goes
+  // straight to the live desk (in review; a person confirms the price there).
+  // Otherwise the copilot HUD path below runs as before.
+  function autoImportEnabled() {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get(["tfAutoImport"], (stored) => resolve(!!(stored && stored.tfAutoImport)));
+      } catch (err) {
+        resolve(false);
+      }
+    });
+  }
+
+  async function routeInbound(rawText, direction) {
+    if (await autoImportEnabled()) {
+      // Only a bubble the page marks as received is a supplier message. An
+      // unmarked bubble could be the buyer's own words, so it is not read.
+      if (direction === "received") autoImportMessage(rawText);
+      return;
+    }
+    handleInboundQuote(rawText);
+  }
+
+  function autoImportMessage(rawText) {
+    if (detectCaptchaChallenge()) {
+      if (overlayEl) overlayEl.updateStatus("CAPTCHA DETECTED", "#f59e0b", "Automatic reading paused until the check is cleared.");
+      return;
+    }
+    const payload = typeof tradeflowPayloadFor === "function"
+      ? tradeflowPayloadFor(document, rawText)
+      : { ok: false, reason: "empty" };
+    if (!payload.ok) return;
+    try {
+      chrome.runtime.sendMessage({ type: "AUTO_IMPORT_QUOTE", payload }, (reply) => {
+        if (chrome.runtime.lastError || !overlayEl) return;
+        if (reply && reply.ok && !reply.duplicate) {
+          overlayEl.updateStatus("SENT TO DESK", "#10b981", "New supplier message is on your desk. Confirm the price there.");
+        } else if (reply && (reply.reason === "ambiguous" || reply.reason === "unmapped")) {
+          overlayEl.updateStatus("CHOOSE SUPPLIER", "#f59e0b", "Open the side panel and choose this chat's supplier once.");
+        } else if (reply && reply.reason === "api-key") {
+          overlayEl.updateStatus("DESK KEY", "#f59e0b", "The desk refused the API key in the side panel.");
+        }
+      });
+    } catch (err) {
+      /* extension context gone after an update: the page reload restores it */
+    }
   }
 
   async function handleInboundQuote(rawText) {
@@ -1313,7 +1396,7 @@
     });
 
     // Start Targeted Chat Observer
-    observerManager = new DOMChatObserverManager((text) => handleInboundQuote(text));
+    observerManager = new DOMChatObserverManager((text, direction) => routeInbound(text, direction));
     observerManager.start();
   }
 
