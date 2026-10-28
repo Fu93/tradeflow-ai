@@ -37,7 +37,9 @@ def desk(tmp_path, monkeypatch):
 def _quote(store, deal_id, supplier_id, text, **landed):
     from src.desk import service
 
-    event = service.ingest_message(store, deal_id, source="paste", raw_text=text, supplier_id=supplier_id, **landed)["event"]
+    event = service.ingest_message(
+        store, deal_id, source="paste", raw_text=text, supplier_id=supplier_id, **landed
+    )["event"]
     token = event["provenance"].get("suggested_token") or event["provenance"]["candidates"][0]
     return service.accept_review(store, deal_id, event["id"], supplier_id, chosen_token=token)
 
