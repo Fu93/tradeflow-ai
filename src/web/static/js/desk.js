@@ -852,6 +852,29 @@
     }
   });
 
+  // Freight, fees and duty go in together or not at all. A blank is "no data",
+  // never zero, so a partly filled set would silently rank on the unit price.
+  function landedInputs() {
+    const ids = ["paste-freight", "paste-fees", "paste-duty"];
+    const raw = ids.map((id) => {
+      const el = document.getElementById(id);
+      return el ? el.value.trim() : "";
+    });
+    const filled = raw.filter((value) => value !== "").length;
+    if (filled === 0) return { values: null };
+    if (filled < raw.length) return { error: "Fill freight, fees and duty together (0 counts), or leave all three blank." };
+    const numbers = raw.map(Number);
+    if (numbers.some((value) => !Number.isFinite(value) || value < 0)) return { error: "Freight, fees and duty must be zero or more." };
+    return { values: { freight: numbers[0], fees: numbers[1], duty_rate: numbers[2] / 100 } };
+  }
+
+  function clearLandedInputs() {
+    ["paste-freight", "paste-fees", "paste-duty"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+  }
+
   document.getElementById("paste-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const error = document.getElementById("paste-error");
@@ -863,6 +886,12 @@
       raw_text: area.value,
       supplier_id: document.getElementById("paste-supplier").value,
     };
+    const landed = landedInputs();
+    if (landed.error) {
+      error.textContent = landed.error;
+      return;
+    }
+    if (landed.values) Object.assign(payload, landed.values);
     if (isSample) {
       // Treated like any paste so the desk computes a counter. The record names
       // its source; the deal's suppliers are fictional example.test addresses.
@@ -875,6 +904,7 @@
         body: JSON.stringify(payload),
       });
       area.value = "";
+      clearLandedInputs();
       delete area.dataset.sample;
       showNote("paste-sample-note", "");
       if (result.snapshot) show(result.snapshot);
