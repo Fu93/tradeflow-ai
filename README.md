@@ -20,7 +20,7 @@ Code paths and tests are in [How this project uses Nebius, NVIDIA and Tavily](#h
 
 1. **Fill a sample deal**, enter the API key (the judge key is in the Devpost testing instructions), **Open desk**. Four fictional suppliers.
 2. **Use a sample message**, then **Add quote**. The waiting item shows which Nemotron model read it and the spans it labelled.
-3. Pick the figure and **Accept**. Every confirmed quote recomputes all suppliers: ranking, default counter, push-lower counter, walk-away hazard.
+3. Pick the figure and **Accept**. Every confirmed quote recomputes all suppliers: ranking, default counter, push-lower counter, walk-away hazard. The paste form can also take freight, other fees and import duty per quote; the ranking then uses landed cost (see "Live supplier desk"). The sample message has none, so its ranking is by unit price.
 4. **Use push lower in the draft** on a card, and **Check supplier on the web** (Tavily).
 5. With the Chrome extension, tick **Read new supplier messages automatically**: new supplier messages on an open chat reach the desk by themselves.
 
@@ -71,9 +71,10 @@ The first commit in this repository is dated 13 October 2026, after the submissi
 - drafts that use the product name in the supplier's language;
 - a daily cap on paid model calls;
 - the reader's first-hop timeout (30 s) and a prompt that defines each label category (PR #31);
+- freight, fees and duty fields on the desk's paste form, so the ranking can use landed cost (PR #32);
 - in the Chrome extension, a server choice, review inside the side panel, one key for every call, and the automatic read of new supplier messages.
 
-The pull requests are #18 to #31.
+The pull requests are #18 to #32.
 
 **AI assistance.** The project's design, direction and trade-offs are the author's; AI coding tools (Cursor, Codebuff, Claude) assisted with writing code.
 <!-- TODO(owner): confirm that you reviewed the decision logic and tests before keeping the sentence "all decision logic and tests were reviewed by the author" -->
@@ -226,6 +227,8 @@ The "Optional phrasing call" box in this diagram is the earlier AMD-era endpoint
 ## Live supplier desk
 
 A deal keeps four or five supplier threads in SQLite (`TRADEFLOW_DESK_DB`, or `desk.db` under `TRADEFLOW_STORE_DIR`, or `data/desk.db`). Each quote stores its source (`email`, `chat-import`, or `paste`), the raw text, the parsed fields, the time, and provenance. An accepted quote updates that supplier's reserve belief from the full accepted history and runs the coupled solver again. The page at `/desk` polls the snapshot. The same snapshot is available as a server-sent stream for a client that can send the API key.
+
+The paste form on `/desk` has optional freight, other fees and import duty fields (freight and fees per unit in the deal currency; duty as a percent). They go in together or not at all: all three filled (0 counts as a value) or all three blank, and a partly filled set is refused by the form. A blank is "no data", never zero. When every quoted supplier has all three, the ranking uses landed cost instead of the unit price (`ranking_basis` is `landed_cost`, otherwise `unit_price`), and the send-time check recomputes the counter the same way. This is covered by unit tests and CI (`tests/test_desk_landed_inputs.py`); the form has not been tried live with a real quote.
 
 Mailbox intake leaves the seen flag alone. IMAP opens the inbox with EXAMINE and reads with BODY.PEEK. `IMAP_LOOKBACK_DAYS` (14) is the window, including mail that is already read. A message is remembered only after it is stored on a deal, keyed by that deal plus UID and Message-ID, so a wiped database can scan the window again. Mail that matches no deal, and a quote that arrives before its deal exists, stays in the window for a later poll. A poll for one deal does not hide another deal's mail. Mail whose sender is not a supplier on the deal is not stored.
 
