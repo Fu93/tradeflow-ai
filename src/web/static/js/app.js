@@ -166,6 +166,21 @@ document.addEventListener("DOMContentLoaded", () => {
   } catch (err) {
     console.warn("[TradeFlow] market intel init failed (continuing):", err);
   }
+  try {
+    const evidenceRoot = document.getElementById("webEvidence");
+    if (evidenceRoot && window.TradeFlowWebEvidence) {
+      window.TradeFlowWebEvidence.mount(evidenceRoot, {
+        endpoint: "/api/v1/market/evidence",
+        headers: tfAuthHeaders,
+        product: () => {
+          const box = document.getElementById("marketQuery");
+          return box ? box.value : "";
+        },
+      });
+    }
+  } catch (err) {
+    console.warn("[TradeFlow] web evidence init failed (continuing):", err);
+  }
   // P1-3: SSE 與遙測配置必須先於圖表初始化；圖表失敗（CDN 不可達）不得中止
   // 整個啟動鏈，否則會話清單永遠停在 "Connecting..."。
   initSSE();

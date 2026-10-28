@@ -1,6 +1,12 @@
 (function () {
   const POLL_MS = 2000;
   const reviewChoice = new Map();
+  // Web evidence (Tavily) per supplier. The desk redraws every card on each poll, so a
+  // result lives here, keyed by supplier id, and is painted into whichever card is on
+  // screen. It is reference text: the counter is computed on the server from confirmed
+  // quotes only and never reads it.
+  const evidence = new Map();
+  let dealProduct = "";
 
   function apiKey() {
     const field = document.getElementById("api-key");
@@ -154,6 +160,7 @@
   function show(snapshot) {
     board.hidden = false;
     const deal = snapshot.deal || {};
+    dealProduct = String(deal.product || "");
     document.getElementById("deal-line").textContent =
       (deal.product || "Deal") + " · " + (deal.id || "");
     document.getElementById("basis-line").textContent =
@@ -376,8 +383,70 @@
       actions.appendChild(outcomeButton("Record continue", "continue", supplier.id));
       actions.appendChild(outcomeButton("Record walk-away", "walk_away", supplier.id));
       card.appendChild(actions);
+      card.appendChild(evidenceBlock(supplier));
       root.appendChild(card);
     });
+  }
+
+  function paintEvidence(wrap, entry) {
+    const lib = window.TradeFlowWebEvidence;
+    const button = wrap.querySelector("button");
+    const parts = {
+      list: wrap.querySelector("ul"),
+      state: wrap.querySelector(".desk-evidence-state"),
+      prov: wrap.querySelector(".desk-evidence-prov"),
+    };
+    if (!lib) {
+      parts.state.textContent = "Web evidence is not loaded.";
+      button.disabled = true;
+      return;
+    }
+    button.disabled = !!(entry && entry.loading);
+    if (entry && entry.loading) lib.loading(parts);
+    else lib.paintInto(parts, entry.payload);
+  }
+
+  function repaintEvidence(supplierId) {
+    document.querySelectorAll(".desk-evidence").forEach((wrap) => {
+      if (wrap.dataset.evidence === supplierId) paintEvidence(wrap, evidence.get(supplierId));
+    });
+  }
+
+  function evidenceBlock(supplier) {
+    const id = String(supplier.id || "");
+    const wrap = document.createElement("div");
+    wrap.className = "desk-evidence";
+    wrap.dataset.evidence = id;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Check supplier on the web";
+    const state = document.createElement("p");
+    state.className = "desk-evidence-state";
+    state.setAttribute("role", "status");
+    const list = document.createElement("ul");
+    list.className = "web-evidence-list";
+    const prov = document.createElement("p");
+    prov.className = "desk-evidence-prov";
+    wrap.appendChild(button);
+    wrap.appendChild(state);
+    wrap.appendChild(list);
+    wrap.appendChild(prov);
+    button.addEventListener("click", async () => {
+      const lib = window.TradeFlowWebEvidence;
+      if (!lib) return;
+      evidence.set(id, { loading: true, payload: null });
+      repaintEvidence(id);
+      const payload = await lib.lookup({
+        kind: "supplier",
+        product: dealProduct,
+        supplier: String(supplier.name || ""),
+        headers: () => headers(false),
+      });
+      evidence.set(id, { loading: false, payload: payload });
+      repaintEvidence(id);
+    });
+    if (evidence.has(id)) paintEvidence(wrap, evidence.get(id));
+    return wrap;
   }
 
   function formatWhen(value) {

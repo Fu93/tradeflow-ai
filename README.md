@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/Fu93/tradeflow-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Fu93/tradeflow-ai/actions/workflows/ci.yml)
 
-## Status (2026-10-21)
+## Status (2026-10-28)
 
-AMD Developer Hackathon ACT III has concluded (online phase 12–18 October 2026). No lablab submission record for this project has been located. This repository is now a **research prototype in maintenance mode**: fixes and documentation only, no new modules. Current state and decision lines: [STATUS.md](STATUS.md). Where the code actually lives (including the `src/legacy/` naming inversion): [ARCHITECTURE.md](ARCHITECTURE.md).
+Built for the **Nebius x NVIDIA Global AI Hackathon** (submission deadline Friday 30 October 2026, 17:00 London), track **Best Apps and Agents**, with an entry for the Best Use of Tavily bonus. The repository began on 13 October 2026 as an entry for the AMD Developer Hackathon ACT III, which has concluded (online phase 12–18 October 2026). No lablab submission record for this project has been located. The AMD sections further down document that earlier target and stay because `scripts/check_claims.py` checks their figures against source files. This is a **research prototype**: no factory has closed a deal through it. Current state and decision lines: [STATUS.md](STATUS.md). Where the code actually lives (including the `src/legacy/` naming inversion): [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 30-second pitch
 
@@ -12,7 +12,25 @@ Small cross-border sellers lose procurement margin when they negotiate factory q
 
 The formulas, and the registry for every constant the decision code is allowed to use, are in [docs/MATH.md](docs/MATH.md). Benchmark numbers below come from this repository's CPU runs or from a parameterised simulator. The full boundary note is [docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md). The claim-by-claim check is [docs/DATA_INTEGRITY.md](docs/DATA_INTEGRITY.md).
 
-Track: **Reinvent Commerce** (AMD Developer Hackathon ACT III, lablab.ai). License: MIT.
+License: MIT. The submission text and demo script are in [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md). Feedback on the Nebius and NVIDIA tools is in [docs/NEBIUS_NVIDIA_FEEDBACK.md](docs/NEBIUS_NVIDIA_FEEDBACK.md).
+
+## How this project uses Nebius, NVIDIA and Tavily
+
+| Piece | Role at runtime | Code | Tests |
+|---|---|---|---|
+| **Nebius Token Factory** (`api.tokenfactory.nebius.com/v1`) | The OpenAI-compatible inference API that serves the quote reader | `src/desk/extract.py`, constants with rationales in `src/config/heuristics.py` | `tests/steps/test_extractor_failover.py`, `tests/steps/test_holdout_reader.py` |
+| **NVIDIA Nemotron** (open models) | Reads a supplier message and names evidence spans with a class. Hop 1 is `nvidia/Nemotron-3-Ultra-550b-a55b`, hop 2 is `nvidia/nemotron-3-super-120b-a12b`, both on Token Factory. A third hop on NVIDIA's hosted endpoint opens only after Nebius itself fails (timeout, connection error, HTTP 429, HTTP 5xx, or a malformed body) and only when `NVIDIA_API_KEY` is set. Each hop has its own timeout and the chain stops at a fixed budget | same | same |
+| **Tavily Search API** | The "Web evidence" card on the dashboard: cited public pages about a product's wholesale prices and MOQ (`Market prices`) or about a supplier's reviews and complaints (`Check supplier`) | `src/market/web_evidence.py`, `GET /api/v1/market/evidence`, `src/web/static/js/web_evidence.js` | `tests/test_web_evidence.py` |
+
+**How the model and the search are kept away from the price.** A price field in the model's answer is discarded. The amount is read by deterministic code from a span that occurs verbatim in the message, a second rule reader must agree before the shadow gate would accept anything, and a person confirms every number before it enters a decision. Search results are never read by a decision module: nothing in `src/engine`, `src/desk` or `src/legacy` imports the Tavily module, and `tests/test_web_evidence.py` fails if one does. Every Tavily payload is stamped `reference_only` and `influences_solver: false`, snippets are cleaned and shown as text only, and a search outage returns an explicit "unavailable" reason instead of an error. Lookups are cached and rate-limited per caller and per process to protect the search credits.
+
+**Environment.** `TRADEFLOW_LLM_API_KEY` (the Nebius Token Factory key), `NVIDIA_API_KEY` (optional third hop), `TAVILY_API_KEY`. With all three unset the app still runs offline: the rule reader prefills, nothing is accepted automatically, and the Web evidence card says it is not configured. `TRADEFLOW_WEB_EVIDENCE_OFFLINE=1` switches the card off even when a key is set.
+
+**Not claimed.** No accuracy or latency measurement of the Nemotron chain is committed under `results/`; the committed latency log is for the AMD endpoint. The Tavily card shows what public pages say. It does not verify a supplier and it does not validate a price.
+
+## What changed during the submission period
+
+The first commit in this repository is dated 13 October 2026, after the submission period opened on 26 August. Through 26 October there were 124 commits, summarised round by round in [STATUS.md](STATUS.md): a keyed audit chain with signed human approval, named operator keys, deployment hardening, parser fuzzing with a ReDoS fix, and the split of the app layer. On 28 October one isolated feature was added for this hackathon: the Tavily web-evidence card.
 
 ## What is proven
 
@@ -39,7 +57,7 @@ Each desk step has a guard, a test, and a chain record. A failed check withholds
 | Fixture | `data/hazard_ebay_bi.json` is the fitted walk-away file. The reserve prior is labelled policy until this supplier has enough of their own responses. |
 | Not claimed | No factory has closed a deal through this prototype. The eBay fit is not a Chinese factory rate. `/round`, `/negotiate`, and the v1 engines stay in `src/legacy/` and mount only when `TRADEFLOW_LEGACY=1`. |
 
-Code freeze after 27 Oct 2026. From 28 Oct through 30 Oct, commits are fixes only.
+Code freeze after 27 Oct 2026. From 28 Oct through 30 Oct, commits are fixes only, with one owner-approved exception on 28 Oct: the isolated Tavily web-evidence card (one new module, one route, one dashboard card, and their tests; no decision-path file changed).
 
 Internal notes, filming guides, and older audits are indexed in [docs/internal/README.md](docs/internal/README.md).
 
@@ -111,7 +129,7 @@ Roadmap: deploy the offline demo, turn on AMD live mode only when `VLLM_API_KEY`
 
 ## Public demo
 
-[render.yaml](render.yaml) matches the live Docker web service `tradeflow-ai-demo` in Frankfurt (`https://tradeflow-ai-demo.onrender.com`), instance type 0.5 CPU / 512 MB, health check `GET /health`, offline by default. `WEB_CONCURRENCY` is `1`. `TRADEFLOW_ENV` is `production`, so webhooks fail closed when `TRADEFLOW_WEBHOOK_TOKEN` is unset. `TRADEFLOW_LEGACY` is `0`. `TRADEFLOW_CHAIN_ANCHOR`, `TRADEFLOW_DESK_DB`, and `TRADEFLOW_CHAIN_KEYS` are listed with `sync: false` (blank until set in the dashboard). Other secrets are `sync: false` so a Blueprint sync does not overwrite them: `VLLM_API_KEY`, `EVOLUS_API_KEY`, `EVOLUS_APP_ID`, `TRADEFLOW_API_KEY`, `TRADEFLOW_CHAIN_KEY`, `TRADEFLOW_CHAIN_KEY_ID`, and `TRADEFLOW_WEBHOOK_TOKEN`. The file does not set `PORT`; Render injects it and the process binds `0.0.0.0:$PORT`. The filesystem is ephemeral, so `TRADEFLOW_DESK_DB` and a file anchor do not survive a restart unless a disk is attached.
+[render.yaml](render.yaml) matches the live Docker web service `tradeflow-ai-demo` in Frankfurt (`https://tradeflow-ai-demo.onrender.com`), instance type 0.5 CPU / 512 MB, health check `GET /health`, offline by default. `WEB_CONCURRENCY` is `1`. `TRADEFLOW_ENV` is `production`, so webhooks fail closed when `TRADEFLOW_WEBHOOK_TOKEN` is unset. `TRADEFLOW_LEGACY` is `0`. `TRADEFLOW_CHAIN_ANCHOR`, `TRADEFLOW_DESK_DB`, and `TRADEFLOW_CHAIN_KEYS` are listed with `sync: false` (blank until set in the dashboard). Other secrets are `sync: false` so a Blueprint sync does not overwrite them: `VLLM_API_KEY`, `EVOLUS_API_KEY`, `EVOLUS_APP_ID`, `TRADEFLOW_API_KEY`, `TRADEFLOW_CHAIN_KEY`, `TRADEFLOW_CHAIN_KEY_ID`, `TRADEFLOW_WEBHOOK_TOKEN`, `TRADEFLOW_LLM_API_KEY`, `NVIDIA_API_KEY`, and `TAVILY_API_KEY`. The file does not set `PORT`; Render injects it and the process binds `0.0.0.0:$PORT`. The filesystem is ephemeral, so `TRADEFLOW_DESK_DB` and a file anchor do not survive a restart unless a disk is attached.
 
 Routes that can call the AMD endpoint (`POST /api/v1/quotes/read` with AMD live mode, and `POST /api/v1/classify/semantic` when stage 2 is requested) are capped in-process at 8 requests a minute per client address and 30 an hour for the whole process. A 429 does not echo the quote or any credential. With no real `VLLM_API_KEY`, those routes stay on the offline reader and the cap is not consumed.
 

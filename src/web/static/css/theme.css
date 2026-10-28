@@ -1488,6 +1488,95 @@ select.input-plain { cursor: pointer; min-width: 0; max-width: 100%; }
   gap: 4px;
 }
 
+/* Web evidence (Tavily): reference only, never a price. */
+.web-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule);
+}
+
+.web-evidence-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.web-evidence-title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--step-0);
+}
+
+.web-evidence-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.web-evidence-form .market-search { flex: 1 1 180px; min-width: 0; }
+
+.web-evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.web-evidence-item {
+  min-width: 0;
+  padding: 8px;
+  background: var(--sheet-sunk);
+  border-radius: 10px;
+}
+
+.web-evidence-link { font-weight: 500; overflow-wrap: anywhere; }
+
+.web-evidence-meta {
+  display: block;
+  font-size: var(--step--1);
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
+}
+
+.web-evidence-snippet {
+  margin: 4px 0 0;
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.web-evidence .market-state,
+.web-evidence .fineprint { margin: 0; }
+
+/* The same evidence list, drawn inside a live-desk supplier card. */
+.desk-evidence {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule);
+}
+
+.desk-evidence-state,
+.desk-evidence-prov {
+  margin: 0;
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.desk-evidence-state:empty,
+.desk-evidence-prov:empty,
+.desk-evidence .web-evidence-list:empty { display: none; }
+
 html[data-theme="dark"] {
   --paper: #1c1712;
   --paper-deep: #14110e;

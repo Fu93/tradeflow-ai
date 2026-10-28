@@ -698,3 +698,22 @@ real cross-platform defect plus one environment trap were fixed:
   submitted by 11-10 (judged by the lablab confirmation email, not by
   git push). Either missed → return to the audit-engine main line, no
   new tracks.
+
+## Hackathon target and the Tavily card (2026-10-28)
+
+- **Target:** Nebius x NVIDIA Global AI Hackathon, track Best Apps and
+  Agents, plus the optional Best Use of Tavily bonus. Deadline Fri
+  2026-10-30 17:00 London. Submission pack:
+  [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md); tool feedback:
+  [docs/NEBIUS_NVIDIA_FEEDBACK.md](docs/NEBIUS_NVIDIA_FEEDBACK.md).
+- **[Owner-approved exception to the 27 Oct code freeze]** One feature: the
+  reference-only Web evidence card (`src/market/web_evidence.py`,
+  `GET /api/v1/market/evidence`, dashboard block, per-supplier button on
+  `/desk`). It cannot reach the solver; a static test enforces that.
+- **Verified:** targeted tests (web_evidence, web_xss, market_data,
+  dashboard_smoke), ruff, repo literal/claim/secret checks, and two jsdom
+  runs of the dashboard and desk pages with a stubbed fetch.
+- **Not verified:** any live Tavily or Nebius call (no keys in the
+  development workspace), a real-browser run, and the Nemotron chain's
+  accuracy and latency. The demo service needs `TRADEFLOW_LLM_API_KEY`,
+  `NVIDIA_API_KEY` (optional) and `TAVILY_API_KEY` set before it works.

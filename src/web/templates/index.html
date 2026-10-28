@@ -245,6 +245,24 @@
             <p class="market-state" data-market="state"></p>
           </div>
           <p class="fineprint market-caveat" data-market="caveat">Customs codes can't separate automatic/carbon/custom items. Implied customs unit value is not a price quote.</p>
+          <div class="web-evidence" id="webEvidence" data-endpoint="/api/v1/market/evidence" aria-labelledby="webEvidenceTitle" aria-busy="false">
+            <div class="web-evidence-head">
+              <h3 class="web-evidence-title" id="webEvidenceTitle" data-we="title">Web evidence</h3>
+              <span class="sheet-note" data-we="note">Tavily · reference only</span>
+            </div>
+            <div class="web-evidence-form">
+              <label class="market-search" for="webEvidenceSupplier">
+                <span data-we="supplierLabel">Supplier name</span>
+                <input id="webEvidenceSupplier" class="input-plain market-hit" data-we="supplierInput" type="text" maxlength="80" autocomplete="off" />
+              </label>
+              <button type="button" class="btn-quiet market-hit" data-we="market">Market prices</button>
+              <button type="button" class="btn-quiet market-hit" data-we="supplier">Check supplier</button>
+            </div>
+            <p class="market-state" data-we="state" role="status" aria-live="polite"></p>
+            <ul class="web-evidence-list" data-we="list"></ul>
+            <p class="fineprint" data-we="prov"></p>
+            <p class="fineprint market-caveat" data-we="caveat">Search snippets are unverified third-party text. They are not a price quote and do not set the counter.</p>
+          </div>
           <footer class="market-foot">
             <p class="fineprint" data-market="prov"></p>
             <a data-market="sourceLink" rel="noopener noreferrer" hidden>Source</a>
@@ -413,6 +431,7 @@
   </main>
 
   <script src="/static/js/market_intel.js"></script>
+  <script src="/static/js/web_evidence.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

@@ -384,6 +384,56 @@ async def market_reference(
     return JSONResponse(status_code=status, content=result)
 
 
+# Tavily credits are a paid, finite resource and this route is reachable by every
+# holder of a desk key, so lookups are capped per caller and for the whole process.
+# In-process, so per-instance: a restart clears the window (same honest limit as
+# the write limiter in src/app/rate_limit.py).
+_EVIDENCE_CALLER_PER_MINUTE = 6
+_EVIDENCE_CALLER_PER_HOUR = 60
+_EVIDENCE_PROCESS_PER_MINUTE = 30
+_EVIDENCE_PROCESS_PER_HOUR = 300
+_evidence_limiters: dict[str, Any] = {}
+
+
+def _evidence_limit(request: Request) -> None:
+    from fastapi import HTTPException
+
+    from ..app.rate_limit import SlidingWindowLimiter, client_ip
+
+    if not _evidence_limiters:
+        _evidence_limiters["caller"] = SlidingWindowLimiter(_EVIDENCE_CALLER_PER_MINUTE, _EVIDENCE_CALLER_PER_HOUR)
+        _evidence_limiters["process"] = SlidingWindowLimiter(_EVIDENCE_PROCESS_PER_MINUTE, _EVIDENCE_PROCESS_PER_HOUR)
+    try:
+        _evidence_limiters["caller"].check(client_ip(request))
+        _evidence_limiters["process"].check("process")
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many web-evidence lookups. Wait and retry.",
+            headers={"Retry-After": "60"},
+        ) from exc
+
+
+@api_v1.get("/market/evidence")
+async def market_web_evidence(
+    request: Request,
+    product: str = "",
+    supplier: str | None = None,
+    kind: str = "market",
+):
+    """Tavily web evidence for a product (kind=market) or a supplier (kind=supplier).
+
+    Reference only: a list of cited public pages. It is not a price and not a
+    solver input, and a search outage returns an explicit unavailable payload.
+    """
+    from ..market.web_evidence import build_web_evidence
+
+    _evidence_limit(request)
+    result = await asyncio.to_thread(build_web_evidence, kind, product, supplier)
+    status = 422 if result.get("reason") == "bad_request" else 200
+    return JSONResponse(status_code=status, content=result)
+
+
 @api_v1.post("/telemetry/test-push")
 async def test_push(request: Request):
     try:

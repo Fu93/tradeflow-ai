@@ -40,6 +40,16 @@ services:
         value: Gemma-4-31B-IT
       - key: VLLM_API_KEY
         sync: false
+      # Nebius Token Factory key for the Nemotron quote reader (the base URL and
+      # models default in src/config/heuristics.py). Unset leaves the rule reader only.
+      - key: TRADEFLOW_LLM_API_KEY
+        sync: false
+      # Optional third extractor hop on NVIDIA's hosted endpoint. Opens only after Nebius fails.
+      - key: NVIDIA_API_KEY
+        sync: false
+      # Tavily Search API key for the Web evidence card. Unset: the card says it is not configured.
+      - key: TAVILY_API_KEY
+        sync: false
       - key: EVOLUS_API_KEY
         sync: false
       - key: EVOLUS_APP_ID
