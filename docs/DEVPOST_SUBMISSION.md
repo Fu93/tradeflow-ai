@@ -6,7 +6,7 @@ Deadline: **Friday 30 October 2026, 17:00 London** (10:00 Pacific). Aim to submi
 
 | Requirement | State |
 |---|---|
-| Runs on Nebius Token Factory and uses an NVIDIA open model | In code: the quote reader (`src/desk/extract.py`). **Still to do:** one live run with a real key, so the runtime call is proven, not only tested with fakes. |
+| Runs on Nebius Token Factory and uses an NVIDIA open model | In code: the quote reader (`src/desk/extract.py`). One live check was made on 2026-10-28 (see "Single live check" below); it was a single call, not a benchmark. |
 | Track | Best Apps and Agents |
 | Public repository with an open-source license visible in the About panel | MIT (`LICENSE`). Confirm the About panel on GitHub shows it. |
 | README with setup and how NVIDIA models and Token Factory were used | The first sections of [README.md](../README.md) |
@@ -35,7 +35,13 @@ The model reads the quote. The math prices the counter. You press send.
 
 **The design choice that matters.** Neither the model nor the search can move a price. A price field in the model's answer is thrown away, and no decision module imports the search code; a test fails if one does. This keeps the model's job narrow: it reads wording, the Bayesian reserve-price and expected-surplus core decides the number, and a person approves every send. That boundary is tested; whether it is enough for real money is not something we have shown, because no factory has closed a deal through this prototype.
 
-**Honest limits.** No factory has closed a deal through this prototype. The walk-away hazard is a transfer from an eBay Best Offer fit, not a measured factory rate. **Not yet proven:** a live Token Factory/Nemotron run and a Tavily run. No accuracy or latency measurement of the Nemotron chain is committed yet, and none is claimed here. The Tavily card shows what public pages say; it does not verify a supplier.
+**Honest limits.** No factory has closed a deal through this prototype. The walk-away hazard is a transfer from an eBay Best Offer fit, not a measured factory rate. **Not yet proven:** accuracy of the quote reader, latency over more than a single call, and the Super failover hop. No accuracy or latency benchmark of the Nemotron chain is committed, and none is claimed here. The Tavily card shows what public pages say; it does not verify a supplier.
+
+**Single live check (2026-10-28, about 12:17 London time, UTC).** One check each, on the live demo (<https://tradeflow-ai-demo.onrender.com>) running master commit `5c0321830e5cadb7a4571fbe9ca46fe510017895`. This is one call each, not a benchmark.
+
+- *Nebius Token Factory:* one sample quote (fictional `example.test` suppliers) was read. The demo's recorded extractor attempt shows provider `nebius`, model `nvidia/Nemotron-3-Ultra-550b-a55b`, status `ok`, latency 1.83 s.
+- *Tavily:* `GET /api/v1/market/evidence?kind=market&product=...` returned HTTP 200 with status ok and 5 results in about 2.3 s.
+- *Not measured:* token usage; the Super failover hop was not exercised; no accuracy numbers from this run; the quote-reader eval (`scripts/eval_quote_reader.py`) is still pending.
 
 **What was updated during the submission period.** The first commit in this repository is dated 13 October 2026, after the submission period opened on 26 August, so all of the work falls inside the period. The repository began as an entry for the AMD Developer Hackathon ACT III, which has concluded; no lablab submission record for this project has been located and no prize or placement is claimed. Through 26 October there were 124 commits (a keyed audit chain with signed human approval, deployment hardening, parser fuzzing, the split of the app layer; summarised in [STATUS.md](../STATUS.md)). For this hackathon, the Nemotron quote reader on Nebius Token Factory (`src/desk/extract.py`) and the Tavily web-evidence card (added on 28 October) are the pieces to judge; the README leads with them and keeps the earlier AMD material in a labelled section. Details: README, "What changed during the submission period".
 
