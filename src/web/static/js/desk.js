@@ -598,6 +598,17 @@
           supplierId: saved.supplierId || item.supplier_id || "", token: chosen, auto: true,
         });
       }
+      const tier = provenance.tier_pick;
+      if (tier && tier.token && tokens.indexOf(tier.token) >= 0) {
+        const qty = Number(tier.quantity);
+        const units = Number.isFinite(qty) ? qty.toLocaleString() : "your quantity";
+        const tierText = tier.below_smallest
+          ? "Tier table: your order (" + units + ") is below the smallest row, \u201c" + tier.row +
+            "\u201d. Check the MOQ with the supplier before you accept " + tier.token + "."
+          : "Tier table: for " + units + " the row is \u201c" + tier.row + "\u201d, so " + tier.token +
+            " is pre-selected. You confirm it.";
+        line(block, tierText).className = tier.below_smallest ? "desk-model-hint desk-disagree" : "desk-model-hint";
+      }
       const modelToken = provenance.model_offer_token || "";
       if (modelToken && tokens.indexOf(modelToken) >= 0) {
         const said = provenance.model_offer_span ? " (\u201c" + provenance.model_offer_span + "\u201d)" : "";

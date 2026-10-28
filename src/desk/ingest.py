@@ -293,6 +293,21 @@ def _prepare_reading(raw_text: str, deal: dict[str, Any], *, llm_fields: dict | 
         _quantity_token(raw_text, str(suggested)) or str(suggested) not in candidates
     ):
         suggested = None
+    if reading.get("status") != "accepted":
+        # A tier table: pre-select the row for the deal's quantity instead of
+        # the first row. The quote stays in review; a person confirms.
+        from src.desk.tiers import tier_for_quantity
+
+        try:
+            tier = tier_for_quantity(raw_text, deal.get("quantity"))
+        except Exception:
+            tier = None
+        if tier is not None and tier["token"] in candidates:
+            provenance["tier_pick"] = tier
+            if suggested != tier["token"]:
+                provenance["rules_suggested_token"] = suggested
+                suggested = tier["token"]
+                provenance["suggested_by"] = "tier"
     provenance["candidates"] = candidates
     provenance["suggested_token"] = suggested
     reading["provenance"] = provenance
