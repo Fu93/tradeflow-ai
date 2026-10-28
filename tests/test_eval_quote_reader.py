@@ -84,6 +84,10 @@ def test_model_alone_reads_the_amount_from_its_span_and_the_gate_needs_the_rules
     assert sum(readers["rules"]["tally"].values()) == 40
     assert readers["fake/model"]["answered"] == 40
     assert readers["fake/model"]["prompt_tokens_total"] == 4000
+    assert report["exposed"] == ["zh_rival_then_own", "en_rival_then_own"]
+    assert sum(readers["fake/model"]["tally_clean"].values()) == 38
+    assert sum(readers["gate:fake/model"]["tally_clean"].values()) == 38
+    assert "without the 2 exposed items" in ev.markdown(report)
 
 
 def test_offline_run_writes_no_endpoint_and_no_key(tmp_path, monkeypatch):
