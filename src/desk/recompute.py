@@ -26,6 +26,7 @@ from src.desk.money import quantise_offer
 from src.engine.decision import HEURISTIC_NOTE
 from src.engine.hazard_fit import NOTE as HAZARD_TRANSFER_NOTE
 from src.engine.hazard_fit import baseline_rates, load_hazard_fit
+from src.desk.validity import read_validity
 from src.engine.landed import landed_unit_cost, ranking_basis
 from src.engine.reserve import ReserveState
 
@@ -608,6 +609,9 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "needs_keep_confirmation": row["id"] in needs_keep,
             "offer_mode": modes.get(row["id"], "default"),
             "default_counter": None,
+            # Shown next to the quote; never an input to rank, counter or draft.
+            "quote_validity": None,
+            "quote_received_at": None,
         }
         display = usable[-1] if usable else latest_any
         if display is not None and display.get("parsed", {}).get("unit_price") is not None:
@@ -617,6 +621,8 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             landed = _components(parsed, deal)
             card["landed_cost"] = landed.get("landed_cost")
             card["landed_status"] = landed.get("status") or "no data"
+            card["quote_validity"] = read_validity(display.get("raw_text") or "", display.get("received_at"))
+            card["quote_received_at"] = display.get("received_at")
         if card["excluded_from_decision"]:
             card["rank"] = None
         elif row["id"] in choices:

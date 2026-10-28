@@ -47,6 +47,49 @@
     return p;
   }
 
+  // The supplier's stated quote validity. It is shown, never used to rank or
+  // price: the send guard re-derives the counter from the chain, and a figure
+  // that depended on today's date would not re-derive.
+  function localDay(now) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+  }
+
+  function daysSince(iso, now) {
+    const then = Date.parse(iso || "");
+    if (Number.isNaN(then)) return null;
+    return Math.max(0, Math.floor((now.getTime() - then) / 86400000));
+  }
+
+  function validityText(supplier, now) {
+    const v = supplier.quote_validity;
+    const quoted = (spans) => spans.map((span) => "\u201c" + span + "\u201d").join(" / ");
+    if (!v) {
+      const age = daysSince(supplier.quote_received_at, now);
+      return {
+        warn: false,
+        text: "No validity stated" + (
+          age == null ? "." : age === 0 ? "; received today." : "; received " + age + (age === 1 ? " day" : " days") + " ago."
+        ),
+      };
+    }
+    if (v.status === "conflict") {
+      return { warn: true, text: "The message gives more than one validity: " + quoted(v.spans || []) + ". Check which one stands." };
+    }
+    if (v.status === "working_days") {
+      return { warn: false, text: "Validity is in working days: " + quoted([v.span]) + ". Check the end date with the supplier." };
+    }
+    const from = v.counted_from === "received" ? ", counted from when the desk received the message" : "";
+    if (localDay(now) > v.valid_until) {
+      return {
+        warn: true,
+        text: "Quote expired on " + v.valid_until + " (" + quoted([v.span]) + from + "). " +
+          "Ask the supplier to confirm the price still stands before you send. It is still ranked.",
+      };
+    }
+    return { warn: false, text: "Valid until " + v.valid_until + " (" + quoted([v.span]) + from + ")." };
+  }
+
   function detailMessage(body) {
     if (!body) return "Request failed";
     if (typeof body.detail === "string") return body.detail.replace(/^Value error,\s*/, "");
@@ -321,6 +364,11 @@
         : money(supplier.latest_quote, supplier.currency || "CNY");
       line(card, "Record: " + (supplier.origin || "live"));
       line(card, "Latest quote: " + quote);
+      if (supplier.latest_quote != null) {
+        const validity = validityText(supplier, new Date());
+        const validityLine = line(card, validity.text);
+        validityLine.className = validity.warn ? "desk-validity desk-warn" : "desk-validity";
+      }
       if (supplier.quote_confirmed === false) {
         line(card, "This quote is not confirmed.");
       }

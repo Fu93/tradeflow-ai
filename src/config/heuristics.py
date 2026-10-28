@@ -552,6 +552,22 @@ EXTRACTOR_TIMEOUT_NVIDIA_SECONDS = 30
 # quote cannot wait longer than the whole chain.
 EXTRACTOR_TIMEOUT_BUDGET_SECONDS = 80
 
+# Rationale: calendar facts used to turn a supplier's "valid for 2 weeks" or
+# "有效期一个月" into a date. They are not tuned.
+DAYS_PER_WEEK = 7
+MONTHS_PER_YEAR = 12
+
+# Rationale: a stated quote validity further out than this is treated as a
+# misreading and not shown. A year covers annual price agreements.
+QUOTE_VALIDITY_MAX_DAYS = 366
+
+# Rationale: a validity date written without a year ("有效期至1月5日") is read
+# in the year the message arrived, unless that date is more than about half a
+# year before arrival; then it is next year's date (written in late December
+# about early January). A date a few days or weeks back stays in the past and
+# shows as expired.
+QUOTE_VALIDITY_YEAR_ROLL_DAYS = 183
+
 # Rationale: maximum completion tokens sent on every extractor hop. A long
 # supplier message was truncated when the provider default was left in place.
 EXTRACTOR_MAX_OUTPUT_TOKENS = 4096
