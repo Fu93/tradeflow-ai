@@ -114,18 +114,25 @@ def test_desk_pre_selects_the_row_and_keeps_the_quote_in_review(tmp_path, monkey
         store.close()
 
 
-def test_the_held_out_rule_reader_is_untouched():
-    """The tier step lives outside parse_quote, so the rules-only evaluation does not move."""
+def test_the_held_out_rule_reader_is_untouched(monkeypatch):
+    """The tier step lives outside parse_quote, so the rules-only evaluation cannot move with it."""
     import importlib.util
-    import json
+
+    from src.desk import tiers
 
     spec = importlib.util.spec_from_file_location("eval_quote_reader", ROOT / "scripts" / "eval_quote_reader.py")
     ev = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ev)
     rows, _sha = ev.load()
-    report = ev.evaluate(rows, [], base="http://fake.invalid", target=30, ceiling=40)
-    baseline = json.loads((ROOT / "results" / "quote_reader_eval_rules_only.json").read_text(encoding="utf-8"))
-    assert report["readers"]["rules"]["tally"] == baseline["readers"]["rules"]["tally"]
+    before = ev.evaluate(rows, [], base="http://fake.invalid", target=30, ceiling=40)["readers"]["rules"]["tally"]
+
+    def broken(*_args, **_kwargs):
+        raise AssertionError("the rule reader must not use the tier step")
+
+    monkeypatch.setattr(tiers, "tier_for_quantity", broken)
+    after = ev.evaluate(rows, [], base="http://fake.invalid", target=30, ceiling=40)["readers"]["rules"]["tally"]
+    assert before == after
+    assert "tiers" not in (ROOT / "src/desk/parse.py").read_text(encoding="utf-8")
 
 
 def test_desk_explains_the_tier_pick():
