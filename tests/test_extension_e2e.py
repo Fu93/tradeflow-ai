@@ -1089,6 +1089,21 @@ def main() -> int:
                             "the web check never shows a price figure",
                             not any(ch in sp.locator("#desk-counters .desk-evidence").first.inner_text() for ch in "$\u00a5\u20ac%"),
                         )
+                        print("\n[11] A reloaded chat page uses the panel's server and key")
+                        backend_log.flush()
+                        log_path = os.path.join(backend_tmp, "backend.log")
+                        seen_before = len(open(log_path, encoding="utf-8").read())
+                        page.reload()
+                        page.wait_for_timeout(3000)
+                        backend_log.flush()
+                        fresh = open(log_path, encoding="utf-8").read()[seen_before:]
+                        heuristic_lines = [ln for ln in fresh.splitlines() if "GET /api/v1/heuristics" in ln]
+                        check("the reloaded page asked for the heuristics", bool(heuristic_lines), str(len(heuristic_lines)))
+                        check(
+                            "the page's heuristics call carries the panel's key (no 401)",
+                            bool(heuristic_lines) and all('" 200' in ln for ln in heuristic_lines),
+                            " | ".join(heuristic_lines)[:200],
+                        )
 
             finally:
                 ctx.close()
