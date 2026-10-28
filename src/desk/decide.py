@@ -37,3 +37,42 @@ def decide_supplier(
         intercept=intercept,
         gap_coef=gap_coef,
     )
+
+
+# The figure a person chose to put in front of one supplier. "default" is the
+# best price already on the table (this ask, or the best rival's). "push" is the
+# solver's push-lower counter, which maximises expected surplus under the risk
+# cap. Only a human event on the chain sets it; the recompute, the record check
+# and the chain check all read it through these two functions.
+OFFER_MODES = ("default", "push")
+
+
+def offer_modes(entries: list[dict]) -> dict[str, str]:
+    """Latest human-chosen offer mode per supplier, from the audit chain."""
+    modes: dict[str, str] = {}
+    for entry in entries:
+        if entry.get("type") != "offer_mode":
+            continue
+        payload = entry.get("payload") or {}
+        if payload.get("confirmed_by") != "human":
+            continue
+        supplier_id = str(payload.get("supplier_id") or "")
+        mode = str(payload.get("mode") or "")
+        if supplier_id and mode in OFFER_MODES:
+            modes[supplier_id] = mode
+    return modes
+
+
+def issued_offer(choice: OfferChoice | None, ceiling: float, ask: float, mode: str) -> tuple[float | None, str]:
+    """The number the supplier reads, and how it relates to the ask.
+
+    A push that would lower expected value is withheld by the solver; then the
+    default figure is issued and the relation says so.
+    """
+    from src.desk.money import quantise_offer
+
+    if choice is None or choice.blocked or str(choice.counter_relation) == "withheld":
+        return None, "withheld"
+    if mode == "push" and not choice.push_withheld:
+        return quantise_offer(float(choice.push_counter), float(ceiling), float(ask)), "push_lower"
+    return quantise_offer(float(choice.default_counter), float(ceiling), float(ask)), str(choice.counter_relation)

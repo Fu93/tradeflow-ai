@@ -670,6 +670,37 @@ def reopen_supplier(
         return publish(store, deal_id)
 
 
+def set_offer_mode(
+    store: DeskStore,
+    deal_id: str,
+    supplier_id: str,
+    mode: str,
+    *,
+    human_confirmed: bool,
+) -> dict[str, Any]:
+    """A person chooses which figure this supplier's draft carries.
+
+    "default" is the best price already on the table; "push" is the solver's
+    push-lower counter. The choice is a chained human event, so the send guard
+    re-derives the same figure from the chain before anything is sent.
+    """
+    from src.desk.decide import OFFER_MODES
+
+    if human_confirmed is not True:
+        raise DeskRejected("A person has to choose the figure for a draft.")
+    if mode not in OFFER_MODES:
+        raise DeskRejected("The offer mode is default or push.")
+    with deal_lock(deal_id):
+        if store.get_deal(deal_id) is None or store.supplier(deal_id, supplier_id) is None:
+            raise KeyError(supplier_id)
+        store.append_chain(
+            deal_id,
+            "offer_mode",
+            {"supplier_id": supplier_id, "mode": mode, "confirmed_by": "human"},
+        )
+        return publish(store, deal_id)
+
+
 def confirm_keep_supplier(
     store: DeskStore,
     deal_id: str,

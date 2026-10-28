@@ -63,3 +63,4 @@
   .cards { grid-template-columns: 1fr 1fr; }
   .desk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
 }
+.desk-carries { font-weight: 600; }

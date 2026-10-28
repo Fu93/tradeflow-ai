@@ -361,8 +361,10 @@
       }
       const half = supplier.sensitivity_half == null ? "withheld" : money(supplier.sensitivity_half, "CNY");
       const doubled = supplier.sensitivity_double == null ? "withheld" : money(supplier.sensitivity_double, "CNY");
-      const counter = supplier.counter == null ? "withheld" : money(supplier.counter, "CNY");
+      const defaultFigure = supplier.default_counter != null ? supplier.default_counter : supplier.counter;
+      const counter = defaultFigure == null ? "withheld" : money(defaultFigure, "CNY");
       const push = supplier.push_counter == null ? "withheld" : money(supplier.push_counter, "CNY");
+      const pushing = supplier.counter_relation === "push_lower";
       const relation = supplier.counter_relation === "at_ask"
         ? "This supplier is the cheapest confirmed quote, so the default is their ask."
         : supplier.counter_relation === "match_rival"
@@ -370,8 +372,40 @@
           : "";
       line(card, "Default counter: " + counter);
       if (relation) line(card, relation);
-      line(card, "Push lower: " + push);
+      line(card, "Push lower: " + push + " (the solver's price with the highest expected surplus inside your risk cap)");
       if (supplier.push_note) line(card, supplier.push_note);
+      if (supplier.counter != null) {
+        const carries = line(card, "The draft carries: " + money(supplier.counter, "CNY") +
+          (pushing ? " (push lower, chosen by you)" : " (the default)"));
+        carries.className = "desk-carries";
+        const choose = document.createElement("button");
+        choose.type = "button";
+        const next = supplier.offer_mode === "push" ? "default" : "push";
+        choose.textContent = next === "push" ? "Use push lower in the draft" : "Use the default in the draft";
+        choose.disabled = next === "push" && supplier.push_counter == null;
+        choose.addEventListener("click", async () => {
+          formError.textContent = "";
+          choose.disabled = true;
+          try {
+            const snapshot = await request(
+              "/api/v1/desk/deals/" + dealId + "/suppliers/" + supplier.id + "/offer-mode",
+              {
+                method: "POST",
+                headers: headers(true),
+                body: JSON.stringify({ mode: next, human_confirmed: true }),
+              }
+            );
+            show(snapshot);
+          } catch (err) {
+            formError.textContent = err.message;
+            choose.disabled = false;
+          }
+        });
+        const chooseRow = document.createElement("div");
+        chooseRow.className = "desk-actions";
+        chooseRow.appendChild(choose);
+        card.appendChild(chooseRow);
+      }
       line(card, "At half the prior strength: " + half);
       line(card, "At double the prior strength: " + doubled);
       line(card, "Walk-away hazard: " + hazardText(supplier));
