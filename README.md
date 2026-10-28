@@ -4,9 +4,17 @@
 
 ## Nebius x NVIDIA Global AI Hackathon entry
 
-TradeFlow AI is a one-person supplier-negotiation desk for small cross-border sellers. It is entered in the **Nebius x NVIDIA Global AI Hackathon** (submission deadline Friday 30 October 2026, 17:00 London), track **Best Apps and Agents**, with an entry for the Best Use of Tavily bonus. The Devpost text, the judge testing steps and the demo script are in [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md); feedback on the tools is in [docs/NEBIUS_NVIDIA_FEEDBACK.md](docs/NEBIUS_NVIDIA_FEEDBACK.md). License: MIT.
+TradeFlow AI is a one-person supplier-negotiation desk for small cross-border sellers, entered in the **Nebius x NVIDIA Global AI Hackathon** (track Best Apps and Agents, plus the Best Use of Tavily bonus): a Nemotron model on Nebius Token Factory reads factory quotes, deterministic math prices the counter, and a person sends it.
 
-**How the three services are used.** Nebius Token Factory serves NVIDIA Nemotron models that read a supplier's free-text message and name the evidence spans in it (an offer, a fee, a deposit, a rival's price). Tavily supplies a reference-only "Web evidence" card with cited public pages. Details, code paths and tests are in [How this project uses Nebius, NVIDIA and Tavily](#how-this-project-uses-nebius-nvidia-and-tavily) below.
+Links: [Devpost text, judge steps and demo script](docs/DEVPOST_SUBMISSION.md) · [feedback on the tools](docs/NEBIUS_NVIDIA_FEEDBACK.md) · [public demo](#public-demo) · License: MIT <!-- DEMO_URL: final public demo URL --> <!-- VIDEO_URL: public YouTube link, 3 minutes or less -->
+
+**How the three services are used.**
+
+- **Nebius Token Factory** is the inference API (`api.tokenfactory.nebius.com/v1`) that serves the quote reader.
+- **NVIDIA Nemotron** (Ultra, then Super, both on Token Factory) reads a supplier's free-text message and names the evidence spans in it: an offer, a fee, a deposit, a rival's price.
+- **Tavily** supplies a reference-only "Web evidence" card with cited public pages about a product or a supplier.
+
+Code paths and tests are in [How this project uses Nebius, NVIDIA and Tavily](#how-this-project-uses-nebius-nvidia-and-tavily) below.
 
 **What the language model may and may not do.**
 
@@ -15,18 +23,6 @@ TradeFlow AI is a one-person supplier-negotiation desk for small cross-border se
 - The Bayesian reserve-price belief and the expected-surplus optimiser (a one-step lookahead) decide every counter, from quotes a person has confirmed.
 - A human approves every send. The Chrome extension cannot press Send.
 - Search results (Tavily) are shown as text beside the quote. No decision module reads them.
-
-**Proven and not yet proven (2026-10-28).**
-
-- *Proven in this repository:* the decision core, the audit chain, the fail-closed quote-reading gates and the Tavily card are covered by tests that run offline or with fakes (see "What is proven" below). The request path to Token Factory and the Nemotron failover chain are in code and tested with fake endpoints.
-- *Not yet proven:* a live Token Factory/Nemotron run and a Tavily run; the hosted demo may still run the earlier AMD build until redeployed. No accuracy or latency figure for the Nemotron chain is committed, and none is claimed here. No factory has closed a deal through this prototype.
-
-<!-- TODO(owner): fill after the live run: date, model id, HTTP status, latency, commit -->
-Live-run results (Nebius Token Factory / Nemotron and Tavily): **not recorded yet.** Date: _pending_. Model id: _pending_. HTTP status: _pending_. Latency: _pending_. Commit: _pending_.
-<!-- end TODO(owner) -->
-
-**AI assistance.** The project's design, direction and trade-offs are the author's; AI coding tools (Cursor, Codebuff, Claude) assisted with writing code.
-<!-- TODO(owner): confirm that you reviewed the decision logic and tests before keeping the sentence "all decision logic and tests were reviewed by the author" -->
 
 ## Status (2026-10-28)
 
@@ -45,18 +41,21 @@ The hackathon text and demo script are in [docs/DEVPOST_SUBMISSION.md](docs/DEVP
 | Piece | Role at runtime | Code | Tests |
 |---|---|---|---|
 | **Nebius Token Factory** (`api.tokenfactory.nebius.com/v1`) | The OpenAI-compatible inference API that serves the quote reader | `src/desk/extract.py`, constants with rationales in `src/config/heuristics.py` | `tests/steps/test_extractor_failover.py`, `tests/steps/test_holdout_reader.py` |
-| **NVIDIA Nemotron** (open models) | Reads a supplier message and names evidence spans with a class. Hop 1 is `nvidia/Nemotron-3-Ultra-550b-a55b`, hop 2 is `nvidia/nemotron-3-super-120b-a12b`, both on Token Factory. A third hop on NVIDIA's hosted endpoint opens only after Nebius itself fails (timeout, connection error, HTTP 429, HTTP 5xx, or a malformed body) and only when `NVIDIA_API_KEY` is set. Each hop has its own timeout and the chain stops at a fixed budget | same | same |
+| **NVIDIA Nemotron** (open models) | Reads a supplier message and names evidence spans with a class. Hop 1 is `nvidia/Nemotron-3-Ultra-550b-a55b`, hop 2 is `nvidia/nemotron-3-super-120b-a12b`, both on Token Factory. A third hop on NVIDIA's hosted endpoint is **optional and off in the demo**: it opens only after Nebius itself fails (timeout, connection error, HTTP 429, HTTP 5xx, or a malformed body) and only when `NVIDIA_API_KEY` is set. Each hop has its own timeout and the chain stops at a fixed budget | same | same |
 | **Tavily Search API** | The "Web evidence" card on the dashboard: cited public pages about a product's wholesale prices and MOQ (`Market prices`) or about a supplier's reviews and complaints (`Check supplier`) | `src/market/web_evidence.py`, `GET /api/v1/market/evidence`, `src/web/static/js/web_evidence.js` | `tests/test_web_evidence.py` |
 
 **How the model and the search are kept away from the price.** A price field in the model's answer is discarded. The amount is read by deterministic code from a span that occurs verbatim in the message, a second rule reader must agree before the shadow gate would accept anything, and a person confirms every number before it enters a decision. Search results are never read by a decision module: nothing in `src/engine`, `src/desk` or `src/legacy` imports the Tavily module, and `tests/test_web_evidence.py` fails if one does. Every Tavily payload is stamped `reference_only` and `influences_solver: false`, snippets are cleaned and shown as text only, and a search outage returns an explicit "unavailable" reason instead of an error. Lookups are cached and rate-limited per caller and per process to protect the search credits.
 
-**Environment.** `TRADEFLOW_LLM_API_KEY` (the Nebius Token Factory key), `NVIDIA_API_KEY` (optional third hop), `TAVILY_API_KEY`. With all three unset the app still runs offline: the rule reader prefills, nothing is accepted automatically, and the Web evidence card says it is not configured. `TRADEFLOW_WEB_EVIDENCE_OFFLINE=1` switches the card off even when a key is set.
+**Environment.** `TRADEFLOW_LLM_API_KEY` (the Nebius Token Factory key), `NVIDIA_API_KEY` (optional third hop; off in the demo), `TAVILY_API_KEY`. With all three unset the app still runs offline: the rule reader prefills, nothing is accepted automatically, and the Web evidence card says it is not configured. `TRADEFLOW_WEB_EVIDENCE_OFFLINE=1` switches the card off even when a key is set.
 
 **Not claimed.** No accuracy or latency measurement of the Nemotron chain is committed under `results/`; the committed latency log is for the AMD endpoint. The Tavily card shows what public pages say. It does not verify a supplier and it does not validate a price.
 
 ## What changed during the submission period
 
 The first commit in this repository is dated 13 October 2026, after the submission period opened on 26 August. Through 26 October there were 124 commits, summarised round by round in [STATUS.md](STATUS.md): a keyed audit chain with signed human approval, named operator keys, deployment hardening, parser fuzzing with a ReDoS fix, and the split of the app layer. On 28 October one isolated feature was added for this hackathon: the Tavily web-evidence card.
+
+**AI assistance.** The project's design, direction and trade-offs are the author's; AI coding tools (Cursor, Codebuff, Claude) assisted with writing code.
+<!-- TODO(owner): confirm that you reviewed the decision logic and tests before keeping the sentence "all decision logic and tests were reviewed by the author" -->
 
 ## What is proven
 
@@ -155,8 +154,6 @@ Competitors with a public price: Accio and Alibaba RFQ (free for buyers). Pactum
 
 [render.yaml](render.yaml) matches the live Docker web service `tradeflow-ai-demo` in Frankfurt (`https://tradeflow-ai-demo.onrender.com`), instance type 0.5 CPU / 512 MB, health check `GET /health`, offline by default. `WEB_CONCURRENCY` is `1`. `TRADEFLOW_ENV` is `production`, so webhooks fail closed when `TRADEFLOW_WEBHOOK_TOKEN` is unset. `TRADEFLOW_LEGACY` is `0`. `TRADEFLOW_CHAIN_ANCHOR`, `TRADEFLOW_DESK_DB`, and `TRADEFLOW_CHAIN_KEYS` are listed with `sync: false` (blank until set in the dashboard). Other secrets are `sync: false` so a Blueprint sync does not overwrite them: `VLLM_API_KEY`, `EVOLUS_API_KEY`, `EVOLUS_APP_ID`, `TRADEFLOW_API_KEY`, `TRADEFLOW_CHAIN_KEY`, `TRADEFLOW_CHAIN_KEY_ID`, `TRADEFLOW_WEBHOOK_TOKEN`, `TRADEFLOW_LLM_API_KEY`, `NVIDIA_API_KEY`, and `TAVILY_API_KEY`. The file does not set `PORT`; Render injects it and the process binds `0.0.0.0:$PORT`. The filesystem is ephemeral, so `TRADEFLOW_DESK_DB` and a file anchor do not survive a restart unless a disk is attached.
 
-The hosted demo may still run the earlier AMD build (the AMD tokenfactory and `Gemma-4-31B-IT` path described in the AMD section below) until the service is redeployed with the Nebius and Tavily keys. The Nemotron/Token Factory and Tavily paths are not shown to be live on it yet.
-
 ## Interface
 
 The desk is set in self-hosted Fraunces and Outfit (SIL Open Font License) on a bone-paper palette. The supplier quote sheet is the first panel. The four-supplier auction follows it. Each quote is drawn as a share of the walk-away ceiling returned by the auction API. The page says the suppliers are simulated archetypes, and approval stays with the buyer.
@@ -231,6 +228,9 @@ On Render's free plan the disk is ephemeral, so `TRADEFLOW_DESK_DB` does not sur
 
 ## Honest limits
 
+- *Proven in this repository (2026-10-28):* the decision core, the audit chain, the fail-closed quote-reading gates and the Tavily card are covered by tests that run offline or with fakes (see "What is proven" above). The request path to Token Factory and the Nemotron failover chain are in code and tested with fake endpoints.
+- *Not yet proven:* a live Token Factory/Nemotron run and a Tavily run. No accuracy or latency figure for the Nemotron chain is committed, and none is claimed here. No factory has closed a deal through this prototype.
+<!-- Live run: date, model id, HTTP status, latency, commit; fill when measured -->
 - No closed-loop purchase. Supplier lines in the stress transcript are a script.
 - Synthetic self-play ([results/self_play_benchmark.md](results/self_play_benchmark.md), 20 matches × 5 archetypes, seed 42) is a parameterised simulator. Engine savings in that table run from **8.8% to 20.0%** versus the walk-away ceiling used by that table. Against the Hard-Bargainer the engine's 8.8% is behind the fixed 5%-per-round baseline's 9.2%. Seed 42 reproduces that table; it is not a variance estimate. It is not the auction headline.
 - The real-model log in the AMD section below is a different experiment. Against a Bluffing Hardliner the recorded deal rate is 61.11%, with 0 budget violations in 94 completed matches.
