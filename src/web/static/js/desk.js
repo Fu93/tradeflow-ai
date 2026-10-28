@@ -588,10 +588,28 @@
         : (provenance.tokens || []);
       const suggested = provenance.suggested_token || "";
       const currency = provenance.currency || "CNY";
-      let chosen = saved.token || suggested || "";
+      // A figure the person picked stays. A pre-selection they did not touch
+      // follows the latest suggestion, so a model result that arrives after
+      // the first draw can still point at the supplier's own offer.
+      let chosen = (saved.token && !saved.auto) ? saved.token : (suggested || saved.token || "");
       if (chosen && tokens.indexOf(chosen) < 0) chosen = "";
-      if (chosen && !saved.token) {
-        reviewChoice.set(item.id, { supplierId: item.supplier_id || saved.supplierId || "", token: chosen });
+      if (chosen && (!saved.token || saved.auto)) {
+        reviewChoice.set(item.id, {
+          supplierId: saved.supplierId || item.supplier_id || "", token: chosen, auto: true,
+        });
+      }
+      const modelToken = provenance.model_offer_token || "";
+      if (modelToken && tokens.indexOf(modelToken) >= 0) {
+        const said = provenance.model_offer_span ? " (\u201c" + provenance.model_offer_span + "\u201d)" : "";
+        const hint = provenance.model_disagrees
+          ? "The model calls " + modelToken + " the supplier's own offer" + said +
+            ", but the rules read " + suggested + ". Check before you accept."
+          : provenance.suggested_by === "model"
+            ? "Pre-selected " + modelToken + ": the model labelled it the supplier's own offer" + said +
+              ". The rules did not pick one. You confirm it."
+            : "The model agrees: it labelled " + modelToken + " the supplier's own offer" + said + ".";
+        const hintLine = line(block, hint);
+        hintLine.className = provenance.model_disagrees ? "desk-model-hint desk-disagree" : "desk-model-hint";
       }
       const note = document.createElement("p");
       function lineContaining(raw, token) {
@@ -626,6 +644,10 @@
           const pick = document.createElement("button");
           pick.type = "button";
           pick.textContent = token;
+          if (token === modelToken) {
+            pick.dataset.model = "own_unit_offer";
+            pick.title = "The model labelled this figure the supplier's own offer";
+          }
           if (token === chosen) pick.disabled = true;
           pick.addEventListener("click", () => {
             chosen = token;
@@ -655,7 +677,7 @@
       if (saved.supplierId) select.value = saved.supplierId;
       select.addEventListener("change", () => {
         const prev = reviewChoice.get(item.id) || {};
-        reviewChoice.set(item.id, { supplierId: select.value, token: prev.token || chosen });
+        reviewChoice.set(item.id, { supplierId: select.value, token: prev.token || chosen, auto: Boolean(prev.auto) });
       });
       const actions = document.createElement("div");
       actions.className = "desk-actions";

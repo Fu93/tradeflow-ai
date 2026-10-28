@@ -325,6 +325,34 @@ def _mention_trace(raw_text: str, shadow: dict[str, Any]) -> list[dict[str, Any]
     return rows
 
 
+def _apply_model_offer(provenance: dict[str, Any], shadow: dict[str, Any]) -> None:
+    """Record which candidate the model calls the supplier's own offer.
+
+    The model is a second opinion. It never replaces the rule reader's
+    pre-selection: when the rules pre-selected nothing, the model's candidate
+    fills the gap; when they pre-selected another figure, the disagreement is
+    shown. A person confirms either way, and the model can only point at one
+    of the rule reader's own candidates, never add a number.
+    """
+    offer = shadow.get("model_offer") or None
+    token = str(offer.get("token") or "") if isinstance(offer, dict) else ""
+    candidates = [str(item) for item in provenance.get("candidates") or []]
+    if not token or token not in candidates:
+        provenance["model_offer_token"] = None
+        provenance["model_offer_span"] = None
+        provenance["model_disagrees"] = False
+        return
+    provenance["model_offer_token"] = token
+    provenance["model_offer_span"] = str(offer.get("span") or "")
+    rules_pick = provenance.get("suggested_token")
+    if not rules_pick:
+        provenance["suggested_token"] = token
+        provenance["suggested_by"] = "model"
+        provenance["model_disagrees"] = False
+        return
+    provenance["model_disagrees"] = str(rules_pick) != token
+
+
 def _quantity_token(raw_text: str, token: str) -> bool:
     """A MOQ or a quantity unit is not a unit price, even when it sits near one."""
     if not token or token not in (raw_text or ""):
@@ -390,6 +418,7 @@ def _ingest_locked(
         provenance["extractor_attempts"] = list(shadow["attempts"])
     if shadow.get("mentions"):
         provenance["extractor_mentions"] = _mention_trace(raw_text, shadow)
+        _apply_model_offer(provenance, shadow)
     if shadow.get("extractor_pending"):
         provenance["extractor_pending"] = True
     if freight is not None:
@@ -577,6 +606,7 @@ def _apply_extractor_result(
         provenance["extractor_error"] = shadow["error"]
     provenance["extractor_attempts"] = list(shadow.get("attempts") or [])
     provenance["extractor_mentions"] = _mention_trace(str(event.get("raw_text") or ""), shadow)
+    _apply_model_offer(provenance, shadow)
     parsed = dict(event.get("parsed") or {})
     if event.get("status") == "review":
         parsed["unit_price"] = None
