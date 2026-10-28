@@ -30,6 +30,7 @@
   cursor: pointer;
 }
 .desk-error { color: var(--seal, #9a3412); min-height: 1.2em; }
+.desk-note { margin: 0; font-size: 0.9em; color: var(--ink-soft, #3e463f); }
 .cards { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .desk-card h2 { margin: 0 0 8px; font-size: 18px; overflow-wrap: break-word; word-break: normal; }
 .desk-card p, .desk-log p, .desk-draft p { margin: 4px 0; }
