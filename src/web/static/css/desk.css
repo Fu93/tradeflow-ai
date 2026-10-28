@@ -33,7 +33,15 @@
 .desk-note { margin: 0; font-size: 0.9em; color: var(--ink-soft, #3e463f); }
 .desk-model-hint { margin: 0.25rem 0; font-size: 0.9em; }
 .desk-model-hint.desk-disagree { color: #8a3b00; font-weight: 600; }
-.desk-actions button[data-model="own_unit_offer"] { outline: 2px dashed currentColor; outline-offset: 2px; }
+.desk-actions button[aria-pressed="true"] {
+  background: #fbf7f0;
+  color: var(--steel, #1e3a4c);
+  border-width: 2px;
+  font-weight: 700;
+  cursor: default;
+}
+.desk-actions button[aria-pressed="true"]::before { content: "\2713  "; }
+.desk-actions button[data-model="own_unit_offer"] { outline: 2px dashed var(--steel, #1e3a4c); outline-offset: 3px; }
 .cards { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .desk-card h2 { margin: 0 0 8px; font-size: 18px; overflow-wrap: break-word; word-break: normal; }
 .desk-card p, .desk-log p, .desk-draft p { margin: 4px 0; }

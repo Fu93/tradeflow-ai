@@ -660,6 +660,7 @@
             pick.title = "The model labelled this figure the supplier's own offer";
           }
           if (token === chosen) pick.disabled = true;
+          pick.setAttribute("aria-pressed", token === chosen ? "true" : "false");
           pick.addEventListener("click", () => {
             chosen = token;
             reviewChoice.set(item.id, { supplierId: select.value, token: token });
@@ -667,6 +668,7 @@
             button.disabled = !chosen;
             Array.prototype.forEach.call(picks.children, (node) => {
               node.disabled = node === pick;
+              node.setAttribute("aria-pressed", node === pick ? "true" : "false");
             });
           });
           picks.appendChild(pick);
