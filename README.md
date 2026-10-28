@@ -45,7 +45,16 @@ Internal notes, filming guides, and older audits are indexed in [docs/internal/R
 
 Desk environment variables (unset means the feature stays off, except the database path and the poll interval):
 
-`TRADEFLOW_API_KEY` `TRADEFLOW_LEGACY` `TRADEFLOW_DESK_DB` `TRADEFLOW_STORE_DIR` `DESK_N_SAMPLES` `DESK_N_GRID` `DESK_SMTP_SEND` `SMTP_HOST` `EMAIL_USERNAME` `EMAIL_PASSWORD` `IMAP_HOST` `IMAP_PORT` `IMAP_SSL` `IMAP_USERNAME` `IMAP_PASSWORD` `IMAP_LOOKBACK_DAYS` `IMAP_POLL_SECONDS` `GMAIL_DRAFTS` `GMAIL_CLIENT_ID` `GMAIL_CLIENT_SECRET` `GMAIL_REFRESH_TOKEN` `TRADEFLOW_LLM_BASE_URL` `OPENAI_BASE_URL` `TRADEFLOW_LLM_MODEL` `OPENAI_MODEL` `TRADEFLOW_LLM_API_KEY` `OPENAI_API_KEY` `NVIDIA_API_KEY` `TRADEFLOW_EXTRACTOR_TIMEOUT_ULTRA` `TRADEFLOW_EXTRACTOR_TIMEOUT_SUPER` `TRADEFLOW_EXTRACTOR_TIMEOUT_NVIDIA` `TRADEFLOW_EXTRACTOR_TIMEOUT_BUDGET` `TRADEFLOW_CHAIN_KEY` `TRADEFLOW_CHAIN_KEY_ID` `TRADEFLOW_CHAIN_KEYS` `TRADEFLOW_CHAIN_ANCHOR`
+`TRADEFLOW_API_KEY` `TRADEFLOW_LEGACY` `TRADEFLOW_DESK_DB` `TRADEFLOW_STORE_DIR` `DESK_N_SAMPLES` `DESK_N_GRID` `DESK_SMTP_SEND` `SMTP_HOST` `EMAIL_USERNAME` `EMAIL_PASSWORD` `IMAP_HOST` `IMAP_PORT` `IMAP_SSL` `IMAP_USERNAME` `IMAP_PASSWORD` `IMAP_LOOKBACK_DAYS` `IMAP_POLL_SECONDS` `GMAIL_DRAFTS` `GMAIL_CLIENT_ID` `GMAIL_CLIENT_SECRET` `GMAIL_REFRESH_TOKEN` `TRADEFLOW_LLM_BASE_URL` `OPENAI_BASE_URL` `TRADEFLOW_LLM_MODEL` `OPENAI_MODEL` `TRADEFLOW_LLM_API_KEY` `OPENAI_API_KEY` `NVIDIA_API_KEY` `TRADEFLOW_EXTRACTOR_TIMEOUT_ULTRA` `TRADEFLOW_EXTRACTOR_TIMEOUT_SUPER` `TRADEFLOW_EXTRACTOR_TIMEOUT_NVIDIA` `TRADEFLOW_EXTRACTOR_TIMEOUT_BUDGET` `TRADEFLOW_CHAIN_KEY` `TRADEFLOW_CHAIN_KEY_ID` `TRADEFLOW_CHAIN_KEYS` `TRADEFLOW_CHAIN_ANCHOR` `TAVILY_API_KEY`
+
+Optional web search reads `TAVILY_API_KEY` from the environment and from nowhere else. Leave the line in `.env` empty and no search runs. To turn it on, create a free Tavily key and paste it after `TAVILY_API_KEY=` in `.env`. Do not commit that file. Setting the key does not search by itself. Quote intake, the extractor, and the solver do not call it. A caller asks for pages with `web_search` in `src/desk/web_search.py`:
+
+```python
+from src.desk.web_search import web_search
+web_search("HS 6601 umbrella fabric news", topic="news")
+```
+
+The call is a basic search and asks for at most five pages, so a free monthly allowance is not spent on a deep search. A missing key, a failed call, or a used-up allowance returns no pages and logs a warning. The desk keeps running. Those pages are background for a trade or market question. The solver does not read them, and they do not set a price.
 
 The audit chain is HMAC-SHA256 with `TRADEFLOW_CHAIN_KEY`. The key is not stored in the database. Desk sends refuse to start when that variable is unset, and `GET /health` reports `desk sends disabled: chain key missing`. `TRADEFLOW_CHAIN_KEY_ID` names the current key (default `primary`). `TRADEFLOW_CHAIN_KEYS` is a comma-separated `id:secret` list of retired keys so older rows still verify after a rotation. A chain written by the round-5 code has an empty `key_id`. Its MAC is HMAC-SHA256 of `{deal_id, seq, type, ts, payload, prev_hash}` with the current key, and verify accepts those rows in place. They are not re-signed. A round-5 row has no key id, so a rotated key does not verify it; restoring `TRADEFLOW_CHAIN_KEY` to the key that signed it does. An intact pre-key SHA-256 chain is a different object and is not verified as HMAC.
 
