@@ -358,6 +358,9 @@ def main(argv: list[str] | None = None) -> int:
         "dataset_sha256": sha,
         "endpoint": None if not models else args.base,
         "models": models,
+        # The reader prompt the models saw. Runs before 2026-10-28 20:00 UTC did
+        # not record it; see docs/QUOTE_READER_EVAL.md for how that run is pinned.
+        "prompt_sha256": extract.prompt_sha256() if models else None,
         "note": "Held-out set written on 2026-10-28 before any model run. Labels are the "
                 "author-side reading of each message, not supplier ground truth.",
         "subset": subset,
