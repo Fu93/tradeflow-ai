@@ -598,6 +598,15 @@ def extract_mentions(
     """
     if not configured() and transport is None:
         return {"mentions": [], "numeric_field_discarded": False, "configured": False}
+    if transport is None:
+        from src.engine.llm_config import take_model_call
+
+        if not take_model_call():
+            # Today's paid-call cap is spent: the rule reader carries on, and
+            # the quote says why it was not read by the model.
+            spent = _empty("extractor_daily_cap")
+            spent["attempts"] = []
+            return spent
     attempts: list[dict[str, Any]] = []
     allowance = (
         float(budget_seconds)

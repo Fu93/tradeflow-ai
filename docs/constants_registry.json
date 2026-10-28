@@ -758,6 +758,11 @@
       "category": "n",
       "justification": "Timeout, in seconds, for one optional extractor call. A missing key leaves the rule prefill only. No key is stored in code."
     },
+    "LLM_DAILY_CALL_CAP": {
+      "value": 40,
+      "category": "d",
+      "justification": "Most paid model calls one server process makes per UTC day (desk reader, dashboard reader, Stage-2). A small Token Factory balance must last the judging window; past the cap the rule reader carries on and the reason is shown. TRADEFLOW_LLM_DAILY_CALLS overrides it; 0 turns paid calls off."
+    },
     "EXTRACTOR_BASE_URL": {
       "value": "https://api.tokenfactory.nebius.com/v1",
       "category": "d",

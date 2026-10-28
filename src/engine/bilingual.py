@@ -640,7 +640,7 @@ class InboundIntentClassifier:
 
         # 憑證必須與端點配對。VLLM_*（AMD tokenfactory / 自架 vLLM）優先；
         # Evolus 金鑰只打 evolus.ai。__FILL_ME__ 視為未配置，避免離線 demo 外呼。
-        from .llm_config import body_overrides, resolve_chat_endpoint
+        from .llm_config import body_overrides, resolve_chat_endpoint, take_model_call
 
         cls.last_llm_error = None
         cls.last_llm_latency_ms = None
@@ -648,6 +648,9 @@ class InboundIntentClassifier:
 
         endpoint = resolve_chat_endpoint()
         if endpoint is None:
+            return None
+        if not take_model_call():
+            cls.last_llm_error = "today's live-model budget on this server is spent"
             return None
         base_url = endpoint["base_url"]
         api_key = endpoint["api_key"]
@@ -1632,8 +1635,10 @@ class CrossLingualSanityChecker:
 
         # Stage 2 LLM 對抗性語意審計。佔位符金鑰不外呼；金鑰與主機必須配對。
         import os
-        from .llm_config import body_overrides, resolve_chat_endpoint
+        from .llm_config import body_overrides, resolve_chat_endpoint, take_model_call
         endpoint = resolve_chat_endpoint(default_model="Qwen/Qwen2.5-14B-Instruct") if enable_llm else None
+        if endpoint is not None and not take_model_call():
+            endpoint = None
         if endpoint is not None:
             import json
             import requests

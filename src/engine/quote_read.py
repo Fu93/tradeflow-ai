@@ -14,7 +14,13 @@ from typing import Any
 
 import requests
 
-from src.engine.llm_config import AMD_PROVIDER, PROVIDER_LABELS, body_overrides, resolve_chat_endpoint
+from src.engine.llm_config import (
+    AMD_PROVIDER,
+    PROVIDER_LABELS,
+    body_overrides,
+    resolve_chat_endpoint,
+    take_model_call,
+)
 from src.engine.quote_fields import ACCURACY_NOTE, extract_stage1, validate_fields
 
 OFFLINE_LABEL = (
@@ -27,6 +33,10 @@ TIMEOUT_LABEL = (
 )
 FAILED_LABEL = (
     "Offline fallback — the live model call did not return a usable reading. "
+    "Fields below are the deterministic reader, not a model call."
+)
+DAILY_CAP_LABEL = (
+    "Offline fallback — today's live-model budget on this server is spent. "
     "Fields below are the deterministic reader, not a model call."
 )
 NEEDS_TEXT_LABEL = (
@@ -215,6 +225,13 @@ def read_supplier_quote(
         if not transcript:
             return _base_result("", status="needs_text", label=NEEDS_TEXT_LABEL)
         result = _base_result(transcript, status="offline_fallback", label=OFFLINE_LABEL)
+        return result
+
+    if not take_model_call():
+        if not transcript:
+            return _base_result("", status="needs_text", label=NEEDS_TEXT_LABEL)
+        result = _base_result(transcript, status="offline_fallback", label=DAILY_CAP_LABEL)
+        result["daily_cap_reached"] = True
         return result
 
     timeout = live_timeout_seconds()
