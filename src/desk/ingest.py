@@ -334,8 +334,9 @@ def _apply_model_offer(provenance: dict[str, Any], shadow: dict[str, Any]) -> No
     shown. A person confirms either way, and the model can only point at one
     of the rule reader's own candidates, never add a number.
     """
-    offer = shadow.get("model_offer") or None
-    token = str(offer.get("token") or "") if isinstance(offer, dict) else ""
+    raw_offer = shadow.get("model_offer")
+    offer: dict[str, Any] = raw_offer if isinstance(raw_offer, dict) else {}
+    token = str(offer.get("token") or "")
     candidates = [str(item) for item in provenance.get("candidates") or []]
     if not token or token not in candidates:
         provenance["model_offer_token"] = None
