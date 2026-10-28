@@ -44,6 +44,9 @@ services:
       # models default in src/config/heuristics.py). Unset leaves the rule reader only.
       - key: TRADEFLOW_LLM_API_KEY
         sync: false
+      # Paid Token Factory calls per UTC day (default 40 in heuristics; 0 = off).
+      - key: TRADEFLOW_LLM_DAILY_CALLS
+        value: "40"
       # Optional third extractor hop on NVIDIA's hosted endpoint. Opens only after Nebius fails.
       - key: NVIDIA_API_KEY
         sync: false

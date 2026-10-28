@@ -7,6 +7,8 @@ them as bearer tokens, and must not send an Evolus key to the AMD host.
 from __future__ import annotations
 
 import os
+import threading
+from datetime import datetime, timezone
 
 _PLACEHOLDER_EXACT = {
     "none",
@@ -72,6 +74,52 @@ def nebius_endpoint() -> dict | None:
     base = _real_url(os.getenv("TRADEFLOW_LLM_BASE_URL")) or EXTRACTOR_BASE_URL.rstrip("/")
     model = (os.getenv("TRADEFLOW_DASHBOARD_MODEL") or EXTRACTOR_FALLBACK_MODEL).strip() or EXTRACTOR_FALLBACK_MODEL
     return {"base_url": base, "api_key": key, "model": model, "provider": NEBIUS_PROVIDER}
+
+
+_budget_lock = threading.Lock()
+_budget = {"day": "", "used": 0}
+
+
+def daily_call_cap() -> int:
+    """Paid model calls allowed per UTC day in this process."""
+    from src.config.heuristics import LLM_DAILY_CALL_CAP
+
+    raw = (os.getenv("TRADEFLOW_LLM_DAILY_CALLS") or "").strip()
+    if raw.isdigit():
+        return int(raw)
+    return int(LLM_DAILY_CALL_CAP)
+
+
+def _today() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def take_model_call() -> bool:
+    """Count one paid call. False once today's cap is spent; the caller stays offline."""
+    cap = daily_call_cap()
+    with _budget_lock:
+        day = _today()
+        if _budget["day"] != day:
+            _budget["day"] = day
+            _budget["used"] = 0
+        if _budget["used"] >= cap:
+            return False
+        _budget["used"] += 1
+        return True
+
+
+def model_calls_today() -> dict:
+    """Non-secret counter for /health: calls used today and the cap."""
+    with _budget_lock:
+        used = _budget["used"] if _budget["day"] == _today() else 0
+    return {"used": used, "cap": daily_call_cap()}
+
+
+def reset_model_budget() -> None:
+    """Tests only."""
+    with _budget_lock:
+        _budget["day"] = ""
+        _budget["used"] = 0
 
 
 def body_overrides(endpoint: dict | None) -> dict:
@@ -150,5 +198,6 @@ def llm_status() -> dict:
         "offline_demo": chat is None,
         "amd_live_available": chat is not None and chat["provider"] == AMD_PROVIDER,
         "live_available": chat is not None,
+        "model_calls_today": model_calls_today(),
         "provider_label": None if chat is None else PROVIDER_LABELS.get(chat["provider"], chat["provider"]),
     }

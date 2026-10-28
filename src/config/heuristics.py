@@ -489,6 +489,13 @@ SPAN_GROUP = 3
 # key leaves the rule prefill only.
 LLM_TIMEOUT_SECONDS = 20
 
+# Rationale: most paid model calls (Nebius Token Factory) one server process
+# makes per UTC day, across the desk reader, the dashboard reader and Stage-2.
+# A small balance has to last a two-week judging window; past the cap the desk
+# keeps working on the rule reader and says why. TRADEFLOW_LLM_DAILY_CALLS
+# overrides it (0 turns paid calls off).
+LLM_DAILY_CALL_CAP = 40
+
 # Rationale: default OpenAI-compatible base for the desk span extractor.
 # An unset URL uses this host. A call still requires an API key.
 EXTRACTOR_BASE_URL = "https://api.tokenfactory.nebius.com/v1"

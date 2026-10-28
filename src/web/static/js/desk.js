@@ -474,6 +474,9 @@
 
   function readerSummary(provenance) {
     if (provenance.extractor_pending) return "The model is reading this message\u2026";
+    if (provenance.extractor_error === "extractor_daily_cap") {
+      return "Today's model budget on this server is spent. Read by the rule reader only.";
+    }
     const attempts = provenance.extractor_attempts || [];
     let used = null;
     attempts.forEach((attempt) => { if (attempt && attempt.status === "ok") used = attempt; });

@@ -55,3 +55,13 @@ def _isolated_session_store():
         # 還原成測試開始前的路徑，其他模組（與使用者自己的伺服器）不受影響。
         api_main.session_mgr.__init__(db_path=prev[0], store_dir=prev[1])
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_model_budget():
+    """Each test starts with today's paid-call counter at zero (see LLM_DAILY_CALL_CAP)."""
+    from src.engine.llm_config import reset_model_budget
+
+    reset_model_budget()
+    yield
+    reset_model_budget()
