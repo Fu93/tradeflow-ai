@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from datetime import datetime, timezone
 
 _PLACEHOLDER_EXACT = {
@@ -94,8 +95,41 @@ def _today() -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 
+_pause_lock = threading.Lock()
+_pause: dict = {"until": 0.0, "http_status": None, "since": None}
+
+
+def note_model_refusal(http_status: int | None) -> bool:
+    """Pause paid calls when the service refuses the account (no credit, key refused).
+
+    Returns True when ``http_status`` is such a refusal. Calls stay paused for
+    ``LLM_ACCOUNT_PAUSE_SECONDS``; a restart clears the pause.
+    """
+    from src.config.heuristics import LLM_ACCOUNT_PAUSE_SECONDS, LLM_ACCOUNT_REFUSAL_STATUSES
+
+    if http_status is None or int(http_status) not in {int(code) for code in LLM_ACCOUNT_REFUSAL_STATUSES}:
+        return False
+    with _pause_lock:
+        _pause["until"] = time.time() + float(LLM_ACCOUNT_PAUSE_SECONDS)
+        _pause["http_status"] = int(http_status)
+        _pause["since"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return True
+
+
+def model_calls_paused() -> dict | None:
+    """The active pause after an account refusal, or None. Non-secret."""
+    with _pause_lock:
+        if _pause["until"] <= time.time():
+            return None
+        until = datetime.fromtimestamp(_pause["until"], timezone.utc).isoformat(timespec="seconds")
+        return {"http_status": _pause["http_status"], "since": _pause["since"], "until": until}
+
+
 def take_model_call() -> bool:
-    """Count one paid call. False once today's cap is spent; the caller stays offline."""
+    """Count one paid call. False while paused after an account refusal, or once
+    today's cap is spent; the caller stays offline. A paused call is not counted."""
+    if model_calls_paused() is not None:
+        return False
     cap = daily_call_cap()
     with _budget_lock:
         day = _today()
@@ -112,7 +146,7 @@ def model_calls_today() -> dict:
     """Non-secret counter for /health: calls used today and the cap."""
     with _budget_lock:
         used = _budget["used"] if _budget["day"] == _today() else 0
-    return {"used": used, "cap": daily_call_cap()}
+    return {"used": used, "cap": daily_call_cap(), "paused": model_calls_paused()}
 
 
 def reset_model_budget() -> None:
@@ -120,6 +154,8 @@ def reset_model_budget() -> None:
     with _budget_lock:
         _budget["day"] = ""
         _budget["used"] = 0
+    with _pause_lock:
+        _pause.update({"until": 0.0, "http_status": None, "since": None})
 
 
 def body_overrides(endpoint: dict | None) -> dict:

@@ -18,6 +18,8 @@ from src.engine.llm_config import (
     AMD_PROVIDER,
     PROVIDER_LABELS,
     body_overrides,
+    model_calls_paused,
+    note_model_refusal,
     resolve_chat_endpoint,
     take_model_call,
 )
@@ -37,6 +39,11 @@ FAILED_LABEL = (
 )
 DAILY_CAP_LABEL = (
     "Offline fallback — today's live-model budget on this server is spent. "
+    "Fields below are the deterministic reader, not a model call."
+)
+ACCOUNT_LABEL = (
+    "Offline fallback — the model service refused this server's key or its credit "
+    "is spent, so live calls are paused for a while. "
     "Fields below are the deterministic reader, not a model call."
 )
 NEEDS_TEXT_LABEL = (
@@ -227,11 +234,16 @@ def read_supplier_quote(
         result = _base_result(transcript, status="offline_fallback", label=OFFLINE_LABEL)
         return result
 
-    if not take_model_call():
+    paused = model_calls_paused()
+    if paused is not None or not take_model_call():
         if not transcript:
             return _base_result("", status="needs_text", label=NEEDS_TEXT_LABEL)
-        result = _base_result(transcript, status="offline_fallback", label=DAILY_CAP_LABEL)
-        result["daily_cap_reached"] = True
+        label = ACCOUNT_LABEL if paused is not None else DAILY_CAP_LABEL
+        result = _base_result(transcript, status="offline_fallback", label=label)
+        if paused is not None:
+            result["model_calls_paused"] = True
+        else:
+            result["daily_cap_reached"] = True
         return result
 
     timeout = live_timeout_seconds()
@@ -276,6 +288,10 @@ def read_supplier_quote(
 
     if status != 200 or not isinstance(body, dict):
         result["error"] = _redact(f"HTTP {status}")
+        if note_model_refusal(status):
+            result["status"] = "offline_fallback"
+            result["display"] = ACCOUNT_LABEL
+            result["model_calls_paused"] = True
         return result
 
     usage_prompt, usage_completion, usage_total = _tokens(body.get("usage"))

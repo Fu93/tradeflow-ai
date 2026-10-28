@@ -80,3 +80,9 @@ The run writes `results/quote_reader_eval.json`. For each model it records:
 - how many answers carried a number field that was discarded
 
 To estimate cost, multiply the token totals by the published Token Factory prices on the day of the run. No price is hard-coded here.
+
+**Before the full run, try three messages.** `python scripts/eval_quote_reader.py --models nvidia/nemotron-3-super-120b-a12b --limit 3` scores the first three messages and writes `results/quote_reader_eval_smoke.json`, never the full result file. Its note says it is a smoke test, not a result.
+
+**While it runs**, each message prints a line: its id, the call status, the latency, and the outcome for the model alone and for the gate.
+
+**If the key is refused or the credit runs out** (HTTP 401, 402 or 403), the run stops at that message instead of failing the rest. What finished is written with `"complete": false` and the reason, and the script exits with status 3. A partial file is not an evaluation result and should not be quoted as one. Interrupting with Ctrl-C does the same.

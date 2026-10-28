@@ -496,6 +496,17 @@ LLM_TIMEOUT_SECONDS = 20
 # overrides it (0 turns paid calls off).
 LLM_DAILY_CALL_CAP = 40
 
+# Rationale: HTTP statuses with which the model service refuses the account
+# itself: 401 (key not accepted), 402 (no credit), 403 (key not allowed).
+# Retrying the same key cannot succeed, so paid calls pause instead.
+LLM_ACCOUNT_REFUSAL_STATUSES = (401, 402, 403)
+
+# Rationale: seconds paid calls stay paused after an account refusal. Long
+# enough that a judge adding several quotes is not kept waiting on a refused
+# call each time; short enough that a topped-up balance is used again within
+# the half hour without a redeploy (a redeploy clears it at once).
+LLM_ACCOUNT_PAUSE_SECONDS = 1800
+
 # Rationale: default OpenAI-compatible base for the desk span extractor.
 # An unset URL uses this host. A call still requires an API key.
 EXTRACTOR_BASE_URL = "https://api.tokenfactory.nebius.com/v1"
