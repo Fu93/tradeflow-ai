@@ -1,0 +1,16 @@
+{
+  "label": "Sample: fictional suppliers and a message written for this demo. Not a real quote.",
+  "deal": {
+    "product": "folding umbrella",
+    "quantity": 1000,
+    "target": 24,
+    "ceiling": 30,
+    "suppliers": [
+      ["Sample Supplier A", "supplier-a@example.test"],
+      ["Sample Supplier B", "supplier-b@example.test"],
+      ["Sample Supplier C", "supplier-c@example.test"],
+      ["Sample Supplier D", "supplier-d@example.test"]
+    ]
+  },
+  "message": "老板好，隔壁厂给你 24 元那是次料，我们正品单价 27.80 元/把，起订 1000 把，15 天出货。"
+}

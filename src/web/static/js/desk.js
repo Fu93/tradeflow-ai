@@ -704,21 +704,78 @@
     if (current) select.value = current;
   }
 
+  // Sample deal and sample message: fictional, from a static file, and a sample
+  // message that is sent unchanged is stored as simulated, never as live.
+  let sample = null;
+  async function loadSample() {
+    if (sample) return sample;
+    const res = await fetch("/static/samples/desk_sample.json");
+    if (!res.ok) throw new Error("The sample could not be loaded.");
+    sample = await res.json();
+    return sample;
+  }
+
+  function showNote(id, text) {
+    const note = document.getElementById(id);
+    if (!note) return;
+    note.textContent = text;
+    note.hidden = !text;
+  }
+
+  const sampleDeal = document.getElementById("sample-deal");
+  if (sampleDeal) sampleDeal.addEventListener("click", async () => {
+    try {
+      const data = await loadSample();
+      const deal = data.deal || {};
+      document.getElementById("product").value = String(deal.product || "");
+      document.getElementById("quantity").value = String(deal.quantity || "");
+      document.getElementById("target").value = String(deal.target || "");
+      document.getElementById("ceiling").value = String(deal.ceiling || "");
+      document.getElementById("suppliers").value = (deal.suppliers || [])
+        .map((row) => String(row[0]) + ", " + String(row[1])).join("\n");
+      showNote("sample-deal-note", String(data.label || "") + " Enter the API key, then Open desk.");
+    } catch (err) {
+      formError.textContent = err.message;
+    }
+  });
+
+  const sampleMessage = document.getElementById("sample-message");
+  if (sampleMessage) sampleMessage.addEventListener("click", async () => {
+    try {
+      const data = await loadSample();
+      const area = document.getElementById("paste-text");
+      area.value = String(data.message || "");
+      area.dataset.sample = area.value;
+      showNote("paste-sample-note", "Sample text. It is stored as simulated, not as a live quote.");
+    } catch (err) {
+      document.getElementById("paste-error").textContent = err.message;
+    }
+  });
+
   document.getElementById("paste-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const error = document.getElementById("paste-error");
     error.textContent = "";
+    const area = document.getElementById("paste-text");
+    const isSample = !!area.dataset.sample && area.value === area.dataset.sample;
+    const payload = {
+      source: "paste",
+      raw_text: area.value,
+      supplier_id: document.getElementById("paste-supplier").value,
+    };
+    if (isSample) {
+      payload.simulated = true;
+      payload.page_title = "TradeFlow sample message (simulated)";
+    }
     try {
       const result = await request("/api/v1/desk/deals/" + dealId + "/quotes", {
         method: "POST",
         headers: headers(true),
-        body: JSON.stringify({
-          source: "paste",
-          raw_text: document.getElementById("paste-text").value,
-          supplier_id: document.getElementById("paste-supplier").value,
-        }),
+        body: JSON.stringify(payload),
       });
-      document.getElementById("paste-text").value = "";
+      area.value = "";
+      delete area.dataset.sample;
+      showNote("paste-sample-note", "");
       if (result.snapshot) show(result.snapshot);
     } catch (err) {
       error.textContent = err.message;
