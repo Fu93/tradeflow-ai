@@ -11,7 +11,7 @@ Links: [Devpost text, judge steps and demo script](docs/DEVPOST_SUBMISSION.md) �
 **How the three services are used.**
 
 - **Nebius Token Factory** is the inference API (`api.tokenfactory.nebius.com/v1`) that serves the quote reader.
-- **NVIDIA Nemotron** (Super by default, with one retry; Ultra optional; all on Token Factory) reads a supplier's free-text message and names the evidence spans in it: an offer, a fee, a deposit, a rival's price. The desk shows those spans and the model that read them.
+- **NVIDIA Nemotron** (Super by default; after any failed attempt the same model is tried once more; Ultra optional; all on Token Factory; an optional NVIDIA-hosted third hop is off in the demo) reads a supplier's free-text message and names the evidence spans in it: an offer, a fee, a deposit, a rival's price. The desk shows those spans and the model that read them.
 - **Tavily** supplies a reference-only "Web evidence" card with cited public pages about a product or a supplier.
 
 Code paths and tests are in [How this project uses Nebius, NVIDIA and Tavily](#how-this-project-uses-nebius-nvidia-and-tavily) below.
@@ -72,9 +72,10 @@ The first commit in this repository is dated 13 October 2026, after the submissi
 - a daily cap on paid model calls;
 - the reader's first-hop timeout (30 s) and a prompt that defines each label category (PR #31);
 - freight, fees and duty fields on the desk's paste form, so the ranking can use landed cost (PR #32);
+- the card shows the quote validity the supplier stated and flags an expired quote; it never moves the rank, counter or draft (PR #34). Not live-tested. A validity given in working days is shown as written and not turned into a date, and two contradictory validity statements are flagged as a conflict;
 - in the Chrome extension, a server choice, review inside the side panel, one key for every call, and the automatic read of new supplier messages.
 
-The pull requests are #18 to #32.
+The pull requests are #18 to #34.
 
 **AI assistance.** The project's design, direction and trade-offs are the author's; AI coding tools (Cursor, Codebuff, Claude) assisted with writing code.
 <!-- TODO(owner): confirm that you reviewed the decision logic and tests before keeping the sentence "all decision logic and tests were reviewed by the author" -->
@@ -152,7 +153,7 @@ python -m src.cli            # one-supplier walkthrough
 python -m src.cli --multi    # four-supplier auction
 ```
 
-Recording clicks and narration: [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md). Form fields for the earlier lablab (AMD) entry: [docs/LABLAB_FORM.md](docs/LABLAB_FORM.md). The slide deck, built for that earlier entry, is [results/pitch.pptx](results/pitch.pptx) and [results/pitch.pdf](results/pitch.pdf) (nine slides, rebuilt from the SUBMISSION.md outline).
+The video script for this hackathon is in [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md). [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md) is the click-and-narration script written for the earlier AMD-era build and is not updated for this entry. Form fields for the earlier lablab (AMD) entry: [docs/LABLAB_FORM.md](docs/LABLAB_FORM.md). The slide deck, built for that earlier entry, is [results/pitch.pptx](results/pitch.pptx) and [results/pitch.pdf](results/pitch.pdf) (nine slides, rebuilt from the SUBMISSION.md outline).
 
 ![Pitch cover for TradeFlow AI](results/cover_1280x720.png)
 
@@ -258,6 +259,17 @@ On Render's free plan the disk is ephemeral, so `TRADEFLOW_DESK_DB` does not sur
 <!-- Live run 1 (single check, Ultra, not a benchmark): 2026-10-28 about 12:17 London (UTC), live demo https://tradeflow-ai-demo.onrender.com running master commit 5c0321830e5cadb7a4571fbe9ca46fe510017895. Nebius Token Factory: one sample quote (fictional example.test suppliers); recorded extractor attempt: provider nebius, model nvidia/Nemotron-3-Ultra-550b-a55b, status ok, latency 1.83 s (one call). That run used Ultra because it was the default of master 5c03218 at the time. Tavily: GET /api/v1/market/evidence?kind=market&product=... returned HTTP 200, status ok, 5 results, about 2.3 s (one call). -->
 <!-- Live run 2 (single check, Super, before the prompt change, not a benchmark): 2026-10-28, demo on master 10868aa, one sample deal and one pasted sample message to supplier A. Provider Nebius Token Factory, model nvidia/nemotron-3-super-120b-a12b; first attempt timed out at 12.0 s, retry of the same model succeeded in 11.2 s. Labels: rival_price (correct) and our_price_echo for the supplier's own offer (a mislabel). Quote went to review ("more than one price"); llm_price_ignored true; audit verify ok (8 entries); /health llm.model_calls_today 0 -> 1 of cap 40. Token usage not measured. -->
 <!-- Live run 3 (single check, Super, after PR #31, not a benchmark and not a held-out result): 2026-10-28, demo on master 1b4dc05, one sample deal and one pasted (source paste) sample message. Provider Nebius Token Factory, model nvidia/nemotron-3-super-120b-a12b, exactly one attempt, status ok, latency 12.26 s; no timeout, retry or failover. Total time 12.3 to 20.8 s (snapshot pending at 10.4 s, finished at the 20.8 s poll). Labels: "隔壁厂给你 24 元" rival_price; "我们正品单价 27.80 元/把" own_unit_offer (correct this time; last time our_price_echo); "起订 1000 把" other; "15 天出货" other. Quote still went to human review, reason "more than one price" (from the deterministic rule reader), suggested token 27.80, candidates 27.80 and 24; no draft or counter until a person confirms; llm_price_ignored true; audit verify ok (8 entries, no broken sequence); /health llm.model_calls_today 0 -> 1 of cap 40. One sample after the prompt was changed in response to run 2's mislabel; it resembles the two exposed held-out items. The Super eval run is still pending. -->
+**Limits for real use** (each checked against the code):
+
+- The desk page has no currency choice. Deals are opened in CNY and most figures on it are labelled CNY (the API accepts CNY, USD or EUR).
+- Each supplier is entered as an email address.
+- Quotes are compared on the confirmed unit price. Landed cost is used only when freight, fees and duty are entered for every quoted supplier. Tax-included or tax-excluded status, MOQ and lead time are not compared.
+- A person confirms a figure that is already in the supplier's message. There is no manual price entry.
+- With one confirmed quote, the default counter equals that supplier's own ask, unless the person picks the push-lower counter.
+- In this version the model is a shadow check. The candidate figures, the suggested figure and the draft are produced without it; in a local run they were identical with the model off and with a stub that labelled the wrong number.
+- Paid model calls are capped at 40 per UTC day, counted in memory per server process; a restart resets the count.
+- Deals live in the demo database on an ephemeral disk, so a restart of the demo service clears them.
+- On the demo service a send is refused: signed approval is required, no approver public key is pinned, and the desk page attaches no signature. Signing is done with `python -m src.desk.approval_signing`; the chain is verified from the audit line, from `GET /api/v1/desk/deals/{id}/audit/verify` on `/docs`, or with `scripts/desk_verify.py` (there is no verify button).
 - No closed-loop purchase. Supplier lines in the stress transcript are a script.
 - Synthetic self-play ([results/self_play_benchmark.md](results/self_play_benchmark.md), 20 matches × 5 archetypes, seed 42) is a parameterised simulator. Engine savings in that table run from **8.8% to 20.0%** versus the walk-away ceiling used by that table. Against the Hard-Bargainer the engine's 8.8% is behind the fixed 5%-per-round baseline's 9.2%. Seed 42 reproduces that table; it is not a variance estimate. It is not the auction headline.
 - The real-model log in the AMD section below is a different experiment. Against a Bluffing Hardliner the recorded deal rate is 61.11%, with 0 budget violations in 94 completed matches.

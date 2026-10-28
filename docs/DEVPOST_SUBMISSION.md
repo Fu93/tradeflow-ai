@@ -32,16 +32,30 @@ The model reads the quote. The math prices the counter. You press send.
 - Nemotron, served by Nebius Token Factory, names the evidence spans and what each one is: the supplier's offer, a rival's price, a fee, a deposit, an injected instruction. The desk shows those spans next to the message, with the model and its latency.
 - Deterministic code reads the amount from a span that occurs verbatim in the message. A person confirms the number.
 - Every confirmed quote recomputes all suppliers. Each supplier has its own Bayesian reserve-price belief. The desk ranks them (by unit price, or by landed cost when freight, fees and duty are typed for every quoted supplier) and gives two figures per supplier: the default (the best price already on the table) and a push-lower counter that maximises expected surplus inside the buyer's walk-away risk cap. The buyer chooses which one goes into the draft.
-- Drafts are written in the supplier's language. Every step lands in a keyed audit chain, and a send needs a signed human approval that the server re-derives from the chain before anything leaves.
+- Drafts are written in the supplier's language. Every step lands in a keyed audit chain, and a send needs a signed human approval that the server re-derives from the chain before anything leaves. The demo service pins no approver key, so it refuses sends (see the limits below).
+- The card shows the quote validity the supplier stated and flags an expired quote; it never moves the rank, counter or draft (PR #34). Not live-tested. A validity given in working days is shown as written and not turned into a date, and two contradictory validity statements are flagged as a conflict.
 
 **Where each tool earns its place.**
 
-- *Nebius Token Factory with NVIDIA Nemotron* reads messy supplier text. The default model is Nemotron Super with one retry on a timeout, a 429, a 5xx or a malformed body; Ultra can be selected with `TRADEFLOW_LLM_MODEL`. Every attempt is timed and recorded (first hop 30 s, retry 20 s, whole chain 80 s), and paid calls are capped at 40 per UTC day per server process (`TRADEFLOW_LLM_DAILY_CALLS`; the count is kept in memory and resets if the service restarts; shown on `/health` as `llm.model_calls_today`) so a small balance lasts the judging window. The cap counts one call per quote read, so a retry of the same model does not count. `render.yaml` sets `WEB_CONCURRENCY=1`, so the service runs one process. Past the cap the desk keeps working on the rule reader and says so.
+- *Nebius Token Factory with NVIDIA Nemotron* reads messy supplier text. The default model is Nemotron Super with one more try of the same model after any failed attempt; Ultra can be selected with `TRADEFLOW_LLM_MODEL`. Every attempt is timed and recorded (first hop 30 s, retry 20 s, whole chain 80 s), and paid calls are capped at 40 per UTC day per server process (`TRADEFLOW_LLM_DAILY_CALLS`; the count is kept in memory and resets if the service restarts; shown on `/health` as `llm.model_calls_today`) so a small balance lasts the judging window. The cap counts one call per quote read, so a retry of the same model does not count. `render.yaml` sets `WEB_CONCURRENCY=1`, so the service runs one process. Past the cap the desk keeps working on the rule reader and says so.
 - *Tavily* adds a Web evidence card to each supplier: cited public pages about a product's wholesale prices and about a supplier's reviews. It sits beside the quote and never touches the price.
 
 **The design choice that matters.** Neither the model nor the search can move a price. A price field in the model's answer is thrown away, and no decision module imports the search code; a test fails if one does. This keeps the model's job narrow: it reads wording, the Bayesian reserve-price and expected-surplus core decides the number, and a person approves every send. That boundary is tested; whether it is enough for real money is not something we have shown, because no factory has closed a deal through this prototype.
 
 **Honest limits.** No factory has closed a deal through this prototype. The walk-away hazard is a transfer from an eBay Best Offer fit, not a measured factory rate. The extension's automatic read was tested on a mock chat page, not on the real 1688, Alibaba, WhatsApp or WeChat pages. The landed-cost fields on the paste form are covered by unit tests and CI, and have not been tried live with a real quote. **Not yet proven:** the Nemotron reader's accuracy (the held-out evaluation in [QUOTE_READER_EVAL.md](QUOTE_READER_EVAL.md) has a rules-only baseline; the Nemotron run is pending; the one message read live before the prompt change got one label wrong, and the one read after it was a single sample, see below) and latency beyond these single calls. The Tavily card shows what public pages say; it does not verify a supplier.
+
+**Limits for real use.** Each of these is checked against the code.
+
+- The desk page has no currency choice. Deals are opened in CNY and most figures on it are labelled CNY.
+- Each supplier is entered as an email address.
+- Quotes are compared on the confirmed unit price. Landed cost is used only when freight, fees and duty are entered for every quoted supplier. Tax-included or tax-excluded status, MOQ and lead time are not compared.
+- A person confirms a figure that is already in the supplier's message. There is no manual price entry.
+- With one confirmed quote, the default counter equals that supplier's own ask, unless the person picks the push-lower counter.
+- In this version the model is a shadow check. The candidate figures, the suggested figure and the draft are produced without it; in a local run they were identical with the model off and with a stub that labelled the wrong number.
+- Paid model calls are capped at 40 per UTC day, counted in memory per server process.
+- Deals live in the demo database on an ephemeral disk; a restart clears them.
+- On the demo service a send is refused: signed approval is required, no approver public key is pinned, and the desk page attaches no signature.
+
 
 **Single live check, Ultra (2026-10-28, about 12:17 London time, UTC).** One check each, on the live demo (<https://tradeflow-ai-demo.onrender.com>) running master commit `5c0321830e5cadb7a4571fbe9ca46fe510017895`. This is one call each, not a benchmark. That run used Ultra because it was the default of that commit.
 
@@ -90,7 +104,7 @@ Record on the live demo URL. Say the number that is on the screen. Do not say a 
 | 1:50 | **Use push lower in the draft** on the cheapest supplier; the draft changes | "I choose the push-lower figure. The draft changes, and the choice is in the audit chain." |
 | 2:10 | **Check supplier on the web** | "Tavily finds public pages about this supplier, labelled reference only. The counter does not change." |
 | 2:25 | The Chrome extension on a chat page with automatic read on; a new message appears on the desk by itself | "On a supplier chat, new messages reach the desk by themselves. The extension never types or sends." |
-| 2:45 | The audit line on the desk (`#audit-line`); optionally the response of `GET /api/v1/desk/deals/{id}/audit/verify` or `python scripts/desk_verify.py <base-url>`; then README limits | "Every step is in a keyed chain and a send needs a signature. No factory has closed a deal through this yet; the limits are in the README." |
+| 2:45 | The audit line on the desk (`#audit-line`); optionally the response of `GET /api/v1/desk/deals/{id}/audit/verify` or `python scripts/desk_verify.py <base-url>`; then README limits | "Every step is in a keyed chain, and a real send needs a signed approval; this demo pins no approver key, so it refuses sends. No factory has closed a deal through this yet; the limits are in the README." |
 
 The ranking on screen is by unit price unless freight, fees and duty were typed for every supplier; the desk prints "Ranking basis: unit_price" or "Ranking basis: landed_cost" above the cards.
 
@@ -101,6 +115,6 @@ The ranking on screen is by unit price unless freight, fees and duty were typed 
 3. Press **Use a sample message**, choose a supplier, and press **Add quote**. The waiting item shows which Nemotron model read it and the spans it labelled. Pick the figure and press **Accept**.
 4. Add a quote or two for other suppliers; the cards rank them and show the default and push-lower counters. (Optional: type freight, fees and duty together on every quote and the ranking uses landed cost; otherwise it uses the unit price.) Press **Use push lower in the draft** on any card.
 5. On a supplier card, press **Check supplier on the web**.
-6. Sending mail is off on the demo service. Approval stays on the desk. Paid model calls are capped at 40 per UTC day per server process; past the cap the desk says so and keeps working on the rule reader.
+6. Sending is not possible on the demo service: signed approval is required, no approver key is pinned there (`/ready` reports `signed_approval` as not ready), and the desk page attaches no signature, so **Approve and send** is refused and no mail is sent. Signing is done outside the page with `python -m src.desk.approval_signing`. To check the audit chain, read the audit line on the desk, open `GET /api/v1/desk/deals/{id}/audit/verify` on `/docs`, or run `python scripts/desk_verify.py <base-url>`; there is no verify button. Paid model calls are capped at 40 per UTC day per server process; past the cap the desk says so and keeps working on the rule reader.
 
 The demo service stores data on an ephemeral disk, so a restart clears deals. Replace the `<JUDGE_KEY>` placeholder above before submitting (put the key only in the Devpost form, never in the repository), and rotate the key after judging.
