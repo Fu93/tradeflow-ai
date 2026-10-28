@@ -897,6 +897,11 @@
       "category": "n",
       "justification": "Largest extractor response, in bytes, that is parsed. A larger body is dropped and the quote stays in human review."
     },
+    "DESK_TRACE_MAX_MENTIONS": {
+      "value": 12,
+      "category": "n",
+      "justification": "Most extractor rows kept on a quote for display (class and verbatim span, never an amount). A longer answer is cut so a hostile message cannot bloat the snapshot."
+    },
     "FIELD_MAX_CHARS": {
       "value": 500,
       "category": "n",

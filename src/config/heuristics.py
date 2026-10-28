@@ -608,6 +608,11 @@ MINOR_SCALE = 100
 # body is dropped and the quote stays in human review.
 EXTRACTOR_MAX_BYTES = 65536
 
+# Rationale: most extractor rows kept on a quote for display. The desk shows
+# which spans the model labelled (class and verbatim text, never an amount);
+# a longer answer is cut so a hostile message cannot bloat the snapshot.
+DESK_TRACE_MAX_MENTIONS = 12
+
 # Rationale: maximum characters stored for one extractor evidence span or a
 # caller note. Longer text is rejected by the schema. It is not a price.
 FIELD_MAX_CHARS = 500
