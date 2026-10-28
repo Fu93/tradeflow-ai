@@ -204,6 +204,9 @@
       const priorStrength = supplier.d_prior_strength == null ? "labelled policy" : String(supplier.d_prior_strength);
       row.appendChild(document.createTextNode(supplier.name));
       [validityText(supplier),
+        supplier.moq_above_order && supplier.supplier_moq
+          ? "Minimum order " + Number(supplier.supplier_moq.quantity).toLocaleString() + " is above your order."
+          : "",
         "Default counter: " + counter,
         "Push lower: " + push,
         supplier.push_note || "",

@@ -52,7 +52,8 @@ _MONTHS.update({name: index for index, name in enumerate(calendar.month_abbr) if
 _MONTHS = {name.lower(): index for name, index in _MONTHS.items()}
 _MONTHS["sept"] = _MONTHS["sep"]
 
-_COUNT = r"(?P<n>\d{1,3}|[零一二两兩三四五六七八九十]{1,3})"
+# A count starts and ends a digit run: "1030天" is not read as 30 days.
+_COUNT = r"(?P<n>(?<![\d.])\d{1,3}(?!\d)|[零一二两兩三四五六七八九十]{1,3})"
 _EN_COUNT = r"(?P<n>\d{1,3}|zero|one|two|three|four|five|six|seven|eight|nine|ten|an?)"
 _ZH_UNIT = r"(?P<unit>个?工作日|個?工作日|天|日|周|週|星期|个月|個月|月)"
 _EN_UNIT = r"(?P<unit>business days?|working days?|days?|weeks?|months?)"

@@ -51,6 +51,7 @@ def test_stated_validity_becomes_a_date(text, until, counted_from):
         "valid till 11/05",  # day and month order is ambiguous
         "> 报价有效期 3 天\n单价 26 元",  # quoted history, not this message
         "有效期 5000 天",  # beyond a year: a misreading
+        "1030天内有效",  # not 30 days read out of 1030
     ],
 )
 def test_not_a_quote_validity(text):
