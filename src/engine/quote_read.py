@@ -1,6 +1,6 @@
 """Read a supplier quote. The solver is not called from here.
 
-AMD live mode asks the configured OpenAI-compatible model for fields and a
+Live mode asks the configured OpenAI-compatible model for fields and a
 short reading. Offline mode uses the deterministic reader. Either way
 ``buyer_price`` stays null: this module does not choose what we pay.
 """
@@ -14,7 +14,7 @@ from typing import Any
 
 import requests
 
-from src.engine.llm_config import resolve_chat_endpoint
+from src.engine.llm_config import AMD_PROVIDER, PROVIDER_LABELS, body_overrides, resolve_chat_endpoint
 from src.engine.quote_fields import ACCURACY_NOTE, extract_stage1, validate_fields
 
 OFFLINE_LABEL = (
@@ -22,11 +22,11 @@ OFFLINE_LABEL = (
     "These fields are the supplier's numbers, not our price."
 )
 TIMEOUT_LABEL = (
-    "Offline fallback — the AMD call timed out. "
+    "Offline fallback — the live model call timed out. "
     "Fields below are the deterministic reader, not a model call."
 )
 FAILED_LABEL = (
-    "Offline fallback — the AMD call did not return a usable reading. "
+    "Offline fallback — the live model call did not return a usable reading. "
     "Fields below are the deterministic reader, not a model call."
 )
 NEEDS_TEXT_LABEL = (
@@ -81,10 +81,13 @@ def _tokens(usage: Any) -> tuple[int | None, int | None, int | None]:
     return prompt_n, completion_n, total_n
 
 
-def display_line(model: str, latency_ms: int | None, total_tokens: int | None) -> str:
+def display_line(
+    model: str, latency_ms: int | None, total_tokens: int | None, provider: str = AMD_PROVIDER
+) -> str:
     latency = "latency unavailable" if latency_ms is None else f"{latency_ms} ms"
     tokens = "tokens unavailable" if total_tokens is None else f"{total_tokens} tokens"
-    return f"AMD GPU Cloud · {model} · {latency} · {tokens}"
+    label = PROVIDER_LABELS.get(provider, PROVIDER_LABELS[AMD_PROVIDER])
+    return f"{label} · {model} · {latency} · {tokens}"
 
 
 def _currency_view(stage1: dict) -> dict:
@@ -151,6 +154,17 @@ def _apply_model_fields(result: dict, parsed: dict) -> None:
         result["reading"] = reading.strip()[:500]
 
 
+def _chat_body(endpoint: dict, content: list | str) -> dict:
+    body = {
+        "model": endpoint["model"],
+        "messages": [{"role": "user", "content": content}],
+        "temperature": 0,
+        "max_tokens": int(os.getenv("VLLM_MAX_TOKENS", "500")),
+    }
+    body.update(body_overrides(endpoint))
+    return body
+
+
 def _post_chat(endpoint: dict, content: list | str, timeout: int) -> tuple[int, dict | None, str]:
     response = requests.post(
         f"{endpoint['base_url']}/chat/completions",
@@ -158,12 +172,7 @@ def _post_chat(endpoint: dict, content: list | str, timeout: int) -> tuple[int, 
             "Authorization": f"Bearer {endpoint['api_key']}",
             "Content-Type": "application/json",
         },
-        json={
-            "model": endpoint["model"],
-            "messages": [{"role": "user", "content": content}],
-            "temperature": 0,
-            "max_tokens": int(os.getenv("VLLM_MAX_TOKENS", "500")),
-        },
+        json=_chat_body(endpoint, content),
         timeout=timeout,
     )
     body_text = response.text or ""
@@ -267,7 +276,7 @@ def read_supplier_quote(
         return result
     _apply_model_fields(result, parsed)
     result["status"] = "ok"
-    result["display"] = display_line(endpoint["model"], latency_ms, usage_total)
+    result["display"] = display_line(endpoint["model"], latency_ms, usage_total, endpoint["provider"])
     result["buyer_price"] = None
     result["decides_price"] = False
     return result
