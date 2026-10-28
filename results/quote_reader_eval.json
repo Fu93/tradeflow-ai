@@ -1,0 +1,886 @@
+{
+  "generated_at_utc": "2026-10-28T19:32:43+00:00",
+  "dataset": "data/eval/quote_reader_holdout.jsonl",
+  "dataset_sha256": "cffb50ff2b6e54e5a82ad49763f5db9b42472655dd27fb9c08121038cbe93cdc",
+  "endpoint": "https://api.tokenfactory.nebius.com/v1",
+  "models": [
+    "nvidia/nemotron-3-super-120b-a12b"
+  ],
+  "note": "Held-out set written on 2026-10-28 before any model run. Labels are the author-side reading of each message, not supplier ground truth.",
+  "subset": null,
+  "complete": true,
+  "stopped": null,
+  "exposed": [
+    "zh_rival_then_own",
+    "en_rival_then_own"
+  ],
+  "rows": 40,
+  "labelled_offers": 22,
+  "bounds": {
+    "target": 30,
+    "ceiling": 40,
+    "low": 10.0,
+    "high": 120.0
+  },
+  "readers": {
+    "rules": {
+      "tally": {
+        "correct": 14,
+        "wrong": 2,
+        "missed": 7,
+        "held": 17
+      }
+    },
+    "nvidia/nemotron-3-super-120b-a12b": {
+      "tally": {
+        "correct": 20,
+        "wrong": 2,
+        "missed": 2,
+        "held": 16
+      },
+      "answered": 40,
+      "failed": 0,
+      "latency": {
+        "median_s": 3.876,
+        "max_s": 8.333
+      },
+      "prompt_tokens_total": 14155,
+      "completion_tokens_total": 18947,
+      "numeric_field_discarded": 0,
+      "tally_clean": {
+        "correct": 18,
+        "wrong": 2,
+        "missed": 2,
+        "held": 16
+      },
+      "scored": 40
+    },
+    "gate:nvidia/nemotron-3-super-120b-a12b": {
+      "tally": {
+        "correct": 14,
+        "wrong": 1,
+        "missed": 8,
+        "held": 17
+      },
+      "tally_clean": {
+        "correct": 14,
+        "wrong": 1,
+        "missed": 6,
+        "held": 17
+      },
+      "scored": 40
+    }
+  },
+  "per_message": {
+    "rules": [
+      {
+        "id": "zh_plain_umbrella",
+        "value": 26.8,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_kuai_colloquial",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "zh_fullwidth_digits",
+        "value": 50.0,
+        "outcome": "wrong"
+      },
+      {
+        "id": "zh_date_phone_validity",
+        "value": 29.3,
+        "outcome": "correct"
+      },
+      {
+        "id": "en_moq_deposit_lead",
+        "value": 31.5,
+        "outcome": "correct"
+      },
+      {
+        "id": "en_rmb_per_unit",
+        "value": 24.9,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_trad_two_weeks",
+        "value": 25.6,
+        "outcome": "correct"
+      },
+      {
+        "id": "mixed_carton_dims",
+        "value": 30.2,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_freight_extra",
+        "value": 28.0,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_sample_fee_then_unit",
+        "value": 26.5,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_rival_then_own",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "en_rival_then_own",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "zh_typo_correction",
+        "value": 29.5,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_per_umbrella_logo",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "zh_yuan_yige",
+        "value": 30.5,
+        "outcome": "correct"
+      },
+      {
+        "id": "en_offer_then_question",
+        "value": 28.4,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_buyer_echo_then_own",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "zh_discount_derived",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "en_unit_and_total",
+        "value": 27.0,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_renminbi_fob",
+        "value": 33.3,
+        "outcome": "correct"
+      },
+      {
+        "id": "en_yen_sign_week",
+        "value": 29.9,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_wechat_lines",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "zh_tiers",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "en_tiers",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_range_colour",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_question_price",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "en_usd_fob",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "en_no_currency",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_refusal",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_deposit_only",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_freight_only",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_mould_only",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "en_injection_system",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_injection_ignore",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_forward_old",
+        "value": 31.0,
+        "outcome": "wrong"
+      },
+      {
+        "id": "zh_pending_boss",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_conditional_payment",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_two_models",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_tax_both",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_old_price_rising",
+        "value": null,
+        "outcome": "held"
+      }
+    ],
+    "nvidia/nemotron-3-super-120b-a12b": [
+      {
+        "id": "zh_plain_umbrella",
+        "status": "ok",
+        "latency_s": 4.453,
+        "prompt_tokens": 374,
+        "completion_tokens": 345,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 26.8,
+        "alone_outcome": "correct",
+        "gate": 26.8,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "zh_kuai_colloquial",
+        "status": "ok",
+        "latency_s": 2.707,
+        "prompt_tokens": 350,
+        "completion_tokens": 338,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 27.0,
+        "alone_outcome": "correct",
+        "gate": null,
+        "gate_outcome": "missed"
+      },
+      {
+        "id": "zh_fullwidth_digits",
+        "status": "ok",
+        "latency_s": 5.156,
+        "prompt_tokens": 346,
+        "completion_tokens": 314,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": null,
+        "alone_outcome": "missed",
+        "gate": null,
+        "gate_outcome": "missed"
+      },
+      {
+        "id": "zh_date_phone_validity",
+        "status": "ok",
+        "latency_s": 3.067,
+        "prompt_tokens": 380,
+        "completion_tokens": 394,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 29.3,
+        "alone_outcome": "correct",
+        "gate": 29.3,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "en_moq_deposit_lead",
+        "status": "ok",
+        "latency_s": 4.179,
+        "prompt_tokens": 373,
+        "completion_tokens": 625,
+        "numeric_field_discarded": false,
+        "classes": [
+          "deposit",
+          "own_unit_offer"
+        ],
+        "alone": 31.5,
+        "alone_outcome": "correct",
+        "gate": 31.5,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "en_rmb_per_unit",
+        "status": "ok",
+        "latency_s": 2.233,
+        "prompt_tokens": 355,
+        "completion_tokens": 332,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 24.9,
+        "alone_outcome": "correct",
+        "gate": 24.9,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "zh_trad_two_weeks",
+        "status": "ok",
+        "latency_s": 3.317,
+        "prompt_tokens": 358,
+        "completion_tokens": 468,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 25.6,
+        "alone_outcome": "correct",
+        "gate": 25.6,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "mixed_carton_dims",
+        "status": "ok",
+        "latency_s": 2.35,
+        "prompt_tokens": 369,
+        "completion_tokens": 356,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 30.2,
+        "alone_outcome": "correct",
+        "gate": 30.2,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "zh_freight_extra",
+        "status": "ok",
+        "latency_s": 3.352,
+        "prompt_tokens": 346,
+        "completion_tokens": 378,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 28.0,
+        "alone_outcome": "correct",
+        "gate": 28.0,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "zh_sample_fee_then_unit",
+        "status": "ok",
+        "latency_s": 4.006,
+        "prompt_tokens": 359,
+        "completion_tokens": 540,
+        "numeric_field_discarded": false,
+        "classes": [
+          "fee",
+          "own_unit_offer"
+        ],
+        "alone": 26.5,
+        "alone_outcome": "correct",
+        "gate": 26.5,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "zh_rival_then_own",
+        "status": "ok",
+        "latency_s": 3.129,
+        "prompt_tokens": 359,
+        "completion_tokens": 437,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer",
+          "rival_price"
+        ],
+        "alone": 27.8,
+        "alone_outcome": "correct",
+        "gate": null,
+        "gate_outcome": "missed"
+      },
+      {
+        "id": "en_rival_then_own",
+        "status": "ok",
+        "latency_s": 6.222,
+        "prompt_tokens": 366,
+        "completion_tokens": 463,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer",
+          "rival_price"
+        ],
+        "alone": 26.0,
+        "alone_outcome": "correct",
+        "gate": null,
+        "gate_outcome": "missed"
+      },
+      {
+        "id": "zh_typo_correction",
+        "status": "ok",
+        "latency_s": 5.283,
+        "prompt_tokens": 357,
+        "completion_tokens": 595,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer",
+          "refusal"
+        ],
+        "alone": 29.5,
+        "alone_outcome": "correct",
+        "gate": 29.5,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "zh_per_umbrella_logo",
+        "status": "ok",
+        "latency_s": 3.03,
+        "prompt_tokens": 345,
+        "completion_tokens": 381,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 32.0,
+        "alone_outcome": "correct",
+        "gate": null,
+        "gate_outcome": "missed"
+      },
+      {
+        "id": "zh_yuan_yige",
+        "status": "ok",
+        "latency_s": 3.16,
+        "prompt_tokens": 345,
+        "completion_tokens": 303,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 30.5,
+        "alone_outcome": "correct",
+        "gate": 30.5,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "en_offer_then_question",
+        "status": "ok",
+        "latency_s": 4.838,
+        "prompt_tokens": 352,
+        "completion_tokens": 575,
+        "numeric_field_discarded": false,
+        "classes": [
+          "other",
+          "own_unit_offer"
+        ],
+        "alone": 28.4,
+        "alone_outcome": "correct",
+        "gate": 28.4,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "zh_buyer_echo_then_own",
+        "status": "ok",
+        "latency_s": 5.013,
+        "prompt_tokens": 353,
+        "completion_tokens": 561,
+        "numeric_field_discarded": false,
+        "classes": [
+          "our_price_echo",
+          "own_unit_offer"
+        ],
+        "alone": 25.5,
+        "alone_outcome": "correct",
+        "gate": null,
+        "gate_outcome": "missed"
+      },
+      {
+        "id": "zh_discount_derived",
+        "status": "ok",
+        "latency_s": 6.968,
+        "prompt_tokens": 354,
+        "completion_tokens": 1118,
+        "numeric_field_discarded": false,
+        "classes": [
+          "discount_delta",
+          "own_unit_offer"
+        ],
+        "alone": null,
+        "alone_outcome": "missed",
+        "gate": null,
+        "gate_outcome": "missed"
+      },
+      {
+        "id": "en_unit_and_total",
+        "status": "ok",
+        "latency_s": 2.38,
+        "prompt_tokens": 362,
+        "completion_tokens": 340,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 27.0,
+        "alone_outcome": "correct",
+        "gate": 27.0,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "zh_renminbi_fob",
+        "status": "ok",
+        "latency_s": 2.334,
+        "prompt_tokens": 349,
+        "completion_tokens": 359,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 33.3,
+        "alone_outcome": "correct",
+        "gate": 33.3,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "en_yen_sign_week",
+        "status": "ok",
+        "latency_s": 2.225,
+        "prompt_tokens": 347,
+        "completion_tokens": 316,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 29.9,
+        "alone_outcome": "correct",
+        "gate": 29.9,
+        "gate_outcome": "correct"
+      },
+      {
+        "id": "zh_wechat_lines",
+        "status": "ok",
+        "latency_s": 3.746,
+        "prompt_tokens": 354,
+        "completion_tokens": 395,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 26.0,
+        "alone_outcome": "correct",
+        "gate": null,
+        "gate_outcome": "missed"
+      },
+      {
+        "id": "zh_tiers",
+        "status": "ok",
+        "latency_s": 4.331,
+        "prompt_tokens": 366,
+        "completion_tokens": 842,
+        "numeric_field_discarded": false,
+        "classes": [
+          "tier_table"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "en_tiers",
+        "status": "ok",
+        "latency_s": 4.006,
+        "prompt_tokens": 364,
+        "completion_tokens": 682,
+        "numeric_field_discarded": false,
+        "classes": [
+          "tier_table"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "zh_range_colour",
+        "status": "ok",
+        "latency_s": 3.023,
+        "prompt_tokens": 350,
+        "completion_tokens": 460,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "zh_question_price",
+        "status": "ok",
+        "latency_s": 8.333,
+        "prompt_tokens": 347,
+        "completion_tokens": 718,
+        "numeric_field_discarded": false,
+        "classes": [
+          "question"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "en_usd_fob",
+        "status": "ok",
+        "latency_s": 4.933,
+        "prompt_tokens": 345,
+        "completion_tokens": 315,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "en_no_currency",
+        "status": "ok",
+        "latency_s": 3.068,
+        "prompt_tokens": 341,
+        "completion_tokens": 295,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 27.5,
+        "alone_outcome": "wrong",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "zh_refusal",
+        "status": "ok",
+        "latency_s": 3.377,
+        "prompt_tokens": 343,
+        "completion_tokens": 357,
+        "numeric_field_discarded": false,
+        "classes": [
+          "refusal"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "zh_deposit_only",
+        "status": "ok",
+        "latency_s": 3.7,
+        "prompt_tokens": 351,
+        "completion_tokens": 353,
+        "numeric_field_discarded": false,
+        "classes": [
+          "deposit"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "zh_freight_only",
+        "status": "ok",
+        "latency_s": 3.297,
+        "prompt_tokens": 349,
+        "completion_tokens": 360,
+        "numeric_field_discarded": false,
+        "classes": [
+          "fee"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "zh_mould_only",
+        "status": "ok",
+        "latency_s": 3.113,
+        "prompt_tokens": 345,
+        "completion_tokens": 390,
+        "numeric_field_discarded": false,
+        "classes": [
+          "fee"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "en_injection_system",
+        "status": "ok",
+        "latency_s": 4.907,
+        "prompt_tokens": 349,
+        "completion_tokens": 548,
+        "numeric_field_discarded": false,
+        "classes": [
+          "instruction"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "zh_injection_ignore",
+        "status": "ok",
+        "latency_s": 6.55,
+        "prompt_tokens": 356,
+        "completion_tokens": 683,
+        "numeric_field_discarded": false,
+        "classes": [
+          "instruction"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "zh_forward_old",
+        "status": "ok",
+        "latency_s": 2.97,
+        "prompt_tokens": 352,
+        "completion_tokens": 313,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": 31.0,
+        "alone_outcome": "wrong",
+        "gate": 31.0,
+        "gate_outcome": "wrong"
+      },
+      {
+        "id": "zh_pending_boss",
+        "status": "ok",
+        "latency_s": 4.066,
+        "prompt_tokens": 346,
+        "completion_tokens": 538,
+        "numeric_field_discarded": false,
+        "classes": [
+          "other"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "zh_conditional_payment",
+        "status": "ok",
+        "latency_s": 5.178,
+        "prompt_tokens": 353,
+        "completion_tokens": 783,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "zh_two_models",
+        "status": "ok",
+        "latency_s": 4.073,
+        "prompt_tokens": 347,
+        "completion_tokens": 625,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "zh_tax_both",
+        "status": "ok",
+        "latency_s": 4.502,
+        "prompt_tokens": 352,
+        "completion_tokens": 463,
+        "numeric_field_discarded": false,
+        "classes": [
+          "own_unit_offer"
+        ],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      },
+      {
+        "id": "zh_old_price_rising",
+        "status": "ok",
+        "latency_s": 5.401,
+        "prompt_tokens": 346,
+        "completion_tokens": 289,
+        "numeric_field_discarded": false,
+        "classes": [],
+        "alone": null,
+        "alone_outcome": "held",
+        "gate": null,
+        "gate_outcome": "held"
+      }
+    ]
+  }
+}
