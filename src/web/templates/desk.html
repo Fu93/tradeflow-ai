@@ -90,6 +90,13 @@
         <label>Raw text
           <textarea id="paste-text" rows="4" required></textarea>
         </label>
+        <fieldset class="desk-landed">
+          <legend>Landed cost, per unit in the deal currency (optional)</legend>
+          <label>Freight <input id="paste-freight" type="number" min="0" step="any" inputmode="decimal" /></label>
+          <label>Other fees <input id="paste-fees" type="number" min="0" step="any" inputmode="decimal" /></label>
+          <label>Import duty, percent <input id="paste-duty" type="number" min="0" step="any" inputmode="decimal" /></label>
+          <p class="desk-note">Fill all three (0 counts as a value). When every quoted supplier has them, the ranking uses landed cost instead of the unit price.</p>
+        </fieldset>
         <div class="desk-actions">
           <button type="submit">Add quote</button>
           <button type="button" id="sample-message">Use a sample message</button>
