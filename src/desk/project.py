@@ -27,7 +27,33 @@ def _references(prior: str | None, message_id: str) -> str:
     return join_references(prior, message_id)
 
 
+def _has_cjk(text: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def product_for_language(product: str, language: str) -> str:
+    """The product name the draft uses, in the draft's language.
+
+    A product typed as "折叠伞 / folding umbrella" carries both names. A Chinese
+    draft takes the part with Chinese characters, an English draft the other.
+    A product with one name is used as typed.
+    """
+    text = str(product or "").strip()
+    for separator in (" / ", "／"):
+        if separator in text:
+            parts = [part.strip() for part in text.split(separator) if part.strip()]
+            chinese = [part for part in parts if _has_cjk(part)]
+            other = [part for part in parts if not _has_cjk(part)]
+            if language == "zh" and chinese:
+                return chinese[0]
+            if language != "zh" and other:
+                return other[0]
+            return parts[0] if parts else text
+    return text
+
+
 def draft_body(product: str, counter: float, quantity: int, language: str, currency: str) -> str:
+    product = product_for_language(product, language)
     amount = f"{counter:.2f}"
     if language == "zh" and currency == DEAL_CURRENCY:
         return (

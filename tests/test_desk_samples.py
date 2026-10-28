@@ -96,3 +96,17 @@ def test_desk_page_wires_the_samples_without_numbers_in_code():
     assert "payload.page_title = \"TradeFlow sample message (fictional demo text)\";" in script
     assert "simulated" not in "TradeFlow sample message (fictional demo text)"
     assert _sample()["message"] not in script
+
+
+def test_draft_uses_the_product_name_in_the_draft_language():
+    from src.desk.project import draft_body, product_for_language
+
+    both = "折叠伞 / folding umbrella"
+    assert product_for_language(both, "zh") == "折叠伞"
+    assert product_for_language(both, "en") == "folding umbrella"
+    assert product_for_language("folding umbrella", "zh") == "folding umbrella"
+    assert product_for_language("折叠伞／folding umbrella", "zh") == "折叠伞"
+    zh = draft_body(both, 23.52, 1000, "zh", "CNY")
+    assert "关于折叠伞" in zh and "folding" not in zh and "23.52" in zh
+    en = draft_body(both, 23.52, 1000, "en", "CNY")
+    assert "for folding umbrella we" in en and "折叠伞" not in en

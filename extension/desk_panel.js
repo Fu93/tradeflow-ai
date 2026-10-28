@@ -99,7 +99,7 @@
 
   // Fictional suppliers on a reserved test domain. Nothing here is a real company.
   const SAMPLE_DEAL = {
-    product: "carbon umbrella",
+    product: "碳纤维伞 / carbon umbrella",
     quantity: 1000,
     target_price: 12,
     ceiling_price: 16,
