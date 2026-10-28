@@ -39,6 +39,9 @@ The model reads the quote. The math prices the counter. You press send.
 
 **What was updated during the submission period.** The first commit in this repository is dated 13 October 2026, after the submission period opened on 26 August, so all of the work falls inside the period. The repository began as an entry for the AMD Developer Hackathon ACT III, which has concluded; no lablab submission record for this project has been located and no prize or placement is claimed. Through 26 October there were 124 commits (a keyed audit chain with signed human approval, deployment hardening, parser fuzzing, the split of the app layer; summarised in [STATUS.md](../STATUS.md)). For this hackathon, the Nemotron quote reader on Nebius Token Factory (`src/desk/extract.py`) and the Tavily web-evidence card (added on 28 October) are the pieces to judge; the README leads with them and keeps the earlier AMD material in a labelled section. Details: README, "What changed during the submission period".
 
+**AI assistance.** The project's design, direction and trade-offs are the author's; AI coding tools (Cursor, Codebuff, Claude) assisted with writing code.
+<!-- TODO(owner): confirm that you reviewed the decision logic and tests before keeping the sentence "all decision logic and tests were reviewed by the author" -->
+
 **Built with.** Python, FastAPI, SQLite, NumPy, ONNX Runtime, a Chrome MV3 extension, Docker and Render, Nebius Token Factory, NVIDIA Nemotron, Tavily.
 
 ## Demo video script (3:00 or less)

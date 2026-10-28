@@ -25,6 +25,9 @@ TradeFlow AI is a one-person supplier-negotiation desk for small cross-border se
 Live-run results (Nebius Token Factory / Nemotron and Tavily): **not recorded yet.** Date: _pending_. Model id: _pending_. HTTP status: _pending_. Latency: _pending_. Commit: _pending_.
 <!-- end TODO(owner) -->
 
+**AI assistance.** The project's design, direction and trade-offs are the author's; AI coding tools (Cursor, Codebuff, Claude) assisted with writing code.
+<!-- TODO(owner): confirm that you reviewed the decision logic and tests before keeping the sentence "all decision logic and tests were reviewed by the author" -->
+
 ## Status (2026-10-28)
 
 The repository began on 13 October 2026 as an entry for the AMD Developer Hackathon ACT III, which has concluded (online phase 12–18 October 2026). No lablab submission record for this project has been located. The AMD-era material is kept, not deleted, under [Earlier AMD Developer Hackathon build](#earlier-amd-developer-hackathon-build) near the end of this file, because `scripts/check_claims.py` checks its figures against source files. This is a **research prototype**: no factory has closed a deal through it. Current state and decision lines: [STATUS.md](STATUS.md). Where the code actually lives (including the `src/legacy/` naming inversion): [ARCHITECTURE.md](ARCHITECTURE.md).
