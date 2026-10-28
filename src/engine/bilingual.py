@@ -640,7 +640,13 @@ class InboundIntentClassifier:
 
         # 憑證必須與端點配對。VLLM_*（AMD tokenfactory / 自架 vLLM）優先；
         # Evolus 金鑰只打 evolus.ai。__FILL_ME__ 視為未配置，避免離線 demo 外呼。
-        from .llm_config import body_overrides, resolve_chat_endpoint, take_model_call
+        from .llm_config import (
+            body_overrides,
+            model_calls_paused,
+            note_model_refusal,
+            resolve_chat_endpoint,
+            take_model_call,
+        )
 
         cls.last_llm_error = None
         cls.last_llm_latency_ms = None
@@ -648,6 +654,9 @@ class InboundIntentClassifier:
 
         endpoint = resolve_chat_endpoint()
         if endpoint is None:
+            return None
+        if model_calls_paused() is not None:
+            cls.last_llm_error = "model calls are paused: the service refused the key or its credit is spent"
             return None
         if not take_model_call():
             cls.last_llm_error = "today's live-model budget on this server is spent"
@@ -695,6 +704,7 @@ class InboundIntentClassifier:
             )
             cls.last_llm_latency_ms = round((_time.perf_counter() - _t0) * 1000, 1)
             if resp.status_code != 200:
+                note_model_refusal(resp.status_code)
                 cls.last_llm_error = (
                     f"Stage-2 endpoint returned HTTP {resp.status_code}: "
                     f"{(resp.text or '')[:200]}"
@@ -1635,7 +1645,7 @@ class CrossLingualSanityChecker:
 
         # Stage 2 LLM 對抗性語意審計。佔位符金鑰不外呼；金鑰與主機必須配對。
         import os
-        from .llm_config import body_overrides, resolve_chat_endpoint, take_model_call
+        from .llm_config import body_overrides, note_model_refusal, resolve_chat_endpoint, take_model_call
         endpoint = resolve_chat_endpoint(default_model="Qwen/Qwen2.5-14B-Instruct") if enable_llm else None
         if endpoint is not None and not take_model_call():
             endpoint = None
@@ -1668,6 +1678,7 @@ class CrossLingualSanityChecker:
                     json=payload,
                     timeout=float(os.getenv("VLLM_TIMEOUT_SECONDS", "90")),
                 )
+                note_model_refusal(resp.status_code)
                 if resp.status_code == 200:
                     content = resp.json()["choices"][0]["message"]["content"]
                     m = re.search(r"\{.*\}", content, re.DOTALL)

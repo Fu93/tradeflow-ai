@@ -511,6 +511,16 @@
     if (provenance.extractor_error === "extractor_daily_cap") {
       return "Today's model budget on this server is spent. Read by the rule reader only.";
     }
+    if (provenance.extractor_error === "extractor_paused") {
+      return "Model calls are paused: the model service refused this server's key or its credit is spent. " +
+        "Read by the rule reader only.";
+    }
+    if (provenance.extractor_error === "extractor_account") {
+      const refused = (provenance.extractor_attempts || []).map((a) => a && a.status).filter(Boolean).pop() || "";
+      return "The model service refused this server's key or its credit is spent" +
+        (refused ? " (" + refused.replace("http_", "HTTP ") + ")" : "") +
+        ". Model calls pause for a while; read by the rule reader only.";
+    }
     const attempts = provenance.extractor_attempts || [];
     let used = null;
     attempts.forEach((attempt) => { if (attempt && attempt.status === "ok") used = attempt; });
