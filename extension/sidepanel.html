@@ -323,6 +323,11 @@
         <section class="desk-block">
           <h2>Live desk</h2>
           <p id="desk-empty" class="desk-note">No live desk linked.</p>
+          <label class="desk-note" for="desk-server">Desk server</label>
+          <select id="desk-server">
+            <option value="">This computer (127.0.0.1:8000)</option>
+            <option value="https://tradeflow-ai-demo.onrender.com">Hosted demo</option>
+          </select>
           <label class="desk-note" for="desk-api-key">API key</label>
           <input id="desk-api-key" type="password" autocomplete="off" spellcheck="false" />
           <label class="desk-note" for="desk-deal-id">Deal id</label>
@@ -331,6 +336,8 @@
           <select id="desk-supplier"></select>
           <button type="button" id="btn-desk-import">Import visible message</button>
           <p id="desk-import-status" class="desk-note" role="status"></p>
+          <h2>Waiting for you</h2>
+          <div id="desk-review"></div>
           <h2>Ranking</h2>
           <ul id="desk-ranking" class="desk-list"></ul>
           <h2>Counters</h2>
@@ -378,6 +385,7 @@
   </div>
   <script src="market_intel.js"></script>
   <script src="sidepanel.js"></script>
+  <script src="desk_review.js"></script>
   <script src="desk_panel.js"></script>
 </body>
 </html>

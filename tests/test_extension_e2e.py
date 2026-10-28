@@ -1017,6 +1017,44 @@ def main() -> int:
                             f"review={len(review)}",
                         )
 
+                        print("\n[9] The panel confirms the figure itself")
+                        check(
+                            "desk server menu offers this computer and the hosted demo",
+                            sp.locator("#desk-server option").count() == 2,
+                        )
+                        sp.locator("#desk-review .desk-review-item").first.wait_for(timeout=10000)
+                        item = sp.locator("#desk-review .desk-review-item").first
+                        check("a waiting item is shown in the panel", item.count() == 1)
+                        check(
+                            "the waiting item shows the supplier's message",
+                            len(item.locator(".desk-review-text").inner_text().strip()) > 0,
+                        )
+                        picks = item.locator(".desk-review-picks button")
+                        check("candidate figures are offered", picks.count() >= 1, f"n={picks.count()}")
+                        accept = item.locator(".desk-review-actions button", has_text="Accept")
+                        item.locator("select").select_option(value="")
+                        check("Accept stays off with no supplier chosen", accept.is_disabled())
+                        item.locator("select").select_option(index=1)
+                        picks.first.click()
+                        check(
+                            "the exact line is quoted before accepting",
+                            "Confirming" in item.locator(".desk-review-confirm").inner_text(),
+                        )
+                        check("Accept is on once figure and supplier are chosen", accept.is_enabled())
+                        accept.click()
+                        for _wait in range(40):
+                            if "Nothing waiting" in sp.locator("#desk-review").inner_text():
+                                break
+                            time.sleep(0.25)
+                        check(
+                            "accepting in the panel clears the waiting item",
+                            "Nothing waiting" in sp.locator("#desk-review").inner_text(),
+                            sp.locator("#desk-review").inner_text()[:80],
+                        )
+                        with urllib.request.urlopen(quoted, timeout=30) as response:
+                            after = json.loads(response.read().decode())
+                        check("the desk records the accepted figure", not (after.get("review") or []))
+
             finally:
                 ctx.close()
 

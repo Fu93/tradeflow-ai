@@ -26,6 +26,21 @@
 
 ---
 
+## Live desk panel (the part that talks to the Nebius/Nemotron quote reader)
+
+Open the side panel's **Live desk** tab.
+
+1. Pick the **Desk server**: this computer (`127.0.0.1:8000`) or the hosted demo
+   (`https://tradeflow-ai-demo.onrender.com`). Those are the only two hosts the
+   manifest allows (`host_permissions` and the page CSP `connect-src`); another
+   host needs both edited.
+2. Enter the API key and the deal id from `/desk`.
+3. On a supplier chat, press **Import visible message**. The desk reads it.
+4. Under **Waiting for you**, pick the figure, check the quoted line, choose the
+   supplier, and press **Accept**. Nothing is accepted for you.
+5. The counter and the draft appear below. Copy the draft and paste it yourself.
+   The extension never types into the chat or presses send.
+
 ## 30-second setup
 
 1. **Start the TradeFlow backend**

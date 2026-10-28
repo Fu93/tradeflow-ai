@@ -35,7 +35,11 @@
     while (node && node.firstChild) node.removeChild(node.firstChild);
   }
 
+  const LOCAL_BASE = "http://127.0.0.1:8000";
+  let serverBase = "";
+
   function apiBase() {
+    if (serverBase) return serverBase;
     // [FIX 2026-10-25] IPv4 loopback fallback — `localhost` can resolve to
     // ::1 on Windows while the desk server binds IPv4 only.
     return typeof API_BASE_URL === "string" && API_BASE_URL ? API_BASE_URL : "http://127.0.0.1:8000";
@@ -123,9 +127,34 @@
       select.appendChild(option);
     });
     if (current) select.value = current;
+    renderReview(snapshot);
     const chosen = select.value;
     const match = (snapshot.drafts || []).find((item) => item.supplier_id === chosen && item.status === "draft");
     draft.value = match ? match.body : "";
+  }
+
+  function renderReview(snapshot) {
+    const root = document.getElementById("desk-review");
+    const input = document.getElementById("desk-deal-id");
+    const dealId = input && input.value.trim();
+    if (!root || !globalThis.TradeFlowDeskReview || !dealId) return;
+    globalThis.TradeFlowDeskReview.render(root, snapshot.review || [], snapshot.suppliers || [], {
+      post: async (eventId, payload) => {
+        const response = await fetch(
+          apiBase() + "/api/v1/desk/deals/" + encodeURIComponent(dealId) + "/review/" + encodeURIComponent(eventId),
+          { method: "POST", headers: headers(), body: JSON.stringify(payload) }
+        );
+        if (response.status === 401) throw new Error("The API key was rejected. Enter the key this server expects.");
+        if (!response.ok) throw new Error("The desk did not take that (" + response.status + ").");
+        return response.json();
+      },
+      done: (next) => { render(next); setStatus(payload_done(next)); },
+      fail: (message) => setStatus(message),
+    });
+  }
+
+  function payload_done() {
+    return "Saved. The counter below is computed from the figure you confirmed.";
   }
 
   function rememberSupplier(confirmed) {
@@ -171,10 +200,23 @@
     const copy = document.getElementById("btn-desk-copy");
     const select = document.getElementById("desk-supplier");
     if (!input || !button) return;
-    storageGet(["tfDeskDeal", "tfDeskSupplier", "tfApiKey"], (stored) => {
+    const server = document.getElementById("desk-server");
+    storageGet(["tfDeskDeal", "tfDeskSupplier", "tfApiKey", "tfApiBase"], (stored) => {
+      const saved = String(stored.tfApiBase || "").trim().replace(/\/+$/, "");
+      if (saved && saved !== LOCAL_BASE) {
+        serverBase = saved;
+        if (server) server.value = saved;
+      }
       if (stored.tfDeskDeal) input.value = stored.tfDeskDeal;
       if (stored.tfApiKey && keyInput && !keyInput.value) keyInput.value = stored.tfApiKey;
       if (stored.tfDeskSupplier && select) select.value = stored.tfDeskSupplier;
+      refresh();
+    });
+    if (server) server.addEventListener("change", () => {
+      serverBase = server.value || "";
+      try { API_BASE_URL = serverBase || LOCAL_BASE; } catch (err) { /* panel script not loaded */ }
+      storageSet({ tfApiBase: serverBase });
+      setStatus("Connecting\u2026");
       refresh();
     });
     input.addEventListener("change", () => {

@@ -450,7 +450,7 @@ body.is-error .scroll { opacity: 0.7; }
 .desk-block h2 { font-size: 13px; margin: 8px 0 0; }
 .desk-note { color: var(--ink-2); font-size: 12px; margin: 0; }
 .desk-list { margin: 0; padding-left: 0; list-style: none; }
-.desk-draft, #desk-deal-id, #desk-supplier, #desk-api-key { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; font: inherit; }
+.desk-draft, #desk-deal-id, #desk-supplier, #desk-api-key, #desk-server { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; font: inherit; }
 #desk-draft { min-height: 8em; white-space: pre-wrap; }
 .tabbar {
   flex: 0 0 auto;
@@ -1284,3 +1284,10 @@ button:focus, .party:focus, .source-badge:focus {
   color: var(--accent);
 }
 .market-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* Live desk: items waiting for a person (the model's reading, a figure to confirm). */
+.desk-review-item { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--line, #d6d3cb); border-radius: 8px; }
+.desk-review-text { margin: 0; max-height: 7em; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; }
+.desk-review-picks, .desk-review-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.desk-review-picks button[aria-pressed="true"] { font-weight: 600; outline: 2px solid currentColor; }
+.desk-review-confirm { margin: 0; font-size: 12px; overflow-wrap: anywhere; }

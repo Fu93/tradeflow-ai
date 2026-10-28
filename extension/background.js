@@ -19,6 +19,12 @@ chrome.storage?.local?.get(["tfApiBase"], (stored) => {
   if (override) API_BASE_URL = override.replace(/\/+$/, "");
 });
 
+chrome.storage?.onChanged?.addListener((changes, area) => {
+  if (area !== "local" || !changes.tfApiBase) return;
+  const next = String(changes.tfApiBase.newValue || "").trim();
+  API_BASE_URL = next ? next.replace(/\/+$/, "") : API_BASE_URL_DEFAULT;
+});
+
 // ---------------------------------------------------------------------------
 // Security: outbound auth (H9)
 // ---------------------------------------------------------------------------
