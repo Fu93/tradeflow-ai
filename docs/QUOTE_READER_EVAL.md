@@ -53,6 +53,21 @@ Every reader is limited to the desk's unit-sanity band around the deal's target 
 
 We have not fixed either defect yet. Fixing the parser after seeing this set would stop it being held-out for the rules, so the fix waits until the Nemotron run below is recorded, and both results will be kept.
 
+## The two parser defects, fixed after the baseline
+
+Both are fixed in `src/desk/parse.py` and `src/desk/span_read.py`, with tests in `tests/test_parse_fullwidth_and_forward.py`:
+
+- A full-width full stop is now a decimal mark, so `２８．５０元` reads as 28.50. The token stays as written, so a person's confirmation still quotes the message.
+- A dash rule around 转发 or 轉發 now starts forwarded history, like `----- 转发邮件 -----` already did.
+
+[`results/quote_reader_eval_rules_after_fix.json`](../results/quote_reader_eval_rules_after_fix.json) is the rules run after the fix:
+
+| Reader | Correct | Wrong | Missed | Held for a person |
+|---|---|---|---|---|
+| rules, after the fix | 15 | 0 | 7 | 18 |
+
+**This run is not held-out.** The two fixes were made after looking at two items in this set. The held-out figure for the rules is the baseline above (14 correct, 2 wrong). Both files are kept.
+
 ## Pending: the Nemotron run
 
 This needs a Nebius Token Factory key. The development workspace cannot reach Token Factory.

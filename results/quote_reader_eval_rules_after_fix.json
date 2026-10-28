@@ -1,0 +1,230 @@
+{
+  "generated_at_utc": "2026-10-28T16:06:53+00:00",
+  "dataset": "data/eval/quote_reader_holdout.jsonl",
+  "dataset_sha256": "cffb50ff2b6e54e5a82ad49763f5db9b42472655dd27fb9c08121038cbe93cdc",
+  "endpoint": null,
+  "models": [],
+  "note": "Held-out set written on 2026-10-28 before any model run. Labels are the author-side reading of each message, not supplier ground truth.",
+  "rows": 40,
+  "labelled_offers": 22,
+  "bounds": {
+    "target": 30,
+    "ceiling": 40,
+    "low": 10.0,
+    "high": 120.0
+  },
+  "readers": {
+    "rules": {
+      "tally": {
+        "correct": 15,
+        "wrong": 0,
+        "missed": 7,
+        "held": 18
+      }
+    }
+  },
+  "per_message": {
+    "rules": [
+      {
+        "id": "zh_plain_umbrella",
+        "value": 26.8,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_kuai_colloquial",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "zh_fullwidth_digits",
+        "value": 28.5,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_date_phone_validity",
+        "value": 29.3,
+        "outcome": "correct"
+      },
+      {
+        "id": "en_moq_deposit_lead",
+        "value": 31.5,
+        "outcome": "correct"
+      },
+      {
+        "id": "en_rmb_per_unit",
+        "value": 24.9,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_trad_two_weeks",
+        "value": 25.6,
+        "outcome": "correct"
+      },
+      {
+        "id": "mixed_carton_dims",
+        "value": 30.2,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_freight_extra",
+        "value": 28.0,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_sample_fee_then_unit",
+        "value": 26.5,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_rival_then_own",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "en_rival_then_own",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "zh_typo_correction",
+        "value": 29.5,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_per_umbrella_logo",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "zh_yuan_yige",
+        "value": 30.5,
+        "outcome": "correct"
+      },
+      {
+        "id": "en_offer_then_question",
+        "value": 28.4,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_buyer_echo_then_own",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "zh_discount_derived",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "en_unit_and_total",
+        "value": 27.0,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_renminbi_fob",
+        "value": 33.3,
+        "outcome": "correct"
+      },
+      {
+        "id": "en_yen_sign_week",
+        "value": 29.9,
+        "outcome": "correct"
+      },
+      {
+        "id": "zh_wechat_lines",
+        "value": null,
+        "outcome": "missed"
+      },
+      {
+        "id": "zh_tiers",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "en_tiers",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_range_colour",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_question_price",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "en_usd_fob",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "en_no_currency",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_refusal",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_deposit_only",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_freight_only",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_mould_only",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "en_injection_system",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_injection_ignore",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_forward_old",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_pending_boss",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_conditional_payment",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_two_models",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_tax_both",
+        "value": null,
+        "outcome": "held"
+      },
+      {
+        "id": "zh_old_price_rising",
+        "value": null,
+        "outcome": "held"
+      }
+    ]
+  }
+}
