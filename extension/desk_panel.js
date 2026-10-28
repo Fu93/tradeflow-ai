@@ -103,7 +103,6 @@
     quantity: 1000,
     target_price: 12,
     ceiling_price: 16,
-    risk_tolerance: 0.5,
     suppliers: [
       { name: "Sample Supplier A", address: "supplier-a@example.test" },
       { name: "Sample Supplier B", address: "supplier-b@example.test" },
