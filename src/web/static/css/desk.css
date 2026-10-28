@@ -31,6 +31,9 @@
 }
 .desk-error { color: var(--seal, #9a3412); min-height: 1.2em; }
 .desk-note { margin: 0; font-size: 0.9em; color: var(--ink-soft, #3e463f); }
+.desk-typed { margin: 6px 0; font-size: 0.9em; }
+.desk-typed summary { cursor: pointer; color: var(--steel, #1e3a4c); }
+.desk-typed input { min-width: 0; flex: 1 1 8rem; }
 .desk-deal-bar { align-items: center; justify-content: space-between; }
 .desk-deal-bar p { margin: 0; overflow-wrap: anywhere; }
 .desk-workings { margin: 6px 0; font-size: 0.9em; }

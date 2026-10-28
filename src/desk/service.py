@@ -26,7 +26,7 @@ from src.desk.approval_signing import (
     verify_signed_approval,
 )
 from src.desk.audit_chain import approval_recorded, chain_key_configured, export_history, reanchor_refusal
-from src.desk.input_checks import require_address, require_plain
+from src.desk.input_checks import EMAIL_CHANNEL, require_address, require_contact, require_plain
 from src.desk.names import supplier_name_key
 from src.desk.parse import _confirm_span, _visible_text, parse_quote, price_from_token
 from src.desk.bus import BUS  # noqa: F401  (re-exported for existing callers)
@@ -154,7 +154,8 @@ def create_deal(
 ) -> dict[str, Any]:
     product = require_plain(product, "Product")
     names = [item["name"].strip() for item in suppliers]
-    addresses = [require_address(item["address"]) for item in suppliers]
+    channels = [str(item.get("channel") or EMAIL_CHANNEL).strip().lower() or EMAIL_CHANNEL for item in suppliers]
+    addresses = [require_contact(item["address"], channel) for item, channel in zip(suppliers, channels, strict=True)]
     if not 4 <= len(suppliers) <= 5:
         raise DeskRejected("A deal needs four or five suppliers.")
     if any(not name for name in names):
@@ -210,7 +211,7 @@ def _create_deal_row(
             {
                 "name": item["name"].strip(),
                 "address": item["address"].strip(),
-                "channel": (item.get("channel") or "email").strip() or "email",
+                "channel": (item.get("channel") or EMAIL_CHANNEL).strip().lower() or EMAIL_CHANNEL,
             }
             for item in suppliers
         ],
@@ -277,6 +278,8 @@ def accept_review(
     *,
     chosen_token: str | None = None,
     reject: bool = False,
+    typed_amount: float | None = None,
+    typed_words: str | None = None,
 ) -> dict[str, Any]:
     with deal_lock(deal_id):
         event = store.event(deal_id, event_id)
@@ -328,13 +331,32 @@ def accept_review(
         for key in ("freight", "duty_rate", "fees"):
             if previous.get(key) is not None:
                 parsed[key] = previous[key]
-        if not chosen_token:
-            raise DeskRejected("Accept confirms only the amount shown from the message.")
-        if _quantity_token(event["raw_text"], chosen_token):
-            raise DeskRejected("That amount is a quantity, not a unit price.")
-        price = price_from_token(event["raw_text"], chosen_token, deal_currency=currency)
-        if price is None:
-            raise DeskRejected("That amount is not a unit price in the deal currency.")
+        typed = typed_amount is not None
+        words = ""
+        if typed and chosen_token:
+            raise DeskRejected("Pick a figure from the message or type one, not both.")
+        if typed:
+            # A person typed the price (for example 28塊5 -> 28.50) and names
+            # the words they read it from. Code cannot re-derive it, so it is
+            # recorded as typed and those words must stand in the message.
+            words = str(typed_words or "").strip()
+            if not words or words not in _visible_text(str(event["raw_text"] or "")):
+                raise DeskRejected("Name the words in the message the typed price comes from.")
+            try:
+                price = float(typed_amount)  # type: ignore[arg-type]
+            except (TypeError, ValueError) as exc:
+                raise DeskRejected("The typed price is not a number.") from exc
+            if not price > 0 or price != price:
+                raise DeskRejected("The typed price must be above zero.")
+        else:
+            if not chosen_token:
+                raise DeskRejected("Accept confirms only the amount shown from the message.")
+            if _quantity_token(event["raw_text"], chosen_token):
+                raise DeskRejected("That amount is a quantity, not a unit price.")
+            read = price_from_token(event["raw_text"], chosen_token, deal_currency=currency)
+            if read is None:
+                raise DeskRejected("That amount is not a unit price in the deal currency.")
+            price = float(read)
         parsed["unit_price"] = price
         parsed["currency"] = currency
         if price is None or _outside_sanity(float(price), deal):
@@ -346,6 +368,9 @@ def accept_review(
         rule_shadow = provenance.get("span_value")
         if chosen_token:
             provenance["chosen_token"] = chosen_token
+        if typed:
+            provenance["typed_by_person"] = True
+            provenance["typed_words"] = words
         provenance["shadow_matched"] = bool(
             provenance.get("shadow_would_accept")
             and rule_shadow is not None
@@ -371,11 +396,12 @@ def accept_review(
                 "to": "accepted",
                 "event_id": event_id,
                 "supplier_id": supplier_id,
-                "token": chosen_token,
+                "token": None if typed else chosen_token,
+                "typed": typed,
                 "value": float(price),
                 "currency": currency,
                 "unit": "per_piece",
-                "span": _confirm_span(_visible_text(raw_text), str(chosen_token)),
+                "span": words if typed else _confirm_span(_visible_text(raw_text), str(chosen_token)),
                 "raw_sha256": hashlib.sha256(raw_text.encode("utf-8")).hexdigest(),
                 "freight": parsed.get("freight"),
                 "duty_rate": parsed.get("duty_rate"),
@@ -1018,7 +1044,10 @@ async def send_draft(
         reply_to = envelope["in_reply_to"] or None
         references = envelope["references"] or None
         deal_id = draft["deal_id"]
-        if not smtp_enabled():
+        # A supplier reached in a chat app is never mailed: the approved text
+        # is copied and sent by a person, so the draft stays "approved".
+        by_hand = str(supplier.get("channel") or EMAIL_CHANNEL) != EMAIL_CHANNEL
+        if by_hand or not smtp_enabled():
             store.mark_draft(
                 draft_id,
                 status="approved",

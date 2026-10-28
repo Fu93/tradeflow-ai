@@ -618,6 +618,8 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "supplier_moq": None,
             "supplier_lead_time": None,
             "moq_above_order": False,
+            # The words a person typed the price from, when it was typed.
+            "quote_typed_words": None,
         }
         display = usable[-1] if usable else latest_any
         if display is not None and display.get("parsed", {}).get("unit_price") is not None:
@@ -629,6 +631,8 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             card["landed_status"] = landed.get("status") or "no data"
             card["quote_validity"] = read_validity(display.get("raw_text") or "", display.get("received_at"))
             card["quote_received_at"] = display.get("received_at")
+            if (display.get("provenance") or {}).get("typed_by_person"):
+                card["quote_typed_words"] = str((display.get("provenance") or {}).get("typed_words") or "")
             moq = read_moq(display.get("raw_text") or "")
             card["supplier_moq"] = moq
             card["supplier_lead_time"] = read_lead_time(display.get("raw_text") or "")

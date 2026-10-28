@@ -26,7 +26,7 @@ from src.config.heuristics import (
     RISK_TOLERANCE_MAX,
 )
 from src.desk.audit_chain import ChainKeyMissing
-from src.desk.input_checks import require_address, require_plain
+from src.desk.input_checks import require_address, require_contact, require_plain
 from src.desk.names import supplier_name_key
 from src.desk.service import (
     BUS,
@@ -63,10 +63,13 @@ class SupplierIn(BaseModel):
     address: str = Field(min_length=1, max_length=320)
     channel: str = Field(default="email", max_length=40)
 
-    @field_validator("address")
-    @classmethod
-    def _address(cls, value: str) -> str:
-        return require_address(value)
+    @model_validator(mode="after")
+    def _contact(self):
+        # Email suppliers need one addr-spec; chat suppliers (WeChat, WhatsApp)
+        # need a one-line handle, and their drafts are sent by hand.
+        self.channel = (self.channel or "email").strip().lower() or "email"
+        self.address = require_contact(self.address, self.channel)
+        return self
 
 
 class DealIn(BaseModel):
@@ -131,6 +134,9 @@ class ReviewIn(BaseModel):
     supplier_id: str | None = None
     action: str = "accept"
     chosen_token: str | None = Field(default=None, max_length=80)
+    # A price the person typed (28塊5 -> 28.5) and the words it came from.
+    typed_amount: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    typed_words: str | None = Field(default=None, max_length=80)
 
 
 class ApprovalSignatureIn(BaseModel):
@@ -340,6 +346,8 @@ def register_desk_routes(api_v1: APIRouter) -> None:
                 body.supplier_id,
                 chosen_token=body.chosen_token,
                 reject=body.action == "reject",
+                typed_amount=body.typed_amount,
+                typed_words=body.typed_words,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="No such review item") from exc
