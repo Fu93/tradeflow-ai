@@ -76,6 +76,7 @@ class DecisionRecord:
     hazard_intercept: float | None = None
     hazard_gap: float | None = None
     held_previous_counter: float | None = None
+    offer_mode: str = "default"
 
     def eligible(self) -> bool:
         return self.counter is not None and self.unconfirmed == 0 and all(item.passed for item in self.checks)
@@ -132,6 +133,7 @@ def build_record(
     hazard_gap: float | None = None,
     held_previous_counter: float | None = None,
     inputs_stored: bool = False,
+    offer_mode: str = "default",
 ) -> DecisionRecord:
     """Pure. A failed check clears the counter."""
     fit = fit_digest if fit_digest is not None else hazard_fit_sha256()
@@ -232,6 +234,7 @@ def build_record(
         hazard_intercept=None if hazard_intercept is None else float(hazard_intercept),
         hazard_gap=None if hazard_gap is None else float(hazard_gap),
         held_previous_counter=None if held_previous_counter is None else float(held_previous_counter),
+        offer_mode=str(offer_mode or "default"),
     )
 
 

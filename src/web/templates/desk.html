@@ -16,13 +16,14 @@
         <p class="file-kicker">Live supplier desk</p>
         <h1>Quotes in, counters out</h1>
       </div>
-      <a href="/">Auction desk</a>
+      <a href="/">Decision lab</a>
     </header>
-    <p>Four or five suppliers. A new accepted quote recomputes the desk. Replies stay drafts until you approve a send.</p>
+    <p>Paste a supplier's message. When the server has a Nebius key, NVIDIA Nemotron on Nebius Token Factory labels what each number in it is. You confirm the price. The solver prices every counter, and nothing is sent until you approve it.</p>
 
     <form id="desk-form" class="desk-form">
       <label>API key <input id="api-key" name="api-key" type="password" autocomplete="off" /></label>
-      <label>Product <input id="product" name="product" required maxlength="200" /></label>
+      <label>Product <input id="product" name="product" required maxlength="200" placeholder="折叠伞 / folding umbrella" /></label>
+      <p class="desk-note">Type both names as "中文 / English" and each draft uses the one in the supplier's language.</p>
       <label>Quantity <input id="quantity" name="quantity" type="number" min="1" required /></label>
       <label>Target <input id="target" name="target" type="number" min="0" step="any" required /></label>
       <label>Ceiling <input id="ceiling" name="ceiling" type="number" min="0" step="any" required /></label>
@@ -32,7 +33,9 @@
       </label>
       <div class="desk-actions">
         <button type="submit">Open desk</button>
+        <button type="button" id="sample-deal">Fill a sample deal</button>
       </div>
+      <p id="sample-deal-note" class="desk-note" hidden></p>
       <p id="form-error" class="desk-error" role="alert"></p>
     </form>
 
@@ -89,7 +92,9 @@
         </label>
         <div class="desk-actions">
           <button type="submit">Add quote</button>
+          <button type="button" id="sample-message">Use a sample message</button>
         </div>
+        <p id="paste-sample-note" class="desk-note" hidden></p>
         <p id="paste-error" class="desk-error" role="alert"></p>
       </form>
     </section>

@@ -1,0 +1,112 @@
+"""The desk's sample deal and sample message: fictional, labelled, and able to drive a counter."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+SAMPLE = ROOT / "src" / "web" / "static" / "samples" / "desk_sample.json"
+KEY = "desk-sample-key"
+
+
+@pytest.fixture
+def desk_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRADEFLOW_DESK_DB", str(tmp_path / "desk.db"))
+    monkeypatch.setenv("TRADEFLOW_ENV", "sandbox")
+    monkeypatch.setenv("TRADEFLOW_API_KEY", KEY)
+    monkeypatch.setenv("DESK_N_SAMPLES", "200")
+    monkeypatch.setenv("DESK_N_GRID", "8")
+    for name in ("TRADEFLOW_LLM_API_KEY", "OPENAI_API_KEY", "NVIDIA_API_KEY", "DESK_SMTP_SEND"):
+        monkeypatch.delenv(name, raising=False)
+    from src.desk.store import reset_stores
+
+    reset_stores()
+    yield tmp_path
+    reset_stores()
+
+
+def _sample() -> dict:
+    return json.loads(SAMPLE.read_text(encoding="utf-8"))
+
+
+def test_sample_is_labelled_fictional_and_uses_a_reserved_domain():
+    data = _sample()
+    assert "fictional" in data["label"].lower() and "not a real quote" in data["label"].lower()
+    for _name, address in data["deal"]["suppliers"]:
+        assert address.endswith("@example.test")
+
+
+def test_sample_deal_passes_the_deal_schema():
+    from src.desk.routes import DealIn
+
+    deal = _sample()["deal"]
+    DealIn.model_validate({
+        "product": deal["product"],
+        "quantity": deal["quantity"],
+        "target_price": deal["target"],
+        "ceiling_price": deal["ceiling"],
+        "suppliers": [{"name": name, "address": address} for name, address in deal["suppliers"]],
+    })
+
+
+def test_sample_message_drives_a_counter_and_names_its_source(desk_env):
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    data = _sample()
+    deal = data["deal"]
+    client = TestClient(app)
+    headers = {"X-API-Key": KEY}
+    opened = client.post("/api/v1/desk/deals", headers=headers, json={
+        "product": deal["product"], "quantity": deal["quantity"],
+        "target_price": deal["target"], "ceiling_price": deal["ceiling"],
+        "suppliers": [{"name": n, "address": a, "channel": "email"} for n, a in deal["suppliers"]],
+    })
+    assert opened.status_code == 200, opened.text
+    deal_id = opened.json()["deal"]["id"]
+    supplier = opened.json()["suppliers"][0]["id"]
+    # The body the page sends for an unchanged sample message.
+    posted = client.post(f"/api/v1/desk/deals/{deal_id}/quotes", headers=headers, json={
+        "source": "paste", "raw_text": data["message"], "supplier_id": supplier,
+        "page_title": "TradeFlow sample message (fictional demo text)",
+    })
+    assert posted.status_code == 200, posted.text
+    event = posted.json()["event"]
+    assert event["provenance"]["page_title"] == "TradeFlow sample message (fictional demo text)"
+    assert event["status"] == "review"
+    assert event["parsed"]["unit_price"] is None
+    # A person confirms the supplier's own offer; the desk then issues a counter.
+    accepted = client.post(f"/api/v1/desk/deals/{deal_id}/review/{event['id']}", headers=headers, json={
+        "action": "accept", "supplier_id": supplier, "chosen_token": "27.80",
+    })
+    assert accepted.status_code == 200, accepted.text
+    card = next(row for row in accepted.json()["suppliers"] if row["id"] == supplier)
+    assert card["latest_quote"] == 27.8
+    assert card["counter"] is not None
+    assert card["excluded_from_decision"] is False
+
+
+def test_desk_page_wires_the_samples_without_numbers_in_code():
+    page = (ROOT / "src/web/templates/desk.html").read_text(encoding="utf-8")
+    script = (ROOT / "src/web/static/js/desk.js").read_text(encoding="utf-8")
+    assert 'id="sample-deal"' in page and 'id="sample-message"' in page
+    assert '"/static/samples/desk_sample.json"' in script
+    assert "payload.page_title = \"TradeFlow sample message (fictional demo text)\";" in script
+    assert "simulated" not in "TradeFlow sample message (fictional demo text)"
+    assert _sample()["message"] not in script
+
+
+def test_draft_uses_the_product_name_in_the_draft_language():
+    from src.desk.project import draft_body, product_for_language
+
+    both = "折叠伞 / folding umbrella"
+    assert product_for_language(both, "zh") == "折叠伞"
+    assert product_for_language(both, "en") == "folding umbrella"
+    assert product_for_language("folding umbrella", "zh") == "folding umbrella"
+    assert product_for_language("折叠伞／folding umbrella", "zh") == "折叠伞"
+    zh = draft_body(both, 23.52, 1000, "zh", "CNY")
+    assert "关于折叠伞" in zh and "folding" not in zh and "23.52" in zh
+    en = draft_body(both, 23.52, 1000, "en", "CNY")
+    assert "for folding umbrella we" in en and "折叠伞" not in en

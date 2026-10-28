@@ -489,17 +489,28 @@ SPAN_GROUP = 3
 # key leaves the rule prefill only.
 LLM_TIMEOUT_SECONDS = 20
 
+# Rationale: most paid model calls (Nebius Token Factory) one server process
+# makes per UTC day, across the desk reader, the dashboard reader and Stage-2.
+# A small balance has to last a two-week judging window; past the cap the desk
+# keeps working on the rule reader and says why. TRADEFLOW_LLM_DAILY_CALLS
+# overrides it (0 turns paid calls off).
+LLM_DAILY_CALL_CAP = 40
+
 # Rationale: default OpenAI-compatible base for the desk span extractor.
 # An unset URL uses this host. A call still requires an API key.
 EXTRACTOR_BASE_URL = "https://api.tokenfactory.nebius.com/v1"
 
 # Rationale: default chat model for the desk span extractor. It names evidence
-# spans and does not set a price. Temperature stays zero.
-EXTRACTOR_MODEL = "nvidia/Nemotron-3-Ultra-550b-a55b"
+# spans and does not set a price. Temperature stays zero. Super, not Ultra:
+# on 2026-10-28 the Ultra model's reasoning output was most of this account's
+# Token Factory bill (owner decision). TRADEFLOW_LLM_MODEL still selects Ultra
+# (nvidia/Nemotron-3-Ultra-550b-a55b) for a run that wants it.
+EXTRACTOR_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 
-# Rationale: second Nebius chat model. The desk calls it when the Ultra hop
-# times out, gets a server or rate-limit response, or returns a body that is
-# not a mentions object. It does not set a price.
+# Rationale: second Nebius hop. The desk calls it when the first hop times out,
+# gets a server or rate-limit response, or returns a body that is not a
+# mentions object. With the default first hop it is one retry of the same
+# model. It does not set a price.
 EXTRACTOR_FALLBACK_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 
 # Rationale: NVIDIA integrate base used only after Nebius itself fails.
@@ -603,6 +614,11 @@ MINOR_SCALE = 100
 # Rationale: largest extractor response, in bytes, that is parsed. A larger
 # body is dropped and the quote stays in human review.
 EXTRACTOR_MAX_BYTES = 65536
+
+# Rationale: most extractor rows kept on a quote for display. The desk shows
+# which spans the model labelled (class and verbatim text, never an amount);
+# a longer answer is cut so a hostile message cannot bloat the snapshot.
+DESK_TRACE_MAX_MENTIONS = 12
 
 # Rationale: maximum characters stored for one extractor evidence span or a
 # caller note. Longer text is rejected by the schema. It is not a price.

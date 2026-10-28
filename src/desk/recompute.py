@@ -21,7 +21,7 @@ from src.config.heuristics import (
 from src.desk.store import DeskStore
 from src.desk.headline import audit_line, confirmed_prices, saving_vs_best_first
 from src.desk.shadow import progress as shadow_progress
-from src.desk.decide import decide_supplier
+from src.desk.decide import decide_supplier, issued_offer, offer_modes
 from src.desk.money import quantise_offer
 from src.engine.decision import HEURISTIC_NOTE
 from src.engine.hazard_fit import NOTE as HAZARD_TRANSFER_NOTE
@@ -164,6 +164,10 @@ def _landed_consistent_rivals(
 
 def _hold_previous(row: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any]:
     if not previous:
+        return row
+    # A person switching between the default and the push-lower figure is a new
+    # choice, not a counter drifting upward; the previous figure is not held.
+    if str(previous.get("offer_mode") or "default") != str(row.get("offer_mode") or "default"):
         return row
     old_ids = list(previous.get("accepted_event_ids") or [])
     new_ids = list(row.get("accepted_event_ids") or [])
@@ -428,6 +432,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         if supplier_needs_keep(chain_entries, row["id"])
     }
     quoting -= needs_keep
+    modes = offer_modes(chain_entries)
     beliefs_state: dict[str, dict[str, Any]] = {}
     for row in suppliers:
         history = decision_events(row["id"])
@@ -601,6 +606,8 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "quote_confirmed": bool(usable),
             "counter_held": False,
             "needs_keep_confirmation": row["id"] in needs_keep,
+            "offer_mode": modes.get(row["id"], "default"),
+            "default_counter": None,
         }
         display = usable[-1] if usable else latest_any
         if display is not None and display.get("parsed", {}).get("unit_price") is not None:
@@ -643,10 +650,31 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             )
             card["blocked"] = blocked
             card["hazard"] = float(choice.incremental_hazard)
+            # hazard is at the default figure; hazard_upper is at the push-lower
+            # figure, which is what the desk labels it. (Before 2026-10-28 both
+            # held the default's value.)
             card["hazard_upper"] = float(choice.incremental_hazard)
+            if card["push_counter"] is not None:
+                from src.engine.hazard_fit import incremental_hazard as _push_hazard
+
+                card["hazard_upper"] = float(_push_hazard(
+                    own_quote, float(card["push_counter"]), 0.0, fit,
+                    intercept=decision_intercept, gap_coef=decision_gap,
+                ))
             card["hazard_figure"] = figure
             card["prior_driven"] = True
             card["decision_inputs"] = beliefs_state[row["id"]].get("decision_inputs") or {}
+            card["default_counter"] = counter
+            if card["offer_mode"] == "push" and counter is not None:
+                issued, how = issued_offer(choice, ceiling, own_quote, "push")
+                if how == "push_lower" and issued is not None:
+                    card["counter"] = issued
+                    card["counter_relation"] = "push_lower"
+                    card["hazard_figure"] = "push"
+                else:
+                    card["push_note"] = (card["push_note"] + " " if card["push_note"] else "") + (
+                        "Push-lower was chosen but is withheld, so the draft carries the default figure."
+                    )
             card = _hold_previous(card, previous_rows.get(row["id"]))
         cards.append(card)
 

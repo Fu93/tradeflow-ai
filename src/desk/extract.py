@@ -155,7 +155,12 @@ def output_token_limit(message: str) -> int:
 
 
 def _nebius_hops() -> list[dict[str, Any]]:
-    """Ultra, then Super, on the Nebius host. TRADEFLOW_LLM_MODEL overrides Ultra."""
+    """Two hops on the Nebius host: the default model (Super), then Super again.
+
+    ``TRADEFLOW_LLM_MODEL`` replaces the first hop (for example with Ultra). With
+    the default, the second hop is one retry of the same model after a timeout,
+    a 429, a 5xx, or a malformed body.
+    """
     base = endpoint()
     keys = ("TRADEFLOW_LLM_API_KEY", "OPENAI_API_KEY")
     return [
@@ -585,14 +590,23 @@ def extract_mentions(
 ) -> dict[str, Any]:
     """Call the measured chain when a Nebius key is set. ``transport`` is for tests.
 
-    Nebius Ultra, then Nebius Super. ``TRADEFLOW_LLM_MODEL`` overrides the Ultra
-    model. NVIDIA Super runs only after Nebius itself fails with a timeout, a
+    Nebius Super, then one Super retry. ``TRADEFLOW_LLM_MODEL`` replaces the first
+    hop's model. NVIDIA Super runs only after Nebius itself fails with a timeout, a
     connection error, HTTP 429, HTTP 5xx, or a malformed body, and only when
     ``NVIDIA_API_KEY`` is set. Any other 4xx does not open NVIDIA. The whole
     chain stops at the budget. Every hop is recorded.
     """
     if not configured() and transport is None:
         return {"mentions": [], "numeric_field_discarded": False, "configured": False}
+    if transport is None:
+        from src.engine.llm_config import take_model_call
+
+        if not take_model_call():
+            # Today's paid-call cap is spent: the rule reader carries on, and
+            # the quote says why it was not read by the model.
+            spent = _empty("extractor_daily_cap")
+            spent["attempts"] = []
+            return spent
     attempts: list[dict[str, Any]] = []
     allowance = (
         float(budget_seconds)

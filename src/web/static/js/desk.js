@@ -361,8 +361,10 @@
       }
       const half = supplier.sensitivity_half == null ? "withheld" : money(supplier.sensitivity_half, "CNY");
       const doubled = supplier.sensitivity_double == null ? "withheld" : money(supplier.sensitivity_double, "CNY");
-      const counter = supplier.counter == null ? "withheld" : money(supplier.counter, "CNY");
+      const defaultFigure = supplier.default_counter != null ? supplier.default_counter : supplier.counter;
+      const counter = defaultFigure == null ? "withheld" : money(defaultFigure, "CNY");
       const push = supplier.push_counter == null ? "withheld" : money(supplier.push_counter, "CNY");
+      const pushing = supplier.counter_relation === "push_lower";
       const relation = supplier.counter_relation === "at_ask"
         ? "This supplier is the cheapest confirmed quote, so the default is their ask."
         : supplier.counter_relation === "match_rival"
@@ -370,8 +372,40 @@
           : "";
       line(card, "Default counter: " + counter);
       if (relation) line(card, relation);
-      line(card, "Push lower: " + push);
+      line(card, "Push lower: " + push + " (the solver's price with the highest expected surplus inside your risk cap)");
       if (supplier.push_note) line(card, supplier.push_note);
+      if (supplier.counter != null) {
+        const carries = line(card, "The draft carries: " + money(supplier.counter, "CNY") +
+          (pushing ? " (push lower, chosen by you)" : " (the default)"));
+        carries.className = "desk-carries";
+        const choose = document.createElement("button");
+        choose.type = "button";
+        const next = supplier.offer_mode === "push" ? "default" : "push";
+        choose.textContent = next === "push" ? "Use push lower in the draft" : "Use the default in the draft";
+        choose.disabled = next === "push" && supplier.push_counter == null;
+        choose.addEventListener("click", async () => {
+          formError.textContent = "";
+          choose.disabled = true;
+          try {
+            const snapshot = await request(
+              "/api/v1/desk/deals/" + dealId + "/suppliers/" + supplier.id + "/offer-mode",
+              {
+                method: "POST",
+                headers: headers(true),
+                body: JSON.stringify({ mode: next, human_confirmed: true }),
+              }
+            );
+            show(snapshot);
+          } catch (err) {
+            formError.textContent = err.message;
+            choose.disabled = false;
+          }
+        });
+        const chooseRow = document.createElement("div");
+        chooseRow.className = "desk-actions";
+        chooseRow.appendChild(choose);
+        card.appendChild(chooseRow);
+      }
       line(card, "At half the prior strength: " + half);
       line(card, "At double the prior strength: " + doubled);
       line(card, "Walk-away hazard: " + hazardText(supplier));
@@ -456,6 +490,70 @@
     return match[1] + " " + match[2] + " UTC";
   }
 
+  // What the model did with a message: which model, how long, and the spans it
+  // labelled. Spans are verbatim supplier text; no amount comes from the model.
+  const SPAN_LABELS = {
+    own_unit_offer: "Supplier's offer",
+    rival_price: "Rival's price",
+    our_price_echo: "Your figure, echoed",
+    refusal: "Refusal",
+    question: "Question",
+    discount_delta: "Discount",
+    fee: "Fee",
+    deposit: "Deposit",
+    tier_table: "Tier table",
+    instruction: "Instruction (ignored)",
+    other: "Other",
+  };
+
+  function readerSummary(provenance) {
+    if (provenance.extractor_pending) return "The model is reading this message\u2026";
+    if (provenance.extractor_error === "extractor_daily_cap") {
+      return "Today's model budget on this server is spent. Read by the rule reader only.";
+    }
+    const attempts = provenance.extractor_attempts || [];
+    let used = null;
+    attempts.forEach((attempt) => { if (attempt && attempt.status === "ok") used = attempt; });
+    if (!attempts.length) return "Read by the rule reader only.";
+    if (!used) return "The model did not answer (" + String(attempts[attempts.length - 1].status || "failed") + "). Rule reader only.";
+    const seconds = Number(used.latency_s);
+    const took = Number.isFinite(seconds) ? " in " + seconds.toFixed(1) + " s" : "";
+    const where = used.provider === "nebius" ? "Nebius Token Factory" : String(used.provider || "");
+    const tries = attempts.length > 1 ? " after " + String(attempts.length - 1) + " failed attempt" + (attempts.length > 2 ? "s" : "") : "";
+    return "Read by " + String(used.model || "a model") + " on " + where + took + tries + ".";
+  }
+
+  function readerTrace(provenance) {
+    const wrap = document.createElement("div");
+    wrap.className = "desk-trace";
+    line(wrap, readerSummary(provenance || {})).className = "desk-trace-head";
+    const mentions = (provenance && provenance.extractor_mentions) || [];
+    if (mentions.length) {
+      const list = document.createElement("ul");
+      list.className = "desk-trace-spans";
+      mentions.forEach((mention) => {
+        const item = document.createElement("li");
+        item.dataset.spanClass = String(mention.class || "other");
+        const label = document.createElement("span");
+        label.className = "desk-trace-label";
+        let text = SPAN_LABELS[mention.class] || String(mention.class || "Other");
+        if (mention.is_question) text += " (question)";
+        if (mention.polarity === "negative") text += " (negative)";
+        label.textContent = text;
+        const span = document.createElement("q");
+        span.textContent = String(mention.span || "");
+        item.appendChild(label);
+        item.appendChild(span);
+        list.appendChild(item);
+      });
+      wrap.appendChild(list);
+    }
+    if (provenance && provenance.shadow_would_accept) {
+      line(wrap, "The rules and the model agree on the amount. You still confirm it.").className = "desk-trace-agree";
+    }
+    return wrap;
+  }
+
   function renderReview(items, suppliers) {
     const root = document.getElementById("review");
     clear(root);
@@ -473,6 +571,7 @@
       const pre = document.createElement("pre");
       pre.textContent = item.raw_text || "";
       block.appendChild(pre);
+      block.appendChild(readerTrace(item.provenance || {}));
       const provenance = item.provenance || {};
       const tokens = provenance.candidates && provenance.candidates.length
         ? provenance.candidates
@@ -605,6 +704,7 @@
       const pre = document.createElement("pre");
       pre.textContent = item.raw_text || "";
       block.appendChild(pre);
+      block.appendChild(readerTrace(item.provenance || {}));
       root.appendChild(block);
     });
   }
@@ -704,21 +804,79 @@
     if (current) select.value = current;
   }
 
+  // Sample deal and sample message: fictional, from a static file, and a sample
+  // message that is sent unchanged is stored as simulated, never as live.
+  let sample = null;
+  async function loadSample() {
+    if (sample) return sample;
+    const res = await fetch("/static/samples/desk_sample.json");
+    if (!res.ok) throw new Error("The sample could not be loaded.");
+    sample = await res.json();
+    return sample;
+  }
+
+  function showNote(id, text) {
+    const note = document.getElementById(id);
+    if (!note) return;
+    note.textContent = text;
+    note.hidden = !text;
+  }
+
+  const sampleDeal = document.getElementById("sample-deal");
+  if (sampleDeal) sampleDeal.addEventListener("click", async () => {
+    try {
+      const data = await loadSample();
+      const deal = data.deal || {};
+      document.getElementById("product").value = String(deal.product || "");
+      document.getElementById("quantity").value = String(deal.quantity || "");
+      document.getElementById("target").value = String(deal.target || "");
+      document.getElementById("ceiling").value = String(deal.ceiling || "");
+      document.getElementById("suppliers").value = (deal.suppliers || [])
+        .map((row) => String(row[0]) + ", " + String(row[1])).join("\n");
+      showNote("sample-deal-note", String(data.label || "") + " Enter the API key, then Open desk.");
+    } catch (err) {
+      formError.textContent = err.message;
+    }
+  });
+
+  const sampleMessage = document.getElementById("sample-message");
+  if (sampleMessage) sampleMessage.addEventListener("click", async () => {
+    try {
+      const data = await loadSample();
+      const area = document.getElementById("paste-text");
+      area.value = String(data.message || "");
+      area.dataset.sample = area.value;
+      showNote("paste-sample-note", "Fictional sample text. The desk treats it like a pasted quote so you can see the counter; the record says it came from this button.");
+    } catch (err) {
+      document.getElementById("paste-error").textContent = err.message;
+    }
+  });
+
   document.getElementById("paste-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const error = document.getElementById("paste-error");
     error.textContent = "";
+    const area = document.getElementById("paste-text");
+    const isSample = !!area.dataset.sample && area.value === area.dataset.sample;
+    const payload = {
+      source: "paste",
+      raw_text: area.value,
+      supplier_id: document.getElementById("paste-supplier").value,
+    };
+    if (isSample) {
+      // Treated like any paste so the desk computes a counter. The record names
+      // its source; the deal's suppliers are fictional example.test addresses.
+      payload.page_title = "TradeFlow sample message (fictional demo text)";
+    }
     try {
       const result = await request("/api/v1/desk/deals/" + dealId + "/quotes", {
         method: "POST",
         headers: headers(true),
-        body: JSON.stringify({
-          source: "paste",
-          raw_text: document.getElementById("paste-text").value,
-          supplier_id: document.getElementById("paste-supplier").value,
-        }),
+        body: JSON.stringify(payload),
       });
-      document.getElementById("paste-text").value = "";
+      area.value = "";
+      delete area.dataset.sample;
+      showNote("paste-sample-note", "");
       if (result.snapshot) show(result.snapshot);
     } catch (err) {
       error.textContent = err.message;

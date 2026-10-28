@@ -758,15 +758,20 @@
       "category": "n",
       "justification": "Timeout, in seconds, for one optional extractor call. A missing key leaves the rule prefill only. No key is stored in code."
     },
+    "LLM_DAILY_CALL_CAP": {
+      "value": 40,
+      "category": "d",
+      "justification": "Most paid model calls one server process makes per UTC day (desk reader, dashboard reader, Stage-2). A small Token Factory balance must last the judging window; past the cap the rule reader carries on and the reason is shown. TRADEFLOW_LLM_DAILY_CALLS overrides it; 0 turns paid calls off."
+    },
     "EXTRACTOR_BASE_URL": {
       "value": "https://api.tokenfactory.nebius.com/v1",
       "category": "d",
       "justification": "Default OpenAI-compatible base for the desk span extractor on Nebius Token Factory. An unset URL uses this. A key is still required before any call."
     },
     "EXTRACTOR_MODEL": {
-      "value": "nvidia/Nemotron-3-Ultra-550b-a55b",
+      "value": "nvidia/nemotron-3-super-120b-a12b",
       "category": "d",
-      "justification": "Default chat model for the desk span extractor. It names evidence spans and does not set a price. Temperature stays zero."
+      "justification": "Default chat model for the desk span extractor. It names evidence spans and does not set a price. Temperature stays zero. Super, not Ultra, since 2026-10-28 for cost (owner decision); TRADEFLOW_LLM_MODEL selects Ultra."
     },
     "EXTRACTOR_FALLBACK_MODEL": {
       "value": "nvidia/nemotron-3-super-120b-a12b",
@@ -896,6 +901,11 @@
       "value": 65536,
       "category": "n",
       "justification": "Largest extractor response, in bytes, that is parsed. A larger body is dropped and the quote stays in human review."
+    },
+    "DESK_TRACE_MAX_MENTIONS": {
+      "value": 12,
+      "category": "n",
+      "justification": "Most extractor rows kept on a quote for display (class and verbatim span, never an amount). A longer answer is cut so a hostile message cannot bloat the snapshot."
     },
     "FIELD_MAX_CHARS": {
       "value": 500,

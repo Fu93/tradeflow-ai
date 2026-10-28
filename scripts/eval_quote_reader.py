@@ -244,7 +244,10 @@ def markdown(report: dict[str, Any]) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--offline", action="store_true", help="score the rules only; no network")
-    parser.add_argument("--models", nargs="*", default=[EXTRACTOR_MODEL, EXTRACTOR_FALLBACK_MODEL])
+    parser.add_argument(
+        "--models", nargs="*", default=list(dict.fromkeys([EXTRACTOR_MODEL, EXTRACTOR_FALLBACK_MODEL])),
+        help="model ids to score (default: the desk's models, once each)",
+    )
     parser.add_argument("--base", default=EXTRACTOR_BASE_URL)
     parser.add_argument("--target", type=float, default=30)
     parser.add_argument("--ceiling", type=float, default=40)

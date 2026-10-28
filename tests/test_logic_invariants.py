@@ -336,11 +336,16 @@ class TestExtensionDoesNotAutoSend(unittest.TestCase):
         for name in ("content.js", "sidepanel.js"):
             raw = (ROOT / "extension" / name).read_text(encoding="utf-8")
             live = _strip_js_comments(raw)
-            # The comment stripper also cuts http:// URLs, so the path is
-            # checked on the raw file. The live source must not embed the
-            # threshold; both scripts read it from the heuristics endpoint.
-            self.assertIn("/api/v1/heuristics", raw)
+            # The live source must not embed the threshold; both scripts read it
+            # from the heuristics endpoint. The side panel calls it directly; the
+            # page HUD asks the service worker, which adds the panel's server and
+            # key (a direct page fetch had neither and got 401 on a keyed server).
             self.assertNotIn(f"{model.BREAKDOWN_TRIP_THRESHOLD:.2f}", live)
+        sidepanel_raw = (ROOT / "extension" / "sidepanel.js").read_text(encoding="utf-8")
+        self.assertIn("/api/v1/heuristics", sidepanel_raw)
+        self.assertIn('type: "GET_HEURISTICS"', content)
+        self.assertIn('type === "GET_HEURISTICS"', background)
+        self.assertIn("/api/v1/heuristics", background)
 
 
 class TestRoundPathHonesty(unittest.TestCase):
