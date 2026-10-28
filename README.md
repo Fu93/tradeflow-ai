@@ -11,10 +11,18 @@ Links: [Devpost text, judge steps and demo script](docs/DEVPOST_SUBMISSION.md) Â
 **How the three services are used.**
 
 - **Nebius Token Factory** is the inference API (`api.tokenfactory.nebius.com/v1`) that serves the quote reader.
-- **NVIDIA Nemotron** (Ultra, then Super, both on Token Factory) reads a supplier's free-text message and names the evidence spans in it: an offer, a fee, a deposit, a rival's price.
+- **NVIDIA Nemotron** (Super by default, with one retry; Ultra optional; all on Token Factory) reads a supplier's free-text message and names the evidence spans in it: an offer, a fee, a deposit, a rival's price. The desk shows those spans and the model that read them.
 - **Tavily** supplies a reference-only "Web evidence" card with cited public pages about a product or a supplier.
 
 Code paths and tests are in [How this project uses Nebius, NVIDIA and Tavily](#how-this-project-uses-nebius-nvidia-and-tavily) below.
+
+**Try it in two minutes** on the demo's `/desk` page:
+
+1. **Fill a sample deal**, enter the API key, **Open desk**. Four fictional suppliers.
+2. **Use a sample message**, then **Add quote**. The waiting item shows which Nemotron model read it and the spans it labelled.
+3. Pick the figure and **Accept**. Every confirmed quote recomputes all suppliers: ranking, default counter, push-lower counter, walk-away hazard.
+4. **Use push lower in the draft** on a card, and **Check supplier on the web** (Tavily).
+5. With the Chrome extension, tick **Read new supplier messages automatically**: new supplier messages on an open chat reach the desk by themselves.
 
 **What the language model may and may not do.**
 
@@ -41,18 +49,30 @@ The hackathon text and demo script are in [docs/DEVPOST_SUBMISSION.md](docs/DEVP
 | Piece | Role at runtime | Code | Tests |
 |---|---|---|---|
 | **Nebius Token Factory** (`api.tokenfactory.nebius.com/v1`) | The OpenAI-compatible inference API that serves the quote reader | `src/desk/extract.py`, constants with rationales in `src/config/heuristics.py` | `tests/steps/test_extractor_failover.py`, `tests/steps/test_holdout_reader.py` |
-| **NVIDIA Nemotron** (open models) | Reads a supplier message and names evidence spans with a class. Hop 1 is `nvidia/Nemotron-3-Ultra-550b-a55b`, hop 2 is `nvidia/nemotron-3-super-120b-a12b`, both on Token Factory. A third hop on NVIDIA's hosted endpoint is **optional and off in the demo**: it opens only after Nebius itself fails (timeout, connection error, HTTP 429, HTTP 5xx, or a malformed body) and only when `NVIDIA_API_KEY` is set. Each hop has its own timeout and the chain stops at a fixed budget | same | same |
+| **NVIDIA Nemotron** (open models) | Reads a supplier message and names evidence spans with a class. The default is `nvidia/nemotron-3-super-120b-a12b` on Token Factory, with one retry of the same model; `TRADEFLOW_LLM_MODEL` selects another, such as `nvidia/Nemotron-3-Ultra-550b-a55b`. The dashboard's live reader (`src/engine/quote_read.py`) uses the same key and the Super model. Paid calls are capped per UTC day (`TRADEFLOW_LLM_DAILY_CALLS`, default from `LLM_DAILY_CALL_CAP`). A third hop on NVIDIA's hosted endpoint is **optional and off in the demo**: it opens only after Nebius itself fails (timeout, connection error, HTTP 429, HTTP 5xx, or a malformed body) and only when `NVIDIA_API_KEY` is set. Each hop has its own timeout and the chain stops at a fixed budget | same | same |
 | **Tavily Search API** | The "Web evidence" card on the dashboard: cited public pages about a product's wholesale prices and MOQ (`Market prices`) or about a supplier's reviews and complaints (`Check supplier`) | `src/market/web_evidence.py`, `GET /api/v1/market/evidence`, `src/web/static/js/web_evidence.js` | `tests/test_web_evidence.py` |
 
 **How the model and the search are kept away from the price.** A price field in the model's answer is discarded. The amount is read by deterministic code from a span that occurs verbatim in the message, a second rule reader must agree before the shadow gate would accept anything, and a person confirms every number before it enters a decision. Search results are never read by a decision module: nothing in `src/engine`, `src/desk` or `src/legacy` imports the Tavily module, and `tests/test_web_evidence.py` fails if one does. Every Tavily payload is stamped `reference_only` and `influences_solver: false`, snippets are cleaned and shown as text only, and a search outage returns an explicit "unavailable" reason instead of an error. Lookups are cached and rate-limited per caller and per process to protect the search credits.
 
-**Environment.** `TRADEFLOW_LLM_API_KEY` (the Nebius Token Factory key), `NVIDIA_API_KEY` (optional third hop; off in the demo), `TAVILY_API_KEY`. With all three unset the app still runs offline: the rule reader prefills, nothing is accepted automatically, and the Web evidence card says it is not configured. `TRADEFLOW_WEB_EVIDENCE_OFFLINE=1` switches the card off even when a key is set.
+**Environment.** `TRADEFLOW_LLM_API_KEY` (the Nebius Token Factory key), `TRADEFLOW_LLM_MODEL` (optional model override), `TRADEFLOW_LLM_DAILY_CALLS` (paid calls per day; `0` turns them off), `NVIDIA_API_KEY` (optional third hop; off in the demo), `TAVILY_API_KEY`. With all three unset the app still runs offline: the rule reader prefills, nothing is accepted automatically, and the Web evidence card says it is not configured. `TRADEFLOW_WEB_EVIDENCE_OFFLINE=1` switches the card off even when a key is set.
 
-**Not claimed.** No accuracy or latency measurement of the Nemotron chain is committed under `results/`; the committed latency log is for the AMD endpoint. The Tavily card shows what public pages say. It does not verify a supplier and it does not validate a price.
+**Not claimed.** No accuracy or latency measurement of the Nemotron chain is committed yet. The held-out evaluation, its protocol and its rules-only baseline are in [docs/QUOTE_READER_EVAL.md](docs/QUOTE_READER_EVAL.md); the Nemotron run is pending. The committed latency log is for the AMD endpoint. The Tavily card shows what public pages say. It does not verify a supplier and it does not validate a price.
 
 ## What changed during the submission period
 
-The first commit in this repository is dated 13 October 2026, after the submission period opened on 26 August. Through 26 October there were 124 commits, summarised round by round in [STATUS.md](STATUS.md): a keyed audit chain with signed human approval, named operator keys, deployment hardening, parser fuzzing with a ReDoS fix, and the split of the app layer. On 28 October one isolated feature was added for this hackathon: the Tavily web-evidence card.
+The first commit in this repository is dated 13 October 2026, after the submission period opened on 26 August. Through 26 October there were 124 commits, summarised round by round in [STATUS.md](STATUS.md): a keyed audit chain with signed human approval, named operator keys, deployment hardening, parser fuzzing with a ReDoS fix, and the split of the app layer. On 28 October, for this hackathon:
+
+- the Tavily web-evidence card;
+- the dashboard reader on Nemotron and Token Factory, with Super as the default model;
+- a held-out quote-reader evaluation;
+- the desk showing which model read each quote and the spans it labelled;
+- the buyer's choice of the push-lower counter for a draft;
+- a sample deal and a sample message;
+- drafts that use the product name in the supplier's language;
+- a daily cap on paid model calls;
+- in the Chrome extension, a server choice, review inside the side panel, one key for every call, and the automatic read of new supplier messages.
+
+The pull requests are #18 to #29.
 
 **AI assistance.** The project's design, direction and trade-offs are the author's; AI coding tools (Cursor, Codebuff, Claude) assisted with writing code.
 <!-- TODO(owner): confirm that you reviewed the decision logic and tests before keeping the sentence "all decision logic and tests were reviewed by the author" -->
