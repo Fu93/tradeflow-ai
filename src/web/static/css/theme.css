@@ -1605,3 +1605,17 @@ html[data-theme="dark"] .masthead { background: rgba(28, 23, 18, 0.92); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* The product's front door: the live supplier desk. This page is the lab. */
+.masthead-desk {
+  justify-self: start;
+  padding: 6px 12px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.masthead-desk:hover, .masthead-desk:focus-visible { text-decoration: underline; }
+.masthead { flex-wrap: wrap; row-gap: 8px; }
