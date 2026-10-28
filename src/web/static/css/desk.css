@@ -31,6 +31,10 @@
 }
 .desk-error { color: var(--seal, #9a3412); min-height: 1.2em; }
 .desk-note { margin: 0; font-size: 0.9em; color: var(--ink-soft, #3e463f); }
+.desk-deal-bar { align-items: center; justify-content: space-between; }
+.desk-deal-bar p { margin: 0; overflow-wrap: anywhere; }
+.desk-workings { margin: 6px 0; font-size: 0.9em; }
+.desk-workings summary { cursor: pointer; color: var(--steel, #1e3a4c); }
 .desk-model-hint { margin: 0.25rem 0; font-size: 0.9em; }
 .desk-model-hint.desk-disagree { color: #8a3b00; font-weight: 600; }
 .desk-actions button[aria-pressed="true"] {

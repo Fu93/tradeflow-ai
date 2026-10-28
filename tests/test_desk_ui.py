@@ -137,6 +137,11 @@ def test_desk_page_updates_when_mail_arrives():
                 arg=previous,
             )
             page.get_by_text("cheapest confirmed quote").first.wait_for(timeout=10000)
+            # The model's working is folded away; a person opens it, and it stays
+            # open across the redraw on every poll.
+            page.locator(".desk-card", has_text="14.80 CNY").locator(
+                "summary", has_text="How these figures were worked out"
+            ).click()
             page.get_by_text("labelled policy").first.wait_for(timeout=10000)
             page.get_by_text("unconfirmed numbers used in decisions: 0").first.wait_for(timeout=10000)
             card = page.locator(".desk-card", has_text="14.80 CNY")

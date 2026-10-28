@@ -1,6 +1,8 @@
 (function () {
   const POLL_MS = 2000;
   const reviewChoice = new Map();
+  // Supplier cards whose "How these figures were worked out" section is open.
+  const workingsOpen = new Set();
   // Web evidence (Tavily) per supplier. The desk redraws every card on each poll, so a
   // result lives here, keyed by supplier id, and is painted into whichever card is on
   // screen. It is reference text: the counter is computed on the server from confirmed
@@ -164,6 +166,20 @@
     } catch (err) {
       formError.textContent = err.message;
     }
+  });
+
+  // Leave this deal (it stays in the desk database) and show the form again.
+  document.getElementById("new-deal").addEventListener("click", () => {
+    if (timer) window.clearInterval(timer);
+    timer = 0;
+    dealId = "";
+    sessionStorage.removeItem("tfDeskDeal");
+    reviewChoice.clear();
+    workingsOpen.clear();
+    board.hidden = true;
+    formError.textContent = "";
+    form.hidden = false;
+    form.scrollIntoView({ block: "start" });
   });
 
   function start() {
@@ -343,6 +359,32 @@
     });
   }
 
+  // Minimum order and lead time, with the words they came from. Shown only:
+  // they never rank or price. An MOQ above the order is flagged.
+  function termsLines(card, supplier) {
+    const quoted = (spans) => spans.map((span) => "\u201c" + span + "\u201d").join(" / ");
+    const moq = supplier.supplier_moq;
+    if (moq && moq.status === "conflict") {
+      line(card, "Minimum order: the message gives more than one (" + quoted(moq.spans || []) + ").").className =
+        "desk-validity desk-warn";
+    } else if (moq) {
+      const amount = Number(moq.quantity).toLocaleString();
+      const text = supplier.moq_above_order
+        ? "Minimum order " + amount + " (" + quoted([moq.span]) + ") is above your order. It is still ranked."
+        : "Minimum order: " + amount + " (" + quoted([moq.span]) + ").";
+      line(card, text).className = supplier.moq_above_order ? "desk-validity desk-warn" : "desk-validity";
+    }
+    const lead = supplier.supplier_lead_time;
+    if (lead && lead.status === "conflict") {
+      line(card, "Lead time: the message gives more than one (" + quoted(lead.spans || []) + ").").className =
+        "desk-validity desk-warn";
+    } else if (lead && lead.status === "working_days") {
+      line(card, "Lead time in working days: " + quoted([lead.span]) + ".").className = "desk-validity";
+    } else if (lead) {
+      line(card, "Lead time: " + lead.days + " days (" + quoted([lead.span]) + ").").className = "desk-validity";
+    }
+  }
+
   function renderCards(suppliers) {
     const root = document.getElementById("cards");
     clear(root);
@@ -362,24 +404,24 @@
       const quote = supplier.latest_quote == null
         ? "no quote"
         : money(supplier.latest_quote, supplier.currency || "CNY");
-      line(card, "Record: " + (supplier.origin || "live"));
+      const origin = supplier.origin || "live";
+      // A live record is the normal case; only say so when it is not.
+      if (origin !== "live") line(card, "Record: " + origin);
       line(card, "Latest quote: " + quote);
       if (supplier.latest_quote != null) {
         const validity = validityText(supplier, new Date());
         const validityLine = line(card, validity.text);
         validityLine.className = validity.warn ? "desk-validity desk-warn" : "desk-validity";
+        termsLines(card, supplier);
       }
       if (supplier.quote_confirmed === false) {
         line(card, "This quote is not confirmed.");
       }
-      const landed = supplier.landed_status === "complete" && supplier.landed_cost != null
-        ? money(supplier.landed_cost, "CNY")
-        : "no data";
-      line(card, "Landed cost: " + landed);
+      if (supplier.landed_status === "complete" && supplier.landed_cost != null) {
+        line(card, "Landed cost: " + money(supplier.landed_cost, "CNY"));
+      }
       const priorMean = supplier.d_prior_mean == null ? "labelled policy" : String(supplier.d_prior_mean);
       const priorStrength = supplier.d_prior_strength == null ? "labelled policy" : String(supplier.d_prior_strength);
-      line(card, "D prior (user policy): mean " + priorMean + ", strength " + priorStrength);
-      line(card, "Reserve: " + (supplier.reserve_note || supplier.belief_label || "no data"));
       if (supplier.needs_keep_confirmation) {
         line(card, "This supplier was not on the chain before migration. Confirm to keep them.");
         const keptAddress = document.createElement("input");
@@ -454,9 +496,25 @@
         chooseRow.appendChild(choose);
         card.appendChild(chooseRow);
       }
-      line(card, "At half the prior strength: " + half);
-      line(card, "At double the prior strength: " + doubled);
       line(card, "Walk-away hazard: " + hazardText(supplier));
+      // The model's working, for whoever wants it. Closed by default; stays
+      // open across the redraw on every poll once a person opens it.
+      const workings = document.createElement("details");
+      workings.className = "desk-workings";
+      workings.open = workingsOpen.has(supplier.id);
+      workings.addEventListener("toggle", () => {
+        if (workings.open) workingsOpen.add(supplier.id);
+        else workingsOpen.delete(supplier.id);
+      });
+      const summary = document.createElement("summary");
+      summary.textContent = "How these figures were worked out";
+      workings.appendChild(summary);
+      if (origin === "live") line(workings, "Record: live");
+      line(workings, "D prior (user policy): mean " + priorMean + ", strength " + priorStrength);
+      line(workings, "Reserve: " + (supplier.reserve_note || supplier.belief_label || "no data"));
+      line(workings, "At half the prior strength: " + half);
+      line(workings, "At double the prior strength: " + doubled);
+      card.appendChild(workings);
       if (supplier.excluded_from_decision) {
         line(card, "Excluded from the decision until you include unverified quotes.");
       }
