@@ -10,7 +10,7 @@ Deadline: **Friday 30 October 2026, 17:00 London** (10:00 Pacific). Aim to submi
 | Track | Best Apps and Agents |
 | Public repository with an open-source license visible in the About panel | MIT (`LICENSE`). Confirm the About panel on GitHub shows it. |
 | README with setup and how NVIDIA models and Token Factory were used | The first sections of [README.md](../README.md) |
-| Working demo URL | **To do.** Set the keys on the Render service, then paste the URL. |
+| Working demo URL | Done: <https://tradeflow-ai-demo.onrender.com>. `/health` returned 200 and one single live check was made on 2026-10-28 (see "Single live check" below). |
 | Public YouTube video, 3 minutes or less, no unlicensed trademarks or copyrighted music | **To do.** Script below. Leave AMD and lablab logos out of every frame. |
 | Text description | Below |
 | Feedback on the Nebius and NVIDIA tools | [NEBIUS_NVIDIA_FEEDBACK.md](NEBIUS_NVIDIA_FEEDBACK.md). Edit it against your own runs first. |
@@ -37,11 +37,17 @@ The model reads the quote. The math prices the counter. You press send.
 
 **Honest limits.** No factory has closed a deal through this prototype. The walk-away hazard is a transfer from an eBay Best Offer fit, not a measured factory rate. **Not yet proven:** accuracy of the quote reader, latency over more than a single call, and the Super failover hop. No accuracy or latency benchmark of the Nemotron chain is committed, and none is claimed here. The Tavily card shows what public pages say; it does not verify a supplier.
 
-**Single live check (2026-10-28, about 12:17 London time, UTC).** One check each, on the live demo (<https://tradeflow-ai-demo.onrender.com>) running master commit `5c0321830e5cadb7a4571fbe9ca46fe510017895`. This is one call each, not a benchmark.
+**Single live check (2026-10-28, about 12:17 London time, UTC).** One check each, on the live demo (<https://tradeflow-ai-demo.onrender.com>) running master commit `5c0321830e5cadb7a4571fbe9ca46fe510017895`. This is one call each, not a benchmark. The Token Factory call ran Nemotron-3-Ultra because that was the default model of master commit `5c03218` at the time; the model can be selected with `TRADEFLOW_LLM_MODEL`.
 
 - *Nebius Token Factory:* one sample quote (fictional `example.test` suppliers) was read. The demo's recorded extractor attempt shows provider `nebius`, model `nvidia/Nemotron-3-Ultra-550b-a55b`, status `ok`, latency 1.83 s.
 - *Tavily:* `GET /api/v1/market/evidence?kind=market&product=...` returned HTTP 200 with status ok and 5 results in about 2.3 s.
 - *Not measured:* token usage; the Super failover hop was not exercised; no accuracy numbers from this run; the quote-reader eval (`scripts/eval_quote_reader.py`) is still pending.
+
+<!-- TODO(owner): edits to make AFTER PR #22 (default model -> Super) is merged:
+(a) In "Single live check", say: "The measured run used Ultra, the default at that time; the default has since been changed to Super, and Ultra can be selected with TRADEFLOW_LLM_MODEL."
+(b) In the "Not measured" list, change "the Super failover hop was not exercised" to "the Super default was not exercised live yet". Also update the "Not yet proven" wording in "Honest limits" ("the Super failover hop") the same way.
+Do not make these edits before #22 is merged. -->
+<!-- TODO(owner): edit to make AFTER PR #26 (daily cap on paid model calls) is merged, checked against the #26 diff: state the cap honestly. In #26, TRADEFLOW_LLM_DAILY_CALLS sets the number of paid Token Factory model calls per UTC day for the server process (default 40, from LLM_DAILY_CALL_CAP; 0 turns paid calls off). Once the cap is spent, the desk keeps working on the rule reader and shows a visible notice ("today's model budget on this server is spent"). The used/cap counter is in /health under llm.model_calls_today. Do not state this before #26 is merged. -->
 
 **What was updated during the submission period.** The first commit in this repository is dated 13 October 2026, after the submission period opened on 26 August, so all of the work falls inside the period. The repository began as an entry for the AMD Developer Hackathon ACT III, which has concluded; no lablab submission record for this project has been located and no prize or placement is claimed. Through 26 October there were 124 commits (a keyed audit chain with signed human approval, deployment hardening, parser fuzzing, the split of the app layer; summarised in [STATUS.md](../STATUS.md)). For this hackathon, the Nemotron quote reader on Nebius Token Factory (`src/desk/extract.py`) and the Tavily web-evidence card (added on 28 October) are the pieces to judge; the README leads with them and keeps the earlier AMD material in a labelled section. Details: README, "What changed during the submission period".
 
