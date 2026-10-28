@@ -20,18 +20,25 @@ chrome.storage?.local?.get(["tfApiBase"], (stored) => {
 });
 
 chrome.storage?.onChanged?.addListener((changes, area) => {
-  if (area !== "local" || !changes.tfApiBase) return;
-  const next = String(changes.tfApiBase.newValue || "").trim();
-  API_BASE_URL = next ? next.replace(/\/+$/, "") : API_BASE_URL_DEFAULT;
+  if (area !== "local") return;
+  if (changes.tfApiBase) {
+    const next = String(changes.tfApiBase.newValue || "").trim();
+    API_BASE_URL = next ? next.replace(/\/+$/, "") : API_BASE_URL_DEFAULT;
+  }
+  if (changes.tfApiKey) TF_API_KEY = String(changes.tfApiKey.newValue || "").trim();
 });
 
 // ---------------------------------------------------------------------------
 // Security: outbound auth (H9)
 // ---------------------------------------------------------------------------
-// Copilot routes stay quiet until a key is configured in this file. The live
-// desk does not use that constant: its key is typed into the desk tab and
-// stored as tfApiKey.
-const TF_API_KEY = "";
+// One key for every route: the key typed into the Live desk tab, stored as
+// tfApiKey in chrome.storage.local. Before 2026-10-28 the copilot routes read
+// a constant that was always empty, so a server with TRADEFLOW_API_KEY set
+// (the hosted demo, or any production run) refused every copilot session.
+let TF_API_KEY = "";
+chrome.storage?.local?.get(["tfApiKey"], (stored) => {
+  TF_API_KEY = String((stored && stored.tfApiKey) || "").trim();
+});
 const TF_WEBHOOK_TOKEN = "";
 
 function apiKeyHeader() {
@@ -587,6 +594,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (type === "IMPORT_DESK_QUOTE") {
     importLatestVisible(message).then(sendResponse);
+    return true;
+  }
+
+  // The page HUD asks here, so the call carries the panel's server and key.
+  if (type === "GET_HEURISTICS") {
+    fetch(`${API_BASE_URL}/api/v1/heuristics`, { headers: apiKeyHeader() })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => sendResponse({ ok: !!data, data: data || null }))
+      .catch(() => sendResponse({ ok: false, data: null }));
     return true;
   }
 });

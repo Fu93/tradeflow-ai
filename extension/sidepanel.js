@@ -43,7 +43,21 @@ async function loadHeuristics() {
 // ---------------------------------------------------------------------------
 // Security helpers (H3): outbound auth + HTML escaping.
 // ---------------------------------------------------------------------------
-const TF_API_KEY = localStorage.getItem("tfApiKey") || "";
+// The same key as the Live desk tab (chrome.storage.local tfApiKey). The old
+// page-local copy is read only as a fallback for a panel opened before then.
+let TF_API_KEY = "";
+try { TF_API_KEY = localStorage.getItem("tfApiKey") || ""; } catch (err) { TF_API_KEY = ""; }
+try {
+  chrome.storage.local.get(["tfApiKey"], (stored) => {
+    const key = String((stored && stored.tfApiKey) || "").trim();
+    if (key) TF_API_KEY = key;
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.tfApiKey) TF_API_KEY = String(changes.tfApiKey.newValue || "").trim();
+  });
+} catch (err) {
+  /* outside the extension: keep the fallback */
+}
 
 function tfAuthHeaders() {
   const headers = {};

@@ -1166,14 +1166,14 @@
   let tripThreshold = null;
 
   async function loadHeuristics() {
+    // Through the service worker, so the call uses the server and API key
+    // chosen in the side panel. A direct fetch from the page had neither and
+    // was refused (401) by any server with TRADEFLOW_API_KEY set.
     try {
-      // [FIX 2026-10-25] IPv4 loopback — `localhost` can resolve to ::1 first
-      // on Windows while the desk server binds IPv4 only.
-      const res = await fetch("http://127.0.0.1:8000/api/v1/heuristics");
-      if (!res.ok) return;
-      const data = await res.json();
-      const n = Number(data.breakdown_trip_threshold);
-      if (Number.isFinite(n)) tripThreshold = n;
+      const reply = await chrome.runtime.sendMessage({ type: "GET_HEURISTICS" });
+      const data = reply && reply.ok ? reply.data : null;
+      const n = Number(data && data.breakdown_trip_threshold);
+      tripThreshold = Number.isFinite(n) ? n : null;
     } catch (err) {
       tripThreshold = null;
     }
