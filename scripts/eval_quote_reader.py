@@ -61,6 +61,9 @@ OUT = ROOT / "results" / "quote_reader_eval.json"
 CURRENCY = "CNY"
 KEYS = ("TRADEFLOW_LLM_API_KEY", "OPENAI_API_KEY")
 OUTCOMES = ("correct", "wrong", "missed", "held")
+# Held-out items the reader prompt was revised against on 2026-10-28 (the demo's
+# sample message is close to them). They stay in the set and are also scored apart.
+EXPOSED = ("zh_rival_then_own", "en_rival_then_own")
 
 Transport = Callable[[dict[str, Any]], Any]
 
@@ -220,8 +223,15 @@ def evaluate(
             "completion_tokens_total": sum(tokens_out) if tokens_out else None,
             "numeric_field_discarded": sum(1 for item in scored if item["numeric_field_discarded"]),
         }
-        readers["gate:" + model] = {"tally": tally([item["gate_outcome"] for item in scored])}
+        readers[model]["tally_clean"] = tally(
+            [item["alone_outcome"] for item in scored if item["id"] not in EXPOSED]
+        )
+        readers["gate:" + model] = {
+            "tally": tally([item["gate_outcome"] for item in scored]),
+            "tally_clean": tally([item["gate_outcome"] for item in scored if item["id"] not in EXPOSED]),
+        }
     return {
+        "exposed": [row["id"] for row in rows if row["id"] in EXPOSED],
         "rows": len(rows),
         "labelled_offers": sum(1 for row in rows if row["own_offer"] is not None),
         "bounds": {"target": target, "ceiling": ceiling, "low": low, "high": high},
@@ -238,6 +248,12 @@ def markdown(report: dict[str, Any]) -> str:
     for name, block in report["readers"].items():
         t = block["tally"]
         lines.append(f"| {name} | {t['correct']} | {t['wrong']} | {t['missed']} | {t['held']} |")
+        clean = block.get("tally_clean")
+        if clean:
+            lines.append(
+                f"| {name} (without the {len(report.get('exposed') or [])} exposed items) | {clean['correct']} | "
+                f"{clean['wrong']} | {clean['missed']} | {clean['held']} |"
+            )
     return "\n".join(lines)
 
 
