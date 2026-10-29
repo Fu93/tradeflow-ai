@@ -124,13 +124,12 @@ def test_the_typed_bind_checks_the_message_the_words_and_the_amount():
     assert not _bind(MESSAGE, token_review, 28.5, digest)
 
 
-def test_desk_offers_a_typed_price_and_keeps_it_across_polls():
+def test_desk_wires_typed_price_to_the_review_request():
     script = (ROOT / "src/web/static/js/desk.js").read_text(encoding="utf-8")
     assert "function typedRow(" in script
     assert "typed_amount: value, typed_words: words.value.trim()" in script
     assert "Recorded as typed by you." in script
     assert "typedDrafts.get(item.id)" in script
-    assert "if (!(typing && reviewSig === lastReviewSig))" in script
 
 
 @pytest.mark.parametrize(

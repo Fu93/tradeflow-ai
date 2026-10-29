@@ -335,3 +335,25 @@ def test_resuming_deal_preserves_saved_simulation_policy(desk_server):
         saved = await (await response.value).json()
         assert saved["deal"]["include_unverified"] is True
     asyncio.run(run_browser(scenario, desk_server))
+
+
+def test_typed_price_and_words_keep_focus_across_polls_then_confirm(desk_server):
+    async def scenario(browser, base):
+        page = await opened_page(browser, base)
+        await page.fill("#paste-text", "老板，这款伞 28塊5 一把，起订 1000 把。")
+        await page.click('#paste-form button[type="submit"]')
+        await page.locator("#review .desk-typed > summary").click()
+        amount = page.get_by_role("spinbutton", name="Typed unit price", exact=True)
+        words = page.get_by_role("textbox", name="Words in the message the price comes from", exact=True)
+        await amount.fill("28.5")
+        await words.fill("28塊5")
+        handle = await words.element_handle()
+        await page.wait_for_timeout(2400)
+        assert await amount.input_value() == "28.5"
+        assert await words.input_value() == "28塊5"
+        assert await handle.evaluate("node => node.isConnected && document.activeElement === node")
+        await page.get_by_role("button", name="Accept typed price", exact=True).click()
+        await page.locator("#drafts textarea").first.wait_for()
+        await playwright.expect(page.locator("#cards")).to_contain_text("28.50 CNY")
+        assert await page.get_by_role("button", name="Accept typed price", exact=True).count() == 0
+    asyncio.run(run_browser(scenario, desk_server))
