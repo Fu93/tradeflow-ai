@@ -1,6 +1,9 @@
 """SQLite desk. One file, reopened after a restart."""
 from __future__ import annotations
 
+from contextlib import contextmanager
+from collections.abc import Iterator
+
 import hashlib
 import json
 import os
@@ -44,11 +47,52 @@ class DeskStore:
             os.makedirs(parent, exist_ok=True)
         self.path = path
         self._lock = threading.RLock()
+        self._atomic_depth = 0
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self._create()
+
+    def _commit(self) -> None:
+        if not self._atomic_depth:
+            self.conn.commit()
+
+    @contextmanager
+    def atomic(self) -> Iterator[None]:
+        """Commit related business rows and audit entries together.
+
+        Hold the connection lock for the entire unit: otherwise another deal's
+        thread can commit or roll back this connection's unfinished work.
+        Nested units use savepoints, so an inner failure cannot commit a prefix.
+        External anchors remain separate; their existing verification fails
+        closed if a process dies between exporting an anchor and SQLite commit.
+        """
+        with self._lock:
+            outer = self._atomic_depth == 0
+            savepoint = "unit_" + uuid.uuid4().hex
+            if outer:
+                if self.conn.in_transaction:
+                    raise RuntimeError("Cannot start an atomic unit with unfinished database work.")
+                self.conn.execute("BEGIN IMMEDIATE")
+            else:
+                self.conn.execute("SAVEPOINT " + savepoint)
+            self._atomic_depth += 1
+            try:
+                yield
+                if outer:
+                    self.conn.commit()
+                else:
+                    self.conn.execute("RELEASE SAVEPOINT " + savepoint)
+            except BaseException:
+                if outer:
+                    self.conn.rollback()
+                else:
+                    self.conn.execute("ROLLBACK TO SAVEPOINT " + savepoint)
+                    self.conn.execute("RELEASE SAVEPOINT " + savepoint)
+                raise
+            finally:
+                self._atomic_depth -= 1
 
     def close(self) -> None:
         with self._lock:
@@ -75,8 +119,10 @@ class DeskStore:
                     "ON CONFLICT(id) DO UPDATE SET at = excluded.at",
                     (_now(),),
                 )
-                self.conn.commit()
+                self._commit()
             except sqlite3.Error as exc:
+                if not self._atomic_depth:
+                    self.conn.rollback()
                 return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
             return {"ok": True, "detail": "writable"}
 
@@ -164,7 +210,7 @@ class DeskStore:
 
     def _drop_snapshot(self, deal_id: str) -> None:
         self.conn.execute("DELETE FROM snapshots WHERE deal_id = ?", (deal_id,))
-        self.conn.commit()
+        self._commit()
 
     def _return_quotes_to_review(self, deal_id: str) -> None:
         self.conn.execute(
@@ -186,7 +232,7 @@ class DeskStore:
                 ingested.append(json.loads(row["payload_json"]))
             legacy_head = self._archive_unkeyed_chain(str(deal["id"]), list(rows))
             self._return_quotes_to_review(str(deal["id"]))
-            self.conn.commit()
+            self._commit()
             self.append_chain(deal["id"], "deal_opened", self._opened_payload(deal, legacy_head=legacy_head))
             for payload in ingested:
                 self.append_chain(deal["id"], "quote_ingested", payload)
@@ -201,7 +247,7 @@ class DeskStore:
         if opened is not None:
             raise DeskRejected("This deal already has a keyed chain. Migration will not replace it.")
         self._return_quotes_to_review(str(deal["id"]))
-        self.conn.commit()
+        self._commit()
         self.append_chain(deal["id"], "deal_opened", self._opened_payload(deal, legacy_head=None))
         self._drop_snapshot(str(deal["id"]))
 
@@ -235,7 +281,7 @@ class DeskStore:
                     deal_id,
                 ),
             )
-            self.conn.commit()
+            self._commit()
 
     def create_deal(
         self,
@@ -301,11 +347,11 @@ class DeskStore:
 
     def _finish_create(self, commit: bool) -> None:
         if commit:
-            self.conn.commit()  # create_deal
+            self._commit()  # create_deal
 
     def commit(self) -> None:
         with self._lock:
-            self.conn.commit()
+            self._commit()
 
     def rollback(self) -> None:
         with self._lock:
@@ -317,7 +363,7 @@ class DeskStore:
                 "UPDATE suppliers SET name = ?, address = ? WHERE id = ?",
                 (name, address, supplier_id),
             )
-            self.conn.commit()
+            self._commit()
 
     def _deal(self, deal_id: str) -> dict[str, Any] | None:
         row = self.conn.execute("SELECT * FROM deals WHERE id = ?", (deal_id,)).fetchone()
@@ -336,11 +382,12 @@ class DeskStore:
 
     def touch(self, deal_id: str) -> None:
         with self._lock:
+            self.conn.execute("DELETE FROM snapshots WHERE deal_id = ?", (deal_id,))
             self.conn.execute(
                 "UPDATE deals SET updated_at = ? WHERE id = ?",
                 (_now(), deal_id),
             )
-            self.conn.commit()
+            self._commit()
 
     def suppliers(self, deal_id: str) -> list[dict[str, Any]]:
         with self._lock:
@@ -364,7 +411,7 @@ class DeskStore:
                 "UPDATE suppliers SET belief_mean = ?, belief_std = ? WHERE id = ?",
                 (float(mean), float(std), supplier_id),
             )
-            self.conn.commit()
+            self._commit()
 
     def find_event(self, deal_id: str, external_id: str) -> dict[str, Any] | None:
         with self._lock:
@@ -413,9 +460,10 @@ class DeskStore:
                         hashlib.sha256((raw_text or "").encode("utf-8")).hexdigest(),
                     ),
                 )
-                self.conn.commit()
+                self._commit()
             except sqlite3.IntegrityError:
-                self.conn.rollback()
+                if not self._atomic_depth:
+                    self.conn.rollback()
                 return None
             row = self.conn.execute(
                 "SELECT * FROM quote_events WHERE id = ?",
@@ -475,7 +523,7 @@ class DeskStore:
                     event_id,
                 ),
             )
-            self.conn.commit()
+            self._commit()
 
     def save_snapshot(self, deal_id: str, payload: dict[str, Any], elapsed_ms: int) -> None:
         with self._lock:
@@ -492,7 +540,7 @@ class DeskStore:
                 """,
                 (deal_id, encoded, now, int(elapsed_ms)),
             )
-            self.conn.commit()
+            self._commit()
 
     def get_snapshot(self, deal_id: str) -> dict[str, Any] | None:
         with self._lock:
@@ -551,7 +599,7 @@ class DeskStore:
                         """,
                         (deal_id, supplier_id, existing["id"]),
                     )
-                    self.conn.commit()
+                    self._commit()
                     row = self.conn.execute(
                         "SELECT * FROM drafts WHERE id = ?",
                         (existing["id"],),
@@ -594,7 +642,7 @@ class DeskStore:
                     decision_id,
                 ),
             )
-            self.conn.commit()
+            self._commit()
             row = self.conn.execute(
                 "SELECT * FROM drafts WHERE id = ?",
                 (draft_id,),
@@ -611,7 +659,7 @@ class DeskStore:
                 """,
                 (deal_id, supplier_id),
             )
-            self.conn.commit()
+            self._commit()
 
     def claim_draft_send(self, draft_id: str, message_id: str) -> bool:
         """One in-flight send per draft. A second caller does not send again."""
@@ -624,7 +672,7 @@ class DeskStore:
                 """,
                 (message_id, draft_id),
             )
-            self.conn.commit()
+            self._commit()
             return cursor.rowcount == 1
 
     def set_gmail_draft(self, draft_id: str, *, gmail_id: str | None, error: str | None) -> None:
@@ -633,7 +681,7 @@ class DeskStore:
                 "UPDATE drafts SET gmail_draft_id = ?, gmail_error = ? WHERE id = ?",
                 (gmail_id, error, draft_id),
             )
-            self.conn.commit()
+            self._commit()
 
     def append_chain(
         self,
@@ -659,7 +707,7 @@ class DeskStore:
         with self._lock:
             row = audit_chain.append(self.conn, deal_id, type_, _now(), payload)
             if commit:
-                self.conn.commit()
+                self._commit()
             return row
 
     def verify_chain(self, deal_id: str) -> dict[str, Any]:
@@ -706,7 +754,7 @@ class DeskStore:
                     _now(),
                 ),
             )
-            self.conn.commit()
+            self._commit()
             return decision_id
 
     def get_decision(self, decision_id: str) -> dict[str, Any] | None:
@@ -767,7 +815,7 @@ class DeskStore:
                     draft_id,
                 ),
             )
-            self.conn.commit()
+            self._commit()
 
     def mailbox_ids(self, mailbox_key: str) -> set[str]:
         with self._lock:
@@ -800,7 +848,7 @@ class DeskStore:
                 f"UPDATE deals SET {assignments}, updated_at = ? WHERE id = ?",
                 (*updates.values(), _now(), deal_id),
             )
-            self.conn.commit()
+            self._commit()
 
     def insert_outcome(
         self,
@@ -832,7 +880,7 @@ class DeskStore:
                     created,
                 ),
             )
-            self.conn.commit()
+            self._commit()
             return {
                 "id": outcome_id,
                 "deal_id": deal_id,
@@ -893,7 +941,7 @@ class DeskStore:
                 "UPDATE suppliers SET hazard_events = ?, hazard_walks = ? WHERE id = ?",
                 (int(events), int(walks), supplier_id),
             )
-            self.conn.commit()
+            self._commit()
 
     def remember_mailbox(self, mailbox_key: str, external_id: str) -> None:
         with self._lock:
@@ -905,7 +953,7 @@ class DeskStore:
                 """,
                 (mailbox_key, external_id),
             )
-            self.conn.commit()
+            self._commit()
 
     @staticmethod
     def _event(row: sqlite3.Row | None) -> dict[str, Any] | None:

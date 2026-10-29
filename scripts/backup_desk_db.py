@@ -24,8 +24,11 @@ snapshot into a database that has moved on.
 from __future__ import annotations
 
 import argparse
-import shutil
+from contextlib import closing
+import os
+import tempfile
 import sqlite3
+import stat
 import sys
 import time
 from datetime import datetime
@@ -43,11 +46,70 @@ def _default_output() -> Path:
 
 
 def _deals(conn: sqlite3.Connection) -> list[str]:
-    return [row[0] for row in conn.execute("SELECT DISTINCT deal_id FROM desk_chain").fetchall()]
+    return [str(row[0]) for row in conn.execute("SELECT id FROM deals").fetchall()]
+
+
+def _verify(conn: sqlite3.Connection) -> list[str]:
+    from src.desk.migrations import CURRENT_SCHEMA_VERSION
+
+    conn.row_factory = sqlite3.Row
+    if conn.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+        raise ValueError("SQLite integrity check failed")
+    if conn.execute("PRAGMA foreign_key_check").fetchone() is not None:
+        raise ValueError("Database has broken references")
+    version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+    if version > CURRENT_SCHEMA_VERSION:
+        raise ValueError("Backup schema is newer than this build")
+    required = {
+        "deals", "suppliers", "quote_events", "drafts", "desk_chain", "decisions", "snapshots", "hazard_outcomes",
+    }
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if not required <= tables:
+        raise ValueError("Not a complete desk database")
+    deals = _deals(conn)
+    broken = [deal for deal in deals if not audit_chain.verify_rows(audit_chain.chain_rows(conn, deal))["ok"]]
+    if broken:
+        raise ValueError(f"Audit chains do not verify for deals {broken}")
+    return deals
+
+
+def _stage_copy(source: Path, folder: Path) -> tuple[Path, list[str]]:
+    """Take a consistent SQLite snapshot, including committed WAL content.
+
+    Verify the copy itself: the live source may acquire new deals immediately
+    after the backup boundary. No source state from a later moment is compared.
+    """
+    handle, name = tempfile.mkstemp(prefix=".desk-verified-", suffix=".db", dir=folder)
+    os.close(handle)
+    staged = Path(name)
+    try:
+        with closing(sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True)) as src:
+            with closing(sqlite3.connect(staged)) as dst:
+                src.backup(dst)
+                deals = _verify(dst)
+                # Leave one self-contained file, with no restoration dependency
+                # on a stale journal file under the destination's name.
+                dst.execute("PRAGMA journal_mode=DELETE")
+        with staged.open("rb") as stream:
+            os.fsync(stream.fileno())
+        return staged, deals
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
+
+
+def _sync_folder(folder: Path) -> None:
+    # Persist the directory entry as well as the SQLite bytes after publication.
+    if os.name == "posix":
+        descriptor = os.open(folder, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
 
 def backup(source: Path, output: Path) -> dict[str, object]:
-    """Copy the database online, then verify the copy's chains. Fail loudly."""
+    """Publish only a verified, self-contained snapshot. Never overwrite."""
     if not source.is_file():
         print(f"no desk database at {source}", file=sys.stderr)
         raise SystemExit(2)
@@ -55,77 +117,76 @@ def backup(source: Path, output: Path) -> dict[str, object]:
     if output.exists():
         print(f"refusing to overwrite {output}", file=sys.stderr)
         raise SystemExit(2)
-
     started = time.monotonic()
-    src = sqlite3.connect(str(source))
+    staged = None
     try:
-        dst = sqlite3.connect(str(output))
-        try:
-            src.backup(dst)
-        finally:
-            dst.close()
+        staged, deals = _stage_copy(source, output.parent)
+        # A concurrent backup to the same name cannot replace the winner.
+        os.link(staged, output)
+        _sync_folder(output.parent)
+    except (sqlite3.Error, ValueError, OSError) as exc:
+        print(f"backup refused: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     finally:
-        src.close()
-
-    # The copy must stand on its own: every chain in it verifies, and the
-    # entry counts match the source. A backup that fails here is deleted
-    # rather than left in place wearing a timestamp.
-    copy = sqlite3.connect(str(output))
-    copy.row_factory = sqlite3.Row  # verify_rows addresses columns by name
-    try:
-        source_deals = _deals(sqlite3.connect(str(source)))
-        results = {
-            deal_id: audit_chain.verify_rows(audit_chain.chain_rows(copy, deal_id))
-            for deal_id in source_deals
-        }
-        broken = [deal for deal, result in results.items() if not result["ok"]]
-    finally:
-        copy.close()
-    if broken:
-        output.unlink()
-        print(f"backup verified BROKEN for deals {broken}; the file was deleted.", file=sys.stderr)
-        raise SystemExit(1)
-
+        if staged is not None:
+            staged.unlink(missing_ok=True)
     elapsed = time.monotonic() - started
     size = output.stat().st_size
-    print(
-        f"backed up {source} -> {output} ({size} bytes, {len(source_deals)} deal(s), "
-        f"all chains verify, {elapsed:.2f}s)"
-    )
-    return {"output": str(output), "deals": len(source_deals), "size": size, "elapsed_s": round(elapsed, 2)}
+    print(f"backed up {source} -> {output} ({size} bytes, {len(deals)} deal(s), all chains verify, {elapsed:.2f}s)")
+    return {"output": str(output), "deals": len(deals), "size": size, "elapsed_s": round(elapsed, 2)}
 
 
 def restore(backup_file: Path, target: Path, assume_yes: bool) -> int:
-    """Copy a verified backup over the live database path. The desk must be stopped."""
+    """Verify in a staging file BEFORE atomically replacing an offline database."""
     if not backup_file.is_file():
         print(f"no backup file at {backup_file}", file=sys.stderr)
         return 2
+    if backup_file.resolve() == target.resolve() or (target.exists() and os.path.samefile(backup_file, target)):
+        print("backup and target must be different files", file=sys.stderr)
+        return 2
     if target.exists() and not assume_yes:
-        print(
-            f"{target} exists. Restoring replaces it. Stop the desk process, then "
-            "re-run with --yes after moving the live file aside:",
-            file=sys.stderr,
-        )
-        print(f"  mv {target} {target}.pre-restore", file=sys.stderr)
+        print(f"{target} exists. Stop the desk, then re-run with --yes to replace it.", file=sys.stderr)
         return 1
-    shutil.copyfile(backup_file, target)
-    check = sqlite3.connect(str(target))
-    check.row_factory = sqlite3.Row  # verify_rows addresses columns by name
+    # A live or uncheckpointed SQLite WAL must never be paired with replacement
+    # bytes. Refuse instead of deleting recovery data or guessing it is unused.
+    if any(Path(str(target) + suffix).exists() for suffix in ("-wal", "-shm", "-journal")):
+        print("restore refused: stop the desk and checkpoint/close the target database first; journal files remain",
+              file=sys.stderr)
+        return 1
+    # Resolve symlinks so replacement does not silently replace a persistent
+    # storage link with a new database on the ephemeral filesystem.
+    target = target.resolve()
+    target_metadata = target.stat() if target.exists() else None
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staged = None
+    published = False
     try:
-        deals = _deals(check)
-        broken = [
-            deal for deal in deals
-            if not audit_chain.verify_rows(audit_chain.chain_rows(check, deal))["ok"]
-        ]
-    finally:
-        check.close()
-    if broken:
-        print(
-            f"restored, but the chains for {broken} do NOT verify — "
-            "investigate before starting the desk.",
-            file=sys.stderr,
-        )
+        staged, deals = _stage_copy(backup_file, target.parent)
+        if target_metadata is not None:
+            os.chmod(staged, stat.S_IMODE(target_metadata.st_mode))
+            staged_metadata = staged.stat()
+            if os.name == "posix" and (staged_metadata.st_uid, staged_metadata.st_gid) != (
+                target_metadata.st_uid, target_metadata.st_gid
+            ):
+                os.chown(staged, target_metadata.st_uid, target_metadata.st_gid)
+            with staged.open("rb") as stream:
+                os.fsync(stream.fileno())
+        if any(Path(str(target) + suffix).exists() for suffix in ("-wal", "-shm", "-journal")):
+            raise ValueError("target journal appeared; the desk must remain stopped during restore")
+        if assume_yes:
+            os.replace(staged, target)
+        else:
+            os.link(staged, target)
+        published = True
+        _sync_folder(target.parent)
+    except (sqlite3.Error, ValueError, OSError) as exc:
+        detail = ("replacement installed but durability sync failed" if published
+                  else "the existing database was not replaced")
+        print(f"restore refused: {exc}; {detail}", file=sys.stderr)
         return 1
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
     print(f"restored {backup_file} -> {target} ({len(deals)} deal(s), all chains verify).")
     return 0
 

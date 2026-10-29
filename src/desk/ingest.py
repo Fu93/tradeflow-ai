@@ -465,47 +465,48 @@ def _ingest_locked(
         provenance["review_reason"] = "shadow gate would accept; confirm the prefilled amount"
     else:
         provenance["review_reason"] = provenance.get("review_reason") or "confirm the prefilled amount"
-    event = store.insert_event(
-        deal_id=deal_id,
-        supplier_id=linked,
-        source=source,
-        raw_text=raw_text,
-        parsed=parsed,
-        confidence=confidence,
-        status=status,
-        provenance=provenance,
-        external_id=external_id,
-    )
-    if event is None and external_id:
-        existing = store.find_event(deal_id, external_id)
-        return {"duplicate": True, "event": existing, "snapshot": store.get_snapshot(deal_id)}
-    store.touch(deal_id)
-    if event is not None:
-        store.append_chain(
-            deal_id,
-            "quote_ingested",
-            {
-                "event_id": event["id"],
-                "raw_sha256": event.get("raw_sha256"),
-                "source": source,
-                "supplier_id": event.get("supplier_id"),
-                "message_id": message_id_or_blank(provenance.get("message_id")),
-                "references": references_or_blank(provenance.get("references")),
-            },
+    with store.atomic():
+        event = store.insert_event(
+            deal_id=deal_id,
+            supplier_id=linked,
+            source=source,
+            raw_text=raw_text,
+            parsed=parsed,
+            confidence=confidence,
+            status=status,
+            provenance=provenance,
+            external_id=external_id,
         )
-        store.append_chain(
-            deal_id,
-            "extractor_result",
-            {
-                "model": shadow.get("model") or "",
-                "prompt_sha256": shadow.get("prompt_sha256") or "",
-                "response_sha256": shadow.get("response_sha256") or "",
-                "rejected_rows": int(shadow.get("rejected_rows") or 0),
-                "numeric_field_discarded": bool(shadow.get("numeric_field_discarded")),
-                "attempts": list(shadow.get("attempts") or []),
-                "pending": bool(shadow.get("extractor_pending")),
-            },
-        )
+        if event is None and external_id:
+            existing = store.find_event(deal_id, external_id)
+            return {"duplicate": True, "event": existing, "snapshot": store.get_snapshot(deal_id)}
+        store.touch(deal_id)
+        if event is not None:
+            store.append_chain(
+                deal_id,
+                "quote_ingested",
+                {
+                    "event_id": event["id"],
+                    "raw_sha256": event.get("raw_sha256"),
+                    "source": source,
+                    "supplier_id": event.get("supplier_id"),
+                    "message_id": message_id_or_blank(provenance.get("message_id")),
+                    "references": references_or_blank(provenance.get("references")),
+                },
+            )
+            store.append_chain(
+                deal_id,
+                "extractor_result",
+                {
+                    "model": shadow.get("model") or "",
+                    "prompt_sha256": shadow.get("prompt_sha256") or "",
+                    "response_sha256": shadow.get("response_sha256") or "",
+                    "rejected_rows": int(shadow.get("rejected_rows") or 0),
+                    "numeric_field_discarded": bool(shadow.get("numeric_field_discarded")),
+                    "attempts": list(shadow.get("attempts") or []),
+                    "pending": bool(shadow.get("extractor_pending")),
+                },
+            )
     snapshot = publish(store, deal_id)
     # Lazy import: the Gmail drafting of replies belongs to the send path in
     # service.py; importing it lazily here keeps the module graph acyclic
@@ -590,27 +591,29 @@ def _apply_extractor_result(
             provenance["extractor_error"] = shadow["error"]
         provenance["extractor_attempts"] = list(shadow.get("attempts") or [])
         provenance["extractor_mentions"] = _mention_trace(str(event.get("raw_text") or ""), shadow)
-        store.set_event_status(
-            event_id,
-            status=str(event.get("status") or "review"),
-            supplier_id=event.get("supplier_id"),
-            parsed=dict(event.get("parsed") or {}),
-            confidence=str(event.get("confidence") or "low"),
-            provenance=provenance,
-        )
-        store.append_chain(
-            deal_id,
-            "extractor_result",
-            {
-                "model": shadow.get("model") or "",
-                "prompt_sha256": shadow.get("prompt_sha256") or "",
-                "response_sha256": shadow.get("response_sha256") or "",
-                "rejected_rows": int(shadow.get("rejected_rows") or 0),
-                "numeric_field_discarded": bool(shadow.get("numeric_field_discarded")),
-                "attempts": list(shadow.get("attempts") or []),
-                "pending": False,
-            },
-        )
+        with store.atomic():
+            store.set_event_status(
+                event_id,
+                status=str(event.get("status") or "review"),
+                supplier_id=event.get("supplier_id"),
+                parsed=dict(event.get("parsed") or {}),
+                confidence=str(event.get("confidence") or "low"),
+                provenance=provenance,
+            )
+            store.append_chain(
+                deal_id,
+                "extractor_result",
+                {
+                    "model": shadow.get("model") or "",
+                    "prompt_sha256": shadow.get("prompt_sha256") or "",
+                    "response_sha256": shadow.get("response_sha256") or "",
+                    "rejected_rows": int(shadow.get("rejected_rows") or 0),
+                    "numeric_field_discarded": bool(shadow.get("numeric_field_discarded")),
+                    "attempts": list(shadow.get("attempts") or []),
+                    "pending": False,
+                },
+            )
+            store.touch(deal_id)
         publish(store, deal_id)
         return
     provenance["extractor_pending"] = False
@@ -630,27 +633,29 @@ def _apply_extractor_result(
     parsed = dict(event.get("parsed") or {})
     if event.get("status") == "review":
         parsed["unit_price"] = None
-    store.set_event_status(
-        event_id,
-        status=str(event.get("status") or "review"),
-        supplier_id=event.get("supplier_id"),
-        parsed=parsed,
-        confidence=str(event.get("confidence") or "low"),
-        provenance=provenance,
-    )
-    store.append_chain(
-        deal_id,
-        "extractor_result",
-        {
-            "model": shadow.get("model") or "",
-            "prompt_sha256": shadow.get("prompt_sha256") or "",
-            "response_sha256": shadow.get("response_sha256") or "",
-            "rejected_rows": int(shadow.get("rejected_rows") or 0),
-            "numeric_field_discarded": bool(shadow.get("numeric_field_discarded")),
-            "attempts": list(shadow.get("attempts") or []),
-            "pending": False,
-        },
-    )
+    with store.atomic():
+        store.set_event_status(
+            event_id,
+            status=str(event.get("status") or "review"),
+            supplier_id=event.get("supplier_id"),
+            parsed=parsed,
+            confidence=str(event.get("confidence") or "low"),
+            provenance=provenance,
+        )
+        store.append_chain(
+            deal_id,
+            "extractor_result",
+            {
+                "model": shadow.get("model") or "",
+                "prompt_sha256": shadow.get("prompt_sha256") or "",
+                "response_sha256": shadow.get("response_sha256") or "",
+                "rejected_rows": int(shadow.get("rejected_rows") or 0),
+                "numeric_field_discarded": bool(shadow.get("numeric_field_discarded")),
+                "attempts": list(shadow.get("attempts") or []),
+                "pending": False,
+            },
+        )
+        store.touch(deal_id)
     publish(store, deal_id)
 
 def _schedule_extractor(

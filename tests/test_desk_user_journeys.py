@@ -357,3 +357,30 @@ def test_typed_price_and_words_keep_focus_across_polls_then_confirm(desk_server)
         await playwright.expect(page.locator("#cards")).to_contain_text("28.50 CNY")
         assert await page.get_by_role("button", name="Accept typed price", exact=True).count() == 0
     asyncio.run(run_browser(scenario, desk_server))
+
+
+def test_retry_after_committed_but_lost_response_stores_one_quote(desk_server):
+    async def scenario(browser, base):
+        page = await opened_page(browser, base)
+
+        async def lost_response(route):
+            # The server commits, but the client never receives the result.
+            response = await route.fetch()
+            assert response.ok
+            await route.abort("failed")
+
+        await page.route("**/quotes", lost_response)
+        await page.fill("#paste-text", "单价 27.80 元。")
+        await page.click('#paste-form button[type="submit"]')
+        await playwright.expect(page.locator("#paste-error")).not_to_be_empty()
+        assert await page.input_value("#paste-text") == "单价 27.80 元。"
+        await page.unroute("**/quotes", lost_response)
+        await page.click('#paste-form button[type="submit"]')
+        await page.get_by_role("button", name="Accept", exact=True).wait_for()
+        original = await page.evaluate("sessionStorage.getItem('tfDeskDeal')")
+        response = await page.request.get(base + "/api/v1/desk/deals/" + original, headers={"X-API-Key": KEY})
+        snapshot = await response.json()
+        assert len(snapshot["events"]) == 1
+        assert len(snapshot["review"]) == 1
+        assert await page.locator("#events .desk-event").count() == 1
+    asyncio.run(run_browser(scenario, desk_server))

@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, 
 
 from src.app.security import require_desk_mutation
 from src.desk.mailbox import MailboxError
+from src.desk.ingest import deal_lock
 from src.config.heuristics import (
     ADDRESS_CHANGE_MAX_BYTES,
     AUDIT_VERIFY_DEFAULT_LIMIT,
@@ -312,7 +313,8 @@ def register_desk_routes(api_v1: APIRouter) -> None:
             raise HTTPException(status_code=404, detail="No such deal")
         snapshot = store.get_snapshot(deal_id)
         if snapshot is None:
-            snapshot = publish(store, deal_id)
+            with deal_lock(deal_id):
+                snapshot = store.get_snapshot(deal_id) or publish(store, deal_id)
         from src.desk.transmission import send_policy
 
         return {**snapshot, "send_policy": send_policy()}
