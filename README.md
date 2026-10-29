@@ -6,7 +6,9 @@
 
 TradeFlow AI is a one-person supplier-negotiation desk for small cross-border sellers, entered in the **Nebius x NVIDIA Global AI Hackathon** (track Best Apps and Agents, plus the Best Use of Tavily bonus): a Nemotron model on Nebius Token Factory reads factory quotes, deterministic math prices the counter, and a person sends it.
 
-Links: [Devpost text, judge steps and demo script](docs/DEVPOST_SUBMISSION.md) · [feedback on the tools](docs/NEBIUS_NVIDIA_FEEDBACK.md) · [public demo](#public-demo) · License: MIT <!-- DEMO_URL: final public demo URL --> <!-- VIDEO_URL: public YouTube link, 3 minutes or less -->
+Links: [Devpost text, judge steps and demo script](docs/DEVPOST_SUBMISSION.md) · [feedback on the tools](docs/NEBIUS_NVIDIA_FEEDBACK.md) · [public demo](https://tradeflow-ai-demo.onrender.com/desk) · License: MIT <!-- DEMO_URL: final public demo URL -->
+
+<!-- TODO(owner): desk screenshot from live --> <!-- VIDEO_URL: public YouTube link, 3 minutes or less -->
 
 **How the three services are used.**
 
@@ -146,7 +148,7 @@ docker compose up --build
 
 Open http://localhost:8000. `GET /health` is the compose and image healthcheck.
 
-Leave the `__FILL_ME__` keys as they are. The dashboard, the solver, and the supplier-intent regex/ONNX stage run offline. The container listens on `0.0.0.0:$PORT` (compose publishes **8000**). The solver inside this image is **NumPy on CPU**. The compose file does not attach a GPU.
+The desk needs two keys in `.env` for a local run: `TRADEFLOW_API_KEY` (16 or more characters) and `TRADEFLOW_CHAIN_KEY` (the audit-chain key; desk sends refuse to start without it). Open http://localhost:8000/desk and enter the same API key there. Leave the other `__FILL_ME__` keys as they are. The dashboard, the solver, and the supplier-intent regex/ONNX stage run offline. The container listens on `0.0.0.0:$PORT` (compose publishes **8000**). The solver inside this image is **NumPy on CPU**. The compose file does not attach a GPU.
 
 Without Docker (use `python3` if `python` is not on your PATH):
 
@@ -169,8 +171,6 @@ python -m src.cli --multi    # four-supplier auction
 
 The video script for this hackathon is in [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md). [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md) is the click-and-narration script written for the earlier AMD-era build and is not updated for this entry. Form fields for the earlier lablab (AMD) entry: [docs/LABLAB_FORM.md](docs/LABLAB_FORM.md). The slide deck, built for that earlier entry, is [results/pitch.pptx](results/pitch.pptx) and [results/pitch.pdf](results/pitch.pdf) (nine slides, rebuilt from the SUBMISSION.md outline).
 
-![Pitch cover for TradeFlow AI](results/cover_1280x720.png)
-
 ## Human + AI workflow
 
 Hybrid desk. The model reads a supplier message and may phrase a reply. The solver sets every number. The human copies the draft and sends it. The Chrome extension cannot press Send.
@@ -189,7 +189,7 @@ Competitors with a public price: Accio and Alibaba RFQ (free for buyers). Pactum
 
 ## Public demo
 
-[render.yaml](render.yaml) matches the live Docker web service `tradeflow-ai-demo` in Frankfurt (`https://tradeflow-ai-demo.onrender.com`), instance type 0.5 CPU / 512 MB, health check `GET /health`, offline by default. `WEB_CONCURRENCY` is `1`. `TRADEFLOW_ENV` is `production`, so webhooks fail closed when `TRADEFLOW_WEBHOOK_TOKEN` is unset. `TRADEFLOW_LEGACY` is `0`. `TRADEFLOW_CHAIN_ANCHOR`, `TRADEFLOW_DESK_DB`, and `TRADEFLOW_CHAIN_KEYS` are listed with `sync: false` (blank until set in the dashboard). Other secrets are `sync: false` so a Blueprint sync does not overwrite them: `VLLM_API_KEY`, `EVOLUS_API_KEY`, `EVOLUS_APP_ID`, `TRADEFLOW_API_KEY`, `TRADEFLOW_CHAIN_KEY`, `TRADEFLOW_CHAIN_KEY_ID`, `TRADEFLOW_WEBHOOK_TOKEN`, `TRADEFLOW_LLM_API_KEY`, `NVIDIA_API_KEY`, and `TAVILY_API_KEY`. The file does not set `PORT`; Render injects it and the process binds `0.0.0.0:$PORT`. The filesystem is ephemeral, so `TRADEFLOW_DESK_DB` and a file anchor do not survive a restart unless a disk is attached.
+[render.yaml](render.yaml) matches the live Docker web service `tradeflow-ai-demo` in Frankfurt (`https://tradeflow-ai-demo.onrender.com`; the desk is at <https://tradeflow-ai-demo.onrender.com/desk>), instance type 0.5 CPU / 512 MB, health check `GET /health`, offline by default. `WEB_CONCURRENCY` is `1`. `TRADEFLOW_ENV` is `production`, so webhooks fail closed when `TRADEFLOW_WEBHOOK_TOKEN` is unset. `TRADEFLOW_LEGACY` is `0`. `TRADEFLOW_CHAIN_ANCHOR`, `TRADEFLOW_DESK_DB`, and `TRADEFLOW_CHAIN_KEYS` are listed with `sync: false` (blank until set in the dashboard). Other secrets are `sync: false` so a Blueprint sync does not overwrite them: `VLLM_API_KEY`, `EVOLUS_API_KEY`, `EVOLUS_APP_ID`, `TRADEFLOW_API_KEY`, `TRADEFLOW_CHAIN_KEY`, `TRADEFLOW_CHAIN_KEY_ID`, `TRADEFLOW_WEBHOOK_TOKEN`, `TRADEFLOW_LLM_API_KEY`, `NVIDIA_API_KEY`, and `TAVILY_API_KEY`. The file does not set `PORT`; Render injects it and the process binds `0.0.0.0:$PORT`. The filesystem is ephemeral, so `TRADEFLOW_DESK_DB` and a file anchor do not survive a restart unless a disk is attached.
 
 **Approval and sending on the demo.** On 2026-10-28, with the owner's approval, the demo service got `TRADEFLOW_REQUIRE_SIGNED_APPROVAL=0` in the Render dashboard (the only variable changed; `render.yaml` does not set it, and `/ready` now reports `signed_approval: policy=optional`). The live demo therefore accepts an unsigned **Approve and send** click. No SMTP is configured on the demo, so no email is ever sent: an approved draft shows status approved and `transmitted: 0`. A single check on master `d895610` (2026-10-29, not a benchmark): a send with the wrong body hash got HTTP 409, `human_approved: false` got 422, and the correct unsigned approval got 200 with `transmitted: 0`; audit verify then returned `ok: true`. Real use requires a pinned approver public key, signing with `python -m src.desk.approval_signing`, and an SMTP configuration. The price is always confirmed by a person, and the model's labels are a second opinion only. The chain is verified from the audit line, from `GET /api/v1/desk/deals/{id}/audit/verify` on `/docs`, or with `scripts/desk_verify.py` (there is no verify button).
 

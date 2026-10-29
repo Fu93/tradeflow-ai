@@ -10,7 +10,7 @@ Deadline: **Friday 30 October 2026, 17:00 London** (10:00 Pacific). Aim to submi
 | Track | Best Apps and Agents |
 | Public repository with an open-source license visible in the About panel | MIT (`LICENSE`). Confirm the About panel on GitHub shows it. |
 | README with setup and how NVIDIA models and Token Factory were used | The first sections of [README.md](../README.md) |
-| Working demo URL | Done: <https://tradeflow-ai-demo.onrender.com>. `/health` returned 200 and one single live check was made on 2026-10-28 (see "Single live check" below). |
+| Working demo URL | Done: <https://tradeflow-ai-demo.onrender.com/desk>. `/health` returned 200 and one single live check was made on 2026-10-28 (see "Single live check" below). |
 | Public YouTube video, 3 minutes or less, no unlicensed trademarks or copyrighted music | **To do.** Script below. Leave AMD and lablab logos out of every frame. |
 | Text description | Below |
 | Feedback on the Nebius and NVIDIA tools | [NEBIUS_NVIDIA_FEEDBACK.md](NEBIUS_NVIDIA_FEEDBACK.md). Edit it against your own runs first. |
