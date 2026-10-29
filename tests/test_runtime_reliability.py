@@ -158,3 +158,23 @@ def test_live_backup_validates_the_snapshot_not_later_source_state(desk, tmp_pat
     with sqlite3.connect(output) as conn:
         assert conn.execute("SELECT id FROM deals").fetchall() == [(deal_id,)]
     assert len(store.list_deals()) == 2
+
+
+def test_restore_preserves_existing_permissions_and_persistent_storage_link(desk, tmp_path):
+    store, deal_id, _ = desk
+    copy = tmp_path / "backup.db"
+    backup(Path(store.path), copy)
+    target = tmp_path / "persistent" / "restored.db"
+    target.parent.mkdir()
+    # A stopped file at the persistent location, reached through a symlink.
+    target.write_bytes(b"previous contents")
+    target.chmod(0o640)
+    before = target.stat()
+    link = tmp_path / "desk-link.db"
+    link.symlink_to(target)
+    assert restore(copy, link, True) == 0
+    assert link.is_symlink()
+    assert (target.stat().st_mode & 0o777) == (before.st_mode & 0o777)
+    assert (target.stat().st_uid, target.stat().st_gid) == (before.st_uid, before.st_gid)
+    with sqlite3.connect(target) as conn:
+        assert conn.execute("SELECT id FROM deals").fetchall() == [(deal_id,)]

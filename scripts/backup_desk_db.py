@@ -28,6 +28,7 @@ from contextlib import closing
 import os
 import tempfile
 import sqlite3
+import stat
 import sys
 import time
 from datetime import datetime
@@ -152,11 +153,24 @@ def restore(backup_file: Path, target: Path, assume_yes: bool) -> int:
         print("restore refused: stop the desk and checkpoint/close the target database first; journal files remain",
               file=sys.stderr)
         return 1
+    # Resolve symlinks so replacement does not silently replace a persistent
+    # storage link with a new database on the ephemeral filesystem.
+    target = target.resolve()
+    target_metadata = target.stat() if target.exists() else None
     target.parent.mkdir(parents=True, exist_ok=True)
     staged = None
     published = False
     try:
         staged, deals = _stage_copy(backup_file, target.parent)
+        if target_metadata is not None:
+            os.chmod(staged, stat.S_IMODE(target_metadata.st_mode))
+            staged_metadata = staged.stat()
+            if os.name == "posix" and (staged_metadata.st_uid, staged_metadata.st_gid) != (
+                target_metadata.st_uid, target_metadata.st_gid
+            ):
+                os.chown(staged, target_metadata.st_uid, target_metadata.st_gid)
+            with staged.open("rb") as stream:
+                os.fsync(stream.fileno())
         if any(Path(str(target) + suffix).exists() for suffix in ("-wal", "-shm", "-journal")):
             raise ValueError("target journal appeared; the desk must remain stopped during restore")
         if assume_yes:
