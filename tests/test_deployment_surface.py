@@ -144,3 +144,12 @@ class TestBackupDrill:
         )
         assert run.returncode == 2
         assert occupied.read_bytes() == b"not a database"
+
+
+def test_the_dockerfile_default_does_not_hide_the_render_commit(monkeypatch):
+    """The image sets TRADEFLOW_GIT_SHA=unknown; the live demo showed unknown (2026-10-29)."""
+    monkeypatch.setenv("TRADEFLOW_GIT_SHA", "unknown")
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "3860ce8")
+    from src.app.main import app
+
+    assert TestClient(app).get("/version").json()["git_sha"] == "3860ce8"

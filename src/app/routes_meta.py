@@ -145,10 +145,18 @@ def register_meta_routes(app) -> None:
             "schema_version": int(CURRENT_SCHEMA_VERSION),
             # TRADEFLOW_GIT_SHA wins; Render stamps RENDER_GIT_COMMIT on every
             # deploy, so the live demo names its commit without a manual step.
-            "git_sha": (
-                os.environ.get("TRADEFLOW_GIT_SHA", "").strip()
-                or os.environ.get("RENDER_GIT_COMMIT", "").strip()
-                or "unknown"
+            # The Dockerfile defaults TRADEFLOW_GIT_SHA to the word "unknown",
+            # which is no stamp at all, so it does not hide RENDER_GIT_COMMIT.
+            "git_sha": next(
+                (
+                    value
+                    for value in (
+                        os.environ.get("TRADEFLOW_GIT_SHA", "").strip(),
+                        os.environ.get("RENDER_GIT_COMMIT", "").strip(),
+                    )
+                    if value and value.lower() != "unknown"
+                ),
+                "unknown",
             ),
             "python": sys.version.split()[0],
         }

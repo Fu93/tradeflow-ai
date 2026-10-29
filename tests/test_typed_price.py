@@ -146,6 +146,12 @@ def test_desk_offers_a_typed_price_and_keeps_it_across_polls():
         ("两块五", {2.5}),
         ("２８．５０元", {28.5}),
         ("单价 27.80 元", {27.8}),
+        ("28块50", {28.5}),  # two digits after the yuan are cents
+        ("28元05", {28.05}),
+        ("28点5", {28.5}),
+        ("二十八点五", {28.5}),
+        ("一百零五块", {105.0}),
+        ("28塊5，起订1000把", {28.5, 1000.0}),
     ],
 )
 def test_amounts_the_words_state(words, amounts):
@@ -172,3 +178,17 @@ def test_the_send_check_refuses_a_typed_amount_the_words_do_not_state():
     digest = hashlib.sha256(MESSAGE.encode("utf-8")).hexdigest()
     review = {"typed": True, "token": None, "value": 5.0, "span": "28塊5", "unit": "per_piece", "raw_sha256": digest}
     assert not _bind(MESSAGE, review, 5.0, digest)
+
+
+def test_words_that_state_two_amounts_are_refused(deal):
+    """Quoting 28塊5 and the order size together let any of the numbers through (2026-10-29)."""
+    from src.desk.service import accept_review
+    from src.desk.store import DeskRejected
+    from src.desk.typed import words_state
+
+    store, deal_id, ids = deal
+    event = _waiting(store, deal_id, ids["Ningbo"])
+    with pytest.raises(DeskRejected, match="Quote only the words of the price; these words state 28.50 and 1000.00"):
+        accept_review(store, deal_id, event["id"], ids["Ningbo"], typed_amount=28.5, typed_words="28塊5 一把，起订 1000")
+    assert not words_state("28塊5，起订1000把", 28.5, 1e-6)
+    assert words_state("28块50", 28.5, 1e-6) and not words_state("28块50", 50, 1e-6)
