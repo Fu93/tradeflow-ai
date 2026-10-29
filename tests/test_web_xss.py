@@ -933,11 +933,12 @@ class TestChatObserverDirectionFilter(unittest.TestCase):
             self.content = fh.read()
 
     def test_observer_filters_sent_messages(self):
-        self.assertIn("messageDirection", self.content)
+        self.assertIn("ownDirection(node)", self.content)
+        self.assertIn("tradeflowChatDirection(node, document)", self.content)
         self.assertIn("isSentClass", self.content)
         self.assertRegex(
             self.content,
-            r'messageDirection\(node\)\s*===\s*"sent"',
+            r'if\s*\(direction\s*===\s*"sent"\)\s*return',
             "the chat observer must skip the buyer's own (sent) message (H6)",
         )
 
@@ -958,8 +959,8 @@ class TestChatObserverDirectionFilter(unittest.TestCase):
 
     def test_direction_filter_runs_before_ingestion(self):
         code = self.content
-        filter_at = code.index('messageDirection(node) === "sent"')
-        ingest_at = code.index("this.lruCache.add(text)")
+        filter_at = code.index('if (direction === "sent") return;')
+        ingest_at = code.index("this.debouncedTrigger(text, direction, payload, node, identity)")
         self.assertLess(
             filter_at,
             ingest_at,

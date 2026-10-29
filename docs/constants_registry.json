@@ -1944,8 +1944,8 @@
     {
       "file": "src/desk/recompute.py",
       "value": 20,
-      "context": "for draft in store.drafts(deal_id)[:20]:",
-      "justification": "Use of 20 on this line of src/desk/recompute.py: for draft in store.drafts(deal_id)[:20]:. A different line that repeats the digits is not covered."
+      "context": "visible_drafts = all_drafts[:20]",
+      "justification": "Use of 20 on this line of src/desk/recompute.py: visible_drafts = all_drafts[:20]. A different line that repeats the digits is not covered."
     },
     {
       "file": "src/desk/recompute.py",

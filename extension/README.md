@@ -40,8 +40,9 @@ Open the side panel's **Live desk** tab.
    messages automatically**: each new bubble the page marks as received then goes to
    the desk by itself (the same message twice is one quote; the toolbar badge counts
    what waits). When a chat matches no supplier, or several, choose its supplier once
-   in the panel. The automatic read was tested on `mock_chat.html`; the 1688, Alibaba,
-   WhatsApp and WeChat page structures have not been tested.
+   in the panel. Automatic reading has real-Chromium tests using synthetic page structures for 1688, Alibaba,
+   WhatsApp Web and WeChat Web, including multiple tabs/windows and browser restart. These are
+   fixture tests, not tests of logged-in accounts or current vendor page structures.
 4. Under **Waiting for you**, pick the figure, check the quoted line, choose the
    supplier, and press **Accept**. Nothing is accepted for you.
    Each waiting item says which model read the message (for example a Nemotron
@@ -85,3 +86,23 @@ Open the side panel's **Live desk** tab.
    - The sandbox's "simulate the risk-check slider" button exercises the compliance gate: the HUD
      switches to `CAPTCHA DETECTED`, and after you click the slider it returns to
      `COPILOT RADAR ON` and re-registers the session binding for that tab.
+
+## Concurrent capture and recovery
+
+Each message keeps the chat URL, shop/contact and platform message ID observed when it arrived.
+Changing tabs or chat headers during the settle interval does not change that identity. Manual
+supplier bindings are scoped to the server, deal and conversation; a choice for one chat does not
+silently apply to another. Unidentifiable messages remain unimported until the person maps them.
+
+Automatic captures are saved in a local extension queue before network delivery. Failed imports
+remain in **Saved chat captures**, retry on reconnect/configuration change and a periodic alarm,
+and can be retried or removed explicitly. Pausing automatic reading keeps queued captures saved.
+The queue is bounded; oversized messages or storage failures are shown as not saved. No API key
+is copied into each queued capture. Re-importing the same identified message uses the same backend
+idempotency key; an unknown delivery result must not create another quote.
+
+A slow supplier does not block the other threads and is never inferred to have walked away.
+Approval, manual transmission and a recorded delivery receipt are distinct states. Chat sending
+is still manual; approval does not claim a platform receipt. WeChat desktop is not covered by
+Chrome content scripts. Authenticated live-site validation and an approved platform send adapter
+remain separate work. See [chat capture reliability](../docs/CHAT_CAPTURE_RELIABILITY.md).

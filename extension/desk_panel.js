@@ -203,7 +203,7 @@
       const priorMean = supplier.d_prior_mean == null ? "labelled policy" : String(supplier.d_prior_mean);
       const priorStrength = supplier.d_prior_strength == null ? "labelled policy" : String(supplier.d_prior_strength);
       row.appendChild(document.createTextNode(supplier.name));
-      [validityText(supplier),
+      [(supplier.conversation || {}).label || "", validityText(supplier),
         supplier.moq_above_order && supplier.supplier_moq
           ? "Minimum order " + Number(supplier.supplier_moq.quantity).toLocaleString() + " is above your order."
           : "",
@@ -265,6 +265,34 @@
 
   function payload_done() {
     return "Saved. The counter below is computed from the figure you confirmed.";
+  }
+
+  function renderCapturedQueue() {
+    storageGet(["tfAutoQueue"], (saved) => {
+      const root = document.getElementById("desk-capture-items");
+      const count = document.getElementById("desk-capture-count");
+      const entries = Object.entries(saved.tfAutoQueue || {});
+      if (count) count.textContent = String(entries.length);
+      if (!root) return;
+      root.replaceChildren();
+      entries.slice(0, 20).forEach(([key, item]) => {
+        const block = document.createElement("div");
+        const heading = document.createElement("p");
+        heading.textContent = (item.payload.shop || item.payload.contact || "Unmapped chat") + " · deal " + item.deal;
+        const text = document.createElement("textarea");
+        text.readOnly = true;
+        text.rows = 3;
+        text.value = item.payload.text || "";
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "Remove saved capture";
+        remove.addEventListener("click", () => {
+          chrome.runtime.sendMessage({type: "DISCARD_CHAT_IMPORT", key}, () => renderCapturedQueue());
+        });
+        block.append(heading, text, remove);
+        root.appendChild(block);
+      });
+    });
   }
 
   function rememberSupplier(confirmed) {
@@ -370,6 +398,16 @@
         setStatus("Desk is offline.");
       }
     });
+    renderCapturedQueue();
+    const retry = document.getElementById("desk-retry-captures");
+    if (retry) retry.addEventListener("click", () => {
+      chrome.runtime.sendMessage({type: "RETRY_CHAT_IMPORTS"}, (result) => {
+        if (chrome.runtime.lastError) { setStatus("Retry did not reach the extension."); return; }
+        setStatus(result && result.reason === "off" ? "Enable automatic reading to retry saved captures."
+          : "Retry checked saved captures. Unresolved items remain saved below.");
+        renderCapturedQueue();
+      });
+    });
     const auto = document.getElementById("desk-auto-import");
     if (auto) {
       storageGet(["tfAutoImport"], (stored) => { auto.checked = !!stored.tfAutoImport; });
@@ -382,7 +420,9 @@
     }
     if (globalThis.chrome && chrome.storage && chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener((changes, area) => {
-        if (area !== "local" || !changes.tfAutoLast) return;
+        if (area !== "local") return;
+        if (changes.tfAutoQueue) renderCapturedQueue();
+        if (!changes.tfAutoLast) return;
         const last = changes.tfAutoLast.newValue || {};
         const who = last.shop ? " from " + last.shop : "";
         if (last.ok && !last.duplicate) {
@@ -392,7 +432,9 @@
           setStatus("A new message" + who + " matches " + (last.reason === "ambiguous" ? "more than one supplier" : "no supplier") +
             ". Choose this chat's supplier once; later messages from this chat then go in by themselves.");
         } else if (last.reason === "api-key") {
-          setStatus("The API key was rejected. Enter the key this server expects.");
+          setStatus("The API key was rejected. Captures remain saved; enter the correct key to retry.");
+        } else if (last.queued) {
+          setStatus("A message" + who + " is saved locally for retry. It has not reached the desk yet.");
         }
         lastDrawn = "";
         refresh();

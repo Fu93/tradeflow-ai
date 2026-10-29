@@ -5,6 +5,7 @@
  */
 
 import { matchSuppliers } from "./desk_match.js";
+import "./desk_import.js";
 
 // [FIX 2026-10-25] 127.0.0.1, not localhost: on Windows, `localhost` can
 // resolve to ::1 first, the local server binds IPv4 only, and every desk
@@ -597,6 +598,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (type === "RETRY_CHAT_IMPORTS") {
+    retrySavedImports().then(sendResponse).catch(() => sendResponse({ok: false, reason: "offline"}));
+    return true;
+  }
+  if (type === "DISCARD_CHAT_IMPORT") {
+    serialCapture(async () => {
+      const saved = await storageLocal(["tfAutoQueue"]);
+      const queue = Object.assign({}, saved.tfAutoQueue || {});
+      delete queue[String(message.key || "")];
+      await chrome.storage.local.set({tfAutoQueue: queue});
+      return {ok: true};
+    }).then(sendResponse).catch(() => sendResponse({ok: false, reason: "queue-storage"}));
+    return true;
+  }
   if (type === "AUTO_IMPORT_QUOTE") {
     autoImport(message.payload).then(sendResponse).catch(() => sendResponse({ ok: false, reason: "offline" }));
     return true;
@@ -630,7 +645,7 @@ async function supplierTab() {
 async function deskStored() {
   return new Promise((resolve) => {
     chrome.storage.local.get(
-      ["tfDeskDeal", "tfDeskSupplier", "tfApiKey"],
+      ["tfDeskDeal", "tfDeskSupplier", "tfApiKey", "tfApiBase", "tfDeskBindings"],
       (value) => resolve(value || {})
     );
   });
@@ -640,58 +655,64 @@ async function deskStored() {
 // Shared by the manual import and the automatic read, so both match the
 // supplier the same way and neither can accept a price.
 async function importPayloadToDesk(stored, resp, message, extra) {
-  if (!resp || !resp.ok || !resp.text) return resp || { ok: false, reason: "empty" };
+  if (!resp || !resp.ok || !resp.text) return resp || {ok: false, reason: "empty"};
   const key = stored.tfApiKey || "";
-  const dealRes = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${stored.tfDeskDeal}`, {
-    headers: key ? { "X-API-Key": key } : {},
+  const base = String(stored.tfApiBase || API_BASE_URL_DEFAULT).replace(/\/+$/, "");
+  const identity = globalThis.tradeflowChatIdentity(resp);
+  const bindingKey = JSON.stringify([base, stored.tfDeskDeal, identity]);
+  const binding = (stored.tfDeskBindings || {})[bindingKey] || "";
+  const dealRes = await fetch(base + "/api/v1/desk/deals/" + stored.tfDeskDeal, {
+    signal: AbortSignal.timeout(20000), headers: key ? {"X-API-Key": key} : {},
   });
-  if (dealRes.status === 401) return { ok: false, reason: "api-key", status: 401 };
-  if (!dealRes.ok) return { ok: false, reason: "no-deal", status: dealRes.status };
+  if (dealRes.status === 401) return {ok: false, reason: "api-key", status: 401};
+  if (!dealRes.ok) return {ok: false, reason: dealRes.status === 404 ? "no-deal" : "offline", status: dealRes.status};
   const snapshot = await dealRes.json();
   const matches = matchSuppliers(snapshot.suppliers || [], resp);
   const pageUrl = resp.url || "";
   const confirmPage = message && message.confirmPage ? message.confirmPage : "";
   const picked = stored.tfDeskSupplier || "";
-  const confirmedHere = !!(confirmPage && confirmPage === pageUrl && picked);
+  const known = snapshot.suppliers || [];
+  const confirmedHere = !!(confirmPage && confirmPage === pageUrl && picked && known.some((supplier) => supplier.id === picked));
+  const mapped = known.some((supplier) => supplier.id === binding) ? binding : "";
+  const automatic = !!(extra && extra.automatic);
   let supplierId = null;
   if (matches.length === 1) supplierId = matches[0].id;
-  else if (matches.length > 1 && confirmedHere && matches.some((supplier) => supplier.id === picked)) {
-    supplierId = picked;
-  } else if (matches.length === 0 && confirmedHere) supplierId = picked;
-  else {
-    return {
-      ok: false,
-      reason: matches.length > 1 ? "ambiguous" : "unmapped",
-      page: pageUrl,
-      names: (matches.length ? matches : snapshot.suppliers || []).map((supplier) => supplier.name),
-    };
-  }
+  else if (mapped && (!matches.length || matches.some((supplier) => supplier.id === mapped))) supplierId = mapped;
+  else if (!automatic && matches.length > 1 && confirmedHere && matches.some((supplier) => supplier.id === picked)) supplierId = picked;
+  else if (!automatic && matches.length === 0 && confirmedHere) supplierId = picked;
+  else return {
+    ok: false, reason: matches.length > 1 ? "ambiguous" : "unmapped", page: pageUrl,
+    names: (matches.length ? matches : known).map((supplier) => supplier.name),
+  };
   const quote = {
-    source: "chat-import",
-    raw_text: resp.text,
-    supplier_id: supplierId,
-    page_url: resp.url || "",
-    page_title: resp.title || "",
-    simulated: !!resp.simulated,
+    source: "chat-import", raw_text: resp.text, supplier_id: supplierId,
+    page_url: resp.url || "", page_title: resp.title || "", simulated: !!resp.simulated,
   };
-  if (extra && extra.externalId) quote.external_id = extra.externalId;
-  const res = await fetch(`${API_BASE_URL}/api/v1/desk/deals/${stored.tfDeskDeal}/quotes`, {
-    method: "POST",
-    headers: deskHeaders(key),
-    body: JSON.stringify(quote),
+  quote.external_id = "chat:" + await sha256Hex(JSON.stringify([
+    base, stored.tfDeskDeal, supplierId, identity, resp.message_id || "", resp.text,
+  ]));
+  const res = await fetch(base + "/api/v1/desk/deals/" + stored.tfDeskDeal + "/quotes", {
+    signal: AbortSignal.timeout(20000), method: "POST", headers: deskHeaders(key), body: JSON.stringify(quote),
   });
-  if (res.status === 401) return { ok: false, reason: "api-key", status: 401 };
+  if (res.status === 401) return {ok: false, reason: "api-key", status: 401};
   let body = null;
-  try { body = await res.json(); } catch (err) { body = null; }
+  try { body = await res.json(); } catch (err) { /* HTTP status remains available. */ }
+  if (res.ok && confirmedHere && !automatic && (resp.shop || resp.contact)) await rememberChatBinding(bindingKey, supplierId);
   const waiting = body && body.snapshot && Array.isArray(body.snapshot.review) ? body.snapshot.review.length : null;
-  return {
-    ok: res.ok,
-    status: res.status,
-    simulated: !!resp.simulated,
-    supplierId,
-    duplicate: !!(body && body.duplicate),
-    waiting,
-  };
+  return {ok: res.ok, status: res.status, simulated: !!resp.simulated, supplierId,
+    duplicate: !!(body && body.duplicate), waiting};
+}
+
+let bindingWrites = Promise.resolve();
+function rememberChatBinding(key, supplierId) {
+  bindingWrites = bindingWrites.catch(() => {}).then(async () => {
+    const stored = await storageLocal(["tfDeskBindings"]);
+    const bindings = Object.assign({}, stored.tfDeskBindings || {});
+    delete bindings[key];
+    bindings[key] = supplierId;
+    await chrome.storage.local.set({tfDeskBindings: Object.fromEntries(Object.entries(bindings).slice(-200))});
+  });
+  return bindingWrites;
 }
 
 async function importLatestVisible(message) {
@@ -709,7 +730,10 @@ async function importLatestVisible(message) {
     });
   });
   const result = await importPayloadToDesk(stored, resp, message, null);
-  if (result && result.ok) paintWaiting(result.waiting);
+  if (result && result.ok) {
+    paintWaiting(result.waiting);
+    retrySavedImports().catch(() => {});
+  }
   return result;
 }
 
@@ -717,52 +741,129 @@ async function importLatestVisible(message) {
 // Automatic read: a new supplier bubble on a chat page goes to the desk by itself.
 // It still lands in review; a person confirms the price there.
 // ---------------------------------------------------------------------------
-const autoSeen = new Set();
-
 async function sha256Hex(text) {
-  const bytes = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function paintWaiting(count) {
   if (!chrome.action || !chrome.action.setBadgeText) return;
-  const text = typeof count === "number" && count > 0 ? String(count) : "";
-  chrome.action.setBadgeText({ text });
+  chrome.action.setBadgeText({text: typeof count === "number" && count > 0 ? String(count) : ""});
+}
+
+// Persisting captures is independent of network delivery: a slow server must
+// not leave other suppliers' incoming messages waiting only in worker memory.
+let captureWork = Promise.resolve();
+function serialCapture(work) {
+  const result = captureWork.catch(() => {}).then(work);
+  captureWork = result.catch(() => {});
+  return result;
+}
+let deliveryWork = Promise.resolve();
+function serialDelivery(work) {
+  const result = deliveryWork.catch(() => {}).then(work);
+  deliveryWork = result.catch(() => {});
+  return result;
+}
+function removeCaptured(key) {
+  return serialCapture(async () => {
+    const saved = await storageLocal(["tfAutoQueue"]);
+    const queue = Object.assign({}, saved.tfAutoQueue || {});
+    delete queue[key];
+    await chrome.storage.local.set({tfAutoQueue: queue});
+  });
 }
 
 async function autoImport(payload) {
-  const stored = await deskStored();
-  const settings = await storageLocal(["tfAutoImport", "tfConfirmedPage"]);
-  if (!settings.tfAutoImport) return { ok: false, reason: "off" };
-  if (!stored.tfDeskDeal) return { ok: false, reason: "no-deal" };
-  if (!payload || !payload.ok || !payload.text) return payload || { ok: false, reason: "empty" };
-  let path = "";
-  try { path = new URL(payload.url || "").pathname; } catch (err) { path = ""; }
-  // The same message on the same chat page is the same quote, after a reload too:
-  // the desk drops a repeated external id.
-  const externalId = "chat:" + (await sha256Hex(stored.tfDeskDeal + "|" + path + "|" + payload.text));
-  if (autoSeen.has(externalId)) return { ok: true, duplicate: true };
-  // A page whose supplier a person chose in the panel keeps that choice; any other
-  // page needs a name match, or it waits for that choice.
-  const result = await importPayloadToDesk(stored, payload, { confirmPage: settings.tfConfirmedPage || "" }, { externalId });
-  if (result && result.ok) {
-    autoSeen.add(externalId);
-    paintWaiting(result.waiting);
-  }
-  const shop = payload.shop || payload.contact || payload.title || "";
-  chrome.storage.local.set({
-    tfAutoLast: {
-      at: Date.now(),
-      shop,
-      page: payload.url || "",
-      ok: !!(result && result.ok),
-      reason: (result && result.reason) || "",
-      duplicate: !!(result && result.duplicate),
-    },
+  const captured = await serialCapture(async () => {
+    const stored = await deskStored();
+    const settings = await storageLocal(["tfAutoImport", "tfAutoQueue"]);
+    if (!settings.tfAutoImport) return {ok: false, reason: "off"};
+    if (!stored.tfDeskDeal) return {ok: false, reason: "no-deal"};
+    if (!payload || !payload.ok || !payload.text) return {ok: false, reason: "empty"};
+    if (payload.text.length > 20000 || JSON.stringify(payload).length > 30000) return {ok: false, reason: "message-size"};
+    const base = String(stored.tfApiBase || API_BASE_URL_DEFAULT).replace(/\/+$/, "");
+    const key = await sha256Hex(JSON.stringify([
+      base, stored.tfDeskDeal, globalThis.tradeflowChatIdentity(payload), payload.message_id || "", payload.text,
+    ]));
+    const queue = Object.assign({}, settings.tfAutoQueue || {});
+    if (!queue[key] && Object.keys(queue).length >= 200) return {ok: false, reason: "queue-full"};
+    queue[key] = queue[key] || {base, deal: stored.tfDeskDeal, payload, at: Date.now()};
+    try { await chrome.storage.local.set({tfAutoQueue: queue}); }
+    catch (err) { return {ok: false, reason: "queue-storage"}; }
+    return {ok: true, key};
   });
-  return result;
+  if (!captured.ok) return captured;
+  return serialDelivery(async () => {
+    const saved = await storageLocal(["tfAutoQueue", "tfAutoImport"]);
+    if (!saved.tfAutoImport) return {ok: false, reason: "off", queued: true};
+    const item = (saved.tfAutoQueue || {})[captured.key];
+    if (!item) return {ok: true, duplicate: true};
+    const stored = await deskStored();
+    const base = String(stored.tfApiBase || API_BASE_URL_DEFAULT).replace(/\/+$/, "");
+    if (item.base !== base || item.deal !== stored.tfDeskDeal) return {ok: false, reason: "different-desk", queued: true};
+    const result = await deliverCaptured(stored, item.payload);
+    if (result.ok) await removeCaptured(captured.key);
+    await recordCaptureResult(item.payload, result, !result.ok);
+    return Object.assign({}, result, {queued: !result.ok});
+  });
 }
+
+async function deliverCaptured(stored, payload) {
+  try {
+    const result = await importPayloadToDesk(stored, payload, {}, {automatic: true});
+    if (result && result.ok) paintWaiting(result.waiting);
+    return result || {ok: false, reason: "offline"};
+  } catch (err) { return {ok: false, reason: "offline"}; }
+}
+
+async function recordCaptureResult(payload, result, queued) {
+  await chrome.storage.local.set({tfAutoLast: {
+    at: Date.now(), shop: payload.shop || payload.contact || payload.title || "",
+    page: payload.url || "", ok: !!result.ok, reason: result.reason || "",
+    duplicate: !!result.duplicate, queued,
+  }});
+}
+
+function retrySavedImports() {
+  return serialDelivery(async () => {
+    const settings = await storageLocal(["tfAutoImport", "tfAutoQueue"]);
+    if (!settings.tfAutoImport) return {ok: false, reason: "off"};
+    const queue = Object.assign({}, settings.tfAutoQueue || {});
+    const selected = await deskStored();
+    const selectedBase = String(selected.tfApiBase || API_BASE_URL_DEFAULT).replace(/\/+$/, "");
+    const active = Object.entries(queue).filter(([, item]) =>
+      item.base === selectedBase && item.deal === selected.tfDeskDeal
+    ).slice(0, 10);
+    for (const [key, item] of active) {
+      if (!(await storageLocal(["tfAutoImport"])).tfAutoImport) break;
+      const stored = await deskStored();
+      const base = String(stored.tfApiBase || API_BASE_URL_DEFAULT).replace(/\/+$/, "");
+      if (item.base !== base || item.deal !== stored.tfDeskDeal) continue;
+      const result = await deliverCaptured(stored, item.payload);
+      if (result.ok) {
+        delete queue[key];
+        await removeCaptured(key);
+      }
+      await recordCaptureResult(item.payload, result, !result.ok);
+      if (!result.ok && (result.reason === "offline" || result.reason === "api-key")) break;
+    }
+    return {ok: true, remaining: Object.keys(queue).length};
+  });
+}
+
+if (chrome.alarms) {
+  chrome.alarms.create("tradeflow-chat-retry", {periodInMinutes: 1});
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === "tradeflow-chat-retry") retrySavedImports().catch(() => {});
+  });
+}
+retrySavedImports().catch(() => {});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && ["tfApiKey", "tfApiBase", "tfDeskDeal", "tfAutoImport"].some((key) => changes[key])) {
+    retrySavedImports().catch(() => {});
+  }
+});
 
 if (chrome.commands && chrome.commands.onCommand) {
   chrome.commands.onCommand.addListener((command) => {

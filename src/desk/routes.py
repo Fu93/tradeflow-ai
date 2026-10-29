@@ -312,9 +312,11 @@ def register_desk_routes(api_v1: APIRouter) -> None:
         if store.get_deal(deal_id) is None:
             raise HTTPException(status_code=404, detail="No such deal")
         snapshot = store.get_snapshot(deal_id)
-        if snapshot is None:
+        if snapshot is None or any("conversation" not in row for row in snapshot.get("suppliers", [])):
             with deal_lock(deal_id):
-                snapshot = store.get_snapshot(deal_id) or publish(store, deal_id)
+                snapshot = store.get_snapshot(deal_id)
+                if snapshot is None or any("conversation" not in row for row in snapshot.get("suppliers", [])):
+                    snapshot = publish(store, deal_id)
         from src.desk.transmission import send_policy
 
         return {**snapshot, "send_policy": send_policy()}

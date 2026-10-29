@@ -20,6 +20,7 @@ from src.config.heuristics import (
     UNIT_SANITY_MULTIPLE,
 )
 from src.desk.store import DeskStore
+from src.desk.conversation import thread_status
 from src.desk.transmission import send_policy
 from src.desk.history import confirmation_order
 from src.desk.headline import audit_line, confirmed_prices, saving_vs_best_first
@@ -788,8 +789,20 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     public_events = [_public(event) for event in reversed(events[-100:])]
     review = [_public(event) for event in reversed(events) if event["status"] == "review"]
     anchor_pending = store.anchor_is_pending(deal_id)
+    all_drafts = store.drafts(deal_id)
+    visible_drafts = all_drafts[:20]
+    visible_ids = {draft["id"] for draft in visible_drafts}
+    current_suppliers = set()
+    for draft in all_drafts:
+        if draft["status"] == "superseded" or draft["supplier_id"] in current_suppliers:
+            continue
+        current_suppliers.add(draft["supplier_id"])
+        if draft["id"] not in visible_ids:
+            visible_drafts.append(draft)
+    for card in cards:
+        card["conversation"] = thread_status(card, events, all_drafts)
     draft_rows = []
-    for draft in store.drafts(deal_id)[:20]:
+    for draft in visible_drafts:
         draft_rows.append(
             {
                 "id": draft["id"],
