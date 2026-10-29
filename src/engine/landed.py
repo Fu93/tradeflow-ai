@@ -67,6 +67,8 @@ def landed_unit_cost(
         "unit_price_base": unit_base,
         "landed_cost": landed,
         "adder": landed - unit_base,
+        "unit_multiplier": rate * (1.0 + float(duty_rate)),
+        "fixed_cost": (float(freight) + float(fees)) * rate * (1.0 + float(duty_rate)),
         "status": "complete",
         "missing": [],
         "fx_to_base": rate,

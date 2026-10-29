@@ -363,7 +363,10 @@ def test_pasted_quotes_compare_unit_and_landed(live_server):
                 timeout=120000,
             )
             blocked = page.locator("#supplierCards").inner_text()
-            assert "not actionable" not in blocked
+            # A rival match can exceed a tight cap even when the cheapest
+            # supplier's at-ask counter is safe. It must be withheld.
+            assert "not actionable" in blocked
+            assert "not actionable" not in page.locator("#supplierCards .supplier-card").first.inner_text()
             assert "Default counter" in blocked
             assert "labelled_policy" in blocked
             assert page.locator("#auctionSummary details").evaluate("el => el.open") is False
@@ -391,6 +394,7 @@ def test_pasted_quotes_compare_unit_and_landed(live_server):
             cards = page.locator("#supplierCards").inner_text()
             assert "not actionable" not in cards
             assert "upper bound" not in cards
+            assert "not actionable" not in page.locator("#supplierCards .supplier-card").first.inner_text()
             shown = page.evaluate(
                 """() => {
                     const card = document.querySelector("#supplierCards .supplier-card");

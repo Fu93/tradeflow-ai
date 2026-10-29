@@ -56,6 +56,7 @@
       </div>
       <p id="basis-line"></p>
       <p id="audit-line"></p>
+      <p id="next-step" class="desk-next" role="status"></p>
       <form id="paste-form" class="desk-paste desk-form">
         <h2>Paste a quote</h2>
         <label>Supplier
@@ -64,13 +65,16 @@
         <label>Raw text
           <textarea id="paste-text" rows="4" required></textarea>
         </label>
-        <fieldset class="desk-landed">
+        <details class="desk-landed-options">
+          <summary>Add freight, fees and import duty (optional)</summary>
+          <fieldset class="desk-landed">
           <legend>Landed cost, per unit in the deal currency (optional)</legend>
           <label>Freight <input id="paste-freight" type="number" min="0" step="any" inputmode="decimal" /></label>
           <label>Other fees <input id="paste-fees" type="number" min="0" step="any" inputmode="decimal" /></label>
           <label>Import duty, percent <input id="paste-duty" type="number" min="0" step="any" inputmode="decimal" /></label>
           <p class="desk-note">Fill all three (0 counts as a value). When every quoted supplier has them, the ranking uses landed cost instead of the unit price.</p>
-        </fieldset>
+          </fieldset>
+        </details>
         <div class="desk-actions">
           <button type="submit">Add quote</button>
           <button type="button" id="sample-message">Use a sample message</button>
@@ -78,18 +82,16 @@
         <p id="paste-sample-note" class="desk-note" hidden></p>
         <p id="paste-error" class="desk-error" role="alert"></p>
       </form>
+      <section class="desk-log desk-review" id="review-section" aria-label="Confirm supplier quotes">
+        <h2>Review queue</h2>
+        <div id="review"></div>
+      </section>
       <p id="headline-line"></p>
       <div id="cards" class="cards"></div>
-      <div class="desk-grid">
-        <section class="desk-log">
-          <h2>Review queue</h2>
-          <div id="review"></div>
-        </section>
         <section class="desk-log">
           <h2>Event log</h2>
           <div id="events"></div>
         </section>
-      </div>
       <section class="desk-draft">
         <h2>Drafts</h2>
         <p>Copy a draft, or approve a send. Approval is the only way a draft can leave this desk.</p>

@@ -86,4 +86,5 @@ def test_readme_names_every_desk_env_var():
     missing = sorted(name for name in desk_env_names() if name not in readme)
     assert missing == []
     assert "TRADEFLOW_LEGACY" in readme
-    assert "Code freeze after 27 Oct 2026" in readme
+    assert "decision formula was frozen after 27 Oct 2026" in readme
+    assert "safety correction" in readme

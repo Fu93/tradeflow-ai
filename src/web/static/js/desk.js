@@ -53,6 +53,11 @@
     return p;
   }
 
+  function reveal(selector) {
+    const node = document.querySelector(selector);
+    if (node) node.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+
   // The supplier's stated quote validity. It is shown, never used to rank or
   // price: the send guard re-derives the counter from the chain, and a figure
   // that depended on today's date would not re-derive.
@@ -198,7 +203,13 @@
     dealId = "";
     sessionStorage.removeItem("tfDeskDeal");
     reviewChoice.clear();
+    typedDrafts.clear();
+    evidence.clear();
     workingsOpen.clear();
+    document.querySelectorAll('#assumptions [data-filled]').forEach((field) => {
+      delete field.dataset.filled;
+      field.value = "";
+    });
     board.hidden = true;
     formError.textContent = "";
     form.hidden = false;
@@ -212,10 +223,13 @@
 
   async function refresh() {
     if (!dealId) return;
+    const requestedDeal = dealId;
     try {
-      const snapshot = await request("/api/v1/desk/deals/" + dealId, { headers: headers(false) });
+      const snapshot = await request("/api/v1/desk/deals/" + requestedDeal, { headers: headers(false) });
+      if (requestedDeal !== dealId) return;
       show(snapshot);
     } catch (err) {
+      if (requestedDeal !== dealId) return;
       formError.textContent = err.status === 404
         ? "This deal is not in the desk database. A fresh disk does not keep the previous deal. Open a new one."
         : err.status === 401
@@ -248,7 +262,8 @@
     document.getElementById("deal-line").textContent =
       (deal.product || "Deal") + " · " + (deal.id || "");
     document.getElementById("basis-line").textContent =
-      "Ranking basis: " + (snapshot.ranking_basis || "unit_price") + ". " + (snapshot.kappa_note || "");
+      "Ranking basis: " + (snapshot.ranking_basis === "landed_cost" ? "Landed cost" : "Unit price") +
+      ". " + (snapshot.kappa_note || "");
     const auditLine = document.getElementById("audit-line");
     auditLine.textContent = snapshot.audit || "";
     if (snapshot.anchor_pending) {
@@ -284,6 +299,12 @@
     }
     renderCards(snapshot.suppliers || []);
     const reviewItems = snapshot.review || [];
+    const hasConfirmed = (snapshot.suppliers || []).some((supplier) => supplier.quote_confirmed);
+    document.getElementById("next-step").textContent = reviewItems.length
+      ? "Next: confirm the supplier's own price in the review queue below. Nothing is sent."
+      : hasConfirmed
+        ? "Next: compare the confirmed quotes, choose a counter, then review the draft before approving."
+        : "Next: paste a quote or use a sample message, then confirm its price.";
     const reviewSig = JSON.stringify(reviewItems.map((item) => [
       item.id, Boolean((item.provenance || {}).extractor_pending), (item.provenance || {}).suggested_token || "",
     ]));
@@ -455,6 +476,9 @@
       if (supplier.quote_confirmed === false) {
         line(card, "This quote is not confirmed.");
       }
+      if (supplier.walked_away) {
+        line(card, "Supplier walked away. Excluded from the current ranking.").className = "desk-warn";
+      }
       if (supplier.landed_status === "complete" && supplier.landed_cost != null) {
         line(card, "Landed cost: " + money(supplier.landed_cost, dealCurrency));
       }
@@ -564,8 +588,10 @@
       }
       const actions = document.createElement("div");
       actions.className = "desk-actions";
-      actions.appendChild(outcomeButton("Record continue", "continue", supplier.id));
-      actions.appendChild(outcomeButton("Record walk-away", "walk_away", supplier.id));
+      if (supplier.quote_confirmed && !supplier.walked_away) {
+        actions.appendChild(outcomeButton("Record continue", "continue", supplier.id));
+        actions.appendChild(outcomeButton("Record walk-away", "walk_away", supplier.id));
+      }
       card.appendChild(actions);
       card.appendChild(evidenceBlock(supplier));
       root.appendChild(card);
@@ -970,6 +996,7 @@
       });
       reviewChoice.delete(eventId);
       show(snapshot);
+      if (!reject && supplierId) reveal('[data-supplier="' + supplierId + '"]');
     } catch (err) {
       line(block, err.message);
     }
@@ -1207,6 +1234,7 @@
       delete area.dataset.sample;
       showNote("paste-sample-note", "");
       if (result.snapshot) show(result.snapshot);
+      reveal("#review-section");
     } catch (err) {
       error.textContent = err.message;
     }

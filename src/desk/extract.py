@@ -600,6 +600,22 @@ def _stop_for_budget(hop: dict[str, Any], attempts: list[dict[str, Any]]) -> dic
     return result
 
 
+def _paid_attempt_error(transport) -> dict[str, Any] | None:
+    """Reserve one real API attempt, including retries and optional failover."""
+    if transport is not None:
+        return None
+    from src.engine.llm_config import model_calls_paused, take_model_call
+
+    error = "extractor_paused" if model_calls_paused() is not None else ""
+    if not error and not take_model_call():
+        error = "extractor_daily_cap"
+    if error:
+        result = _empty(error)
+        result["attempts"] = []
+        return result
+    return None
+
+
 def extract_mentions(
     message: str,
     *,
@@ -618,21 +634,6 @@ def extract_mentions(
     """
     if not configured() and transport is None:
         return {"mentions": [], "numeric_field_discarded": False, "configured": False}
-    if transport is None:
-        from src.engine.llm_config import model_calls_paused, take_model_call
-
-        if model_calls_paused() is not None:
-            # The service refused the account a short while ago (no credit, or
-            # the key was refused). Calling again cannot succeed.
-            paused = _empty("extractor_paused")
-            paused["attempts"] = []
-            return paused
-        if not take_model_call():
-            # Today's paid-call cap is spent: the rule reader carries on, and
-            # the quote says why it was not read by the model.
-            spent = _empty("extractor_daily_cap")
-            spent["attempts"] = []
-            return spent
     attempts: list[dict[str, Any]] = []
     allowance = (
         float(budget_seconds)
@@ -647,6 +648,11 @@ def extract_mentions(
         remaining = deadline - time.perf_counter()
         if remaining <= 0:
             last = _stop_for_budget(hop, attempts)
+            stopped = True
+            break
+        denied = _paid_attempt_error(transport)
+        if denied is not None:
+            last = denied
             stopped = True
             break
         timeout = min(float(hop["timeout"]), remaining)
@@ -675,13 +681,17 @@ def extract_mentions(
         if remaining <= 0:
             last = _stop_for_budget(hop, attempts)
         else:
-            timeout = min(float(hop["timeout"]), remaining)
-            result, status, latency, digest = _execute_hop(message, hop, transport, timeout)
-            attempts.append(_attempt(hop, status, latency, digest))
-            last = result
-            if status == "ok":
-                last["attempts"] = list(attempts)
-                return last
+            denied = _paid_attempt_error(transport)
+            if denied is not None:
+                last = denied
+            else:
+                timeout = min(float(hop["timeout"]), remaining)
+                result, status, latency, digest = _execute_hop(message, hop, transport, timeout)
+                attempts.append(_attempt(hop, status, latency, digest))
+                last = result
+                if status == "ok":
+                    last["attempts"] = list(attempts)
+                    return last
     last["attempts"] = list(attempts)
     return last
 
