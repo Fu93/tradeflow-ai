@@ -22,7 +22,7 @@ asymmetric rule that is wrong for money and impossible to explain to a supplier.
 """
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
+from decimal import Decimal, ROUND_CEILING, ROUND_DOWN, ROUND_HALF_UP
 
 from src.config.heuristics import MINOR_SCALE
 
@@ -56,6 +56,12 @@ def quantise_down(amount: float, scale: int = MINOR_SCALE) -> float:
     """Round toward zero. Used for caps: a cap must never be rounded upward."""
     value = Decimal(str(float(amount)))
     return float(value.quantize(_quantum(scale), rounding=ROUND_DOWN))
+
+
+def quantise_up(amount: float, scale: int = MINOR_SCALE) -> float:
+    """A safety floor must never be rounded down."""
+    value = Decimal(str(float(amount)))
+    return float(value.quantize(_quantum(scale), rounding=ROUND_CEILING))
 
 
 def quantise_offer(offer: float, ceiling: float, ask: float, scale: int = MINOR_SCALE) -> float:

@@ -2,6 +2,8 @@
 
 Deadline: **Friday 30 October 2026, 17:00 London** (10:00 Pacific). Aim to submit by Friday 12:00 London. Rules: <https://nebiusglobalaihackathon.devpost.com/rules>.
 
+The final concise paste-ready description is in [DEVPOST_FINAL.md](DEVPOST_FINAL.md). Operational handoff, recording instructions, and remaining account steps are in [SUBMISSION_READY.md](SUBMISSION_READY.md).
+
 ## Checklist
 
 | Requirement | State |
@@ -11,7 +13,7 @@ Deadline: **Friday 30 October 2026, 17:00 London** (10:00 Pacific). Aim to submi
 | Public repository with an open-source license visible in the About panel | MIT (`LICENSE`). Confirm the About panel on GitHub shows it. |
 | README with setup and how NVIDIA models and Token Factory were used | The first sections of [README.md](../README.md) |
 | Working demo URL | Done: <https://tradeflow-ai-demo.onrender.com/desk>. `/health` returned 200 and one single live check was made on 2026-10-28 (see "Single live check" below). |
-| Public YouTube video, 3 minutes or less, no unlicensed trademarks or copyrighted music | **To do.** Script below. Leave AMD and lablab logos out of every frame. |
+| Public YouTube video, under 3 minutes, no unlicensed trademarks or copyrighted music | **Local captioned walkthrough prepared; public upload remains required.** See [submission handoff](SUBMISSION_READY.md). Script below. Leave AMD and lablab logos out of every frame. |
 | Text description | Below |
 | Feedback on the Nebius and NVIDIA tools | [NEBIUS_NVIDIA_FEEDBACK.md](NEBIUS_NVIDIA_FEEDBACK.md). Edit it against your own runs first. |
 | Explanation of updates to a pre-existing project | README, "What changed during the submission period". The first commit is dated 13 October 2026. |
@@ -52,7 +54,7 @@ The model reads the quote. The math prices the counter. You press send.
 
 **Where each tool earns its place.**
 
-- *Nebius Token Factory with NVIDIA Nemotron* reads messy supplier text. The default model is Nemotron Super with one more try of the same model after any failed attempt; Ultra can be selected with `TRADEFLOW_LLM_MODEL`. Every attempt is timed and recorded (first hop 30 s, retry 20 s, whole chain 80 s), and paid calls are capped at 40 per UTC day per server process (`TRADEFLOW_LLM_DAILY_CALLS`; the count is kept in memory and resets if the service restarts; shown on `/health` as `llm.model_calls_today`) so a small balance lasts the judging window. The cap counts one call per quote read, so a retry of the same model does not count. `render.yaml` sets `WEB_CONCURRENCY=1`, so the service runs one process. Past the cap the desk keeps working on the rule reader and says so.
+- *Nebius Token Factory with NVIDIA Nemotron* reads messy supplier text. The default model is Nemotron Super with one more try of the same model after any failed attempt; Ultra can be selected with `TRADEFLOW_LLM_MODEL`. Every attempt is timed and recorded (first hop 30 s, retry 20 s, whole chain 80 s), and paid calls are capped at 40 per UTC day per server process (`TRADEFLOW_LLM_DAILY_CALLS`; the count is kept in memory and resets if the service restarts; shown on `/health` as `llm.model_calls_today`) to bound per-process attempts; this is not a guarantee that the configured balance lasts through judging. Since the 29 Oct safety update, every API attempt counts, including retries and optional provider failover. Earlier live observations below used the old one-per-read counter. `render.yaml` sets `WEB_CONCURRENCY=1`, so the service runs one process. Past the cap the desk keeps working on the rule reader and says so.
 - *Tavily* adds a Web evidence card to each supplier: cited public pages about a product's wholesale prices and about a supplier's reviews. It sits beside the quote and never touches the price.
 
 **The design choice that matters.** Neither the model nor the search can move a price. A price field in the model's answer is thrown away, and no decision module imports the search code; a test fails if one does. This keeps the model's job narrow: it reads wording, the Bayesian reserve-price and expected-surplus core decides the number, and a person approves every send. That boundary is tested; whether it is enough for real money is not something we have shown, because no factory has closed a deal through this prototype.
@@ -72,7 +74,7 @@ The model reads the quote. The math prices the counter. You press send.
 - With one confirmed quote, the default draft equals that supplier's own ask, unless the person picks the push-lower counter.
 - The model is a second opinion. It can only point at one of the rule reader's own candidate figures. The desk pre-selects that figure only when the rules pre-selected none, and otherwise shows a disagreement. It never supplies a number, never confirms one, and the counter and draft come only from figures a person confirmed.
 - The Chrome extension was tested only on a simulated chat page, not on real 1688, Alibaba, WhatsApp or WeChat pages.
-- Paid model calls are capped at 40 per UTC day, counted in memory per server process; a restart resets the count. If the model service refuses the key or the credit (HTTP 401, 402 or 403), paid calls pause for 30 minutes and the desk reads with the rules only.
+- Model API attempts, including retries, are capped at 40 per UTC day, counted in memory per server process; a restart resets the count. If the model service refuses the key or the credit (HTTP 401, 402 or 403), paid calls pause for 30 minutes and the desk reads with the rules only.
 - Deals live in the demo database on an ephemeral disk, so a restart or a cold start of the demo service loses them. The New deal button only leaves the current deal; the deal stays in the database until a restart.
 - Technical wording (prior, reserve, sensitivity) is folded under "How these figures were worked out", not removed or rewritten.
 - The live demo accepts unsigned approval clicks and has no SMTP configured, so nothing is ever emailed (see "Approval and sending on the demo"). Real use needs a pinned approver public key (`TRADEFLOW_APPROVAL_PUBKEY`), signing with `python -m src.desk.approval_signing`, and an SMTP configuration (`DESK_SMTP_SEND=1`, `SMTP_HOST`, `EMAIL_USERNAME`, `EMAIL_PASSWORD`).
@@ -111,7 +113,7 @@ The model reads the quote. The math prices the counter. You press send.
 
 **Built with.** Python, FastAPI, SQLite, NumPy, ONNX Runtime, a Chrome MV3 extension, Docker and Render, Nebius Token Factory, NVIDIA Nemotron, Tavily.
 
-## Demo video script (3:00 or less)
+## Original live-capture script (keep the final edit under 3:00)
 
 Record on the live demo URL. Say the number that is on the screen. Do not say a model "decided" anything.
 
@@ -137,6 +139,6 @@ The ranking on screen is by unit price unless freight, fees and duty were typed 
 3. Press **Use a sample message**, choose a supplier, and press **Add quote**. The waiting item shows which Nemotron model read it and the spans it labelled. Pick the figure and press **Accept**.
 4. Add a quote or two for other suppliers; the cards rank them and show the default and push-lower counters. (Optional: type freight, fees and duty together on every quote and the ranking uses landed cost; otherwise it uses the unit price.) Press **Use push lower in the draft** on any card.
 5. On a supplier card, press **Check supplier on the web**.
-6. On the demo service **Approve and send** accepts an unsigned click (`TRADEFLOW_REQUIRE_SIGNED_APPROVAL=0` was set there on 2026-10-28 with the owner's approval; `/ready` shows `signed_approval: policy=optional`). No SMTP is configured, so no email is ever sent: the draft shows status approved and `transmitted: 0`. Real use needs a pinned approver public key, signing with `python -m src.desk.approval_signing`, and an SMTP configuration. To check the audit chain, read the audit line on the desk, open `GET /api/v1/desk/deals/{id}/audit/verify` on `/docs`, or run `python scripts/desk_verify.py <base-url>`; there is no verify button. Paid model calls are capped at 40 per UTC day per server process; past the cap the desk says so and keeps working on the rule reader.
+6. On the demo service **Approve and send** accepts an unsigned click (`TRADEFLOW_REQUIRE_SIGNED_APPROVAL=0` was set there on 2026-10-28 with the owner's approval; `/ready` shows `signed_approval: policy=optional`). No SMTP is configured, so no email is ever sent: the draft shows status approved and `transmitted: 0`. Real use needs a pinned approver public key, signing with `python -m src.desk.approval_signing`, and an SMTP configuration. To check the audit chain, read the audit line on the desk, open `GET /api/v1/desk/deals/{id}/audit/verify` on `/docs`, or run `python scripts/desk_verify.py <base-url>`; there is no verify button. Model API attempts (including retries) are capped at 40 per UTC day per server process; past the cap the desk says so and keeps working on the rule reader.
 
 The demo service stores data on an ephemeral disk, so a restart clears deals. Replace the `<JUDGE_KEY>` placeholder above before submitting (put the key only in the Devpost form, never in the repository), and rotate the key after judging.

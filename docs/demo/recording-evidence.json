@@ -1,0 +1,71 @@
+{
+  "offline": true,
+  "paid_api_attempts": 0,
+  "transmitted": 0,
+  "audit_ok": true,
+  "chapters": [
+    {
+      "index": 0,
+      "start": 0.10260037400030342,
+      "end": 13.358100374000303,
+      "caption": "TradeFlow AI | A supplier negotiation desk\nOffline walkthrough. Fictional suppliers.",
+      "voice": "voice-0.wav"
+    },
+    {
+      "index": 1,
+      "start": 14.556464165000307,
+      "end": 25.364402165000307,
+      "caption": "One deal. Four suppliers. Buyer-defined limits.",
+      "voice": "voice-1.wav"
+    },
+    {
+      "index": 2,
+      "start": 26.50908127599996,
+      "end": 41.31383127599996,
+      "caption": "A rival price: 24. Supplier offer: 27.80.\nThis recording uses the offline rule reader.",
+      "voice": "voice-2.wav"
+    },
+    {
+      "index": 3,
+      "start": 42.409877339000104,
+      "end": 54.564877339000105,
+      "caption": "A person confirms the number.\nThe desk computes the counter.",
+      "voice": "voice-3.wav"
+    },
+    {
+      "index": 4,
+      "start": 56.31839678999995,
+      "end": 66.30489678999996,
+      "caption": "A second confirmed quote updates the comparison.\nComplete freight, fees and duty enable landed costs.",
+      "voice": "voice-4.wav"
+    },
+    {
+      "index": 5,
+      "start": 67.37545904800027,
+      "end": 78.62445904800026,
+      "caption": "Choose a counter. Review the exact draft.\nInfeasible price and risk limits withhold the counter.",
+      "voice": "voice-5.wav"
+    },
+    {
+      "index": 6,
+      "start": 79.75772470499987,
+      "end": 91.04178770499988,
+      "caption": "Tavily: cited references, separate from pricing.\nOffline here; no search request is made.",
+      "voice": "voice-6.wav"
+    },
+    {
+      "index": 7,
+      "start": 92.20218604000002,
+      "end": 103.71056104000002,
+      "caption": "Human approval is required.\nDemo approval sends no email.",
+      "voice": "voice-7.wav"
+    },
+    {
+      "index": 8,
+      "start": 105.37714931400023,
+      "end": 120.64202431400024,
+      "caption": "Verified audit chain. Published code and limitations.\nNo real factory deal is claimed.",
+      "voice": "voice-8.wav"
+    }
+  ]
+}

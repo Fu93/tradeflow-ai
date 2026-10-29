@@ -13,6 +13,7 @@ golden-section search. A mesh step is not an input.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 
 from src.config.heuristics import (
     BRENT_ITERS,
@@ -53,6 +54,27 @@ class OfferChoice:
     note: str
     push_withheld: bool = False
     push_note: str = ""
+    minimum_offer: float = 0.0
+
+
+def within_risk_cap(
+    ask: float,
+    offer: float | None,
+    cap: float,
+    *,
+    fit: HazardFit | None = None,
+    effect: float = 0.0,
+    intercept: float | None = None,
+    gap_coef: float | None = None,
+) -> bool:
+    """Check the actual issued amount, independently of optimiser flags."""
+    if offer is None or not all(isfinite(float(value)) for value in (ask, offer, cap)):
+        return False
+    if ask <= 0.0 or offer < 0.0 or cap < 0.0:
+        return False
+    loaded = fit if fit is not None else load_hazard_fit()
+    risk = incremental_hazard(ask, offer, effect, loaded, intercept=intercept, gap_coef=gap_coef)
+    return isfinite(risk) and risk <= float(cap) + float(OPT_TOL)
 
 
 def _clip(value: float, lo: float, hi: float) -> float:
@@ -217,7 +239,10 @@ def _push(
     if hi <= 0.0:
         return 0.0, "golden_section"
     floor = hazard_floor(ask, cap, effect, fit, intercept=intercept, gap_coef=gap_coef)
-    floor = min(max(floor, 0.0), hi)
+    if floor > hi:
+        # No feasible interval. choose_offer withholds both counters.
+        return hi, "golden_section"
+    floor = max(floor, 0.0)
 
     def score(offer: float) -> float:
         return objective(offer, ask, hi, state, effect, fit, intercept=intercept, gap_coef=gap_coef)
@@ -246,7 +271,11 @@ def choose_offer(
     # issue the full ask as a counter with blocked=False. Withholding is the
     # only honest answer when the posterior has no usable mass.
     unevaluable = not belief.numerically_valid()
-    blocked = hi <= 0.0 or inconsistent or unevaluable
+    floor = hazard_floor(ask, risk_cap, effect, loaded, intercept=intercept, gap_coef=gap_coef)
+    risk_blocked = not within_risk_cap(
+        ask, hi, risk_cap, fit=loaded, effect=effect, intercept=intercept, gap_coef=gap_coef,
+    )
+    blocked = hi <= 0.0 or inconsistent or unevaluable or risk_blocked
     default = 0.0 if blocked else hi
     push, kind = _push(
         float(ask), float(outside), belief, effect, float(risk_cap), loaded,
@@ -284,6 +313,8 @@ def choose_offer(
         )
     elif inconsistent:
         push_note = "The rejection lower bound meets or passes the upper bound, so no price is issued."
+    elif risk_blocked:
+        push_note = "No counter fits both the price ceiling and your walk-away risk limit."
     elif push_withheld:
         push_note = "Push would reduce expected value, so it is withheld."
     ref = reference_ask(belief, float(ask))
@@ -317,6 +348,7 @@ def choose_offer(
         note=bound_note + " " + HEURISTIC_NOTE,
         push_withheld=push_withheld,
         push_note=push_note,
+        minimum_offer=floor,
     )
 
 

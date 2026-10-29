@@ -69,10 +69,15 @@ def issued_offer(choice: OfferChoice | None, ceiling: float, ask: float, mode: s
     A push that would lower expected value is withheld by the solver; then the
     default figure is issued and the relation says so.
     """
-    from src.desk.money import quantise_offer
+    from src.desk.money import quantise_down, quantise_offer, quantise_up
 
     if choice is None or choice.blocked or str(choice.counter_relation) == "withheld":
         return None, "withheld"
+    floor = quantise_up(choice.minimum_offer)
+    if floor > quantise_down(min(float(ceiling), float(ask), float(choice.default_counter))):
+        return None, "withheld"
+    price_cap = min(float(ceiling), float(choice.default_counter))
     if mode == "push" and not choice.push_withheld:
-        return quantise_offer(float(choice.push_counter), float(ceiling), float(ask)), "push_lower"
-    return quantise_offer(float(choice.default_counter), float(ceiling), float(ask)), str(choice.counter_relation)
+        return max(floor, quantise_offer(float(choice.push_counter), price_cap, float(ask))), "push_lower"
+    amount = max(floor, quantise_offer(float(choice.default_counter), price_cap, float(ask)))
+    return amount, str(choice.counter_relation)

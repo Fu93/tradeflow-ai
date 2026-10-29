@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import time
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 import numpy as np
@@ -23,7 +24,7 @@ from src.desk.headline import audit_line, confirmed_prices, saving_vs_best_first
 from src.desk.shadow import progress as shadow_progress
 from src.desk.decide import decide_supplier, issued_offer, offer_modes
 from src.desk.money import quantise_offer
-from src.engine.decision import HEURISTIC_NOTE
+from src.engine.decision import HEURISTIC_NOTE, within_risk_cap
 from src.engine.hazard_fit import NOTE as HAZARD_TRANSFER_NOTE
 from src.engine.hazard_fit import baseline_rates, load_hazard_fit
 from src.desk.terms import read_lead_time, read_moq
@@ -153,14 +154,18 @@ def _landed_consistent_rivals(
     """
     if basis != "landed_cost":
         return [price for other, price in asks.items() if other != supplier_id]
-    own_unit = float(asks[supplier_id])
-    own_landed = float(landed_by_id[supplier_id]["landed_cost"])
-    adder = own_landed - own_unit
+    own = landed_by_id[supplier_id]
+    multiplier = float(own["unit_multiplier"])
+    fixed_cost = float(own["fixed_cost"])
     rivals: list[float] = []
     for other, parts in landed_by_id.items():
         if other == supplier_id:
             continue
-        rivals.append(float(parts["landed_cost"]) - adder)
+        # Decimal prevents a mathematically exact 4.20 cap becoming 4.19999…
+        # and then losing a cent when the money cap is rounded down.
+        rivals.append(float(
+            (Decimal(str(parts["landed_cost"])) - Decimal(str(fixed_cost))) / Decimal(str(multiplier))
+        ))
     return rivals
 
 
@@ -199,7 +204,7 @@ def _headline(
     live = [event for event in confirmed if not _unverified(event)]
     first: dict[str, float] = {}
     basis: dict[str, str] = {}
-    adder: dict[str, float] = {}
+    landed_terms: dict[str, dict[str, Any]] = {}
     for event in live:
         supplier_id = event.get("supplier_id")
         if not supplier_id or str(supplier_id) in first:
@@ -210,7 +215,7 @@ def _headline(
         if landed.get("status") == "complete" and landed.get("landed_cost") is not None and unit is not None:
             first[str(supplier_id)] = float(landed["landed_cost"])
             basis[str(supplier_id)] = "landed"
-            adder[str(supplier_id)] = float(landed["landed_cost"]) - float(unit)
+            landed_terms[str(supplier_id)] = landed
         elif unit is not None:
             first[str(supplier_id)] = float(unit)
             basis[str(supplier_id)] = "unit"
@@ -225,8 +230,9 @@ def _headline(
         supplier_id = str(last.get("supplier_id") or "")
         uses_landed = any(kind == "landed" for kind in basis.values())
         if uses_landed:
-            if supplier_id in adder:
-                agreed_landed = unit_agreed + adder[supplier_id]
+            if supplier_id in landed_terms and all(kind == "landed" for kind in basis.values()):
+                parts = landed_terms[supplier_id]
+                agreed_landed = unit_agreed * float(parts["unit_multiplier"]) + float(parts["fixed_cost"])
         elif basis.get(supplier_id) == "unit" or (not supplier_id and all(kind == "unit" for kind in basis.values())):
             agreed_landed = unit_agreed
     simulated = any(_unverified(event) for event in confirmed) or not live
@@ -338,7 +344,7 @@ def counter_of(choice: Any, ceiling: float, ask: float) -> float | None:
     """
     if choice is None or choice.blocked or str(choice.counter_relation) == "withheld":
         return None
-    return quantise_offer(float(choice.default_counter), float(ceiling), float(ask))
+    return issued_offer(choice, ceiling, ask, "default")[0]
 
 
 def supplier_needs_keep(entries: list[dict[str, Any]], supplier_id: str) -> bool:
@@ -618,6 +624,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             "supplier_moq": None,
             "supplier_lead_time": None,
             "moq_above_order": False,
+            "walked_away": _walked_away(outcomes_by.get(row["id"]) or []),
             # The words a person typed the price from, when it was typed.
             "quote_typed_words": None,
         }
@@ -661,7 +668,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             # quantised the same way. An unrounded figure beside a rounded one
             # reads as a different recommendation.
             card["push_counter"] = (
-                None if blocked or withheld_push else quantise_offer(float(choice.push_counter), ceiling, own_quote)
+                None if blocked or withheld_push else issued_offer(choice, ceiling, own_quote, "push")[0]
             )
             card["push_note"] = choice.push_note or ""
             card["counter_relation"] = relation
@@ -699,18 +706,27 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
                         "Push-lower was chosen but is withheld, so the draft carries the default figure."
                     )
             card = _hold_previous(card, previous_rows.get(row["id"]))
+            if card["counter"] is not None and not within_risk_cap(
+                own_quote, card["counter"], float(deal["risk_tolerance"]), fit=fit,
+                intercept=decision_intercept, gap_coef=decision_gap,
+            ):
+                card["counter"] = None
+                card["push_counter"] = None
+                card["blocked"] = True
+                card["counter_relation"] = "withheld"
+                card["push_note"] = "The previous counter exceeds your current walk-away risk limit."
         cards.append(card)
 
     basis = ranking_basis(
         [
             {"status": card["landed_status"], "landed_cost": card["landed_cost"]}
             for card in cards
-            if card["latest_quote"] is not None
+            if card["quote_confirmed"] and not card["walked_away"] and not card["excluded_from_decision"]
         ]
     ) if any(card["latest_quote"] is not None for card in cards) else "unit_price"
 
     def sort_key(card: dict[str, Any]) -> tuple:
-        if card["latest_quote"] is None or card.get("excluded_from_decision"):
+        if not card["quote_confirmed"] or card["walked_away"] or card.get("excluded_from_decision"):
             return (1, 0.0, card["name"], card["id"])
         if basis == "landed_cost" and card["landed_cost"] is not None:
             cost = float(card["landed_cost"])
@@ -721,7 +737,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     ordered = sorted(cards, key=sort_key)
     rank = 0
     for card in ordered:
-        if card["latest_quote"] is None or card.get("excluded_from_decision"):
+        if not card["quote_confirmed"] or card["walked_away"] or card.get("excluded_from_decision"):
             card["rank"] = None
             continue
         rank += 1

@@ -39,6 +39,7 @@ from src.desk.parse import _confirm_span, _visible_text, parse_quote, price_from
 from src.desk.typed import words_state
 from src.desk.snapshot import publish
 from src.desk.store import DeskStore
+from src.engine.decision import within_risk_cap
 from src.desk.transmission import (
     chained_supplier,
     counter_subject,
@@ -548,7 +549,12 @@ def _fresh_counter(record: dict[str, Any]) -> float:
             raise SendRefused("The record carries the push-lower figure, but a fresh decision withholds the push.")
         fresh = float(pushed)
     else:
-        fresh = min(float(choice.default_counter), float(record["ceiling"]), float(record["ask"]))
+        from src.desk.decide import issued_offer
+
+        default, _relation = issued_offer(choice, float(record["ceiling"]), float(record["ask"]), "default")
+        if default is None:
+            raise SendRefused("No whole-cent counter fits the price and risk limits.")
+        fresh = float(default)
     previous = record.get("held_previous_counter")
     if previous is not None and float(previous) < fresh:
         return float(previous)
@@ -666,6 +672,11 @@ def _guard_send(store: DeskStore, draft: dict[str, Any], deal: dict[str, Any]) -
     counter = record.get("counter")
     if ask is None or counter is None or ceiling is None:
         raise SendRefused("The stored decision has no counter to re-derive.")
+    if record.get("risk_cap") is None or not within_risk_cap(
+        float(ask), float(counter), float(record["risk_cap"]),
+        intercept=record.get("hazard_intercept"), gap_coef=record.get("hazard_gap"),
+    ):
+        raise SendRefused("The issued counter exceeds the walk-away risk limit.")
     confirmed_ask = _confirmed_unit_ask(store, str(draft["deal_id"]), str(draft.get("supplier_id") or ""))
     if not _ask_matches_confirmed(float(ask), confirmed_ask):
         raise SendRefused("The stored ask does not match the confirmed quote.")

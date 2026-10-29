@@ -41,7 +41,7 @@ Code: `src/engine/decision.py`, called from `src/engine/coupled.py` and `src/eng
 
 Let `q` be this supplier's latest ask, `q0` the reference (first) ask, and `W` the outside option: the best other confirmed landed quote, already capped by this latest ask and by the ceiling. When this supplier is the cheapest, `W = q`. The split `(q + target) / 2` is not used.
 
-The default counter is `W`. It is labelled `at_ask` when it sits on this ask, and `match_rival` when a cheaper confirmed quote caps it.
+The default counter is `W` only when it is inside the incremental-risk cap. If the hazard floor is greater than `W`, neither counter is feasible and both are withheld. A safety floor is never clipped downward to manufacture a feasible interval. It is labelled `at_ask` when it sits on this ask, and `match_rival` when a cheaper confirmed quote caps it.
 
 The push-lower counter maximises
 
@@ -65,7 +65,9 @@ then clipped to `[d·q, min(q, W)]`.
 
 The general Beta and the hazard penalty use the golden-section search. The prior strength used in production has `β < 1`, so the log-concave uniqueness that needs `α ≥ 1` and `β ≥ 1` does not apply. The search evaluates the ends.
 
-A tighter rival can only lower `W`. It cannot raise a counter.
+A tighter rival can only lower `W` or make the risk-constrained interval infeasible. It cannot raise a counter. The final amount uses whole minor units: the hazard floor is rounded upward, price caps downward, and the issued amount is checked independently against the hazard cap in the record and send gate.
+
+For complete landed inputs, `L(b) = (b + freight + fees) × (1 + duty_rate)`. A rival landed quote `Lr` becomes the equivalent unit-price cap `Lr / (1 + duty_rate) − freight − fees`. The tax on the original ask is not a fixed adder at a new price.
 
 Student-t utilities remain in `src/engine/bayesian_v2.py` for intervals and for older callers. They do not set this offer. The Weitzman index orders suppliers with a normal approximation to `ask × D`. It does not set the offer. Monte Carlo fills the reported tail. It does not pick the price. CVaR is a report.
 
@@ -85,7 +87,7 @@ h(b) = σ(β0 + βg · g + u)
 
 The JSON stores two outcomes on the same Business & Industrial threads. Thread ended with no deal includes threads the buyer ended. Seller-ended is the seller declining, auto-declining, or letting the buyer's offer expire. The decision uses seller-ended. Both outcomes carry seller-clustered intervals and a seller-grouped hold-out and a by-time hold-out. A reserve-gap coefficient is not stored as a decision term. The sample keeps a first buyer offer at or below the Buy-It-Now price. Offers above that price are dropped: a few ratios reach the thousands, and a logit on the raw gap then has a slope near zero even though the seller-ended rate rises with the discount. The coefficients, the sample size, and the hold-out errors are the ones in the JSON from this offline fit. They are not copied from a prefix of the files. The decision logit is `intercept + gap × quote_gap + small_gap × max(knot − quote_gap, 0)`. The straight line understated seller-ended walk-away on gaps below the knot; the hinge is the correction, and the JSON reports both the line and the hinge against the observed bins. The fit is the first buyer offer of a thread. The desk applies it per round to the latest ask. That transfer, and the remaining bin error, are disclosed on the card.
 
-The user's risk cap applies to `Δh`, not to the level of `h`. The cap can limit how far the push-lower counter goes. It does not withhold the default counter at the ask.
+The user's risk cap applies to `Δh`, not to the level of `h`. The cap applies to both issued figures, including a default that matches a cheaper rival. A default at the ask has zero increment; an infeasible rival match is withheld. This safety correction was added on 29 Oct 2026.
 
 ## Shared reserve factor
 

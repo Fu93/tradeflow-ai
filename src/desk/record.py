@@ -9,6 +9,7 @@ from typing import Any
 
 from src.config.heuristics import DEAL_CURRENCY, MINOR_SCALE, OPT_TOL
 from src.desk.money import is_quantised, to_minor
+from src.engine.decision import within_risk_cap
 
 ROOT = Path(__file__).resolve().parents[2]
 _OPTIMISER = "decision.choose_offer"
@@ -152,6 +153,10 @@ def build_record(
     # record and a message that disagreed about the price.
     counter_quantised = counter is None or is_quantised(float(counter))
     fit_pinned = bool(fit)
+    if counter is not None and ask is not None and risk_cap is not None:
+        hazard_within_cap = hazard_within_cap and within_risk_cap(
+            float(ask), float(counter), float(risk_cap), intercept=hazard_intercept, gap_coef=hazard_gap,
+        )
     checks = (
         _check("only_accepted_inputs", only_accepted or not events, "every priced input was accepted by a person"),
         _check("currency_matches_deal", currencies_ok and bool(currency), f"deal currency is {currency}"),
@@ -162,7 +167,7 @@ def build_record(
             counter_quantised,
             f"counter is a whole number of minor units (scale {int(MINOR_SCALE)})",
         ),
-        _check("hazard_within_cap", hazard_within_cap, "incremental hazard is inside the cap, or the push is withheld"),
+        _check("hazard_within_cap", hazard_within_cap, "the issued counter's incremental hazard is inside the cap"),
         _check("fit_hash_pinned", fit_pinned, "the hazard file hash is on the record"),
         _check(
             "unconfirmed_clear",

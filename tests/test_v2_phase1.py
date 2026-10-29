@@ -310,7 +310,7 @@ def test_default_counter_matches_the_rival_and_push_is_not_above_it():
 
     fit = load_hazard_fit()
     state = ReserveState.policy()
-    choice = choose_offer(ask=15.0, outside=13.0, state=state, risk_cap=0.02, fit=fit)
+    choice = choose_offer(ask=15.0, outside=13.0, state=state, risk_cap=0.5, fit=fit)
     assert choice.default_counter == pytest.approx(13.0)
     assert choice.push_counter <= choice.default_counter + 1e-9
     assert choice.push_half <= choice.default_counter + 1e-9

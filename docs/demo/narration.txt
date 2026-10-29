@@ -1,0 +1,17 @@
+Small sellers compare factory quotes across a language gap. TradeFlow turns a supplier message into a confirmed price, a counter offer and a draft you control. This is an offline walkthrough with fictional suppliers.
+
+Start with one product and four suppliers. The buyer sets quantity, target, ceiling and a walk away risk limit. Sample contacts use a reserved test domain.
+
+This Chinese message mentions a rival at twenty four and the supplier at twenty seven point eight. Live mode uses Nemotron on Nebius Token Factory to label evidence. This recording uses the rule reader, with no paid calls.
+
+I confirm the supplier's own figure. Only confirmed prices enter the decision. The desk shows a default counter and an optional push lower counter, with modelled risk clearly labelled.
+
+Now a second supplier offers twenty six point five. Confirming it updates the comparison. Complete freight, fees and duty would switch the ranking to landed cost.
+
+I choose push lower for the cheapest supplier. The Chinese draft changes to that exact amount. If no price fits the ceiling and risk cap, the desk withholds the counter.
+
+Tavily can add cited public references about a supplier. This offline recording shows the unavailable state. Search results never set the counter and do not verify a factory.
+
+Approval is a separate human action. On this demo no mail transport is configured, so approval is recorded without sending an email. Chat drafts are copied and sent by the person.
+
+The audit endpoint verifies the keyed chain. This remains a research prototype: no factory has closed a deal through it. Code, evaluation results and limitations are public. The model reads, the math prices, and you approve.
