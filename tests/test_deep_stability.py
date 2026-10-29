@@ -134,14 +134,14 @@ def test_failed_objective_evaluation_withholds_the_counter(monkeypatch):
 
 @pytest.mark.parametrize('ask', [.0001, .001, .005, .009])
 def test_no_positive_minor_unit_means_no_draft_price(ask):
-    choice = choose_offer(ask=ask, outside=ask, risk_cap=.5)
+    choice = choose_offer(ask=ask, outside=ask, risk_cap=.5, gap_coef=0)
     for mode in ('default', 'push'):
         assert issued_offer(choice, ask, ask, mode)[0] is None
-    assert not within_risk_cap(ask, 0, .5)
+    assert not within_risk_cap(ask, 0, .5, gap_coef=0)
 
 
 def test_low_prior_cannot_round_a_push_to_a_free_offer():
-    choice = choose_offer(ask=30, outside=30, risk_cap=.5, state=ReserveState(.0001, 1))
+    choice = choose_offer(ask=30, outside=30, risk_cap=.5, gap_coef=0, state=ReserveState(.0001, 1))
     amount, _ = issued_offer(choice, 30, 30, 'push')
     assert amount is not None and amount >= .01
 
