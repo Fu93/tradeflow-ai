@@ -1,6 +1,7 @@
 """Pure desk decision. One supplier, one call to choose_offer. No I/O."""
 from __future__ import annotations
 
+from src.config.heuristics import MINOR_SCALE
 from src.engine.decision import OfferChoice, choose_offer
 from src.engine.hazard_fit import HazardFit
 from src.engine.reserve import ReserveState
@@ -73,7 +74,7 @@ def issued_offer(choice: OfferChoice | None, ceiling: float, ask: float, mode: s
 
     if choice is None or choice.blocked or str(choice.counter_relation) == "withheld":
         return None, "withheld"
-    floor = quantise_up(choice.minimum_offer)
+    floor = max(1.0 / float(MINOR_SCALE), quantise_up(choice.minimum_offer))
     if floor > quantise_down(min(float(ceiling), float(ask), float(choice.default_counter))):
         return None, "withheld"
     price_cap = min(float(ceiling), float(choice.default_counter))

@@ -70,7 +70,7 @@ def within_risk_cap(
     """Check the actual issued amount, independently of optimiser flags."""
     if offer is None or not all(isfinite(float(value)) for value in (ask, offer, cap)):
         return False
-    if ask <= 0.0 or offer < 0.0 or cap < 0.0:
+    if ask <= 0.0 or offer <= 0.0 or cap < 0.0:
         return False
     loaded = fit if fit is not None else load_hazard_fit()
     risk = incremental_hazard(ask, offer, effect, loaded, intercept=intercept, gap_coef=gap_coef)
