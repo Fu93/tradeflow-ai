@@ -200,7 +200,9 @@ def test_review_copy_approval_and_reopen_survive_polling(desk_server):
         await area.evaluate("node => { node.focus(); node.select(); }")
         await page.wait_for_timeout(2400)
         assert await handle.evaluate("node => node.isConnected && node.selectionEnd === node.value.length")
-        await page.evaluate("Object.defineProperty(navigator, 'clipboard', {value: {writeText: async () => {throw Error('denied')}}})")
+        await page.evaluate("""() => Object.defineProperty(navigator, 'clipboard', {
+            value: {writeText: async () => {throw Error('denied')}}
+        })""")
         await page.get_by_role("button", name="Copy draft", exact=True).first.click()
         await playwright.expect(page.locator('#drafts [role="status"]').first).to_contain_text("press Ctrl+C")
         approve = page.get_by_role("button", name="Approve only (no email)", exact=True).first

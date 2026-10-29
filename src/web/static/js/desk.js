@@ -265,7 +265,7 @@
     mutations.clear();
     renderSigs.clear();
     lastReviewSig = "";
-    document.querySelectorAll('#desk-form button[type="submit"], #paste-form button[type="submit"]').forEach((button) => busy(button, false));
+    document.querySelectorAll('#desk-form button[type="submit"], #paste-form button[type="submit"], #assumptions button[type="submit"]').forEach((button) => busy(button, false));
     document.getElementById("paste-text").value = "";
     delete document.getElementById("paste-text").dataset.sample;
     clearLandedInputs();
@@ -502,6 +502,7 @@
       const include = document.getElementById("include-unverified");
       if (include) payload.include_unverified = include.checked;
       busy(submit, true);
+      const epoch = viewEpoch;
       try {
         const snapshot = await request("/api/v1/desk/deals/" + dealId + "/assumptions", {
           method: "POST",
@@ -512,7 +513,7 @@
       } catch (err) {
         if (err.staleView) return;
         boardError.textContent = err.message;
-      } finally { busy(submit, false); }
+      } finally { if (epoch === viewEpoch) busy(submit, false); }
     });
   }
 
