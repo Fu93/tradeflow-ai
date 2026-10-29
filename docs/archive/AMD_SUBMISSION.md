@@ -23,7 +23,7 @@ The desk runs offline until AMD live mode is on and VLLM_API_KEY is a real secre
 
 ## Demo video script (about 4 minutes)
 
-Record the screen. Speak only what the screen just showed. If AMD live mode shows the offline fallback, say that. Do not narrate a call that did not happen. The public URL is whatever Render assigns after a deploy. This pack does not name a hostname. Locally, http://localhost:8000 is the stand-in. Clicks are in [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md).
+Record the screen. Speak only what the screen just showed. If AMD live mode shows the offline fallback, say that. Do not narrate a call that did not happen. The public URL is whatever Render assigns after a deploy. This pack does not name a hostname. Locally, http://localhost:8000 is the stand-in. Clicks are in [docs/DEMO_RUNBOOK.md](../DEMO_RUNBOOK.md).
 
 **0:00 — Pain.** Small sellers lose margin negotiating factory quotes alone, or pay an agent.
 
@@ -43,9 +43,9 @@ Record the screen. Speak only what the screen just showed. If AMD live mode show
 
 Target user is a hypothesis: a small cross-border seller who sources from factories and negotiates in chat. It is not interview data.
 
-HMRC counted 334,294 UK goods importers in 2025. A SAM proxy for non-EU sourcing is 132,484 to 239,616: 126,488 + 5,996 = 132,484, and adding 29,463 + 77,669 = 239,616. UK goods imports from China were GBP 69.7 billion in 2025 (ONS/DBT). That total includes precious metals and large corporates, so it overstates sourcing spend. The savings-pool ceiling is GBP 1.05 billion to GBP 2.09 billion (GBP 69.7 billion times 1.5 percent and 3 percent). Those rates are large-buyer Walmart/Pactum reports, an upper bound, not a TradeFlow result. SOM scenarios use assumed take rates and an Accio Pro public price as an anchor, not willingness to pay. Do not read them as data. Full citations and the formula are in [docs/MARKET_ANALYSIS.md](docs/MARKET_ANALYSIS.md).
+HMRC counted 334,294 UK goods importers in 2025. A SAM proxy for non-EU sourcing is 132,484 to 239,616: 126,488 + 5,996 = 132,484, and adding 29,463 + 77,669 = 239,616. UK goods imports from China were GBP 69.7 billion in 2025 (ONS/DBT). That total includes precious metals and large corporates, so it overstates sourcing spend. The savings-pool ceiling is GBP 1.05 billion to GBP 2.09 billion (GBP 69.7 billion times 1.5 percent and 3 percent). Those rates are large-buyer Walmart/Pactum reports, an upper bound, not a TradeFlow result. SOM scenarios use assumed take rates and an Accio Pro public price as an anchor, not willingness to pay. Do not read them as data. Full citations and the formula are in [docs/MARKET_ANALYSIS.md](../MARKET_ANALYSIS.md).
 
-Umbrellas (HS 6601) are the demo wedge, not a large market. Other codes use `scripts/market_data.py` and `GET /api/v1/market` (UN Comtrade preview). The committed fetch is [results/market_snapshot_6601.json](results/market_snapshot_6601.json). On session create, the dashboard, the API, and the extension's session read attach `market_context` (HS code, UK-from-China value, quantity, implied unit value only when both exist, year, source, fetched_at, caveats, or an explicit unavailable state). The engine-decision card and the extension Evidence tab show it as reference only, next to the supplier quote, labelled implied customs unit value. CIF customs valuation is not a price quote. The auction summary attaches the same block after the simulator returns. It never influences the solver, the recommended price, or the circuit breaker.
+Umbrellas (HS 6601) are the demo wedge, not a large market. Other codes use `scripts/market_data.py` and `GET /api/v1/market` (UN Comtrade preview). The committed fetch is [results/market_snapshot_6601.json](../../results/market_snapshot_6601.json). On session create, the dashboard, the API, and the extension's session read attach `market_context` (HS code, UK-from-China value, quantity, implied unit value only when both exist, year, source, fetched_at, caveats, or an explicit unavailable state). The engine-decision card and the extension Evidence tab show it as reference only, next to the supplier quote, labelled implied customs unit value. CIF customs valuation is not a price quote. The auction summary attaches the same block after the simulator returns. It never influences the solver, the recommended price, or the circuit breaker.
 
 Revenue model, proposed and not earned: a desk subscription, or a share of savings versus the first-round best quote. No revenue is claimed, because no factory deal has closed.
 
@@ -59,7 +59,7 @@ Hybrid desk. The workflow is written for the Hybrid, Becreatives, and Vibe Gener
 
 ## Offline comparison
 
-`python scripts/compare_llm_vs_tradeflow.py` writes [results/llm_vs_tradeflow.json](results/llm_vs_tradeflow.json). It is a simulation with fixed seed 42 and 24 episodes. `ran_on_amd` is false. The stand-in buyer is `offline_accept_opening` (not an AMD call). TradeFlow budget-violation rate 0.00%, deal rate 50.00%, average savings versus the supplier opening 22.24% (deals only). The stand-in budget-violation rate is 100.00%, deal rate 100.00%, average savings 0.00%. That 22.24% is not the auction headline and not the secondary walk-away ceiling figure.
+`python scripts/compare_llm_vs_tradeflow.py` writes [results/llm_vs_tradeflow.json](../../results/llm_vs_tradeflow.json). It is a simulation with fixed seed 42 and 24 episodes. `ran_on_amd` is false. The stand-in buyer is `offline_accept_opening` (not an AMD call). TradeFlow budget-violation rate 0.00%, deal rate 50.00%, average savings versus the supplier opening 22.24% (deals only). The stand-in budget-violation rate is 100.00%, deal rate 100.00%, average savings 0.00%. That 22.24% is not the auction headline and not the secondary walk-away ceiling figure.
 
 ## Evidence notes
 
@@ -88,5 +88,5 @@ MI300X figures in `results/bench.json` are a theoretical roofline lower-bound es
 - [ ] On an AMD GPU box with ROCm and CuPy, run `scripts/benchmark_amd_gpu.py`. Commit that JSON only if `ran_on_amd_gpu` is true and you have read it.
 - [ ] Rotate the Evolus and AMD keys if they were pasted into chat, tickets, or screenshots during development. A scan of this git history did not find a committed live key; `.env` is gitignored. Rotation is still the right move if the keys were shared outside the repo.
 - [x] `results/pitch.pptx` and `results/pitch.pdf` are the 9-slide deck (`python scripts/make_pitch.py`). Glance at both before upload.
-- [ ] Record the video using [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md). Paste the form fields from [docs/LABLAB_FORM.md](docs/LABLAB_FORM.md). `python scripts/preflight.py` is the checklist.
+- [ ] Record the video using [docs/DEMO_RUNBOOK.md](../DEMO_RUNBOOK.md). Paste the form fields from [docs/LABLAB_FORM.md](../LABLAB_FORM.md). `python scripts/preflight.py` is the checklist.
 - [ ] GitHub topics are empty. This pack cannot edit repository settings. Add `procurement`, `negotiation`, `expectimax`, `fastapi`, `amd`, `hackathon`, `commerce`. The description already matches the pitch and can stay. The CI badge in the README points at `.github/workflows/ci.yml`. License on the repo is already MIT.

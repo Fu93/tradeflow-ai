@@ -14,7 +14,17 @@ let _lastSelectedSig = "";
 // real key, put it here; an empty constant sends no header at all, which is
 // deliberate (an empty header is indistinguishable from a bad key once a key
 // is configured).
-const TF_API_KEY = localStorage.getItem("tfApiKey") || "";
+// The live desk keeps the key in sessionStorage; read it there first so a
+// judge who entered it on /desk is not refused here.
+function tfStoredKey(store) {
+  try {
+    return (typeof store !== "undefined" && store && store.getItem("tfApiKey")) || "";
+  } catch (err) {
+    return "";  // storage can be blocked (private mode, sandboxed frames)
+  }
+}
+const TF_API_KEY = tfStoredKey(typeof sessionStorage === "undefined" ? null : sessionStorage) ||
+  tfStoredKey(typeof localStorage === "undefined" ? null : localStorage) || "";
 
 function tfAuthHeaders() {
   const headers = {};

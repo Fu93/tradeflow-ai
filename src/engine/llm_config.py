@@ -230,7 +230,8 @@ def llm_status() -> dict:
         "configured": chat is not None,
         "provider": None if chat is None else chat["provider"],
         "model": None if chat is None else chat["model"],
-        "default_model": DEFAULT_STAGE2_MODEL,
+        # The model a live call would use now, not a legacy default.
+        "default_model": None if chat is None else chat["model"],
         "offline_demo": chat is None,
         "amd_live_available": chat is not None and chat["provider"] == AMD_PROVIDER,
         "live_available": chat is not None,

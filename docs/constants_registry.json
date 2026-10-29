@@ -3123,6 +3123,12 @@
       "value": 1000,
       "context": "_THOUSAND_UNIT = 1000",
       "justification": "The value of 千 in a Chinese-numeral amount. A different line that repeats the digits is not covered."
+    },
+    {
+      "file": "src/app/main.py",
+      "value": 500,
+      "context": "HTTP_INTERNAL_ERROR = 500",
+      "justification": "HTTP status identity: 500 Internal Server Error, for the JSON answer to an unexpected error. A different line that repeats the digits is not covered."
     }
   ]
 }

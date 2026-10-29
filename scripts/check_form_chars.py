@@ -15,7 +15,7 @@ def _section(text: str, heading: str, nxt: str) -> str:
 
 
 def main() -> int:
-    submission = (ROOT / "SUBMISSION.md").read_text(encoding="utf-8")
+    submission = (ROOT / "docs" / "archive" / "AMD_SUBMISSION.md").read_text(encoding="utf-8")
     form = (ROOT / "docs" / "LABLAB_FORM.md").read_text(encoding="utf-8")
     title = re.search(r"## Title\s+```\s*([^\n`]+)\s*```", form).group(1).strip()
     short = _section(submission, "## Short description", "## Long description").split("\n\n")[0].strip()

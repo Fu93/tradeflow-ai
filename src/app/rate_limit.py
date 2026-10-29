@@ -86,7 +86,7 @@ class AmdRateLimiter:
             if len(recent_ip) >= self.per_minute or len(recent_all) >= self.per_hour:
                 raise HTTPException(
                     status_code=429,
-                    detail="Too many AMD live requests. Wait and retry.",
+                    detail="Too many live model requests. Wait and retry.",
                 )
             recent_ip.append(now)
             recent_all.append(now)

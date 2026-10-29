@@ -24,6 +24,35 @@ import tempfile
 
 import pytest
 
+# A developer's real provider keys must never reach the suite: a test that
+# expects "no key configured" would otherwise call the real (paid) service.
+# Tests that need a key set a fake one with monkeypatch.
+os.environ["TRADEFLOW_SKIP_DOTENV"] = "1"
+for _provider_key in (
+    "TRADEFLOW_LLM_API_KEY",
+    "TRADEFLOW_LLM_BASE_URL",
+    "TRADEFLOW_LLM_MODEL",
+    "TRADEFLOW_DASHBOARD_MODEL",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_MODEL",
+    "NVIDIA_API_KEY",
+    "TAVILY_API_KEY",
+    "VLLM_API_KEY",
+    "VLLM_BASE_URL",
+    "VLLM_MODEL",
+    "EVOLUS_API_KEY",
+    "EVOLUS_APP_ID",
+    "COMTRADE_API_KEY",
+    "GMAIL_CLIENT_ID",
+    "GMAIL_CLIENT_SECRET",
+    "GMAIL_REFRESH_TOKEN",
+    "IMAP_PASSWORD",
+    "SMTP_HOST",
+    "EMAIL_PASSWORD",
+):
+    os.environ.pop(_provider_key, None)
+
 # Session create must not call Comtrade during the suite. A test that needs
 # the live client deletes this variable and passes a fake transport.
 os.environ.setdefault("TRADEFLOW_MARKET_OFFLINE", "1")

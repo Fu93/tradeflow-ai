@@ -296,10 +296,10 @@ On Render's free plan the disk is ephemeral, so `TRADEFLOW_DESK_DB` does not sur
 - The real-model log in the AMD section below is a different experiment. Against a Bluffing Hardliner the recorded deal rate is 61.11%, with 0 budget violations in 94 completed matches.
 - Held-out accuracy of the on-device intent model on the synthetic set is **63.08%** (195 of 500 held out). An older 92% figure was a training-set score.
 - Stage-2 is off the synchronous round path by default because the recorded AMD calls average 16.81 s. AMD live mode is a separate request with a timeout and an offline fallback label. No committed Gemma latency.
-- What was checked, and what was not: [docs/VERIFICATION.md](docs/VERIFICATION.md). `python scripts/check_claims.py` fails if a number in this file or in SUBMISSION.md drifts from its source, and if a doc states an MI300X figure that is not in `results/mi300x_roofline.json`.
+- What was checked, and what was not: [docs/VERIFICATION.md](docs/VERIFICATION.md). `python scripts/check_claims.py` fails if a number in this file or in the archived AMD submission (docs/archive/AMD_SUBMISSION.md) drifts from its source, and if a doc states an MI300X figure that is not in `results/mi300x_roofline.json`.
 - The Evolus client is an optional email-draft adapter. The Evolus workflow was not created. This submission is not a second hackathon track.
 
-Hackathon text, demo script and judge steps: [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md). The earlier lablab (AMD) submission copy, a 3–5 minute demo script and a slide outline: [SUBMISSION.md](SUBMISSION.md).
+Hackathon text, demo script and judge steps: [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md). The earlier lablab (AMD) submission copy, a 3–5 minute demo script and a slide outline: [SUBMISSION.md](docs/archive/AMD_SUBMISSION.md).
 
 ## Earlier AMD Developer Hackathon build
 
