@@ -7,10 +7,23 @@ or the deal row is not what gets sent.
 from __future__ import annotations
 
 import hashlib
+import os
 from typing import Any
 
 from src.desk.audit_chain import canonical
 from src.desk.input_checks import message_id_ok, references_or_blank
+
+
+def smtp_enabled() -> bool:
+    if os.environ.get("DESK_SMTP_SEND", "").strip() != "1":
+        return False
+    return all(os.environ.get(key, "").strip() for key in ("SMTP_HOST", "EMAIL_USERNAME", "EMAIL_PASSWORD"))
+
+
+def send_policy() -> dict[str, bool]:
+    from src.desk.approval_signing import approval_policy
+
+    return {"email_enabled": smtp_enabled(), "signed_approval_required": approval_policy() == "required"}
 
 
 def counter_subject(product: str) -> str:

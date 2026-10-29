@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import math
 from email.message import EmailMessage
 from typing import Any
@@ -75,7 +74,7 @@ from src.desk.verify import (  # noqa: F401
     _supplier_decisions,
     _transmission_differs,
 )
-from src.desk.transmission import counter_subject
+from src.desk.transmission import counter_subject, smtp_enabled
 
 # ---- [ARCHITECTURE 2026-10-24] Intake + polling moved to src/desk/ingest.py ----
 # Re-exported so every historical import path (tests, scripts, main's
@@ -862,12 +861,6 @@ def _draft_rfc822(
         message["References"] = references or reply_to
     message.set_content(body)
     return message.as_bytes()
-
-
-def smtp_enabled() -> bool:
-    if os.environ.get("DESK_SMTP_SEND", "").strip() != "1":
-        return False
-    return all(os.environ.get(key, "").strip() for key in ("SMTP_HOST", "EMAIL_USERNAME", "EMAIL_PASSWORD"))
 
 
 async def transmit(

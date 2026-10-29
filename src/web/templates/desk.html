@@ -20,8 +20,12 @@
     </header>
     <p>Paste a supplier's message. When the server has a Nebius key, NVIDIA Nemotron on Nebius Token Factory labels what each number in it is. You confirm the price. The solver prices every counter, and nothing is sent until you approve it.</p>
 
-    <form id="desk-form" class="desk-form">
+    <div class="desk-form" aria-label="Desk connection">
       <label>API key <input id="api-key" name="api-key" type="password" autocomplete="off" /></label>
+      <button id="retry-connection" type="button">Save key / reconnect</button>
+      <p id="connection-status" role="status"></p>
+    </div>
+    <form id="desk-form" class="desk-form">
       <label>Product <input id="product" name="product" required maxlength="200" placeholder="折叠伞 / folding umbrella" /></label>
       <p class="desk-note">Type both names as "中文 / English" and each draft uses the one in the supplier's language.</p>
       <label>Currency of the deal
@@ -36,7 +40,7 @@
       <label>Target <input id="target" name="target" type="number" min="0" step="any" required /></label>
       <label>Ceiling <input id="ceiling" name="ceiling" type="number" min="0" step="any" required /></label>
       <label>Risk tolerance <input id="risk" name="risk" type="number" min="0" step="any" placeholder="leave blank for the configured default" /></label>
-      <label>Suppliers, one per line. The last comma separates the contact, so a name may contain commas.
+      <label>Suppliers (4 or 5), one per line. The last comma separates the contact, so a name may contain commas.
         <textarea id="suppliers" rows="5" required placeholder="Ningbo Co., Ltd., sales@example.test&#10;Yiwu Umbrella, wechat:yiwu-laowang"></textarea>
       </label>
       <p class="desk-note">A contact is an email, or a chat ID written as wechat:ID or whatsapp:number. Drafts for a chat contact are approved here and sent by you in that app.</p>
@@ -94,7 +98,7 @@
         </section>
       <section class="desk-draft">
         <h2>Drafts</h2>
-        <p>Copy a draft, or approve a send. Approval is the only way a draft can leave this desk.</p>
+        <p>Review and copy a draft. The approval button states whether this server can send email; chat messages are sent by you.</p>
         <div id="drafts"></div>
       </section>
       <details class="desk-advanced">

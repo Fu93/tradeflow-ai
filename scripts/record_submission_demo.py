@@ -164,7 +164,7 @@ def main():
                     hold(6)
                     drafts.evaluate('(node) => node.scrollIntoView({block: "start"})')
                     page.on('dialog', lambda dialog: dialog.accept())
-                    drafts.get_by_role('button', name='Approve and send').click()
+                    drafts.locator('[data-action=approve-draft]').click()
                     drafts.get_by_text('approved here, not transmitted', exact=False).wait_for()
                     hold(7)
                     deal_id = page.evaluate("sessionStorage.getItem('tfDeskDeal')")

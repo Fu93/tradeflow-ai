@@ -4,12 +4,30 @@
   // Typed prices in progress, by waiting quote, so a poll's redraw keeps them.
   const typedDrafts = new Map();
   let lastReviewSig = "";
+  let viewEpoch = 0;
+  let opening = false;
+  let adding = false;
+  let sendPolicy = {};
+  const pending = new Set();
+  const mutations = new Set();
+  let mutationRevision = 0;
+  const renderSigs = new Map();
+
+  function changed(section, value) {
+    const signature = JSON.stringify(value);
+    if (renderSigs.get(section) === signature) return false;
+    renderSigs.set(section, signature);
+    return true;
+  }
+
+  function busy(button, active) {
+    button.disabled = active;
+    button.setAttribute("aria-busy", String(active));
+  }
   // Supplier cards whose "How these figures were worked out" section is open.
   const workingsOpen = new Set();
-  // Web evidence (Tavily) per supplier. The desk redraws every card on each poll, so a
-  // result lives here, keyed by supplier id, and is painted into whichever card is on
-  // screen. It is reference text: the counter is computed on the server from confirmed
-  // quotes only and never reads it.
+  // Web evidence survives card updates, keyed by supplier id. It is reference
+  // text: the counter uses only confirmed quotes and never reads this evidence.
   const evidence = new Map();
   let dealProduct = "";
   let dealCurrency = "CNY";
@@ -117,19 +135,38 @@
   }
 
   async function request(path, options) {
-    const response = await fetch(path, options);
-    let body = null;
+    const epoch = viewEpoch;
+    const mutating = options && options.method && options.method !== "GET";
+    const token = {};
+    if (mutating) {
+      if (mutations.size) throw new Error("Another change is still being saved. Please wait, then try again.");
+      mutations.add(token);
+      mutationRevision += 1;
+    }
     try {
-      body = await response.json();
+      const response = await fetch(path, options);
+      let body = null;
+      try { body = await response.json(); } catch (err) { /* Use the HTTP error below. */ }
+      if (epoch !== viewEpoch) {
+        const error = new Error("This view has changed.");
+        error.staleView = true;
+        throw error;
+      }
+      if (!response.ok) {
+        const error = new Error(detailMessage(body));
+        error.status = response.status;
+        throw error;
+      }
+      return body;
     } catch (err) {
-      body = null;
+      if (epoch !== viewEpoch) err.staleView = true;
+      throw err;
+    } finally {
+      if (mutating) {
+        mutations.delete(token);
+        mutationRevision += 1;
+      }
     }
-    if (!response.ok) {
-      const error = new Error(detailMessage(body));
-      error.status = response.status;
-      throw error;
-    }
-    return body;
   }
 
   const form = document.getElementById("desk-form");
@@ -164,6 +201,7 @@
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (opening) return;
     formError.textContent = "";
     const suppliers = suppliersFrom(document.getElementById("suppliers").value);
     if (suppliers.some((item) => !item || !item.name || !item.address)) {
@@ -180,6 +218,10 @@
     };
     const risk = document.getElementById("risk").value.trim();
     if (risk) payload.risk_tolerance = Number(risk);
+    opening = true;
+    const epoch = viewEpoch;
+    const submit = form.querySelector('button[type="submit"]');
+    busy(submit, true);
     try {
       const snapshot = await request("/api/v1/desk/deals", {
         method: "POST",
@@ -192,12 +234,44 @@
       show(snapshot);
       start();
     } catch (err) {
+      if (err.staleView) return;
       formError.textContent = err.message;
+    } finally {
+      if (epoch === viewEpoch) { opening = false; busy(submit, false); }
     }
   });
 
-  // Leave this deal (it stays in the desk database) and show the form again.
-  document.getElementById("new-deal").addEventListener("click", () => {
+  const keyField = document.getElementById("api-key");
+  keyField.value = sessionStorage.getItem("tfApiKey") || localStorage.getItem("tfApiKey") || "";
+  document.getElementById("retry-connection").addEventListener("click", async () => {
+    if (mutations.size) {
+      document.getElementById("connection-status").textContent = "A change is still being saved. Reconnect after it finishes.";
+      return;
+    }
+    viewEpoch += 1;
+    sessionStorage.setItem("tfApiKey", keyField.value.trim());
+    localStorage.removeItem("tfApiKey");
+    formError.textContent = "";
+    boardError.textContent = "";
+    document.getElementById("connection-status").textContent = dealId ? "Reconnecting…" : "Key saved for this tab. Open a desk to connect.";
+    if (dealId) { await refresh(); if (dealId && !board.hidden) start(); }
+  });
+
+  function leaveDeal() {
+    viewEpoch += 1;
+    opening = false;
+    adding = false;
+    pending.clear();
+    mutations.clear();
+    renderSigs.clear();
+    lastReviewSig = "";
+    document.querySelectorAll('#desk-form button[type="submit"], #paste-form button[type="submit"], #assumptions button[type="submit"]').forEach((button) => busy(button, false));
+    document.getElementById("paste-text").value = "";
+    delete document.getElementById("paste-text").dataset.sample;
+    clearLandedInputs();
+    showNote("paste-sample-note", "");
+    document.getElementById("paste-error").textContent = "";
+    document.getElementById("connection-status").textContent = "";
     if (timer) window.clearInterval(timer);
     timer = 0;
     dealId = "";
@@ -209,10 +283,17 @@
     document.querySelectorAll('#assumptions [data-filled]').forEach((field) => {
       delete field.dataset.filled;
       field.value = "";
+      if (field.type === "checkbox") field.checked = false;
     });
     board.hidden = true;
     formError.textContent = "";
+    boardError.textContent = "";
     form.hidden = false;
+  }
+
+  // Leave this deal (it stays in the desk database) and show the form again.
+  document.getElementById("new-deal").addEventListener("click", () => {
+    leaveDeal();
     form.scrollIntoView({ block: "start" });
   });
 
@@ -222,25 +303,30 @@
   }
 
   async function refresh() {
-    if (!dealId) return;
+    if (!dealId || mutations.size) return;
     const requestedDeal = dealId;
+    const revision = mutationRevision;
     try {
       const snapshot = await request("/api/v1/desk/deals/" + requestedDeal, { headers: headers(false) });
-      if (requestedDeal !== dealId) return;
+      if (requestedDeal !== dealId || mutations.size || revision !== mutationRevision) return;
+      document.getElementById("connection-status").textContent = "Connected";
+      form.hidden = true;
       show(snapshot);
     } catch (err) {
-      if (requestedDeal !== dealId) return;
-      formError.textContent = err.status === 404
-        ? "This deal is not in the desk database. A fresh disk does not keep the previous deal. Open a new one."
-        : err.status === 401
-          ? "The desk needs the API key configured on this server."
-          : err.message;
-      if (err.status !== 404 && err.status !== 401) boardError.textContent = formError.textContent;
-      if (err.status === 401) form.hidden = false;
+      if (err.staleView) return;
+      if (requestedDeal !== dealId || mutations.size || revision !== mutationRevision) return;
       if (err.status === 404) {
+        leaveDeal();
+        formError.textContent = "This deal is not in the desk database. A server restart on a fresh disk can remove previous deals. Open a new one.";
+      } else if (err.status === 401) {
         window.clearInterval(timer);
         timer = 0;
-        form.hidden = false;
+        board.hidden = true;
+        form.hidden = true;
+        document.getElementById("connection-status").textContent = "Connection failed. Enter the server's API key and reconnect to resume this deal.";
+      } else {
+        boardError.textContent = err.message;
+        document.getElementById("connection-status").textContent = "Connection interrupted. Retrying…";
       }
     }
   }
@@ -297,7 +383,8 @@
     } else {
       cvar.textContent = "";
     }
-    renderCards(snapshot.suppliers || []);
+    sendPolicy = snapshot.send_policy || {};
+    if (changed("cards", [snapshot.suppliers || [], localDay(new Date())])) renderCards(snapshot.suppliers || []);
     const reviewItems = snapshot.review || [];
     const hasConfirmed = (snapshot.suppliers || []).some((supplier) => supplier.quote_confirmed);
     document.getElementById("next-step").textContent = reviewItems.length
@@ -305,21 +392,14 @@
       : hasConfirmed
         ? "Next: compare the confirmed quotes, choose a counter, then review the draft before approving."
         : "Next: paste a quote or use a sample message, then confirm its price.";
-    const reviewSig = JSON.stringify(reviewItems.map((item) => [
-      item.id, Boolean((item.provenance || {}).extractor_pending), (item.provenance || {}).suggested_token || "",
-    ]));
-    const reviewRoot = document.getElementById("review");
-    const typing = reviewRoot.contains(document.activeElement) &&
-      ["INPUT", "SELECT", "TEXTAREA"].indexOf(document.activeElement.tagName) >= 0;
-    // Someone is typing in a waiting quote and nothing there changed: keep the
-    // fields (and the caret) instead of redrawing them under the cursor.
-    if (!(typing && reviewSig === lastReviewSig)) {
+    const reviewSig = JSON.stringify([reviewItems, (snapshot.suppliers || []).map((item) => [item.id, item.name])]);
+    if (reviewSig !== lastReviewSig) {
       renderReview(reviewItems, snapshot.suppliers || []);
       lastReviewSig = reviewSig;
     }
-    renderEvents(snapshot.events || []);
-    renderDrafts(snapshot.drafts || [], snapshot.suppliers || []);
-    renderPasteSuppliers(snapshot.suppliers || []);
+    if (changed("events", snapshot.events || [])) renderEvents(snapshot.events || []);
+    if (changed("drafts", [snapshot.drafts || [], snapshot.suppliers || [], sendPolicy])) renderDrafts(snapshot.drafts || [], snapshot.suppliers || []);
+    if (changed("pasteSuppliers", (snapshot.suppliers || []).map((item) => [item.id, item.name]))) renderPasteSuppliers(snapshot.suppliers || []);
     board.dataset.deskSeq = String(Number(board.dataset.deskSeq || "0") + 1);
   }
 
@@ -338,6 +418,11 @@
   function fillAssumptions(snapshot) {
     const box = snapshot.hazard_assumptions || {};
     const deal = snapshot.deal || {};
+    const include = document.getElementById("include-unverified");
+    if (include && include.dataset.filled !== "yes") {
+      include.checked = Boolean(deal.include_unverified);
+      include.dataset.filled = "yes";
+    }
     fillOnce("hazard-intercept", box.intercept);
     fillOnce("hazard-tau", box.tau);
     fillOnce("hazard-quote-gap", box.quote_gap);
@@ -363,7 +448,9 @@
     button.type = "button";
     button.textContent = label;
     button.addEventListener("click", async () => {
+      if (button.disabled) return;
       boardError.textContent = "";
+      busy(button, true);
       try {
         const snapshot = await request(
           "/api/v1/desk/deals/" + dealId + "/suppliers/" + supplierId + "/outcome",
@@ -375,21 +462,31 @@
         );
         show(snapshot);
       } catch (err) {
+        if (err.staleView) return;
         boardError.textContent = err.message;
-      }
+      } finally { busy(button, false); }
     });
     return button;
   }
 
   const assumptions = document.getElementById("assumptions");
   if (assumptions) {
+    assumptions.querySelectorAll("input").forEach((field) => {
+      field.addEventListener("input", () => { field.dataset.filled = "yes"; });
+    });
     assumptions.addEventListener("submit", async (event) => {
       event.preventDefault();
+      const submit = assumptions.querySelector('button[type="submit"]');
+      if (submit.disabled) return;
       boardError.textContent = "";
       const payload = {};
       const take = (id, key) => {
         const field = document.getElementById(id);
-        if (!field || field.value.trim() === "") return;
+        if (!field) return;
+        if (field.value.trim() === "") {
+          if (key === "reserve_prior_mean" || key === "reserve_prior_std") payload[key] = null;
+          return;
+        }
         payload[key] = Number(field.value);
       };
       take("hazard-intercept", "hazard_intercept");
@@ -404,6 +501,8 @@
       take("search-cost", "search_cost");
       const include = document.getElementById("include-unverified");
       if (include) payload.include_unverified = include.checked;
+      busy(submit, true);
+      const epoch = viewEpoch;
       try {
         const snapshot = await request("/api/v1/desk/deals/" + dealId + "/assumptions", {
           method: "POST",
@@ -412,8 +511,9 @@
         });
         show(snapshot);
       } catch (err) {
+        if (err.staleView) return;
         boardError.textContent = err.message;
-      }
+      } finally { if (epoch === viewEpoch) busy(submit, false); }
     });
   }
 
@@ -505,6 +605,7 @@
             );
             show(snapshot);
           } catch (err) {
+            if (err.staleView) return;
             boardError.textContent = err.message;
           }
         });
@@ -555,6 +656,7 @@
             );
             show(snapshot);
           } catch (err) {
+            if (err.staleView) return;
             boardError.textContent = err.message;
             choose.disabled = false;
           }
@@ -591,6 +693,24 @@
       if (supplier.quote_confirmed && !supplier.walked_away) {
         actions.appendChild(outcomeButton("Record continue", "continue", supplier.id));
         actions.appendChild(outcomeButton("Record walk-away", "walk_away", supplier.id));
+      }
+      if (supplier.walked_away) {
+        const reopen = document.createElement("button");
+        reopen.type = "button";
+        reopen.textContent = "Reopen supplier";
+        reopen.addEventListener("click", async () => {
+          if (!window.confirm("Reopen this supplier for negotiation? The walk-away stays in the audit history.")) return;
+          busy(reopen, true);
+          try {
+            const snapshot = await request("/api/v1/desk/deals/" + dealId + "/suppliers/" + supplier.id + "/reopen", {
+              method: "POST", headers: headers(true), body: JSON.stringify({human_confirmed: true}),
+            });
+            show(snapshot);
+          } catch (err) {
+            if (!err.staleView) boardError.textContent = err.message;
+          } finally { busy(reopen, false); }
+        });
+        actions.appendChild(reopen);
       }
       card.appendChild(actions);
       card.appendChild(evidenceBlock(supplier));
@@ -909,6 +1029,7 @@
       actions.appendChild(reject);
       block.appendChild(actions);
       block.appendChild(typedRow(item, select, block));
+      if (pending.has(item.id)) block.querySelectorAll("button, input, select").forEach((node) => { node.disabled = true; });
       root.appendChild(block);
     });
   }
@@ -959,6 +1080,10 @@
         note.textContent = "Those words are not in the message. Copy them exactly.";
         return;
       }
+      if (pending.has(item.id)) return;
+      pending.add(item.id);
+      const epoch = viewEpoch;
+      block.querySelectorAll("button, input, select").forEach((node) => { node.disabled = true; });
       try {
         const snapshot = await request("/api/v1/desk/deals/" + dealId + "/review/" + item.id, {
           method: "POST",
@@ -971,7 +1096,13 @@
         typedDrafts.delete(item.id);
         show(snapshot);
       } catch (err) {
+        if (err.staleView) return;
         note.textContent = err.message;
+      } finally {
+        if (epoch === viewEpoch) {
+          pending.delete(item.id);
+          block.querySelectorAll("button, input, select").forEach((node) => { node.disabled = false; });
+        }
       }
     });
     const row = document.createElement("div");
@@ -985,6 +1116,10 @@
   }
 
   async function accept(eventId, supplierId, chosenToken, reject, block) {
+    if (pending.has(eventId)) return;
+    pending.add(eventId);
+    const epoch = viewEpoch;
+    block.querySelectorAll("button, input, select").forEach((node) => { node.disabled = true; });
     const payload = { action: reject ? "reject" : "accept" };
     if (!reject) payload.supplier_id = supplierId || null;
     if (chosenToken) payload.chosen_token = chosenToken;
@@ -998,7 +1133,13 @@
       show(snapshot);
       if (!reject && supplierId) reveal('[data-supplier="' + supplierId + '"]');
     } catch (err) {
+      if (err.staleView) return;
       line(block, err.message);
+    } finally {
+      if (epoch === viewEpoch) {
+        pending.delete(eventId);
+        block.querySelectorAll("button, input, select").forEach((node) => { node.disabled = false; });
+      }
     }
   }
 
@@ -1057,13 +1198,22 @@
       const copy = document.createElement("button");
       copy.type = "button";
       copy.textContent = "Copy draft";
-      copy.addEventListener("click", () => copyText(draft.body || ""));
+      const copyStatus = document.createElement("p");
+      copyStatus.setAttribute("role", "status");
+      copy.addEventListener("click", () => copyText(draft.body || "", area, copyStatus));
       block.appendChild(copy);
+      block.appendChild(copyStatus);
       if ((draft.status === "draft" || draft.status === "failed") && !draft.anchor_pending) {
         const send = document.createElement("button");
         send.type = "button";
-        send.textContent = byHand ? "Approve (you send it in " + app + ")" : "Approve and send";
-        send.addEventListener("click", () => approve(draft.id, area.value, block));
+        send.dataset.action = "approve-draft";
+        send.textContent = byHand ? "Approve (you send it in " + app + ")"
+          : sendPolicy.email_enabled ? "Approve and send" : "Approve only (no email)";
+        send.disabled = Boolean(sendPolicy.signed_approval_required) || pending.has(draft.id);
+        if (sendPolicy.signed_approval_required) {
+          line(block, "This server requires a signed approval. Use the documented signed-approval workflow with your signing key; browser approval is unavailable.");
+        }
+        send.addEventListener("click", () => approve(draft.id, area.value, block, send, byHand));
         block.appendChild(send);
       }
       root.appendChild(block);
@@ -1082,9 +1232,15 @@
     return "draft, not sent";
   }
 
-  function copyText(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).catch(() => {});
+  async function copyText(text, area, status) {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(text);
+      status.textContent = "Copied.";
+    } catch (err) {
+      area.focus();
+      area.select();
+      status.textContent = "Automatic copy is unavailable. The draft is selected; press Ctrl+C (or Command+C) to copy.";
     }
   }
 
@@ -1099,20 +1255,30 @@
     return hex;
   }
 
-  async function approve(draftId, body, block) {
-    const ok = window.confirm("Send this draft? It leaves this desk only after you confirm.");
+  async function approve(draftId, body, block, button, byHand) {
+    if (pending.has(draftId)) return;
+    const ok = window.confirm(byHand ? "Approve this draft? Copy it and send it in the chat app yourself."
+      : sendPolicy.email_enabled ? "Send this exact draft by email?" : "Record approval only? Email sending is disabled on this server.");
     if (!ok) return;
+    pending.add(draftId);
+    busy(button, true);
+    const epoch = viewEpoch;
+    const approvedDeal = dealId;
     try {
       const bodySha = await digestHex(body);
+      if (epoch !== viewEpoch || approvedDeal !== dealId) return;
       await request("/api/v1/desk/drafts/" + draftId + "/send", {
         method: "POST",
         headers: headers(true),
         body: JSON.stringify({ human_approved: true, body_sha256: bodySha }),
       });
-      refresh();
+      await refresh();
     } catch (err) {
+      if (err.staleView) return;
       if (block) line(block, err.message);
       else boardError.textContent = err.message;
+    } finally {
+      if (epoch === viewEpoch) { pending.delete(draftId); busy(button, false); }
     }
   }
 
@@ -1161,6 +1327,7 @@
         .map((row) => String(row[0]) + ", " + String(row[1])).join("\n");
       showNote("sample-deal-note", String(data.label || "") + " Enter the API key, then Open desk.");
     } catch (err) {
+      if (err.staleView) return;
       formError.textContent = err.message;
     }
   });
@@ -1174,6 +1341,7 @@
       area.dataset.sample = area.value;
       showNote("paste-sample-note", "Fictional sample text. The desk treats it like a pasted quote so you can see the counter; the record says it came from this button.");
     } catch (err) {
+      if (err.staleView) return;
       document.getElementById("paste-error").textContent = err.message;
     }
   });
@@ -1203,6 +1371,7 @@
 
   document.getElementById("paste-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (adding) return;
     const error = document.getElementById("paste-error");
     error.textContent = "";
     const area = document.getElementById("paste-text");
@@ -1223,20 +1392,31 @@
       // its source; the deal's suppliers are fictional example.test addresses.
       payload.page_title = "TradeFlow sample message (fictional demo text)";
     }
+    adding = true;
+    const epoch = viewEpoch;
+    const submit = document.querySelector('#paste-form button[type="submit"]');
+    const submittedLanded = ["paste-freight", "paste-fees", "paste-duty"].map((id) => document.getElementById(id).value);
+    busy(submit, true);
     try {
       const result = await request("/api/v1/desk/deals/" + dealId + "/quotes", {
         method: "POST",
         headers: headers(true),
         body: JSON.stringify(payload),
       });
-      area.value = "";
-      clearLandedInputs();
-      delete area.dataset.sample;
-      showNote("paste-sample-note", "");
+      if (area.value === payload.raw_text && document.getElementById("paste-supplier").value === payload.supplier_id &&
+          submittedLanded.every((value, index) => value === document.getElementById(["paste-freight", "paste-fees", "paste-duty"][index]).value)) {
+        area.value = "";
+        clearLandedInputs();
+        delete area.dataset.sample;
+        showNote("paste-sample-note", "");
+      }
       if (result.snapshot) show(result.snapshot);
       reveal("#review-section");
     } catch (err) {
+      if (err.staleView) return;
       error.textContent = err.message;
+    } finally {
+      if (epoch === viewEpoch) { adding = false; busy(submit, false); }
     }
   });
 
