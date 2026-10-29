@@ -20,6 +20,7 @@ from src.config.heuristics import (
     UNIT_SANITY_MULTIPLE,
 )
 from src.desk.store import DeskStore
+from src.desk.history import confirmation_order
 from src.desk.headline import audit_line, confirmed_prices, saving_vs_best_first
 from src.desk.shadow import progress as shadow_progress
 from src.desk.decide import decide_supplier, issued_offer, offer_modes
@@ -236,6 +237,8 @@ def _headline(
         elif basis.get(supplier_id) == "unit" or (not supplier_id and all(kind == "unit" for kind in basis.values())):
             agreed_landed = unit_agreed
     simulated = any(_unverified(event) for event in confirmed) or not live
+    if agreed_landed is not None and not np.isfinite(agreed_landed):
+        agreed_landed = None
     return saving_vs_best_first(
         list(first.values()),
         agreed_landed,
@@ -401,6 +404,8 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     previous_rows = {row["id"]: row for row in previous.get("suppliers") or []}
     suppliers = store.suppliers(deal_id)
     events = store.events(deal_id)
+    links = store.verify_links(deal_id)
+    chain_entries = list(links.get("entries") or []) if links.get("ok") else []
     by_supplier: dict[str, list[dict[str, Any]]] = {row["id"]: [] for row in suppliers}
     for event in events:
         if event.get("supplier_id"):
@@ -420,6 +425,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
             event for event in (by_supplier.get(supplier_id) or [])
             if event.get("status") == "accepted"
         ]
+        rows = confirmation_order(rows, chain_entries)
         live = [event for event in rows if (event.get("provenance") or {}).get("origin") != "simulated"]
         live = [event for event in live if not (event.get("provenance") or {}).get("simulated")]
         if include_unverified:
@@ -432,8 +438,6 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     _kept, unconfirmed = confirmed_prices(consumed)
     outcomes_by = {row["id"]: store.outcomes(deal_id, row["id"]) for row in suppliers}
     quoting = set(quoting_supplier_ids([row["id"] for row in suppliers], outcomes_by))
-    links = store.verify_links(deal_id)
-    chain_entries = list(links.get("entries") or []) if links.get("ok") else []
     needs_keep = {
         row["id"]
         for row in suppliers

@@ -739,9 +739,9 @@
       "justification": "Relative tolerance of the bounded scalar maximiser and the incomplete-beta continued fraction. A numerical guard, not a price."
     },
     "BETA_CF_ITERS": {
-      "value": 200,
+      "value": 1024,
       "category": "n",
-      "justification": "Continued-fraction iterations for the regularized incomplete beta function. A numerical guard, not a price."
+      "justification": "Numerical iteration ceiling for the incomplete-beta continued fraction, including supported prior strength up to one million; early convergence still stops ordinary calls."
     },
     "GATE_CERTIFY_ACCEPTS": {
       "value": 189,
@@ -1045,6 +1045,11 @@
       "value": 183,
       "category": "n",
       "justification": "A validity date with no year that falls more than about half a year before the message arrived is read as next year's date. Display only; it never moves a price."
+    },
+    "BETA_NARROW_QUAD_POINTS": {
+      "value": 32,
+      "category": "n",
+      "justification": "Gauss-Legendre nodes for centred moments on very narrow interior intervals; avoids subtracting nearly equal first and second moments. Not a sampling or pricing budget."
     }
   },
   "inline": [

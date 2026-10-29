@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import math
 from email.message import EmailMessage
 from typing import Any
 
@@ -29,7 +30,7 @@ from src.desk.approval_signing import (
     verify_signed_approval,
 )
 from src.desk.audit_chain import approval_recorded, chain_key_configured, export_history, reanchor_refusal
-from src.desk.input_checks import EMAIL_CHANNEL, require_address, require_contact, require_plain
+from src.desk.input_checks import EMAIL_CHANNEL, require_address, require_contact, require_plain, require_price_band
 from src.desk.names import supplier_name_key
 from src.desk.parse import _confirm_span, _visible_text, parse_quote, price_from_token
 from src.desk.bus import BUS  # noqa: F401  (re-exported for existing callers)
@@ -156,6 +157,7 @@ def create_deal(
     suppliers: list[dict[str, str]],
     currency: str | None = None,
 ) -> dict[str, Any]:
+    require_price_band(target_price, ceiling_price)
     product = require_plain(product, "Product")
     names = [item["name"].strip() for item in suppliers]
     channels = [str(item.get("channel") or EMAIL_CHANNEL).strip().lower() or EMAIL_CHANNEL for item in suppliers]
@@ -181,7 +183,7 @@ def create_deal(
     if code not in DEAL_CURRENCIES:
         raise DeskRejected("Deal currency is not one of the registered currencies.")
     risk = float(BREAKDOWN_TRIP_THRESHOLD if risk_tolerance is None else risk_tolerance)
-    if risk < float(RISK_TOLERANCE_FLOOR) or risk > float(RISK_TOLERANCE_MAX):
+    if not math.isfinite(risk) or risk < float(RISK_TOLERANCE_FLOOR) or risk > float(RISK_TOLERANCE_MAX):
         raise DeskRejected("Risk tolerance is outside the configured range.")
     if chain_key_configured() is False:
         raise DeskUnavailable("desk sends disabled: chain key missing")
@@ -438,6 +440,9 @@ def record_outcome(
     offer: float | None = None,
     agreed_price: float | None = None,
 ) -> dict[str, Any]:
+    for value in (quote, offer, agreed_price):
+        if value is not None and (not math.isfinite(float(value)) or float(value) <= 0):
+            raise DeskRejected("Outcome amounts must be finite and above zero.")
     if outcome not in OUTCOMES:
         raise DeskRejected("Outcome must be continue, walk_away, or agreed.")
     with deal_lock(deal_id):
@@ -496,6 +501,7 @@ def confirm_policy(
     currency: str,
 ) -> dict[str, Any]:
     """The limits a migrated deal may send against. The database row is not enough."""
+    require_price_band(target_price, ceiling_price)
     if human_confirmed is not True:
         raise DeskRejected("A person has to confirm these policy limits.")
     product = require_plain(str(product or ""), "Product")
@@ -509,7 +515,7 @@ def confirm_policy(
     if float(target_price) > float(ceiling_price):
         raise DeskRejected("The target must be at or below the ceiling.")
     risk = float(risk_tolerance)
-    if risk < float(RISK_TOLERANCE_FLOOR) or risk > float(RISK_TOLERANCE_MAX):
+    if not math.isfinite(risk) or risk < float(RISK_TOLERANCE_FLOOR) or risk > float(RISK_TOLERANCE_MAX):
         raise DeskRejected("Risk tolerance is outside the configured range.")
     with deal_lock(deal_id):
         deal = store.get_deal(deal_id)
@@ -784,9 +790,17 @@ def confirm_keep_supplier(
 
 
 def set_assumptions(store: DeskStore, deal_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+    from src.config.heuristics import UNIT_SANITY_MULTIPLE
+
     with deal_lock(deal_id):
-        if store.get_deal(deal_id) is None:
+        deal = store.get_deal(deal_id)
+        if deal is None:
             raise KeyError(deal_id)
+        multiple = fields.get("unit_sanity_multiple", deal.get("unit_sanity_multiple"))
+        require_price_band(
+            float(deal["target_price"]), float(deal["ceiling_price"]),
+            float(UNIT_SANITY_MULTIPLE if multiple is None else multiple),
+        )
         store.set_policy(deal_id, fields)
         store.append_chain(deal_id, "assumptions", {"fields": dict(fields)})
         store.touch(deal_id)

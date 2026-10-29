@@ -7,8 +7,29 @@ reused only when each token is one message-id.
 from __future__ import annotations
 
 import re
+import math
 
 from src.desk.store import DeskRejected
+from src.config.heuristics import UNIT_SANITY_MULTIPLE
+
+
+def require_price_band(target: float, ceiling: float, multiple: float = UNIT_SANITY_MULTIPLE) -> None:
+    """Reject finite inputs whose derived bounds overflow or underflow."""
+    if not all(math.isfinite(float(value)) and float(value) > 0 for value in (target, ceiling, multiple)):
+        raise DeskRejected("Prices and the plausibility multiple must be finite and above zero.")
+    high = max(float(target), float(ceiling)) * float(multiple)
+    low = float(target) / float(multiple)
+    if not math.isfinite(high) or not math.isfinite(high / float(target)) or not math.isfinite(low) or low <= 0:
+        raise DeskRejected("The price range is too large or too small for stable arithmetic.")
+
+
+def require_landed_total(unit: float, freight: float | None, fees: float | None, duty: float | None) -> None:
+    parts = [float(value) for value in (freight, fees, duty) if value is not None]
+    if any(not math.isfinite(value) or value < 0 for value in parts):
+        raise DeskRejected("Landed-cost inputs must be finite and non-negative.")
+    total = (float(unit) + float(freight or 0) + float(fees or 0)) * (1.0 + float(duty or 0))
+    if not math.isfinite(total):
+        raise DeskRejected("Landed-cost inputs exceed the finite arithmetic range.")
 
 _ADDR = re.compile(
     r"[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*"

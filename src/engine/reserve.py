@@ -18,6 +18,7 @@ import numpy as np
 
 from src.config.heuristics import (
     BETA_CDF_CACHE_MAXSIZE,
+    BETA_NARROW_QUAD_POINTS,
     D_PRIOR_MEAN,
     D_PRIOR_STRENGTH,
     HAZARD_MIN_EVENTS,
@@ -70,11 +71,17 @@ def regularized_beta(x: float, alpha: float, beta: float) -> float:
     times over. The function is pure, so the cache is safe; the bound keeps a
     long-lived process from accumulating entries across deals.
     """
-    return _regularized_beta(float(x), float(alpha), float(beta))
+    try:
+        return _regularized_beta(float(x), float(alpha), float(beta))
+    except (ArithmeticError, ValueError):
+        # An unavailable numerical answer must not become a price decision.
+        return float("nan")
 
 
 @lru_cache(maxsize=BETA_CDF_CACHE_MAXSIZE)
 def _regularized_beta(x: float, alpha: float, beta: float) -> float:
+    if not all(math.isfinite(value) for value in (x, alpha, beta)) or alpha <= 0.0 or beta <= 0.0:
+        return float("nan")
     if x <= 0.0:
         return 0.0
     if x >= 1.0:
@@ -82,16 +89,28 @@ def _regularized_beta(x: float, alpha: float, beta: float) -> float:
     if abs(beta - 1.0) <= float(OPT_TOL) and alpha > 0.0:
         return float(x ** alpha)
     if abs(alpha - 1.0) <= float(OPT_TOL) and beta > 0.0:
-        return 1.0 - float((1.0 - x) ** beta)
+        return -math.expm1(beta * math.log1p(-x))
     log_front = (
         alpha * math.log(x)
-        + beta * math.log(1.0 - x)
+        + beta * math.log1p(-x)
         - _log_beta(alpha, beta)
     )
     front = math.exp(log_front)
     if x < (alpha + 1.0) / (alpha + beta + 2):
         return front * _betacf(alpha, beta, x) / alpha
     return 1.0 - front * _betacf(beta, alpha, 1.0 - x) / beta
+
+
+def beta_interval(lower: float, upper: float, alpha: float, beta: float) -> float:
+    """Interval probability without subtracting two CDFs rounded to one."""
+    if lower > beta_mean(alpha, beta):
+        return regularized_beta(1.0 - lower, beta, alpha) - regularized_beta(1.0 - upper, beta, alpha)
+    return regularized_beta(upper, alpha, beta) - regularized_beta(lower, alpha, beta)
+
+
+@lru_cache(maxsize=1)
+def _quadrature() -> tuple[np.ndarray, np.ndarray]:
+    return np.polynomial.legendre.leggauss(BETA_NARROW_QUAD_POINTS)
 
 
 def beta_mean(alpha: float, beta: float) -> float:
@@ -139,13 +158,14 @@ class ReserveState:
         non-finite ``std`` (inf/NaN) is now treated as "no spread supplied"
         rather than propagating into α and β.
         """
-        centre = min(max(float(mean), _TINY), 1.0 - _TINY)
+        centre = min(max(float(mean), _TINY), math.nextafter(1.0, 0.0))
         spread = None if std is None else float(std)
         if spread is None or not math.isfinite(spread) or spread <= 0.0:
             strength = float(D_PRIOR_STRENGTH)
         else:
-            variance = spread * spread
-            strength = centre * (1.0 - centre) / variance - 1.0
+            # Dividing twice avoids underflowing std**2 to zero for a legal
+            # positive spread, and avoids overflowing it for a large spread.
+            strength = (centre * (1.0 - centre) / spread) / spread - 1.0
             if not math.isfinite(strength):
                 strength = MAX_PRIOR_STRENGTH
         strength = min(max(strength, MIN_PRIOR_STRENGTH), MAX_PRIOR_STRENGTH)
@@ -275,6 +295,8 @@ class ReserveState:
                 return False
         if self.alpha <= 0.0 or self.beta <= 0.0:
             return False
+        if not math.isfinite(self.alpha + self.beta):
+            return False
         _lower, _upper, mass, ok = self._interval(self.alpha, self.beta)
         return bool(ok) and math.isfinite(mass) and mass > 0.0
 
@@ -292,16 +314,20 @@ class ReserveState:
             return 0.0
         if point >= upper:
             return 1.0
-        passed = regularized_beta(point, self.alpha, self.beta) - regularized_beta(lower, self.alpha, self.beta)
+        passed = beta_interval(lower, point, self.alpha, self.beta)
         return min(max(passed / mass, 0.0), 1.0)
 
     def mean(self) -> float:
         lower, upper, mass, ok = self._interval(self.alpha, self.beta)
         if not ok:
             return float("nan")
-        moment = regularized_beta(upper, self.alpha + 1.0, self.beta) - regularized_beta(
-            lower, self.alpha + 1.0, self.beta
-        )
+        narrow = self._narrow_moments(lower, upper)
+        if narrow is not None:
+            return narrow[0]
+        if lower > beta_mean(self.alpha, self.beta):
+            reflected_mass = beta_interval(1.0 - upper, 1.0 - lower, self.beta + 1.0, self.alpha)
+            return 1.0 - (reflected_mass / mass) * beta_mean(self.beta, self.alpha)
+        moment = beta_interval(lower, upper, self.alpha + 1.0, self.beta)
         return (moment / mass) * beta_mean(self.alpha, self.beta)
 
     def std(self) -> float:
@@ -310,14 +336,36 @@ class ReserveState:
             return float("nan")
         if lower <= _TINY and upper >= 1.0 - float(OPT_TOL):
             return math.sqrt(max(beta_variance(self.alpha, self.beta), 0.0))
-        total = float(self.alpha) + float(self.beta)
-        factor = (float(self.alpha) * (float(self.alpha) + 1.0)) / (total * (total + 1.0))
-        second_mass = regularized_beta(upper, self.alpha + 2, self.beta) - regularized_beta(
-            lower, self.alpha + 2, self.beta
-        )
+        narrow = self._narrow_moments(lower, upper)
+        if narrow is not None:
+            return math.sqrt(narrow[1])
+        alpha, beta = self.alpha, self.beta
+        if lower > beta_mean(alpha, beta):
+            lower, upper = 1.0 - upper, 1.0 - lower
+            alpha, beta = beta, alpha
+        total = float(alpha) + float(beta)
+        factor = (float(alpha) * (float(alpha) + 1.0)) / (total * (total + 1.0))
+        second_mass = beta_interval(lower, upper, alpha + 2, beta)
         second = factor * second_mass / mass
-        variance = second - self.mean() ** 2
+        mean = beta_mean(alpha, beta) * beta_interval(lower, upper, alpha + 1.0, beta) / mass
+        variance = second - mean ** 2
         return math.sqrt(max(variance, 0.0))
+
+    def _narrow_moments(self, lower: float, upper: float) -> tuple[float, float] | None:
+        width = upper - lower
+        threshold = math.sqrt(math.sqrt(float(np.finfo(float).eps))) * min(lower, 1.0 - upper)
+        if width > threshold:
+            return None
+        nodes, weights = _quadrature()
+        half = width * float(ONE_HALF)
+        centre = lower + half
+        points = centre + half * nodes
+        logs = (self.alpha - 1.0) * np.log(points) + (self.beta - 1.0) * np.log1p(-points)
+        weighted = weights * np.exp(logs - np.max(logs))
+        weighted /= np.sum(weighted)
+        offset = float(np.dot(weighted, nodes))
+        variance = float(np.dot(weighted, (nodes - offset) ** 2)) * half * half
+        return centre + half * offset, variance
 
     def analytic_cdf(self, x: float) -> float:
         """Same truncated CDF. Kept so older callers do not grow a second formula."""
@@ -335,10 +383,12 @@ class ReserveState:
         if hit is not None:
             return hit
         lower, upper = self.bounds()
-        if not (lower < upper):
+        if not all(math.isfinite(value) for value in (alpha, beta, alpha + beta, lower, upper)) or alpha <= 0 or beta <= 0:
+            result = (lower, upper, 0.0, False)
+        elif not (lower < upper):
             result = (lower, upper, 0.0, False)
         else:
-            mass = regularized_beta(upper, alpha, beta) - regularized_beta(lower, alpha, beta)
+            mass = beta_interval(lower, upper, alpha, beta)
             if not math.isfinite(mass) or mass <= _TINY:
                 result = (lower, upper, 0.0, False)
             else:

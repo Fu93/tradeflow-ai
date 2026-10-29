@@ -46,6 +46,8 @@ The repository began on 13 October 2026 as an entry for the AMD Developer Hackat
 
 Small cross-border sellers lose procurement margin when they negotiate factory quotes alone, often across a language gap, or pay a sourcing agent a commission. TradeFlow is a one-person desk for that problem: expected surplus of a one-step accept-or-reject model chooses the next price, an optional language model only reads and phrases the offer, and a human sends it. No factory has closed a deal through this prototype.
 
+The 29 Oct [numerical and replay audit](docs/DECISION_STABILITY_AUDIT.md) documents confirmation-order replay, custom policy verification, stable Beta tails and narrow-interval moments, and a 1,000-case independent SciPy cross-check. This is numerical evidence, not a supplier-savings claim.
+
 The formulas, and the registry for every constant the decision code is allowed to use, are in [docs/MATH.md](docs/MATH.md). Benchmark numbers in this file come from this repository's CPU runs or from a parameterised simulator. The full boundary note is [docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md](docs/LIMITATIONS_AND_REAL_WORLD_FINDINGS.md). The claim-by-claim check is [docs/DATA_INTEGRITY.md](docs/DATA_INTEGRITY.md).
 
 The hackathon text and demo script are in [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md).

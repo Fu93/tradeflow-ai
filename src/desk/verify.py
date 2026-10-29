@@ -39,6 +39,7 @@ from src.desk.parse import _confirm_span, _visible_text, parse_quote, price_from
 from src.desk.typed import words_state
 from src.desk.snapshot import publish
 from src.desk.store import DeskStore
+from src.desk.history import confirmation_order, decision_assumptions
 from src.engine.decision import within_risk_cap
 from src.desk.transmission import (
     chained_supplier,
@@ -86,7 +87,8 @@ def _confirmed_unit_ask(store: DeskStore, deal_id: str, supplier_id: str) -> flo
     from src.desk.headline import human_confirmed
 
     prices: list[float] = []
-    for event in store.events(deal_id):
+    entries = list(store.verify_links(deal_id).get("entries") or [])
+    for event in confirmation_order(store.events(deal_id), entries):
         if str(event.get("supplier_id") or "") != str(supplier_id):
             continue
         if not human_confirmed(event):
@@ -393,6 +395,7 @@ def _recompute_from_chain(
 
     opened = _deal_opened(entries)
     currency = str(opened.get("currency") or "")
+    assumptions = decision_assumptions(entries)
     ceiling = opened.get("ceiling")
     events = {str(event["id"]): event for event in store.events(draft["deal_id"])}
     asks: dict[str, float] = {}
@@ -460,6 +463,10 @@ def _recompute_from_chain(
         rivals=[float(item) for item in rivals],
         ceiling=float(ceiling),
         risk_cap=float(opened.get("risk_tolerance") or 0.0),
+        prior_mean=assumptions.get("reserve_prior_mean"),
+        prior_std=assumptions.get("reserve_prior_std"),
+        intercept=assumptions.get("hazard_intercept"),
+        gap_coef=assumptions.get("hazard_quote_gap"),
     )
     choice = None if built is None else built[1]
     from src.desk.decide import issued_offer, offer_modes
