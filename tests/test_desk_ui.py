@@ -107,10 +107,12 @@ def test_desk_page_updates_when_mail_arrives():
             page.wait_for_selector("#board:not([hidden])", timeout=15000)
             for name in ("ningbo.eml", "wenzhou.eml", "yiwu.eml", "foshan.eml"):
                 fixture.append((FIXTURES / name).read_bytes())
-            page.get_by_text("Ningbo Co., Ltd.").first.wait_for(timeout=15000)
+            page.locator("#cards").get_by_text("Ningbo Co., Ltd.").first.wait_for(timeout=15000)
             page.get_by_text("Record: fixture").first.wait_for(timeout=20000)
             page.get_by_text("Excluded from the decision").first.wait_for(timeout=5000)
             assert "15.60 CNY" not in page.locator(".desk-card").first.inner_text()
+            # The walk-away assumptions are folded under "Advanced".
+            page.locator("details.desk-advanced > summary").click()
             sensitivity = page.locator("#hazard-sensitivity").inner_text()
             assert "%" in sensitivity
             assert "Transferred baseline" in sensitivity

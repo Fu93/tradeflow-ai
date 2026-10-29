@@ -2,7 +2,7 @@
 
 Copy the fenced blocks into the AMD Developer Hackathon ACT III form. Track: **Reinvent Commerce**. Deadline per third-party listing: 18 Oct 2026 23:59 UTC (19 Oct 00:59 BST); on-site Luma pages list 16:00 local on 18 Oct; confirm on lablab. This file cannot click the form for you.
 
-The long description is the same text as [SUBMISSION.md](../SUBMISSION.md). If either file changes, keep them identical.
+The long description is the same text as [AMD_SUBMISSION.md](archive/AMD_SUBMISSION.md). If either file changes, keep them identical.
 
 ## Title
 

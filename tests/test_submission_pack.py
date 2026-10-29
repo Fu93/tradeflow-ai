@@ -23,7 +23,7 @@ def _section(text: str, heading: str, stop: str) -> str:
 
 
 def test_lablab_form_copies_submission_text():
-    submission = (ROOT / "SUBMISSION.md").read_text(encoding="utf-8")
+    submission = (ROOT / "docs" / "archive" / "AMD_SUBMISSION.md").read_text(encoding="utf-8")
     form = (ROOT / "docs" / "LABLAB_FORM.md").read_text(encoding="utf-8")
     short = "One-person sourcing desk: a one-step offer model sets the price, an AMD-hosted model only phrases it, and a human sends the offer."
     shorter = "A one-step model prices the offer. An AMD-hosted model only phrases it. A human sends it."

@@ -159,7 +159,7 @@ def readme_result_paths(readme: str) -> list[str]:
             "results/real_llm_benchmark_100.json",
             "results/self_play_benchmark.md",
             "extension/mock_chat.html",
-            "SUBMISSION.md",
+            "docs/archive/AMD_SUBMISSION.md",
             "docs/DEMO_RUNBOOK.md",
             "docs/LABLAB_FORM.md",
         ]

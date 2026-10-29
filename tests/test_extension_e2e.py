@@ -579,7 +579,7 @@ def main() -> int:
                     })"""
                 )
                 print("    gate: " + json.dumps(gate, ensure_ascii=False)[:400])
-                allowed_badges = {"AMD live", "Offline fallback", "Simulator", "Unreachable"}
+                allowed_badges = {"Live model", "Offline fallback", "Simulator", "Unreachable"}
                 check("source badge is one of the four honesty labels",
                       gate.get("badge") in allowed_badges, f"badge={gate.get('badge')!r}")
                 check("sandbox tab is labelled Simulator",
@@ -720,7 +720,7 @@ def main() -> int:
                 check("offline fallback badge is derived when AMD was not requested",
                       badges.get("offline") == "Offline fallback", f"got={badges.get('offline')!r}")
                 check("AMD live badge is derived only from live fields",
-                      badges.get("amd") == "AMD live", f"got={badges.get('amd')!r}")
+                      badges.get("amd") == "Live model", f"got={badges.get('amd')!r}")
                 check("unreachable badge is shown when the backend cannot be read",
                       badges.get("down") == "Unreachable", f"got={badges.get('down')!r}")
                 check("source badge restores to Simulator",

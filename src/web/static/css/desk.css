@@ -31,6 +31,9 @@
 }
 .desk-error { color: var(--seal, #9a3412); min-height: 1.2em; }
 .desk-note { margin: 0; font-size: 0.9em; color: var(--ink-soft, #3e463f); }
+.desk-actions button.desk-emphasis { background: #8a3b00; border-color: #8a3b00; box-shadow: 0 0 0 3px rgba(138, 59, 0, 0.25); }
+.desk-advanced { margin: 12px 0; }
+.desk-advanced > summary { cursor: pointer; font-weight: 600; color: var(--steel, #1e3a4c); }
 .desk-typed { margin: 6px 0; font-size: 0.9em; }
 .desk-typed summary { cursor: pointer; color: var(--steel, #1e3a4c); }
 .desk-typed input { min-width: 0; flex: 1 1 8rem; }

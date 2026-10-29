@@ -100,7 +100,13 @@
     if (!body) return "Request failed";
     if (typeof body.detail === "string") return body.detail.replace(/^Value error,\s*/, "");
     if (Array.isArray(body.detail)) {
-      return body.detail.map((item) => String(item.msg || "invalid").replace(/^Value error,\s*/, "")).join(" ");
+      return body.detail.map((item) => {
+        const msg = String(item.msg || "invalid").replace(/^Value error,\s*/, "");
+        // Name the field: "reserve prior mean: Input should be less than 1".
+        const loc = Array.isArray(item.loc) ? item.loc.filter((part) => part !== "body") : [];
+        const field = loc.length ? String(loc[loc.length - 1]).replace(/_/g, " ") : "";
+        return field && !/^\d+$/.test(field) ? field + ": " + msg : msg;
+      }).join(" ");
     }
     return "Request failed";
   }
@@ -123,6 +129,9 @@
 
   const form = document.getElementById("desk-form");
   const formError = document.getElementById("form-error");
+  // The form (and its error line) is hidden once a deal is open; errors from
+  // the board's own buttons go here instead.
+  const boardError = document.getElementById("board-error");
   const board = document.getElementById("board");
   let dealId = sessionStorage.getItem("tfDeskDeal") || "";
   let timer = 0;
@@ -212,6 +221,7 @@
         : err.status === 401
           ? "The desk needs the API key configured on this server."
           : err.message;
+      if (err.status !== 404 && err.status !== 401) boardError.textContent = formError.textContent;
       if (err.status === 401) form.hidden = false;
       if (err.status === 404) {
         window.clearInterval(timer);
@@ -332,7 +342,7 @@
     button.type = "button";
     button.textContent = label;
     button.addEventListener("click", async () => {
-      formError.textContent = "";
+      boardError.textContent = "";
       try {
         const snapshot = await request(
           "/api/v1/desk/deals/" + dealId + "/suppliers/" + supplierId + "/outcome",
@@ -344,7 +354,7 @@
         );
         show(snapshot);
       } catch (err) {
-        formError.textContent = err.message;
+        boardError.textContent = err.message;
       }
     });
     return button;
@@ -354,7 +364,7 @@
   if (assumptions) {
     assumptions.addEventListener("submit", async (event) => {
       event.preventDefault();
-      formError.textContent = "";
+      boardError.textContent = "";
       const payload = {};
       const take = (id, key) => {
         const field = document.getElementById(id);
@@ -381,7 +391,7 @@
         });
         show(snapshot);
       } catch (err) {
-        formError.textContent = err.message;
+        boardError.textContent = err.message;
       }
     });
   }
@@ -459,7 +469,7 @@
         keep.type = "button";
         keep.textContent = "Keep supplier";
         keep.addEventListener("click", async () => {
-          formError.textContent = "";
+          boardError.textContent = "";
           try {
             const snapshot = await request(
               "/api/v1/desk/deals/" + dealId + "/suppliers/" + supplier.id + "/keep",
@@ -471,7 +481,7 @@
             );
             show(snapshot);
           } catch (err) {
-            formError.textContent = err.message;
+            boardError.textContent = err.message;
           }
         });
         card.appendChild(keptAddress);
@@ -501,8 +511,14 @@
         const next = supplier.offer_mode === "push" ? "default" : "push";
         choose.textContent = next === "push" ? "Use push lower in the draft" : "Use the default in the draft";
         choose.disabled = next === "push" && supplier.push_counter == null;
+        // The default for the cheapest supplier is their own ask, so the draft
+        // would simply accept it; push lower is the figure to negotiate with.
+        if (next === "push" && supplier.counter_relation === "at_ask" && !choose.disabled) {
+          choose.classList.add("desk-emphasis");
+          choose.title = "The default is this supplier's own ask. Push lower is the figure to negotiate with.";
+        }
         choose.addEventListener("click", async () => {
-          formError.textContent = "";
+          boardError.textContent = "";
           choose.disabled = true;
           try {
             const snapshot = await request(
@@ -515,7 +531,7 @@
             );
             show(snapshot);
           } catch (err) {
-            formError.textContent = err.message;
+            boardError.textContent = err.message;
             choose.disabled = false;
           }
         });
@@ -1069,7 +1085,7 @@
       refresh();
     } catch (err) {
       if (block) line(block, err.message);
-      else formError.textContent = err.message;
+      else boardError.textContent = err.message;
     }
   }
 

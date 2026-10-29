@@ -255,7 +255,8 @@ class AssumptionsIn(BaseModel):
     hazard_reserve_gap: float | None = Field(default=None, allow_inf_nan=False)
     bayes_obs_noise: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     unit_sanity_multiple: float | None = Field(default=None, gt=0, allow_inf_nan=False)
-    reserve_prior_mean: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    # D is a ratio of the first ask, strictly between 0 and 1; 1 breaks the Beta prior.
+    reserve_prior_mean: float | None = Field(default=None, gt=0, lt=1, allow_inf_nan=False)
     reserve_prior_std: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     expected_markup: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     search_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)

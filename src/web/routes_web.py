@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 # [P0 REGRESSION] 這裡原本是 `from ..app.main import require_api_key`，與
 # main.py 檔尾的 `from ..web.routes_web import ...` 形成互相 import 的循環。
@@ -63,6 +63,8 @@ router = APIRouter()
 # 呼叫兩次 include_router 會把整組路由註冊兩次。
 api_v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_api_key)])
 
+HTTP_TEMPORARY_REDIRECT = 307
+
 
 # ---------------------------------------------------------------------------
 # HTML dashboard
@@ -70,6 +72,17 @@ api_v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_api_key)])
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def dashboard():
+    # In production the root opens the live desk: the dashboard below is the
+    # older decision lab and calls key-gated APIs a first visitor cannot use.
+    if os.environ.get("TRADEFLOW_ENV", "").strip().lower() == "production":
+        return RedirectResponse("/desk", status_code=HTTP_TEMPORARY_REDIRECT)
+    html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(content=html)
+
+
+@router.get("/lab", response_class=HTMLResponse, include_in_schema=False)
+async def decision_lab():
+    """The dashboard, reachable in production too."""
     html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
     return HTMLResponse(content=html)
 

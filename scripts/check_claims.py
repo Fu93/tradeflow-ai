@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
-SUBMISSION = ROOT / "SUBMISSION.md"
+SUBMISSION = ROOT / "docs" / "archive" / "AMD_SUBMISSION.md"
 DOCS = (README, SUBMISSION)
 
 

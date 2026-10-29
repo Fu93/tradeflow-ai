@@ -213,7 +213,7 @@ def test_no_document_still_claims_the_contaminated_92_percent_as_generalisation(
     """
     doc_files = [
         "README.md",
-        "SUBMISSION.md",
+        "docs/archive/AMD_SUBMISSION.md",
         "docs/internal/TARGET_ARCHITECTURE_AND_ROADMAP.md",
         "docs/internal/PITCH.md",
         "docs/internal/SUBMISSION_DRAFT.md",
@@ -300,7 +300,7 @@ def test_dataset_is_template_recycled_not_500_distinct_samples():
     "rel",
     [
         "README.md",
-        "SUBMISSION.md",
+        "docs/archive/AMD_SUBMISSION.md",
         "docs/internal/PITCH.md",
         "docs/internal/SUBMISSION_DRAFT.md",
     ],

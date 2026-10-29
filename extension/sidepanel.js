@@ -187,7 +187,7 @@ let toastTimer = 0;
 const scrollMem = {};
 
 const SOURCE_MEANING = {
-  "amd-live": "A live AMD reading was requested and the health check says it is available.",
+  "amd-live": "A live model reading was requested and the health check says it is available.",
   offline: "Cached heuristic — lower confidence.",
   simulator: "This tab is the simulator, not a live supplier chat.",
   unreachable: "The TradeFlow backend could not be read.",
@@ -416,7 +416,7 @@ function tfSourceKind() {
 }
 
 const SOURCE_LABELS = {
-  "amd-live": "AMD live",
+  "amd-live": "Live model",
   offline: "Offline fallback",
   simulator: "Simulator",
   unreachable: "Unreachable",

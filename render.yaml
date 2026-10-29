@@ -34,10 +34,6 @@ services:
         value: "1"
       - key: TRADEFLOW_SOLVER_BACKEND
         value: numpy
-      - key: VLLM_BASE_URL
-        value: https://developer.amd.com.cn/radeon/api/v1
-      - key: VLLM_MODEL
-        value: Gemma-4-31B-IT
       - key: VLLM_API_KEY
         sync: false
       # Nebius Token Factory key for the Nemotron quote reader (the base URL and
@@ -65,11 +61,17 @@ services:
         sync: false
       - key: TRADEFLOW_WEBHOOK_TOKEN
         sync: false
-      # Ed25519 public key of the human approver (64 hex chars). This service
-      # runs TRADEFLOW_ENV=production, so the send gate is fail-CLOSED: with no
-      # pinned key here, every desk send is refused rather than accepted on an
-      # unsigned boolean. /ready reports "signed_approval: false" until it is
-      # set. Generate the pair on the approver's own machine with
+      # Whether a send needs an Ed25519-signed approval. This service runs
+      # TRADEFLOW_ENV=production, which requires one unless this says otherwise.
+      # The public judging demo sets it to 0: a browser cannot sign, mail
+      # sending is off (no SMTP), so an approval there records "approved, not
+      # transmitted". A real deployment leaves it unset (or 1) and pins a key.
+      - key: TRADEFLOW_REQUIRE_SIGNED_APPROVAL
+        sync: false
+      # Ed25519 public key of the human approver (64 hex chars). With signed
+      # approval required and no key pinned, every desk send is refused rather
+      # than accepted on an unsigned boolean (/ready reports it). Generate the
+      # pair on the approver's own machine with
       #   python -m src.desk.approval_signing keygen --out approval_keypair.json
       # and copy only "public_key" into this variable. Never paste the private
       # half into a hosting dashboard.

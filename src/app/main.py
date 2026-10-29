@@ -32,7 +32,10 @@ from fastapi.middleware.cors import CORSMiddleware
 # 真實環境變數與測試 monkeypatch 仍然優先。
 try:
     from dotenv import load_dotenv as _load_dotenv
-    _load_dotenv(override=False)
+    # The test suite sets TRADEFLOW_SKIP_DOTENV so a developer's real .env
+    # (with live provider keys) never reaches the tests.
+    if not os.environ.get("TRADEFLOW_SKIP_DOTENV"):
+        _load_dotenv(override=False)
 except Exception as _dotenv_err:  # pragma: no cover - 缺套件時不應讓 API 無法啟動
     logging.getLogger("tradeflow.app").warning(
         "python-dotenv unavailable (%s); .env will not be loaded. "
@@ -133,6 +136,8 @@ async def _lifespan(app: FastAPI):
             logger.warning("Extractor pool shutdown raised.", exc_info=True)
 
 
+HTTP_INTERNAL_ERROR = 500
+
 app = FastAPI(
     title="TradeFlow Negotiation Engine",
     version="0.4.0",
@@ -156,6 +161,21 @@ async def _safe_validation_error_handler(request: Request, exc: RequestValidatio
     return SafeJSONResponse(
         status_code=422,
         content={"detail": _readable_validation_detail(_sanitize_non_finite(jsonable_encoder(exc.errors())))},
+    )
+
+
+@app.exception_handler(Exception)
+async def _unhandled_error_handler(request: Request, exc: Exception):
+    """An unexpected error answers JSON, never a bare 500 page or a traceback.
+
+    It does not claim the deal is unchanged: some writes store before they
+    recompute. The caller is told to reload; the detail is logged on the
+    server, not sent to the caller.
+    """
+    logger.error("Unhandled error on %s %s", request.method, request.url.path, exc_info=exc)
+    return SafeJSONResponse(
+        status_code=HTTP_INTERNAL_ERROR,
+        content={"detail": "Internal error. The request did not finish; reload the deal to see its current state."},
     )
 
 
