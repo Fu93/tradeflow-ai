@@ -252,9 +252,9 @@ MUTANTS = [
     ),
     (
         "src/desk/store.py",
-        "if commit:\n            self.conn.commit()  # create_deal",
-        "if True:\n            self.conn.commit()  # create_deal",
-        "tests/steps/test_reverify_blockers.py::test_create_rolls_back_when_the_chain_write_fails",
+        "if not self._atomic_depth:\n            self.conn.commit()",
+        "if True:\n            self.conn.commit()",
+        "tests/test_runtime_reliability.py::test_failed_outcome_rolls_back_and_keeps_previous_snapshot",
     ),
     (
         # [ARCHITECTURE 2026-10-24] /health moved from main.py to routes_meta.py.
