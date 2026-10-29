@@ -1,0 +1,9 @@
+{
+  "scope": "Disposable pre-fix failure reproduction, 2026-10-29; no real email sent",
+  "crash_exit": 77,
+  "quote_status_after_crash": "accepted",
+  "review_entries_after_crash": 0,
+  "transport_calls_for_one_approval": 2,
+  "restore_result": "OperationalError",
+  "valid_database_unchanged_after_rejected_backup": false
+}

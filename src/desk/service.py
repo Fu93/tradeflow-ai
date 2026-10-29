@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import logging
 import math
 from email.message import EmailMessage
@@ -186,12 +187,8 @@ def create_deal(
         raise DeskRejected("Risk tolerance is outside the configured range.")
     if chain_key_configured() is False:
         raise DeskUnavailable("desk sends disabled: chain key missing")
-    try:
+    with store.atomic():
         deal = _create_deal_row(store, product, quantity, target_price, ceiling_price, risk, seed, code, suppliers)
-        store.commit()
-    except Exception:
-        store.rollback()
-        raise
     return publish(store, deal["id"])
 
 
@@ -303,20 +300,21 @@ def accept_review(
             provenance["shadow_matched"] = False
             parsed = dict(event["parsed"])
             parsed["unit_price"] = None
-            store.set_event_status(
-                event_id,
-                status="rejected",
-                supplier_id=event.get("supplier_id"),
-                parsed=parsed,
-                confidence="low",
-                provenance=provenance,
-            )
-            store.touch(deal_id)
-            store.append_chain(
-                deal_id,
-                "review",
-                {"actor": "human", "from": event["status"], "to": "rejected", "event_id": event_id, "token": None},
-            )
+            with store.atomic():
+                store.set_event_status(
+                    event_id,
+                    status="rejected",
+                    supplier_id=event.get("supplier_id"),
+                    parsed=parsed,
+                    confidence="low",
+                    provenance=provenance,
+                )
+                store.touch(deal_id)
+                store.append_chain(
+                    deal_id,
+                    "review",
+                    {"actor": "human", "from": event["status"], "to": "rejected", "event_id": event_id, "token": None},
+                )
             publish(store, deal_id)
             return store.get_snapshot(deal_id) or {}
         if not supplier_id:
@@ -392,39 +390,40 @@ def accept_review(
             and price is not None
             and float(rule_shadow) == float(price)
         )
-        store.set_event_status(
-            event_id,
-            status="accepted",
-            supplier_id=supplier_id,
-            parsed=parsed,
-            confidence="high",
-            provenance=provenance,
-        )
-        store.touch(deal_id)
-        raw_text = str(event.get("raw_text") or "")
-        store.append_chain(
-            deal_id,
-            "review",
-            {
-                "actor": "human",
-                "from": event["status"],
-                "to": "accepted",
-                "event_id": event_id,
-                "supplier_id": supplier_id,
-                "token": None if typed else chosen_token,
-                "typed": typed,
-                "value": float(price),
-                "currency": currency,
-                "unit": "per_piece",
-                "span": words if typed else _confirm_span(_visible_text(raw_text), str(chosen_token)),
-                "raw_sha256": hashlib.sha256(raw_text.encode("utf-8")).hexdigest(),
-                "freight": parsed.get("freight"),
-                "duty_rate": parsed.get("duty_rate"),
-                "fees": parsed.get("fees"),
-                "origin": str(provenance.get("origin") or ""),
-                "simulated": bool(provenance.get("simulated")),
-            },
-        )
+        with store.atomic():
+            store.set_event_status(
+                event_id,
+                status="accepted",
+                supplier_id=supplier_id,
+                parsed=parsed,
+                confidence="high",
+                provenance=provenance,
+            )
+            store.touch(deal_id)
+            raw_text = str(event.get("raw_text") or "")
+            store.append_chain(
+                deal_id,
+                "review",
+                {
+                    "actor": "human",
+                    "from": event["status"],
+                    "to": "accepted",
+                    "event_id": event_id,
+                    "supplier_id": supplier_id,
+                    "token": None if typed else chosen_token,
+                    "typed": typed,
+                    "value": float(price),
+                    "currency": currency,
+                    "unit": "per_piece",
+                    "span": words if typed else _confirm_span(_visible_text(raw_text), str(chosen_token)),
+                    "raw_sha256": hashlib.sha256(raw_text.encode("utf-8")).hexdigest(),
+                    "freight": parsed.get("freight"),
+                    "duty_rate": parsed.get("duty_rate"),
+                    "fees": parsed.get("fees"),
+                    "origin": str(provenance.get("origin") or ""),
+                    "simulated": bool(provenance.get("simulated")),
+                },
+            )
         publish(store, deal_id)
         return store.get_snapshot(deal_id) or {}
 
@@ -464,26 +463,27 @@ def record_outcome(
             offer = card.get("counter") if card.get("counter") is not None else card.get("latest_quote")
         if quote is None or offer is None:
             raise DeskRejected("Record the quote and the offer this outcome answers.")
-        store.insert_outcome(
-            deal_id=deal_id,
-            supplier_id=supplier_id,
-            outcome=outcome,
-            quote=float(quote),
-            offer=float(offer),
-            agreed_price=None if agreed_price is None else float(agreed_price),
-        )
-        store.append_chain(
-            deal_id,
-            "outcome",
-            {
-                "supplier_id": supplier_id,
-                "outcome": outcome,
-                "quote": float(quote),
-                "offer": float(offer),
-                "agreed_price": None if agreed_price is None else float(agreed_price),
-            },
-        )
-        store.touch(deal_id)
+        with store.atomic():
+            store.insert_outcome(
+                deal_id=deal_id,
+                supplier_id=supplier_id,
+                outcome=outcome,
+                quote=float(quote),
+                offer=float(offer),
+                agreed_price=None if agreed_price is None else float(agreed_price),
+            )
+            store.append_chain(
+                deal_id,
+                "outcome",
+                {
+                    "supplier_id": supplier_id,
+                    "outcome": outcome,
+                    "quote": float(quote),
+                    "offer": float(offer),
+                    "agreed_price": None if agreed_price is None else float(agreed_price),
+                },
+            )
+            store.touch(deal_id)
         return publish(store, deal_id)
 
 
@@ -531,29 +531,30 @@ def confirm_policy(
             "risk_tolerance": float(deal.get("risk_tolerance") or 0.0),
             "currency": str(deal.get("currency") or ""),
         }
-        store.update_limits(
-            deal_id,
-            product=product.strip(),
-            quantity=int(quantity),
-            target_price=float(target_price),
-            ceiling_price=float(ceiling_price),
-            risk_tolerance=risk,
-            currency=code,
-        )
-        store.append_chain(
-            deal_id,
-            "policy_confirmed",
-            {
-                "confirmed_by": "human",
-                "product": product.strip(),
-                "quantity": int(quantity),
-                "target_price": float(target_price),
-                "ceiling": float(ceiling_price),
-                "risk_tolerance": risk,
-                "currency": code,
-                "previous": previous,
-            },
-        )
+        with store.atomic():
+            store.update_limits(
+                deal_id,
+                product=product.strip(),
+                quantity=int(quantity),
+                target_price=float(target_price),
+                ceiling_price=float(ceiling_price),
+                risk_tolerance=risk,
+                currency=code,
+            )
+            store.append_chain(
+                deal_id,
+                "policy_confirmed",
+                {
+                    "confirmed_by": "human",
+                    "product": product.strip(),
+                    "quantity": int(quantity),
+                    "target_price": float(target_price),
+                    "ceiling": float(ceiling_price),
+                    "risk_tolerance": risk,
+                    "currency": code,
+                    "previous": previous,
+                },
+            )
         return publish(store, deal_id)
 
 
@@ -673,16 +674,18 @@ def confirm_supplier_address(
         if supplier is None:
             raise KeyError(supplier_id)
         new_name = (name or str(supplier["name"])).strip()
-        store.update_supplier(supplier_id, name=new_name, address=cleaned)
-        entry: dict[str, Any] = {
-            "supplier_id": supplier_id,
-            "name": new_name,
-            "address": cleaned,
-            "confirmed_by": "human",
-        }
-        if recorded_change is not None:
-            entry["address_change"] = recorded_change
-        store.append_chain(deal_id, "supplier_address", entry)
+        with store.atomic():
+            store.update_supplier(supplier_id, name=new_name, address=cleaned)
+            entry: dict[str, Any] = {
+                "supplier_id": supplier_id,
+                "name": new_name,
+                "address": cleaned,
+                "confirmed_by": "human",
+            }
+            if recorded_change is not None:
+                entry["address_change"] = recorded_change
+            store.append_chain(deal_id, "supplier_address", entry)
+            store.touch(deal_id)
         return publish(store, deal_id)
 
 
@@ -699,19 +702,21 @@ def reopen_supplier(
     with deal_lock(deal_id):
         if store.supplier(deal_id, supplier_id) is None:
             raise KeyError(supplier_id)
-        store.insert_outcome(
-            deal_id=deal_id,
-            supplier_id=supplier_id,
-            outcome="reopen_supplier",
-            quote=None,
-            offer=None,
-            agreed_price=None,
-        )
-        store.append_chain(
-            deal_id,
-            "reopen_supplier",
-            {"supplier_id": supplier_id, "confirmed_by": "human"},
-        )
+        with store.atomic():
+            store.insert_outcome(
+                deal_id=deal_id,
+                supplier_id=supplier_id,
+                outcome="reopen_supplier",
+                quote=None,
+                offer=None,
+                agreed_price=None,
+            )
+            store.append_chain(
+                deal_id,
+                "reopen_supplier",
+                {"supplier_id": supplier_id, "confirmed_by": "human"},
+            )
+            store.touch(deal_id)
         return publish(store, deal_id)
 
 
@@ -774,17 +779,19 @@ def confirm_keep_supplier(
         if not recompute.supplier_needs_keep(entries, supplier_id):
             raise DeskRejected("This supplier is not waiting to be kept.")
         given = (name or "").strip() or str(supplier.get("name") or "").strip()
-        store.update_supplier(supplier_id, name=given, address=cleaned)
-        store.append_chain(
-            deal_id,
-            "supplier_kept",
-            {
-                "supplier_id": supplier_id,
-                "name": given,
-                "address": cleaned,
-                "confirmed_by": "human",
-            },
-        )
+        with store.atomic():
+            store.update_supplier(supplier_id, name=given, address=cleaned)
+            store.append_chain(
+                deal_id,
+                "supplier_kept",
+                {
+                    "supplier_id": supplier_id,
+                    "name": given,
+                    "address": cleaned,
+                    "confirmed_by": "human",
+                },
+            )
+            store.touch(deal_id)
         return publish(store, deal_id)
 
 
@@ -800,9 +807,10 @@ def set_assumptions(store: DeskStore, deal_id: str, fields: dict[str, Any]) -> d
             float(deal["target_price"]), float(deal["ceiling_price"]),
             float(UNIT_SANITY_MULTIPLE if multiple is None else multiple),
         )
-        store.set_policy(deal_id, fields)
-        store.append_chain(deal_id, "assumptions", {"fields": dict(fields)})
-        store.touch(deal_id)
+        with store.atomic():
+            store.set_policy(deal_id, fields)
+            store.append_chain(deal_id, "assumptions", {"fields": dict(fields)})
+            store.touch(deal_id)
         return publish(store, deal_id)
 
 
@@ -1092,20 +1100,15 @@ async def send_draft(
         if not store.claim_draft_send(draft_id, message_id):
             raise DraftStale("This draft changed. Read the new text and approve it again.")
     fn = sender or transmit
+    send_options = {"message_id": message_id, "reply_to": reply_to, "references": references}
     try:
+        signature = inspect.signature(fn)
         try:
-            transmitted = bool(
-                await fn(
-                    recipient,
-                    body,
-                    product,
-                    message_id=message_id,
-                    reply_to=reply_to,
-                    references=references,
-                )
-            )
+            signature.bind(recipient, body, product, **send_options)
         except TypeError:
-            transmitted = bool(await fn(recipient, body, product))
+            signature.bind(recipient, body, product)
+            send_options = {}
+        transmitted = bool(await fn(recipient, body, product, **send_options))
     except Exception:
         store.mark_draft(
             draft_id,

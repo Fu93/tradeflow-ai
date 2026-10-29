@@ -7,6 +7,7 @@
   let viewEpoch = 0;
   let opening = false;
   let adding = false;
+  let quoteAttempt = null;
   let sendPolicy = {};
   const pending = new Set();
   const mutations = new Set();
@@ -261,6 +262,7 @@
     viewEpoch += 1;
     opening = false;
     adding = false;
+    quoteAttempt = null;
     pending.clear();
     mutations.clear();
     renderSigs.clear();
@@ -1398,11 +1400,17 @@
     const submittedLanded = ["paste-freight", "paste-fees", "paste-duty"].map((id) => document.getElementById(id).value);
     busy(submit, true);
     try {
+      const fingerprint = JSON.stringify(payload);
+      if (!quoteAttempt || quoteAttempt.fingerprint !== fingerprint) {
+        quoteAttempt = {fingerprint: fingerprint, id: "desk-paste-" + crypto.randomUUID()};
+      }
+      payload.external_id = quoteAttempt.id;
       const result = await request("/api/v1/desk/deals/" + dealId + "/quotes", {
         method: "POST",
         headers: headers(true),
         body: JSON.stringify(payload),
       });
+      quoteAttempt = null;
       if (area.value === payload.raw_text && document.getElementById("paste-supplier").value === payload.supplier_id &&
           submittedLanded.every((value, index) => value === document.getElementById(["paste-freight", "paste-fees", "paste-duty"][index]).value)) {
         area.value = "";

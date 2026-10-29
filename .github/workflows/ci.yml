@@ -78,6 +78,21 @@ jobs:
       # A green suite plus a red jury suite is exactly the "tests green, first
       # reviewer step dies" failure mode this project already paid for once on
       # submission day, so verify_all now runs as a named CI step.
+      - name: Crash and recovery drill (disposable database, no external calls)
+        run: python scripts/audit_runtime_reliability.py --output /tmp/tradeflow-runtime-faults.json
+
+      - name: Concurrent HTTP and hard restart drill (independent invoice oracle)
+        run: python scripts/audit_runtime_load.py --output /tmp/tradeflow-runtime-load.json
+
+      - name: Upload runtime reliability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-reliability-evidence
+          path: /tmp/tradeflow-runtime-*.json
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Run verify_all jury health suite
         run: python verify_all.py
 

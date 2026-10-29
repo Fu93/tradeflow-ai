@@ -48,6 +48,10 @@ ALLOW_FILES = {
     # Offline, independent numerical-oracle parameter domains. Never imported
     # by the application and not supplier data or a live pricing policy.
     "scripts/audit_decision_numerics.py",
+    # Explicitly offline fault/load fixtures. These run disposable databases
+    # and fake suppliers, never live pricing; production does not import them.
+    "scripts/audit_runtime_reliability.py",
+    "scripts/audit_runtime_load.py",
     # Timing constants of the connection pool (a 5.0s grace window before a
     # store retired by a path swap is closed). Registered in
     # docs/constants_registry.json; not a scenario number.
