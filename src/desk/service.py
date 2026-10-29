@@ -356,6 +356,9 @@ def accept_review(
             if not price > 0 or price != price:
                 raise DeskRejected("The typed price must be above zero.")
             stated = sorted(amounts_in_words(words))
+            if len(stated) > 1:
+                said = " and ".join(f"{value:.2f}" for value in stated)
+                raise DeskRejected(f"Quote only the words of the price; these words state {said}.")
             if not words_state(words, price, float(OPT_TOL) * max(1.0, abs(price))):
                 said = ", ".join(f"{value:.2f}" for value in stated) or "no amount"
                 raise DeskRejected(f"The typed price is not the amount in those words (they read as {said}).")
