@@ -424,3 +424,29 @@ def test_inactive_desk_entries_do_not_starve_current_desk_retries(desk_server, t
         saved = await wait_queue(worker, 12)
         assert all(entry["deal"] == "old-deal" for entry in saved.values())
     run_case(desk_server, tmp_path, case)
+
+
+def test_buyer_message_burst_does_not_import_or_mask_the_supplier_quote(desk_server, tmp_path):
+    async def case(context, worker, deal):
+        page = await page_for(context, desk_server + "/chat?conversation=alpha", "Alpha Factory")
+        await page.evaluate("""() => {
+          const root = document.querySelector('.chat-messages');
+          for (const [index, marker] of [
+            'msg-sent', 'message-out-extra', 'outgoing-meta', 'own-message', 'self-note'
+          ].entries()) {
+            const node = document.createElement('div');
+            node.className = 'msg-bubble ' + marker;
+            node.dataset.messageId = 'buyer-' + index;
+            node.textContent = '我方预算 ' + (20 + index) + '.00 元。';
+            root.appendChild(node);
+          }
+          const supplier = document.createElement('div');
+          supplier.className = 'msg-bubble msg-received absent some-thing';
+          supplier.dataset.messageId = 'supplier-1';
+          supplier.textContent = '单价 28.00 元。';
+          root.appendChild(supplier);
+        }""")
+        assert await events(context, desk_server, deal, 1) == [("Alpha Factory", "单价 28.00 元。")]
+        await asyncio.sleep(.7)
+        assert len(await events(context, desk_server, deal, 1)) == 1
+    run_case(desk_server, tmp_path, case)
