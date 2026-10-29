@@ -102,15 +102,27 @@ def audit():
                 for snapshot in snapshots:
                     rows = snapshot["suppliers"]
                     costs = {}
+                    asks = {"A": Decimal("30"), "B": Decimal("25"), "C": Decimal("28"), "D": Decimal("27")}
                     for row in rows:
+                        if Decimal(str(row["latest_quote"])) != asks[row["name"]]:
+                            raise AssertionError("Confirmed quote differs from the original submitted amount")
                         freight = Decimal("1") if row["name"] == "A" else Decimal("0")
                         fees = freight
                         duty = Decimal("0.1") if row["name"] == "A" else Decimal("0")
-                        costs[row["id"]] = (Decimal(str(row["latest_quote"])) + freight + fees) * (1 + duty)
+                        costs[row["id"]] = (asks[row["name"]] + freight + fees) * (1 + duty)
                         if row["counter"] is not None:
                             landed = (Decimal(str(row["counter"])) + freight + fees) * (1 + duty)
-                            if landed > 40 or Decimal(str(row["counter"])) > Decimal(str(row["latest_quote"])):
+                            if landed > 40 or Decimal(str(row["counter"])) > asks[row["name"]]:
                                 raise AssertionError("Issued price violates actual invoice constraints")
+                    for row in rows:
+                        if row["counter"] is None:
+                            continue
+                        landed = Decimal(str(row["counter"]))
+                        if row["name"] == "A":
+                            landed = (landed + 2) * Decimal("1.1")
+                        rival = min(value for other, value in costs.items() if other != row["id"])
+                        if landed > rival:
+                            raise AssertionError("Default counter lands above an available rival's invoice")
                     oracle = sorted(rows, key=lambda row: costs[row["id"]])
                     actual = sorted(rows, key=lambda row: row["rank"])
                     if [r["id"] for r in actual] != [r["id"] for r in oracle]:
@@ -132,6 +144,7 @@ def audit():
                 return {"ok": True, "offline": True, "concurrency": 8, "deals": 4, "quote_attempts": 48,
                         "stored_quotes": 16, "confirmed_quotes": 16, "independent_invoice_oracle": "Decimal",
                         "duplicate_quotes": 0, "hard_restart_preserved_state": True,
+                        "submitted_prices_verified": True, "rival_constraint_verified": True,
                         "request_count": len(samples), "p95_seconds": round(samples[int(len(samples) * .95)], 4),
                         "max_seconds": round(max(samples), 4),
                         "scope": "local disposable server, not production capacity"}
