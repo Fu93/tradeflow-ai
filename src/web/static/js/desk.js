@@ -317,7 +317,7 @@
       if (requestedDeal !== dealId || mutations.size || revision !== mutationRevision) return;
       if (err.status === 404) {
         leaveDeal();
-        formError.textContent = "This deal is not in the desk database. Open a new one.";
+        formError.textContent = "This deal is not in the desk database. A server restart on a fresh disk can remove previous deals. Open a new one.";
       } else if (err.status === 401) {
         window.clearInterval(timer);
         timer = 0;
