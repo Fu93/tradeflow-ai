@@ -383,7 +383,8 @@ class ReserveState:
         if hit is not None:
             return hit
         lower, upper = self.bounds()
-        if not all(math.isfinite(value) for value in (alpha, beta, alpha + beta, lower, upper)) or alpha <= 0 or beta <= 0:
+        shapes_finite = all(math.isfinite(value) for value in (alpha, beta, alpha + beta, lower, upper))
+        if not shapes_finite or alpha <= 0 or beta <= 0:
             result = (lower, upper, 0.0, False)
         elif not (lower < upper):
             result = (lower, upper, 0.0, False)
