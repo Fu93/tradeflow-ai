@@ -20,6 +20,7 @@ from src.config.heuristics import (
     UNIT_SANITY_MULTIPLE,
 )
 from src.desk.store import DeskStore
+from src.desk.transmission import send_policy
 from src.desk.history import confirmation_order
 from src.desk.headline import audit_line, confirmed_prices, saving_vs_best_first
 from src.desk.shadow import progress as shadow_progress
@@ -823,6 +824,7 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     rates = baseline_rates(intercept, tau)
     recorded = store.outcomes(deal_id)
     payload = {
+        "send_policy": send_policy(),
         "deal": {
             "id": deal["id"],
             "product": deal["product"],

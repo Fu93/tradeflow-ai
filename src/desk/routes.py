@@ -313,7 +313,9 @@ def register_desk_routes(api_v1: APIRouter) -> None:
         snapshot = store.get_snapshot(deal_id)
         if snapshot is None:
             snapshot = publish(store, deal_id)
-        return snapshot
+        from src.desk.transmission import send_policy
+
+        return {**snapshot, "send_policy": send_policy()}
 
     @api_v1.post("/desk/deals/{deal_id}/quotes")
     def post_quote(deal_id: str, body: QuoteIn, _: str = Depends(require_desk_mutation)):
