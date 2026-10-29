@@ -561,6 +561,14 @@
       const rank = supplier.rank == null ? "—" : String(supplier.rank);
       title.textContent = rank + ". " + (supplier.name || "Supplier");
       card.appendChild(title);
+      const thread = supplier.conversation || {};
+      if (thread.label) {
+        const state = line(card, thread.label);
+        state.dataset.threadState = thread.state || "";
+        state.className = "desk-note";
+      }
+      if (thread.waiting_since) line(card, "Waiting since " + formatWhen(thread.waiting_since));
+      if (thread.last_captured_at) line(card, "Last captured: " + formatWhen(thread.last_captured_at));
       const quote = supplier.latest_quote == null
         ? "no quote"
         : money(supplier.latest_quote, supplier.currency || dealCurrency);

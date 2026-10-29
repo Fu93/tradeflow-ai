@@ -203,11 +203,9 @@
   // ---------------------------------------------------------------------------
   // 5. Multi-Platform Chat Bubble and Input Selectors
   // ---------------------------------------------------------------------------
-  // [修正/誠實揭露] 舊版在此定義了一個 `PLATFORMS` 查詢表（c1688/alibaba/
-  // globalsources/made_in_china/whatsapp/generic 的 DOM selector），但它**從未被
-  // 任何程式碼引用** —— 是死碼。本擴充為 Copilot 模式，**刻意不提供**任何自動
-  // 填入聊天框或自動點擊發送的能力；相關的 findChatInput() / findSendButton()
-  // 早已移除。死碼已刪除，僅保留對選擇器的說明供偵測入口使用。
+  // Receive-only platform profiles live in desk_import.js and have synthetic
+  // fixture coverage. Live accounts still need validation. findChatInput() /
+  // findSendButton() remain absent until an approved-delivery path is supported.
 
   // ---------------------------------------------------------------------------
   // 5b. Security helpers (H2/H5)
@@ -994,71 +992,73 @@
     }
 
     findAndBindChatBox() {
-      const chatContainer = document.querySelector(
-        ".chat-messages, .im-message-box, #messages-box, .chat-list-left, #chatMessages, .messages-container"
-      );
-
-      if (chatContainer) {
-        this.bindTargetedChatObserver(chatContainer);
-      } else {
-        // Shallow discovery observer on document.body
-        this.discoveryObserver = new MutationObserver(() => {
-          const found = document.querySelector(
-            ".chat-messages, .im-message-box, #messages-box, .chat-list-left, #chatMessages, .messages-container"
-          );
-          if (found) {
-            this.discoveryObserver.disconnect();
-            this.discoveryObserver = null;
-            this.bindTargetedChatObserver(found);
-          }
-        });
-        this.discoveryObserver.observe(document.body, { childList: true });
-      }
+      const bind = () => {
+        const container = tradeflowVisibleChat(document);
+        if (container && container !== this.container) this.bindTargetedChatObserver(container);
+        else if (!container && this.container) {
+          if (this.chatBoxObserver) this.chatBoxObserver.disconnect();
+          this.container = null;
+        }
+      };
+      bind();
+      this.discoveryObserver = new MutationObserver(bind);
+      this.discoveryObserver.observe(document.body, {childList: true, subtree: true});
     }
 
     bindTargetedChatObserver(container) {
-      if (this.chatBoxObserver) {
-        this.chatBoxObserver.disconnect();
-      }
-
+      if (this.chatBoxObserver) this.chatBoxObserver.disconnect();
+      this.container = container;
+      const selector = tradeflowChatProfile(document).messages;
       this.chatBoxObserver = new MutationObserver((mutations) => {
-        if (this.isDestroyed) return;
-
-        for (const mutation of mutations) {
-          if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
-            mutation.addedNodes.forEach((node) => {
-              if (node.nodeType === Node.ELEMENT_NODE) {
-                // H6 (F13): do not ingest the buyer's own (sent) message as an
-                // inbound supplier quote.
-                if (messageDirection(node) === "sent") return;
-                const direction = ownDirection(node);
-
-                const text = (node.innerText || node.textContent || "").trim();
-                if (text && !this.lruCache.has(text)) {
-                  this.lruCache.add(text);
-                  this.debouncedTrigger(text, direction);
-                }
-              }
-            });
-          }
-        }
+        if (this.isDestroyed || !container.isConnected || !container.getClientRects().length ||
+            container.closest('[hidden], [aria-hidden="true"]')) return;
+        const candidates = new Set();
+        const collect = (node) => {
+          const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+          if (!element) return;
+          const own = element.closest(selector);
+          if (own && container.contains(own)) candidates.add(own);
+          element.querySelectorAll(selector).forEach((item) => candidates.add(item));
+        };
+        mutations.forEach((mutation) => {
+          if (mutation.type === "characterData") collect(mutation.target);
+          else mutation.addedNodes.forEach(collect);
+        });
+        candidates.forEach((node) => {
+          if (node.querySelector(selector)) return;
+          const own = ownDirection(node);
+          const known = tradeflowChatDirection(node, document);
+          const direction = own === "sent" ? "sent" : known === "unknown" ? own : known;
+          if (direction === "sent") return;
+          const text = (node.innerText || node.textContent || "").trim();
+          if (!text) return;
+          const payload = tradeflowPayloadFor(document, text);
+          payload.message_id = tradeflowMessageId(node);
+          const identity = tradeflowChatIdentity(payload);
+          // Freeze page/supplier identity before debounce or a chat switch.
+          this.debouncedTrigger(text, direction, payload, node, identity);
+        });
       });
-
-      this.chatBoxObserver.observe(container, { childList: true });
-      console.log("[TradeFlow] Targeted ChatObserver successfully attached to container.");
+      this.chatBoxObserver.observe(container, {childList: true, subtree: true, characterData: true});
     }
 
-    debouncedTrigger(text, direction) {
-      // Every new bubble is kept: two supplier messages inside the settle time are
-      // two quotes, not one. They are handed over in order once the page settles.
+    debouncedTrigger(text, direction, payload, node, identity) {
       this.pending = this.pending || [];
-      this.pending.push({ text, direction: direction || "unknown" });
+      const previous = this.pending.find((item) => item.node === node && item.identity === identity);
+      const item = {text, direction: direction || "unknown", payload, node, identity};
+      if (previous) Object.assign(previous, item);
+      else this.pending.push(item);
       clearTimeout(this.debounceTimer);
       this.debounceTimer = setTimeout(() => {
         const batch = this.pending || [];
         this.pending = [];
         if (this.isDestroyed || !this.onNewMessage) return;
-        batch.forEach((item) => this.onNewMessage(item.text, item.direction));
+        batch.forEach((entry) => {
+          const key = JSON.stringify([entry.identity, entry.payload.message_id || "", entry.text]);
+          if (this.lruCache.has(key)) return;
+          this.lruCache.add(key);
+          this.onNewMessage(entry.text, entry.direction, entry.payload);
+        });
       }, 350);
     }
 
@@ -1118,24 +1118,24 @@
     });
   }
 
-  async function routeInbound(rawText, direction) {
+  async function routeInbound(rawText, direction, capturedPayload) {
     if (await autoImportEnabled()) {
       // Only a bubble the page marks as received is a supplier message. An
       // unmarked bubble could be the buyer's own words, so it is not read.
-      if (direction === "received") autoImportMessage(rawText);
+      if (direction === "received") autoImportMessage(rawText, capturedPayload);
       return;
     }
     handleInboundQuote(rawText);
   }
 
-  function autoImportMessage(rawText) {
+  function autoImportMessage(rawText, capturedPayload) {
     if (detectCaptchaChallenge()) {
       if (overlayEl) overlayEl.updateStatus("CAPTCHA DETECTED", "#f59e0b", "Automatic reading paused until the check is cleared.");
       return;
     }
-    const payload = typeof tradeflowPayloadFor === "function"
+    const payload = capturedPayload || (typeof tradeflowPayloadFor === "function"
       ? tradeflowPayloadFor(document, rawText)
-      : { ok: false, reason: "empty" };
+      : {ok: false, reason: "empty"});
     if (!payload.ok) return;
     try {
       chrome.runtime.sendMessage({ type: "AUTO_IMPORT_QUOTE", payload }, (reply) => {
@@ -1145,7 +1145,11 @@
         } else if (reply && (reply.reason === "ambiguous" || reply.reason === "unmapped")) {
           overlayEl.updateStatus("CHOOSE SUPPLIER", "#f59e0b", "Open the side panel and choose this chat's supplier once.");
         } else if (reply && reply.reason === "api-key") {
-          overlayEl.updateStatus("DESK KEY", "#f59e0b", "The desk refused the API key in the side panel.");
+          overlayEl.updateStatus("DESK KEY", "#f59e0b", "The desk refused the API key. Captures remain saved locally.");
+        } else if (reply && reply.queued) {
+          overlayEl.updateStatus("SAVED FOR RETRY", "#f59e0b", "The quote is saved locally. Select its original desk to retry.");
+        } else if (!reply || !reply.ok) {
+          overlayEl.updateStatus("IMPORT NOT SAVED", "#f59e0b", "Keep the original message. Check the connection or saved-capture queue.");
         }
       });
     } catch (err) {
@@ -1396,7 +1400,7 @@
     });
 
     // Start Targeted Chat Observer
-    observerManager = new DOMChatObserverManager((text, direction) => routeInbound(text, direction));
+    observerManager = new DOMChatObserverManager((text, direction, payload) => routeInbound(text, direction, payload));
     observerManager.start();
   }
 

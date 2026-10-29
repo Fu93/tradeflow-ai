@@ -20,7 +20,10 @@
     "*://wx.qq.com/*",
     "http://localhost:8000/*",
     "http://127.0.0.1:8000/*",
-    "https://tradeflow-ai-demo.onrender.com/*"
+    "https://tradeflow-ai-demo.onrender.com/*",
+    "*://wx2.qq.com/*",
+    "*://web.wechat.com/*",
+    "*://web2.wechat.com/*"
   ],
   "optional_host_permissions": [
     "*://*/*"
@@ -43,9 +46,15 @@
         "*://wx.qq.com/*",
         "file:///*mock_chat.html*",
         "http://localhost/*",
-        "http://127.0.0.1/*"
+        "http://127.0.0.1/*",
+        "*://wx2.qq.com/*",
+        "*://web.wechat.com/*",
+        "*://web2.wechat.com/*"
       ],
-      "js": ["desk_import.js", "content.js"],
+      "js": [
+        "desk_import.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -64,7 +73,9 @@
   },
   "commands": {
     "import-latest": {
-      "suggested_key": { "default": "Alt+Shift+I" },
+      "suggested_key": {
+        "default": "Alt+Shift+I"
+      },
       "description": "Import the visible supplier message into the live desk"
     }
   },
