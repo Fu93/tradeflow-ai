@@ -23,8 +23,10 @@ only place the continued fraction is written, and
 which is what "same kernel, different tolerance" is supposed to mean, and is
 twelve orders of magnitude below any price difference a supplier could observe.
 
-No number changes. The decision path keeps its tolerance and the legacy path
-keeps its own; only the code is shared.
+The original unification preserved both budgets. The 2026-10-29 numerical
+audit raised the decision iteration ceiling to 1024 for concentrated priors;
+ordinary calls still stop at convergence. Exhausting a budget now raises
+ArithmeticError, which the reserve CDF converts to an unavailable result.
 """
 from __future__ import annotations
 
@@ -96,6 +98,8 @@ def betacf(
         height *= delta
         if abs(delta - 1.0) < eps:
             break
+    else:
+        raise ArithmeticError("Incomplete-beta continued fraction did not converge.")
     return height
 
 

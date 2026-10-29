@@ -70,7 +70,7 @@ def within_risk_cap(
     """Check the actual issued amount, independently of optimiser flags."""
     if offer is None or not all(isfinite(float(value)) for value in (ask, offer, cap)):
         return False
-    if ask <= 0.0 or offer < 0.0 or cap < 0.0:
+    if ask <= 0.0 or offer <= 0.0 or cap < 0.0:
         return False
     loaded = fit if fit is not None else load_hazard_fit()
     risk = incremental_hazard(ask, offer, effect, loaded, intercept=intercept, gap_coef=gap_coef)
@@ -245,9 +245,15 @@ def _push(
     floor = max(floor, 0.0)
 
     def score(offer: float) -> float:
-        return objective(offer, ask, hi, state, effect, fit, intercept=intercept, gap_coef=gap_coef)
+        value = objective(offer, ask, hi, state, effect, fit, intercept=intercept, gap_coef=gap_coef)
+        if not isfinite(value):
+            raise ArithmeticError("The offer objective could not be evaluated.")
+        return value
 
-    found = bounded_scalar_max(score, floor, hi)
+    try:
+        found = bounded_scalar_max(score, floor, hi)
+    except ArithmeticError:
+        return hi, "unavailable"
     return _clip(found, floor, hi), "golden_section"
 
 
@@ -291,6 +297,10 @@ def choose_offer(
         float(ask), float(outside), double_state, effect, float(risk_cap), loaded,
         intercept=intercept, gap_coef=gap_coef,
     )
+    if "unavailable" in (kind, _kind_half, _kind_double):
+        unevaluable = True
+        blocked = True
+        default = 0.0
     push = min(push, default) if not blocked else 0.0
     push_half = min(push_half, default) if not blocked else 0.0
     push_double = min(push_double, default) if not blocked else 0.0

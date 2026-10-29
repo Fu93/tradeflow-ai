@@ -474,7 +474,8 @@ OPT_TOL = 1e-12
 
 # Rationale: continued-fraction iterations for the regularized incomplete
 # beta function. A numerical guard.
-BETA_CF_ITERS = 200
+BETA_CF_ITERS = 1024
+BETA_NARROW_QUAD_POINTS = 32
 
 # Rationale: how many resolved shadow accepts, all confirmed unchanged, put
 # the two-sided Wilson 95 percent lower bound at 0.98. The desk shows

@@ -543,6 +543,8 @@ def register_desk_routes(api_v1: APIRouter) -> None:
             return set_assumptions(get_store(), deal_id, fields)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="No such deal") from exc
+        except DeskRejected as exc:
+            raise _rejected(exc) from exc
 
     @api_v1.post("/desk/drafts/{draft_id}/send")
     async def post_send(draft_id: str, body: SendIn, _: str = Depends(require_desk_mutation)):

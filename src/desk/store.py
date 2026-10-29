@@ -429,7 +429,7 @@ class DeskStore:
                 """
                 SELECT * FROM quote_events
                 WHERE deal_id = ?
-                ORDER BY received_at ASC, id ASC
+                ORDER BY rowid ASC
                 """,
                 (deal_id,),
             ).fetchall()
@@ -851,7 +851,7 @@ class DeskStore:
                     """
                     SELECT * FROM hazard_outcomes
                     WHERE deal_id = ?
-                    ORDER BY created_at, id
+                    ORDER BY rowid
                     """,
                     (deal_id,),
                 ).fetchall()
@@ -860,7 +860,7 @@ class DeskStore:
                     """
                     SELECT * FROM hazard_outcomes
                     WHERE deal_id = ? AND supplier_id = ?
-                    ORDER BY created_at, id
+                    ORDER BY rowid
                     """,
                     (deal_id, supplier_id),
                 ).fetchall()

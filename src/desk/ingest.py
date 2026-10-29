@@ -28,7 +28,7 @@ from src.config.heuristics import (
 )
 from src.desk import mailbox
 from src.desk.extract import time_left
-from src.desk.input_checks import message_id_or_blank, references_or_blank
+from src.desk.input_checks import message_id_or_blank, references_or_blank, require_landed_total
 from src.desk.parse import parse_quote
 from src.desk.bus import BUS  # noqa: F401  (re-exported for existing callers)
 from src.desk.bus import DeskBus  # noqa: F401  (re-exported for existing callers)
@@ -186,6 +186,10 @@ def ingest_message(
     deal = store.get_deal(deal_id)
     if deal is None:
         raise KeyError(deal_id)
+    maximum_unit = max(float(deal["target_price"]), float(deal["ceiling_price"])) * float(
+        deal.get("unit_sanity_multiple") or UNIT_SANITY_MULTIPLE
+    )
+    require_landed_total(maximum_unit, freight, fees, duty_rate)
     prepared = _prepare_reading(
         raw_text,
         deal,

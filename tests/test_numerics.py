@@ -39,6 +39,11 @@ def test_the_two_precisions_agree_to_one_part_in_a_billion():
     worst_at = None
     for alpha, beta in SHAPES:
         for x in POINTS:
+            # Both CDF callers reflect the opposite tail before invoking this
+            # kernel. Comparing unconverged fractions outside that domain
+            # previously compared two equally inaccurate approximations.
+            if x >= (alpha + 1.0) / (alpha + beta + 2.0):
+                continue
             loose = betacf(alpha, beta, x)
             tight = betacf_precise(alpha, beta, x)
             if not (math.isfinite(loose) and math.isfinite(tight)):
