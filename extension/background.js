@@ -834,12 +834,25 @@ function retrySavedImports() {
     const selectedBase = String(selected.tfApiBase || API_BASE_URL_DEFAULT).replace(/\/+$/, "");
     const active = Object.entries(queue).filter(([, item]) =>
       item.base === selectedBase && item.deal === selected.tfDeskDeal
+    ).sort(([, left], [, right]) =>
+      (left.last_attempt_at || 0) - (right.last_attempt_at || 0) || (left.at || 0) - (right.at || 0)
     ).slice(0, 10);
     for (const [key, item] of active) {
       if (!(await storageLocal(["tfAutoImport"])).tfAutoImport) break;
       const stored = await deskStored();
       const base = String(stored.tfApiBase || API_BASE_URL_DEFAULT).replace(/\/+$/, "");
       if (item.base !== base || item.deal !== stored.tfDeskDeal) continue;
+      // Persist fairness independently of Chrome storage's object key order.
+      // Unmapped/invalid captures remain saved without occupying every batch.
+      const retained = await serialCapture(async () => {
+        const saved = await storageLocal(["tfAutoQueue"]);
+        const current = Object.assign({}, saved.tfAutoQueue || {});
+        if (!current[key]) return false;
+        current[key] = Object.assign({}, current[key], {last_attempt_at: Date.now()});
+        await chrome.storage.local.set({tfAutoQueue: current});
+        return true;
+      });
+      if (!retained) continue;
       const result = await deliverCaptured(stored, item.payload);
       if (result.ok) {
         delete queue[key];
@@ -848,7 +861,8 @@ function retrySavedImports() {
       await recordCaptureResult(item.payload, result, !result.ok);
       if (!result.ok && (result.reason === "offline" || result.reason === "api-key")) break;
     }
-    return {ok: true, remaining: Object.keys(queue).length};
+    const remaining = await storageLocal(["tfAutoQueue"]);
+    return {ok: true, remaining: Object.keys(remaining.tfAutoQueue || {}).length};
   });
 }
 
