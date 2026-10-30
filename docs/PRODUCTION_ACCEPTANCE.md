@@ -43,7 +43,7 @@ python scripts/audit_container_runtime.py --image tradeflow-acceptance --expecte
 4. 部署後執行下列只讀版本／健康門檻，接著用專用測試交易確認報價、核准，以及一次重新部署後的資料保存。
 
 ```bash
-python scripts/check_live_readiness.py --base-url https://tradeflow-ai-demo.onrender.com --expected-sha $(git rev-parse HEAD) --output /tmp/live-readiness.json
+python scripts/check_deployed_release.py --base-url https://tradeflow-ai-demo.onrender.com --expected-sha $(git rev-parse HEAD) --output /tmp/live-readiness.json
 ```
 
 5. 用真實帳號核對 1688、Alibaba、WhatsApp Web、微信網頁版 DOM、登入和訊息 ID；再用受控測試聯絡人驗證實際傳送及收件結果。本輪沒有這些帳號，故未完成。聊天核准後自動發送及微信桌面版仍未實作；SMTP 是否送達也不能由核准狀態推定。
