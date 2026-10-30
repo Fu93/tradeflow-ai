@@ -57,6 +57,6 @@ Python, FastAPI, SQLite, NumPy, Chrome MV3, Docker, Render, Nebius Token Factory
 3. Choose **Use a sample message**, then **Add quote**. The message mentions a competitor's 24 and the supplier's own 27.80. Review the evidence and accept the supplier's own figure.
 4. Compare the default and push-lower counters. Choose **Use push lower in the draft** and read the updated Chinese draft. Try a second supplier quote to see the comparison update.
 5. Choose **Check supplier on the web** for reference-only results. API keys, outages or the model attempt cap may cause an explicit fallback.
-6. **Approve and send** records approval on this demo; no email is transmitted. The audit verification endpoint is available through `/docs` with the same demo key.
+6. **Approve only (no email)** (accept the confirm dialog) records approval on this demo; no email is transmitted. The audit verification endpoint is available through `/docs` with the same demo key.
 
 Do not publish an API key in this file. Supply the actual key in the private testing instructions on Devpost, and a public YouTube URL in its video field.
