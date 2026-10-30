@@ -8,6 +8,8 @@ TradeFlow AI is a one-person supplier-negotiation desk for small cross-border se
 
 Links: [Owner handoff / 接手手冊](docs/OWNER_HANDOFF.md) · [Devpost text, judge steps and demo script](docs/DEVPOST_SUBMISSION.md) · [feedback on the tools](docs/NEBIUS_NVIDIA_FEEDBACK.md) · [public demo](https://tradeflow-ai-demo.onrender.com/desk) · License: MIT <!-- DEMO_URL: final public demo URL -->
 
+Demo video: https://youtu.be/tzt-KsSRMEo · Devpost: https://devpost.com/software/tradeflow-ai-the-supplier-negotiation-desk
+
 [2-minute offline walkthrough (MP4)](docs/demo/tradeflow-demo.mp4) · [Submission handoff and final English copy](docs/SUBMISSION_READY.md) · [Concise Devpost description](docs/DEVPOST_FINAL.md)
 
 ![Local offline walkthrough: confirmed quote and human-selected counter](docs/screenshots/submission-desk-desktop.png)

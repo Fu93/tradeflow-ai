@@ -2,6 +2,8 @@
 
 Deadline: **Friday 30 October 2026, 17:00 London** (10:00 Pacific). Aim to submit by Friday 12:00 London. Rules: <https://nebiusglobalaihackathon.devpost.com/rules>.
 
+Demo video: <https://youtu.be/tzt-KsSRMEo>. Devpost project: <https://devpost.com/software/tradeflow-ai-the-supplier-negotiation-desk>.
+
 The final concise paste-ready description is in [DEVPOST_FINAL.md](DEVPOST_FINAL.md). Operational handoff, recording instructions, and remaining account steps are in [SUBMISSION_READY.md](SUBMISSION_READY.md).
 
 ## Checklist
@@ -13,7 +15,7 @@ The final concise paste-ready description is in [DEVPOST_FINAL.md](DEVPOST_FINAL
 | Public repository with an open-source license visible in the About panel | MIT (`LICENSE`). Confirm the About panel on GitHub shows it. |
 | README with setup and how NVIDIA models and Token Factory were used | The first sections of [README.md](../README.md) |
 | Working demo URL | Done: <https://tradeflow-ai-demo.onrender.com/desk>. `/health` returned 200 and one single live check was made on 2026-10-28 (see "Single live check" below). |
-| Public YouTube video, under 3 minutes, no unlicensed trademarks or copyrighted music | **Local captioned walkthrough prepared; public upload remains required.** See [submission handoff](SUBMISSION_READY.md). Script below. Leave AMD and lablab logos out of every frame. |
+| Public YouTube video, under 3 minutes, no unlicensed trademarks or copyrighted music | Done: <https://youtu.be/tzt-KsSRMEo>. Devpost project: <https://devpost.com/software/tradeflow-ai-the-supplier-negotiation-desk>. Script below. Leave AMD and lablab logos out of every frame. |
 | Text description | Below |
 | Feedback on the Nebius and NVIDIA tools | [NEBIUS_NVIDIA_FEEDBACK.md](NEBIUS_NVIDIA_FEEDBACK.md). Edit it against your own runs first. |
 | Explanation of updates to a pre-existing project | README, "What changed during the submission period". The first commit is dated 13 October 2026. |

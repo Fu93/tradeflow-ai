@@ -59,4 +59,4 @@ Python, FastAPI, SQLite, NumPy, Chrome MV3, Docker, Render, Nebius Token Factory
 5. Choose **Check supplier on the web** for reference-only results. API keys, outages or the model attempt cap may cause an explicit fallback.
 6. **Approve only (no email)** (accept the confirm dialog) records approval on this demo; no email is transmitted. The audit verification endpoint is available through `/docs` with the same demo key.
 
-Do not publish an API key in this file. Supply the actual key in the private testing instructions on Devpost, and a public YouTube URL in its video field.
+Do not publish an API key in this file. Supply the actual key in the private testing instructions on Devpost. Demo video: https://youtu.be/tzt-KsSRMEo. Devpost project: https://devpost.com/software/tradeflow-ai-the-supplier-negotiation-desk.
