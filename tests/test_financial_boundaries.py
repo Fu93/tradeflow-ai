@@ -1,6 +1,7 @@
 """Independent invoice arithmetic at adversarial minor-unit boundaries."""
 
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal, ROUND_DOWN, localcontext
+import math
 import random
 
 import pytest
@@ -12,7 +13,9 @@ from src.desk.store import DeskRejected
 from src.engine.landed import landed_unit_cost
 
 
-def test_cent_boundary_caps_match_independent_decimal_invoices():
+@pytest.mark.parametrize("just_below", [False, True])
+@pytest.mark.parametrize("perturb", [False, True])
+def test_cent_boundary_caps_match_independent_decimal_invoices(just_below, perturb):
     rng = random.Random(301026)
     for _ in range(1000):
         ask = Decimal(rng.randrange(100, 10000)) / 100
@@ -20,7 +23,15 @@ def test_cent_boundary_caps_match_independent_decimal_invoices():
         freight = Decimal(rng.randrange(0, 10000)) / 1000
         fees = Decimal(rng.randrange(0, 1000)) / 1000
         duty = Decimal(rng.randrange(0, 1000)) / 1000
-        rival_input = float((cent + freight + fees) * (1 + duty))
+        if perturb:
+            freight, fees, duty = (
+                Decimal(str(math.nextafter(float(value), math.inf))) for value in (freight, fees, duty)
+            )
+        with localcontext() as oracle:
+            oracle.prec = 100
+            rival_input = float((cent + freight + fees) * (1 + duty))
+        if just_below:
+            rival_input = math.nextafter(rival_input, 0)
         own = landed_unit_cost(unit_price=float(ask), freight=float(freight), fees=float(fees), duty_rate=float(duty))
         rival = landed_unit_cost(unit_price=rival_input, freight=0, fees=0, duty_rate=0)
         cap = _landed_consistent_rivals(
@@ -28,9 +39,12 @@ def test_cent_boundary_caps_match_independent_decimal_invoices():
         )[0]
         actual = Decimal(str(quantise_down(cap)))
         exact_invoice = Decimal(str(rival_input))
-        expected = (exact_invoice / (1 + duty) - freight - fees).quantize(Decimal(".01"), rounding=ROUND_DOWN)
+        with localcontext() as oracle:
+            oracle.prec = 100
+            expected = (exact_invoice / (1 + duty) - freight - fees).quantize(Decimal(".01"), rounding=ROUND_DOWN)
+            issued_invoice = (actual + freight + fees) * (1 + duty)
         assert actual == expected
-        assert (actual + freight + fees) * (1 + duty) <= exact_invoice
+        assert issued_invoice <= exact_invoice
 
 
 @pytest.mark.parametrize("amount", [1e16, 1e26, 1e30])

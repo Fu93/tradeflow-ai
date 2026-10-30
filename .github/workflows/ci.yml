@@ -85,9 +85,11 @@ jobs:
         run: python scripts/audit_runtime_load.py --output /tmp/tradeflow-runtime-load.json
 
       - name: Independent Decimal invoice boundaries
-        run: >
-          python scripts/audit_financial_boundaries.py --cases 10000
-          --output /tmp/tradeflow-runtime-financial-boundaries.json
+        run: |
+          python scripts/audit_financial_boundaries.py --cases 10000 --output /tmp/tradeflow-runtime-financial-boundaries.json
+          python scripts/audit_financial_boundaries.py --cases 10000 --just-below-cent --output /tmp/tradeflow-runtime-financial-below-boundaries.json
+          python scripts/audit_financial_boundaries.py --cases 10000 --perturb-inputs --output /tmp/tradeflow-runtime-financial-precise-inputs.json
+          python scripts/audit_financial_boundaries.py --cases 10000 --just-below-cent --perturb-inputs --output /tmp/tradeflow-runtime-financial-below-precise-inputs.json
 
       - name: Upload runtime reliability evidence
         if: always()

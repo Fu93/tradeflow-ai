@@ -7,6 +7,7 @@
 - **Readiness 假綠燈**：production 未設定有效 API 金鑰，或核准公鑰格式錯誤時，`/ready` 仍回傳 200。修正後為 503；也檢查 Ed25519 公鑰是否為有效群元素。`/health` 保留為程序存活檢查，Render Blueprint 改用 `/ready`。
 - **金額界線少一分**：[修正前獨立檢查](reliability/production/money-before.json)在 100,000 組刻意落在分界線的帳單中，發現 11,136 組上限多減一分，未發現超額。例：單價界線 1.32 被浮點算成 1.3199999999999998，向下取分後變成 1.31。到岸成本及其係數改以輸入的十進位字串運算，再轉成 API 數值；[修正後檢查](reliability/production/money-after.json)中少一分及超額均為零，未用 epsilon 放寬金額上限。
 - **極端金額延後崩潰**：例如 1e26 能通過有限值檢查，之後在取分時觸發 Decimal InvalidOperation。現在在輸入階段拒絕無法保留貨幣最小單位精度的價格範圍及到岸總額。
+- **接近界線時上限向上捨入**：進一步測試略低於分界線、以及較多小數位的輸入，發現反推上限轉回 float 可能向上跨過界線。現在保留精確十進位中間金額，依輸入位數設定運算精度；反推的 float 上限若向上捨入就往下移一個 ULP，不用 epsilon 放寬限制。排序也使用精確金額，顯示用 float 不回流成金額依據。
 - **映像帶入舊資料**：實際 Docker 建置把本機 `data/desk.db` 打包進映像；原有排除規則只完整處理 sessions，新增的根目錄 glob 也不足以排除巢狀 desk 檔案。已補齊遞迴資料庫／journal 排除規則，並以真正映像驗證沒有內嵌資料庫。
 - **本環境的 HTTPS 建置失敗**：代理 CA 未傳入內層 pip。Dockerfile 現在支援選用 BuildKit CA secret，安裝期間掛載，不寫入映像；一般主機不提供此 secret 時沿用標準 CA，TLS 驗證保持啟用。
 
@@ -23,8 +24,11 @@
 
 CI 新增獨立 Decimal 界線檢查及真正的 production 容器驗收工作，不只檢查原始碼字串。
 
+補充的三種界線證據：[略低於分界線](reliability/production/money-below-after.json)、[較多小數位](reliability/production/money-precise-after.json)、[兩者同時出現](reliability/production/money-below-precise-after.json)。連同原始界線情境，每種各 100,000 組，獨立 Decimal 帳單均未發現上限超額或多減一分。CI 每次重跑這四種模式各 10,000 組。這是已測範圍的證據，不是所有實數輸入的形式化證明。
+
 ```bash
 python scripts/audit_financial_boundaries.py --cases 100000 --output /tmp/money.json
+python scripts/audit_financial_boundaries.py --cases 100000 --just-below-cent --perturb-inputs --output /tmp/money-near.json
 # 另需 scipy，正式服務不依賴它：
 python scripts/audit_decision_numerics.py --cases 2000 --seed 531026 --out /tmp/numerics.json
 docker build --build-arg GIT_SHA=$(git rev-parse HEAD) -t tradeflow-acceptance .

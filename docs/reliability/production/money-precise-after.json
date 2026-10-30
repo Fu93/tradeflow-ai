@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "scope": "offline Decimal invoice boundary audit",
+  "seed": 301026,
+  "just_below_cent": false,
+  "perturb_inputs": true,
+  "checked": 100000,
+  "unsafe_count": 0,
+  "unsafe_examples": [],
+  "conservative_cases": 0,
+  "examples": []
+}

@@ -2,8 +2,11 @@
 
 import argparse
 from pathlib import Path
-import random, sys, json
-from decimal import Decimal, ROUND_DOWN
+import random
+import sys
+import json
+import math
+from decimal import Decimal, ROUND_DOWN, localcontext
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.engine.landed import landed_unit_cost
@@ -14,6 +17,8 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--cases", type=int, default=100000)
 parser.add_argument("--seed", type=int, default=301026)
 parser.add_argument("--output", type=Path)
+parser.add_argument("--just-below-cent", action="store_true")
+parser.add_argument("--perturb-inputs", action="store_true")
 args = parser.parse_args()
 if args.cases < 1:
     parser.error("--cases must be above zero")
@@ -27,7 +32,15 @@ for i in range(args.cases):
     freight = Decimal(rng.randrange(0, 10000)) / 1000
     fees = Decimal(rng.randrange(0, 1000)) / 1000
     duty = Decimal(rng.randrange(0, 1000)) / 1000
-    rival = (offer + freight + fees) * (1 + duty)
+    if args.perturb_inputs:
+        freight, fees, duty = (
+            Decimal(str(math.nextafter(float(value), math.inf))) for value in (freight, fees, duty)
+        )
+    with localcontext() as oracle:
+        oracle.prec = 100
+        rival = (offer + freight + fees) * (1 + duty)
+    if args.just_below_cent:
+        rival = Decimal(str(math.nextafter(float(rival), 0)))
     own = landed_unit_cost(unit_price=float(ownask), freight=float(freight), fees=float(fees), duty_rate=float(duty))
     other = landed_unit_cost(unit_price=float(rival), freight=0, fees=0, duty_rate=0)
     inverse = _landed_consistent_rivals(
@@ -36,8 +49,11 @@ for i in range(args.cases):
     price = Decimal(str(quantise_down(inverse)))
     # True inputs are the submitted JSON decimals, not a higher precision synthetic rival.
     exactrival = Decimal(str(float(rival)))
-    exactcap = (exactrival / (1 + duty)) - freight - fees
-    if (price + freight + fees) * (1 + duty) > exactrival:
+    with localcontext() as oracle:
+        oracle.prec = 100
+        exactcap = (exactrival / (1 + duty)) - freight - fees
+        issued_invoice = (price + freight + fees) * (1 + duty)
+    if issued_invoice > exactrival:
         unsafe.append(
             {
                 "offer": str(offer),
@@ -69,6 +85,8 @@ report = {
     "ok": not unsafe and not over_conservative,
     "scope": "offline Decimal invoice boundary audit",
     "seed": args.seed,
+    "just_below_cent": args.just_below_cent,
+    "perturb_inputs": args.perturb_inputs,
     "checked": i + 1,
     "unsafe_count": len(unsafe),
     "unsafe_examples": unsafe[:5],
