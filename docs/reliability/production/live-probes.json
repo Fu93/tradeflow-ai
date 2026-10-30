@@ -1,0 +1,24 @@
+{
+  "ok": false,
+  "checked_at_utc": "2026-10-30T11:50:14.727477+00:00",
+  "base_url": "https://tradeflow-ai-demo.onrender.com",
+  "expected_sha": "b4931ee8392c95282bb4ab44f8c5a182ee3a2f80",
+  "version_match": false,
+  "probes": {
+    "version": {
+      "http_status": 200,
+      "status": null,
+      "git_sha": "532f52a4d17a60cb53a5ef48eeaecaa00cbcd468"
+    },
+    "health": {
+      "http_status": 200,
+      "status": "ok"
+    },
+    "ready": {
+      "http_status": 200,
+      "status": "ready",
+      "blocking": []
+    }
+  },
+  "scope": "read-only probes; does not prove persistence, live providers or supplier delivery"
+}

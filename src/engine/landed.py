@@ -7,6 +7,8 @@ the figure is already in the base currency.
 """
 from __future__ import annotations
 
+from decimal import Decimal, localcontext
+import math
 from typing import Any
 
 
@@ -59,22 +61,56 @@ def landed_unit_cost(
             "currency": currency,
             "base_currency": base_currency,
         }
-    rate = 1.0 if same else float(fx_to_base)
-    pre_duty = (float(unit_price) + float(freight) + float(fees)) * rate
-    landed = pre_duty * (1.0 + float(duty_rate))
-    unit_base = float(unit_price) * rate
+    # Decimal input strings preserve submitted financial amounts at cent
+    # boundaries. A binary-float sum can otherwise shave a cent off a cap
+    # when the landed comparison is inverted and rounded down.
+    rate_decimal = Decimal(1) if same else Decimal(str(fx_to_base))
+    unit, shipping, charges, duty = (Decimal(str(value)) for value in (unit_price, freight, fees, duty_rate))
+    with localcontext() as context:
+        context.prec = max(context.prec, _decimal_budget(unit, shipping, charges, duty, rate_decimal))
+        multiplier = rate_decimal * (Decimal(1) + duty)
+        fixed = (shipping + charges) * multiplier
+        exact_landed = unit * multiplier + fixed
+        unit_base = float(unit * rate_decimal)
+    landed = float(exact_landed)
+    rate = float(rate_decimal)
     return {
         "unit_price_base": unit_base,
         "landed_cost": landed,
         "adder": landed - unit_base,
-        "unit_multiplier": rate * (1.0 + float(duty_rate)),
-        "fixed_cost": (float(freight) + float(fees)) * rate * (1.0 + float(duty_rate)),
+        "unit_multiplier": float(multiplier),
+        "fixed_cost": float(fixed),
+        # Used internally for comparisons; display floats must not be fed
+        # back into an exact monetary cap after losing decimal digits.
+        "exact": {"unit_multiplier": str(multiplier), "fixed_cost": str(fixed), "landed_cost": str(exact_landed)},
         "status": "complete",
         "missing": [],
         "fx_to_base": rate,
         "currency": currency,
         "base_currency": base_currency,
     }
+
+
+def _decimal_budget(*values: Decimal) -> int:
+    """Enough digits for the sums/products of the supplied decimal inputs."""
+    return sum(len(value.as_tuple().digits) + abs(int(value.as_tuple().exponent)) for value in values)
+
+
+def rival_unit_cap(own: dict[str, Any], other: dict[str, Any]) -> float:
+    """A float upper bound that cannot round above the decimal invoice cap."""
+    def exact(parts: dict[str, Any], key: str) -> Decimal:
+        return Decimal(str((parts.get("exact") or {}).get(key, parts[key])))
+
+    landed = exact(other, "landed_cost")
+    fixed = exact(own, "fixed_cost")
+    multiplier = exact(own, "unit_multiplier")
+    with localcontext() as context:
+        context.prec = max(context.prec, _decimal_budget(landed, fixed, multiplier))
+        bound = (landed - fixed) / multiplier
+    result = float(bound)
+    if Decimal(str(result)) > bound:
+        result = math.nextafter(result, -math.inf)
+    return result
 
 
 def ranking_basis(rows: list[dict[str, Any]]) -> str:

@@ -52,6 +52,8 @@ ALLOW_FILES = {
     # and fake suppliers, never live pricing; production does not import them.
     "scripts/audit_runtime_reliability.py",
     "scripts/audit_runtime_load.py",
+    # Actual disposable-container drills use fictional invoice inputs only.
+    "scripts/audit_container_runtime.py",
     # Timing constants of the connection pool (a 5.0s grace window before a
     # store retired by a path swap is closed). Registered in
     # docs/constants_registry.json; not a scenario number.

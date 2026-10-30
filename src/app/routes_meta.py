@@ -51,6 +51,19 @@ def register_meta_routes(app) -> None:
 
         checks: dict[str, dict[str, Any]] = {}
 
+        from src.app.security import MIN_API_KEY_LEN, env_mode
+
+        production = env_mode() != "sandbox"
+        configured_key = os.environ.get("TRADEFLOW_API_KEY", "").strip()
+        auth_ok = len(configured_key) >= MIN_API_KEY_LEN
+        checks["api_auth"] = {
+            "ok": auth_ok,
+            "detail": (
+                "API authentication configured" if auth_ok else "API authentication not configured for production"
+            ),
+            "required": production,
+        }
+
         checks["chain_key"] = {
             "ok": bool(chain_key_configured()),
             "detail": "TRADEFLOW_CHAIN_KEY is set" if chain_key_configured() else "TRADEFLOW_CHAIN_KEY is missing",
@@ -100,13 +113,24 @@ def register_meta_routes(app) -> None:
 
         policy = approval_policy()
         pubkey_present = required_approval_pubkey() is not None
-        approval_ok = policy != "required" or pubkey_present
+        pubkey_valid = False
+        if pubkey_present:
+            from nacl.signing import VerifyKey
+            from nacl.bindings import crypto_core_ed25519_is_valid_point
+
+            try:
+                raw_key = bytes.fromhex(required_approval_pubkey() or "")
+                VerifyKey(raw_key)
+                pubkey_valid = bool(crypto_core_ed25519_is_valid_point(raw_key))
+            except (ValueError, TypeError):
+                pass
+        approval_ok = policy != "required" or pubkey_valid
         checks["signed_approval"] = {
             "ok": approval_ok,
             "detail": (
                 "policy=required, public key pinned"
-                if policy == "required" and pubkey_present
-                else "policy=required, no public key pinned (fail-closed: sends are refused)"
+                if policy == "required" and pubkey_valid
+                else "policy=required, public key missing or malformed (fail-closed: sends are refused)"
                 if policy == "required"
                 else f"policy={policy}"
             ),

@@ -10,7 +10,7 @@ import re
 import math
 
 from src.desk.store import DeskRejected
-from src.config.heuristics import UNIT_SANITY_MULTIPLE
+from src.config.heuristics import MINOR_SCALE, UNIT_SANITY_MULTIPLE
 
 
 def require_price_band(target: float, ceiling: float, multiple: float = UNIT_SANITY_MULTIPLE) -> None:
@@ -21,6 +21,8 @@ def require_price_band(target: float, ceiling: float, multiple: float = UNIT_SAN
     low = float(target) / float(multiple)
     if not math.isfinite(high) or not math.isfinite(high / float(target)) or not math.isfinite(low) or low <= 0:
         raise DeskRejected("The price range is too large or too small for stable arithmetic.")
+    if math.ulp(high) > 1.0 / MINOR_SCALE:
+        raise DeskRejected("The price range is too large to preserve currency minor-unit precision.")
 
 
 def require_landed_total(unit: float, freight: float | None, fees: float | None, duty: float | None) -> None:
@@ -30,6 +32,8 @@ def require_landed_total(unit: float, freight: float | None, fees: float | None,
     total = (float(unit) + float(freight or 0) + float(fees or 0)) * (1.0 + float(duty or 0))
     if not math.isfinite(total):
         raise DeskRejected("Landed-cost inputs exceed the finite arithmetic range.")
+    if math.ulp(total) > 1.0 / MINOR_SCALE:
+        raise DeskRejected("Landed-cost inputs are too large to preserve currency minor-unit precision.")
 
 _ADDR = re.compile(
     r"[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*"

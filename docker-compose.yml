@@ -1,5 +1,6 @@
 services:
   tradeflow:
+    restart: unless-stopped
     build:
       context: .
       # [OPS 2026-10-25] Stamp the build identity read by GET /version:

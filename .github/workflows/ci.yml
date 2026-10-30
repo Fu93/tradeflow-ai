@@ -84,6 +84,13 @@ jobs:
       - name: Concurrent HTTP and hard restart drill (independent invoice oracle)
         run: python scripts/audit_runtime_load.py --output /tmp/tradeflow-runtime-load.json
 
+      - name: Independent Decimal invoice boundaries
+        run: |
+          python scripts/audit_financial_boundaries.py --cases 10000 --output /tmp/tradeflow-runtime-financial-boundaries.json
+          python scripts/audit_financial_boundaries.py --cases 10000 --just-below-cent --output /tmp/tradeflow-runtime-financial-below-boundaries.json
+          python scripts/audit_financial_boundaries.py --cases 10000 --perturb-inputs --output /tmp/tradeflow-runtime-financial-precise-inputs.json
+          python scripts/audit_financial_boundaries.py --cases 10000 --just-below-cent --perturb-inputs --output /tmp/tradeflow-runtime-financial-below-precise-inputs.json
+
       - name: Upload runtime reliability evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -209,3 +216,38 @@ jobs:
 
       - name: Extension end-to-end (real Chromium, headed via xvfb)
         run: xvfb-run -a python tests/test_extension_e2e.py
+
+  container-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install locked caller dependencies
+        run: python -m pip install --require-hashes -r requirements.lock
+      - name: Seed disposable build-context state canaries
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          for name in ("data/desk.db", "data/desk.db-wal", "data/nested/desk.sqlite3"):
+              path = Path(name)
+              path.parent.mkdir(parents=True, exist_ok=True)
+              with path.open("xb") as stream:
+                  stream.write(b"Synthetic runtime-state canary; must never be baked into an image")
+          PY
+      - name: Build actual production image
+        run: docker build --build-arg GIT_SHA=${{ github.sha }} -t tradeflow-ci .
+      - name: Resource limits, signed approval and container recreation
+        run: >
+          python scripts/audit_container_runtime.py --image tradeflow-ci
+          --expected-sha ${{ github.sha }} --output /tmp/container-acceptance.json
+      - name: Upload container acceptance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-acceptance-evidence
+          path: /tmp/container-acceptance.json
+          if-no-files-found: error
+          retention-days: 14

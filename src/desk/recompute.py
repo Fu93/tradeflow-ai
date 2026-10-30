@@ -32,7 +32,7 @@ from src.engine.hazard_fit import NOTE as HAZARD_TRANSFER_NOTE
 from src.engine.hazard_fit import baseline_rates, load_hazard_fit
 from src.desk.terms import read_lead_time, read_moq
 from src.desk.validity import read_validity
-from src.engine.landed import landed_unit_cost, ranking_basis
+from src.engine.landed import landed_unit_cost, ranking_basis, rival_unit_cap
 from src.engine.reserve import ReserveState
 
 HAZARD_NOTE = (
@@ -158,17 +158,11 @@ def _landed_consistent_rivals(
     if basis != "landed_cost":
         return [price for other, price in asks.items() if other != supplier_id]
     own = landed_by_id[supplier_id]
-    multiplier = float(own["unit_multiplier"])
-    fixed_cost = float(own["fixed_cost"])
     rivals: list[float] = []
     for other, parts in landed_by_id.items():
         if other == supplier_id:
             continue
-        # Decimal prevents a mathematically exact 4.20 cap becoming 4.19999…
-        # and then losing a cent when the money cap is rounded down.
-        rivals.append(float(
-            (Decimal(str(parts["landed_cost"])) - Decimal(str(fixed_cost))) / Decimal(str(multiplier))
-        ))
+        rivals.append(rival_unit_cap(own, parts))
     return rivals
 
 
@@ -510,13 +504,13 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
     choices: dict[str, Any] = {}
     landed_rows: list[dict[str, Any]] = []
     asks: dict[str, float] = {}
+    landed_by_id: dict[str, dict[str, Any]] = {}
     if active:
         fit = load_hazard_fit()
         intercept = _optional(deal, "hazard_intercept")
         quote_gap = _optional(deal, "hazard_quote_gap")
         decision_intercept = None if intercept is None else float(intercept)
         decision_gap = None if quote_gap is None else float(quote_gap)
-        landed_by_id: dict[str, dict[str, Any]] = {}
         for row in active:
             latest = decision_events(row["id"])[-1]
             asks[row["id"]] = float(latest["parsed"]["unit_price"])
@@ -735,9 +729,10 @@ def recompute(store: DeskStore, deal_id: str) -> dict[str, Any]:
         if not card["quote_confirmed"] or card["walked_away"] or card.get("excluded_from_decision"):
             return (1, 0.0, card["name"], card["id"])
         if basis == "landed_cost" and card["landed_cost"] is not None:
-            cost = float(card["landed_cost"])
+            parts = landed_by_id.get(card["id"]) or {}
+            cost = Decimal(str((parts.get("exact") or {}).get("landed_cost", card["landed_cost"])))
         else:
-            cost = float(card["latest_quote"])
+            cost = Decimal(str(card["latest_quote"]))
         return (0, cost, card["name"], card["id"])
 
     ordered = sorted(cards, key=sort_key)
