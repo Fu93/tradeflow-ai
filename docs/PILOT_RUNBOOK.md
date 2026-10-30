@@ -8,17 +8,16 @@
 
 ## Why this exists
 
-Everything verified so far is configuration-level (`scripts/check_live_readiness.py`)
-or simulator-level (`verify_all.py`, `verify_live.py`, the 787-test suite).
-The only claim still unbacked is "a person can actually use this against
-a real supplier". This runbook is the smallest experiment that backs it.
+Automated validation now includes actual Docker resource limits, backup/restore and container recreation, signed approvals in a real browser, and independent financial/numerical checks. Real mailbox and supplier delivery remain unverified. Start with [the owner handoff](OWNER_HANDOFF.md); this pilot measures the external-account workflow, not a promised saving.
 
-## Day 0 — setup (about 30 minutes)
+## Day 0 — setup
+
+First configure and start the service following OWNER_HANDOFF. The configuration checker inspects its process environment; a host-side invocation does not automatically load `.env`. Preserve an existing private key instead of generating a replacement.
 
 ```bash
-python scripts/check_live_readiness.py          # must print LIVE-READY
-python -m src.desk.approval_signing keygen      # private key stays on YOUR machine
-python scripts/anchor_chain_head.py --tag pilot-day-0
+docker compose exec -T tradeflow python scripts/check_live_readiness.py --intake imap --probe-db --connect
+python -m src.desk.approval_signing keygen --out approval_keypair.json # create once on YOUR computer
+docker compose exec -T tradeflow python scripts/anchor_chain_head.py --out /app/data/anchors/pilot-day-0.json
 ```
 
 Mail in: a Gmail account with an app password (IMAP), or any IMAP
@@ -35,14 +34,14 @@ is the point: your approvals become non-repudiable.
 4. Disagree if you disagree — the human is the boss, the engine is a
    suggestion. Note WHY you disagreed; that note is pilot data.
 5. Approve the draft with your Ed25519 key. The send is recorded in the
-   chain with your signature; the anchor script pins the head into git.
+   chain with your signature; export the anchor and keep a trusted copy outside the service host.
 6. Record the outcome when the supplier replies (accept / counter /
    walk). `POST /desk/deals/{id}/suppliers/{id}/outcome`.
 
 ## Every day
 
 ```bash
-python scripts/anchor_chain_head.py --tag pilot-$(date +%F)
+docker compose exec -T tradeflow python scripts/anchor_chain_head.py --out /app/data/anchors/pilot-YYYY-MM-DD.json
 ```
 
 ## After the loop — the flywheel and the ledger
@@ -73,29 +72,16 @@ python scripts/export_confirmed_spans.py        # real labelled data, git-ignore
 | Real confirmations | ≥3 human-confirmed spans exported |
 | Real send | ≥1 counter approved with the Ed25519 key and transmitted |
 | Real outcome | supplier reply recorded as an outcome row |
-| Integrity | chain verifies; anchor tags exist for every pilot day |
+| Integrity | chain verifies; trusted off-host anchor exports exist for every pilot day |
 
 Not required for success: closing a cheaper deal. The pilot proves the
 desk works on real mail; the price quality is the next experiment and
 needs more than three rounds to say anything.
 
-## Getting the readiness check to LIVE-READY (2026-10-24)
+## Configuration gate and live pilot are separate
 
-`scripts/check_live_readiness.py` fails on exactly three rows, and all three
-are operator credentials no code change can supply:
+The checker reports CONFIGURATION OK or CONFIGURATION INCOMPLETE, not a live-delivery certification. It rejects incomplete selected IMAP/Gmail credentials, incomplete enabled SMTP credentials, unusable keys, malformed approval keys and invalid ports. Manual intake can be selected without a mailbox.
 
-1. `TRADEFLOW_API_KEY` — 16+ characters, `.env` line: `TRADEFLOW_API_KEY=<generate one>`.
-2. `TRADEFLOW_CHAIN_KEY` — the HMAC key of the audit chain; desk sends refuse
-   to start without it. Also consider `TRADEFLOW_APPROVAL_PUBKEY` (the
-   signed-approval gate) and named operator keys
-   (`scripts/manage_users.py issue --label …`, Phase 2).
-3. A mail intake channel — either `IMAP_HOST/PORT/USERNAME/PASSWORD/SSL=1`
-   (a dedicated app password, TLS on) or the Gmail API trio with
-   `GMAIL_DRAFTS=1`. The desk reads; a human always sends.
+`--probe-db` verifies an existing database and a rolled-back write; it never creates a replacement database to make a wrong path look healthy. `--connect` enables TLS login-only probes, without selecting the inbox or transmitting a message. SMTP authentication is not recipient delivery.
 
-`DESK_SMTP_SEND=1` plus the SMTP variables is what turns approved sends into
-transmitted mail; leaving it unset keeps sends recorded-but-not-transmitted,
-which is the correct posture for the first week of the pilot.
-
-Everything else the check prints — persistence, provenance notes — is
-informational. The verdict line counts only the `[FAIL]` rows.
+Follow OWNER_HANDOFF for the signed-payload download, local signing and signature-file import. Keep private keys on the operator computer. Copy anchor exports off the service host, together with the maintenance backup; a file beside the database is not independent tamper evidence.

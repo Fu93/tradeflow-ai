@@ -232,7 +232,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          for name in ("data/desk.db", "data/desk.db-wal", "data/nested/desk.sqlite3"):
+          for name in ("data/desk.db", "data/desk.db-wal", "data/nested/desk.sqlite3", "data/nested/approval_keypair-canary.json"):
               path = Path(name)
               path.parent.mkdir(parents=True, exist_ok=True)
               with path.open("xb") as stream:

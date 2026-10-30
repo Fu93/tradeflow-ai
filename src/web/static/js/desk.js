@@ -1221,13 +1221,84 @@
           : sendPolicy.email_enabled ? "Approve and send" : "Approve only (no email)";
         send.disabled = Boolean(sendPolicy.signed_approval_required) || pending.has(draft.id);
         if (sendPolicy.signed_approval_required) {
-          line(block, "This server requires a signed approval. Use the documented signed-approval workflow with your signing key; browser approval is unavailable.");
+          const recipient = suppliers.find((supplier) => supplier.id === draft.supplier_id);
+          line(block, "Recipient: " + (recipient ? recipient.address : "unavailable") + " · " + (channels[draft.supplier_id] || "email"));
+          line(block, "This server requires a signed approval. Download this draft's approval payload, sign it on your computer, then import the signature JSON. Your private key stays on your computer.");
+          signedApprovalControls(block, draft, byHand);
         }
         send.addEventListener("click", () => approve(draft.id, area.value, block, send, byHand));
         block.appendChild(send);
       }
       root.appendChild(block);
     });
+  }
+
+  function signedApprovalControls(block, draft, byHand) {
+    const epoch = viewEpoch;
+    const currentDeal = dealId;
+    const body = draft.body || "";
+    const current = () => epoch === viewEpoch && currentDeal === dealId && block.isConnected;
+    const download = document.createElement("button");
+    download.type = "button";
+    download.dataset.action = "download-approval-payload";
+    download.textContent = "Download approval payload";
+    download.addEventListener("click", async () => {
+      busy(download, true);
+      try {
+        const bodySha = await digestHex(body);
+        if (!current()) return;
+        const payload = {deal_id: currentDeal, draft_id: draft.id, body_sha256: bodySha};
+        const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2) + "\n"], {type: "application/json"}));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "approval-" + draft.id + ".json";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (_) {
+        if (current()) line(block, "Could not prepare this approval. Use HTTPS or localhost and retry.");
+      } finally {
+        if (current()) busy(download, false);
+      }
+    });
+    const file = document.createElement("input");
+    file.type = "file";
+    file.accept = ".json,application/json";
+    file.hidden = true;
+    file.dataset.role = "approval-signature";
+    const upload = document.createElement("button");
+    upload.type = "button";
+    upload.dataset.action = "import-approval-signature";
+    upload.textContent = "Import signature and approve";
+    upload.disabled = pending.has(draft.id);
+    upload.addEventListener("click", () => { if (!pending.has(draft.id)) file.click(); });
+    file.addEventListener("change", async () => {
+      if (!current() || pending.has(draft.id)) return;
+      const selected = file.files && file.files[0];
+      if (!selected) return;
+      busy(upload, true);
+      try {
+        if (selected.size > 4096) throw new Error("invalid signature");
+        const parsed = JSON.parse(await selected.text());
+        if (!current()) return;
+        if (!parsed || Array.isArray(parsed) || Object.keys(parsed).sort().join(",") !== "alg,pubkey,sig" ||
+            parsed.alg !== "ed25519" || typeof parsed.pubkey !== "string" || typeof parsed.sig !== "string" ||
+            !/^[0-9a-f]{64}$/i.test(parsed.pubkey) || !/^[0-9a-f]{128}$/i.test(parsed.sig)) {
+          throw new Error("invalid signature");
+        }
+        // Only these three signature fields reach the server. Never accept
+        // a keygen file, private key, or arbitrary request from the upload.
+        const approval = {alg: parsed.alg, pubkey: parsed.pubkey, sig: parsed.sig};
+        await approve(draft.id, body, block, upload, byHand, approval);
+      } catch (_) {
+        if (current()) line(block, "Choose the signature JSON from the signing tool, never your private key file.");
+      } finally {
+        file.value = "";
+        if (current()) busy(upload, false);
+      }
+    });
+    block.append(download, upload, file);
   }
 
   function draftState(draft) {
@@ -1265,7 +1336,7 @@
     return hex;
   }
 
-  async function approve(draftId, body, block, button, byHand) {
+  async function approve(draftId, body, block, button, byHand, approval) {
     if (pending.has(draftId)) return;
     const ok = window.confirm(byHand ? "Approve this draft? Copy it and send it in the chat app yourself."
       : sendPolicy.email_enabled ? "Send this exact draft by email?" : "Record approval only? Email sending is disabled on this server.");
@@ -1277,10 +1348,12 @@
     try {
       const bodySha = await digestHex(body);
       if (epoch !== viewEpoch || approvedDeal !== dealId) return;
+      const payload = { human_approved: true, body_sha256: bodySha };
+      if (approval) payload.approval = approval;
       await request("/api/v1/desk/drafts/" + draftId + "/send", {
         method: "POST",
         headers: headers(true),
-        body: JSON.stringify({ human_approved: true, body_sha256: bodySha }),
+        body: JSON.stringify(payload),
       });
       await refresh();
     } catch (err) {

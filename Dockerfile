@@ -23,6 +23,8 @@ COPY models ./models
 COPY data ./data
 COPY seed_data ./seed_data
 COPY knowledge ./knowledge
+COPY scripts/backup_desk_db.py scripts/anchor_chain_head.py scripts/check_live_readiness.py scripts/check_deployed_release.py ./scripts/
+COPY docs/constants_registry.json ./docs/constants_registry.json
 
 # Fail the build if the runtime assets the app loads are missing, instead of
 # discovering it from a warning at request time.

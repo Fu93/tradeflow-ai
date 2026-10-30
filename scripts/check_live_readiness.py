@@ -1,194 +1,210 @@
-"""Live-readiness self-check: can this desk actually run in production?
+"""Configuration preflight, not a claim of live supplier delivery.
 
-This is the honest gate between "the demo works" and "the desk is live".
-It checks the configuration a real deployment needs (keys, mail channels,
-audit chain, approval mode), reports the data-provenance reality, and
-prints a verdict. It does not connect anywhere unless --connect is given.
-
-Verdicts:
-  LIVE-READY       every hard requirement is met
-  NOT LIVE-READY   at least one hard requirement failed (reasons listed)
-
-Data provenance is printed regardless of verdict. It is the boundary
-note in executable form: no constant is hard-coded without a row in the
-registry, and the registry says what each number IS (policy default,
-guard, or mathematical identity) — none of them is a measured factory
-quote. That is a property of the prototype and stays true in production;
-calibration to real deals is the pilot's job, not this script's.
-
-Usage:
-  python scripts/check_live_readiness.py            # config-only
-  python scripts/check_live_readiness.py --connect  # + SMTP/IMAP logins
+Default: inspect environment only, never create a database or connect externally.
+--probe-db checks an existing database with a rolled-back write.
+--connect tests configured SMTP/IMAP authentication without sending or reading mail.
 """
+
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 import json
 import os
-import sys
 from pathlib import Path
+import sqlite3
+import ssl
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-PLACEHOLDER = "__FILL_ME__"
+sys.path.insert(0, str(ROOT))
 
-RESULTS: list[tuple[str, str, str]] = []  # (name, status, detail)
-
-
-def check(name: str, ok: bool, detail: str, warn: bool = False) -> bool:
-    status = "PASS" if ok else ("WARN" if warn else "FAIL")
-    RESULTS.append((name, status, detail))
-    print(f"  [{status}] {name} -- {detail}")
-    return ok or warn
+SAMPLES = {"__FILL_ME__", "local-demo-key-change-me", "local-demo-chain-key-change-me"}
 
 
-def _set(*names: str) -> str:
-    for name in names:
-        value = os.environ.get(name, "").strip()
-        if value and value != PLACEHOLDER:
-            return name
-    return ""
+def inspect_configuration(intake="auto", probe_db=False, connect=False):
+    from nacl.bindings import crypto_core_ed25519_is_valid_point
+    from src.desk.approval_signing import approval_policy, required_approval_pubkey
+    from src.desk.store import db_path
+    from scripts.backup_desk_db import _verify
 
+    checks = []
 
-def env_checks() -> None:
-    print("== Hard requirements ==")
-    key = os.environ.get("TRADEFLOW_API_KEY", "").strip()
-    check(
-        "API key",
-        bool(key) and key != PLACEHOLDER and len(key) >= 16,
-        "TRADEFLOW_API_KEY of 16+ chars" if key else "TRADEFLOW_API_KEY is unset",
+    def record(name, ok, detail, *, warning=False):
+        checks.append({"name": name, "status": "PASS" if ok else "WARN" if warning else "FAIL", "detail": detail})
+
+    def value(name):
+        text = os.environ.get(name, "").strip()
+        return "" if text in SAMPLES else text
+
+    def require(names, label):
+        missing = [name for name in names if not value(name)]
+        record(label, not missing, "configured" if not missing else "missing: " + ", ".join(missing))
+        return not missing
+
+    def port(name, default):
+        try:
+            number = int(value(name) or str(default))
+            if not 1 <= number <= 65535:
+                raise ValueError
+            return number
+        except ValueError:
+            record(name, False, "must be an integer between 1 and 65535")
+            return None
+
+    record("API key", len(value("TRADEFLOW_API_KEY")) >= 16, "requires a non-sample key of at least 16 characters")
+    require(("TRADEFLOW_CHAIN_KEY",), "Audit chain key")
+    mode = os.environ.get("TRADEFLOW_ENV", "sandbox").strip().lower()
+    record("Environment mode", mode in {"production", "sandbox"}, "use production or sandbox")
+    production = mode == "production"
+    record(
+        "Production mode",
+        production,
+        "production" if production else "sandbox; not a production deployment",
+        warning=True,
     )
-    chain = os.environ.get("TRADEFLOW_CHAIN_KEY", "").strip()
-    check(
-        "Audit chain key",
-        bool(chain) and chain != PLACEHOLDER,
-        "HMAC chain key present" if chain else "TRADEFLOW_CHAIN_KEY is unset; desk sends refuse to start",
+    policy = approval_policy()
+    public = required_approval_pubkey()
+    valid = False
+    try:
+        valid = bool(public and crypto_core_ed25519_is_valid_point(bytes.fromhex(public)))
+    except (ValueError, TypeError):
+        pass
+    record(
+        "Signed approval",
+        valid if policy == "required" else False,
+        "required; valid public key pinned"
+        if policy == "required" and valid
+        else "required; public key missing or invalid"
+        if policy == "required"
+        else "optional policy; this does not establish signed approvals",
+        warning=policy != "required",
     )
-    intake = _set("IMAP_HOST", "GMAIL_CLIENT_ID")
-    check(
-        "Mail intake channel",
-        bool(intake),
-        f"{intake} configured" if intake else "neither IMAP_* nor GMAIL_* is set; quotes cannot arrive",
-    )
-    smtp = os.environ.get("DESK_SMTP_SEND", "").strip()
-    if smtp == "1":
-        have_host = _set("SMTP_HOST")
-        have_creds = _set("EMAIL_USERNAME", "EMAIL_PASSWORD")
-        check(
-            "Mail out (SMTP) enabled",
-            have_host == "SMTP_HOST" and bool(have_creds),
-            "DESK_SMTP_SEND=1 with SMTP credentials"
-            if have_host == "SMTP_HOST" and have_creds
-            else "DESK_SMTP_SEND=1 but SMTP credentials are incomplete",
+
+    imap_fields = ("IMAP_HOST", "IMAP_USERNAME", "IMAP_PASSWORD")
+    gmail_fields = ("GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN")
+    if intake == "auto":
+        intake = (
+            "imap"
+            if any(value(k) for k in imap_fields)
+            else "gmail"
+            if any(value(k) for k in gmail_fields)
+            else "manual"
+        )
+    imap_ok, imap_port = False, None
+    if intake == "imap":
+        imap_ok = require(imap_fields, "IMAP intake")
+        imap_port = port("IMAP_PORT", 993)
+        tls = os.environ.get("IMAP_SSL", "1").strip().lower() not in {"0", "false", "no"}
+        record("IMAP TLS", tls, "implicit TLS required for a real mailbox")
+        imap_ok = imap_ok and imap_port is not None and tls
+    elif intake == "gmail":
+        require(gmail_fields, "Gmail intake")
+        record(
+            "Gmail live access", False, "OAuth access and inbox ingestion still need a real-account pilot", warning=True
         )
     else:
-        check(
-            "Mail out (SMTP)",
+        record("Manual intake", True, "paste/import is available; automatic mailbox intake not selected")
+
+    smtp_requested = os.environ.get("DESK_SMTP_SEND", "").strip() == "1"
+    smtp_ok, smtp_port = False, None
+    if smtp_requested:
+        smtp_ok = require(("SMTP_HOST", "EMAIL_USERNAME", "EMAIL_PASSWORD"), "SMTP configuration")
+        smtp_port = port("SMTP_PORT", 465)
+        smtp_ok = smtp_ok and smtp_port is not None
+    else:
+        record("SMTP delivery", False, "disabled; approval is recorded without transmitting email", warning=True)
+
+    if probe_db:
+        path = Path(db_path()).resolve()
+        if not path.is_file():
+            record("Database write probe", False, "database does not exist; start the configured service first")
+        else:
+            try:
+                with closing(sqlite3.connect(path.as_uri() + "?mode=rw", uri=True, timeout=5)) as conn:
+                    _verify(conn)
+                    conn.execute("BEGIN IMMEDIATE")
+                    try:
+                        conn.execute(
+                            "CREATE TABLE IF NOT EXISTS _readiness_probe (id INTEGER PRIMARY KEY CHECK (id=1), at TEXT)"
+                        )
+                        conn.execute(
+                            "INSERT INTO _readiness_probe(id,at) VALUES(1,'operator-probe') ON CONFLICT(id) DO UPDATE SET at=excluded.at"
+                        )
+                    finally:
+                        conn.rollback()
+                record(
+                    "Database write probe",
+                    True,
+                    "rolled-back write succeeded; persistence across redeploy is unverified",
+                )
+            except (OSError, sqlite3.Error, ValueError) as exc:
+                record("Database write probe", False, "probe failed: " + type(exc).__name__)
+    else:
+        record(
+            "Database write probe",
             False,
-            "DESK_SMTP_SEND is not 1: sends are recorded, not transmitted (sandbox)",
-            warn=True,
+            "not requested; use --probe-db against the intended existing database",
+            warning=True,
         )
-    pubkey = os.environ.get("TRADEFLOW_APPROVAL_PUBKEY", "").strip()
-    check(
-        "Human approval mode",
-        bool(pubkey) and pubkey != PLACEHOLDER,
-        "Ed25519 signed approvals enforced (non-repudiable)" if pubkey
-        else "TRADEFLOW_APPROVAL_PUBKEY unset: approvals are the server-side human_confirmed flag",
-        warn=not pubkey,
-    )
 
-
-def db_check() -> None:
-    print("== Persistence ==")
-    sys.path.insert(0, str(ROOT))
-    from src.desk.store import DeskStore, db_path
-
-    path = db_path()
-    ok = True
-    detail = f"desk DB at {path} is writable"
-    try:
-        store = DeskStore(path)
-        store.close()
-    except Exception as exc:  # pragma: no cover - environment-specific
-        ok = False
-        detail = f"cannot open desk DB at {path}: {exc}"
-    check("Desk database", ok, detail)
-
-
-def provenance_section() -> None:
-    print("== Data provenance (read this before claiming anything) ==")
-    registry = json.loads((ROOT / "docs" / "constants_registry.json").read_text(encoding="utf-8"))
-    counts = {"c": 0, "d": 0, "n": 0}
-    for row in registry["constants"].values():
-        counts[row["category"]] = counts.get(row["category"], 0) + 1
-    print(
-        f"  173-slot registry: {counts['c']} cited mathematical identities, "
-        f"{counts['d']} labelled policy defaults, {counts['n']} numerical guards. "
-        "No measured factory number is in the code."
-    )
-    print(
-        "  Walk-away hazard: a real eBay Best Offer 2012-13 fit, transferred to "
-        "factory negotiation and labelled as such. Not a measured Chinese factory rate."
-    )
-    print(
-        "  Intent model: trained on a programmatic synthetic set (66 templates, "
-        "500 items); held-out accuracy 63.08% is a synthetic-set figure."
-    )
-    print(
-        "  The only numbers that become real in production are the ones a person "
-        "confirms on the desk. Calibration to live deals is the pilot's job."
-    )
-
-
-def connect_checks() -> None:
-    print("== Connection tests (--connect) ==")
-    host = os.environ.get("SMTP_HOST", "").strip()
-    if host and host != PLACEHOLDER:
+    if connect and smtp_ok:
         import smtplib
 
         try:
-            with smtplib.SMTP(host, int(os.environ.get("SMTP_PORT", "587")), timeout=10) as client:
-                client.starttls()
-                client.login(os.environ.get("EMAIL_USERNAME", ""), os.environ.get("EMAIL_PASSWORD", ""))
-            check("SMTP login", True, f"authenticated against {host}")
+            # Match EmailStdTransport's current implicit-TLS send path.
+            with smtplib.SMTP_SSL(
+                value("SMTP_HOST"), smtp_port, timeout=10, context=ssl.create_default_context()
+            ) as client:
+                client.login(value("EMAIL_USERNAME"), value("EMAIL_PASSWORD"))
+            record("SMTP authentication", True, "authenticated; no message sent and delivery not verified")
         except Exception as exc:
-            check("SMTP login", False, f"{host}: {exc}")
-    else:
-        check("SMTP login", False, "SMTP_HOST not configured", warn=True)
-    imap_host = os.environ.get("IMAP_HOST", "").strip()
-    if imap_host and imap_host != PLACEHOLDER:
+            record("SMTP authentication", False, "authentication failed: " + type(exc).__name__)
+    if connect and imap_ok:
         import imaplib
 
         try:
-            with imaplib.IMAP4_SSL(imap_host, int(os.environ.get("IMAP_PORT", "993"))) as client:
-                client.login(os.environ.get("IMAP_USERNAME", ""), os.environ.get("IMAP_PASSWORD", ""))
-            check("IMAP login", True, f"authenticated against {imap_host}")
+            with imaplib.IMAP4_SSL(
+                value("IMAP_HOST"), imap_port, ssl_context=ssl.create_default_context(), timeout=10
+            ) as client:
+                client.login(value("IMAP_USERNAME"), value("IMAP_PASSWORD"))
+            record("IMAP authentication", True, "authenticated; no mailbox selected or messages read")
         except Exception as exc:
-            check("IMAP login", False, f"{imap_host}: {exc}")
-    else:
-        check("IMAP login", False, "IMAP_HOST not configured", warn=True)
+            record("IMAP authentication", False, "authentication failed: " + type(exc).__name__)
+    if not connect:
+        record(
+            "External authentication", False, "not tested; --connect explicitly enables login-only probes", warning=True
+        )
+
+    registry = ROOT / "docs/constants_registry.json"
+    registry_count = len(json.loads(registry.read_text())["constants"]) if registry.is_file() else None
+    return {
+        "ok": not any(row["status"] == "FAIL" for row in checks),
+        "intake": intake,
+        "checks": checks,
+        "registry_count": registry_count,
+        "production_live_verified": False,
+        "mail_delivery_verified": False,
+        "scope": "configuration and explicitly requested probes; real supplier pilot and redeploy persistence remain separate",
+    }
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--connect", action="store_true", help="Also test real SMTP/IMAP logins")
+    parser.add_argument("--intake", choices=("auto", "manual", "imap", "gmail"), default="auto")
+    parser.add_argument("--probe-db", action="store_true")
+    parser.add_argument("--connect", action="store_true")
+    parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-
-    print("TradeFlow live-readiness self-check")
-    env_checks()
-    db_check()
-    if args.connect:
-        connect_checks()
-    provenance_section()
-
-    hard_fail = any(status == "FAIL" and name not in ("Mail out (SMTP)",) for name, status, _ in RESULTS)
-    # Mail out is a mode choice, not a defect: sandbox sends are recorded.
-    print("-" * 70)
-    if hard_fail:
-        print("VERDICT: NOT LIVE-READY. Fix the [FAIL] rows above; nothing else counts.")
-        return 1
-    print("VERDICT: LIVE-READY on configuration. Real usage still needs one live pilot: a real")
-    print("mailbox, a real supplier thread, and a human on the send button.")
-    return 0
+    report = inspect_configuration(args.intake, args.probe_db, args.connect)
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        for row in report["checks"]:
+            print(f"[{row['status']}] {row['name']}: {row['detail']}")
+        print("CONFIGURATION OK" if report["ok"] else "CONFIGURATION INCOMPLETE")
+        print("Real deployment, supplier delivery, and persistence are not certified by this check.")
+    return 0 if report["ok"] else 1
 
 
 if __name__ == "__main__":

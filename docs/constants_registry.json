@@ -3012,8 +3012,8 @@
     {
       "file": "src/desk/approval_signing.py",
       "value": 384,
-      "context": "os.chmod(path, 0o600)",
-      "justification": "Use of 384 on this line of src/desk/approval_signing.py: os.chmod(path, 0o600). A different line that repeats the digits is not covered."
+      "context": "descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)",
+      "justification": "Create private signing keys with owner-only read/write permissions from the first write; exclusive creation preserves existing identities and refuses symlinks."
     },
     {
       "file": "src/desk/routes.py",
