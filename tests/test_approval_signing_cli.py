@@ -198,3 +198,20 @@ class TestMalformedBlocks:
         monkeypatch.setenv(APPROVAL_PUBKEY_ENV, other_public)
         assert approval_is_pinned(block) is False
         assert approval_is_pinned({"alg": "ed25519", "pubkey": None, "sig": None}) is False
+
+
+def test_keygen_never_overwrites_an_existing_identity(tmp_path):
+    target = tmp_path / "approval_keypair.json"
+    original = b"keep the existing identity"
+    target.write_bytes(original)
+    assert _cli(["keygen", "--out", str(target)]) == 2
+    assert target.read_bytes() == original
+
+
+def test_keygen_refuses_an_existing_symlink(tmp_path):
+    original = tmp_path / "existing-key.json"
+    original.write_bytes(b"existing private identity")
+    target = tmp_path / "approval_keypair.json"
+    target.symlink_to(original)
+    assert _cli(["keygen", "--out", str(target)]) == 2
+    assert original.read_bytes() == b"existing private identity"

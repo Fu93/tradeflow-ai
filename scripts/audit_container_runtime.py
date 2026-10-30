@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 import secrets
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -54,7 +55,7 @@ def audit(image: str, docker_host: str | None, expected_sha: str | None) -> dict
         timings.append(time.monotonic() - started)
         return result
 
-    def start():
+    def start(database="/app/data/desk.db"):
         nonlocal base
         args = [
             "run",
@@ -78,7 +79,7 @@ def audit(image: str, docker_host: str | None, expected_sha: str | None) -> dict
             "TRADEFLOW_REQUIRE_SIGNED_APPROVAL": "1",
             "TRADEFLOW_APPROVAL_PUBKEY": signing.verify_key.encode().hex(),
             "TRADEFLOW_CHAIN_ANCHOR": "/app/data/audit-anchor.json",
-            "TRADEFLOW_DESK_DB": "/app/data/desk.db",
+            "TRADEFLOW_DESK_DB": database,
             "TRADEFLOW_LLM_DAILY_CALLS": "0",
             "TRADEFLOW_WEB_EVIDENCE_OFFLINE": "1",
             "TRADEFLOW_MARKET_OFFLINE": "1",
@@ -110,7 +111,10 @@ def audit(image: str, docker_host: str | None, expected_sha: str | None) -> dict
             "-c",
             "from pathlib import Path; p=[p for p in Path('/app/data').rglob('*') "
             "if p.is_file() and (p.match('*.db*') or p.match('*.sqlite*'))]; "
-            "assert not p, 'runtime databases baked into image'; print('clean')",
+            "assert not p, 'runtime databases baked into image'; "
+            "assert not [p for pattern in ('approval_keypair*.json','*.key','*.pem','*.p8','*.p12') "
+            "for p in Path('/app/data').rglob(pattern)], 'private key baked into image'; "
+            "print('clean')",
         )
         assert scan == "clean"
         start()
@@ -187,13 +191,67 @@ def audit(image: str, docker_host: str | None, expected_sha: str | None) -> dict
         assert approved["status"] == "approved" and approved["transmitted"] == 0
         snapshot = request(path)
         assert request(path + "/audit/verify")["ok"]
+        preflight = json.loads(
+            docker(
+                "exec", name, "python", "scripts/check_live_readiness.py", "--intake", "manual", "--probe-db", "--json"
+            )
+        )
+        assert preflight["ok"] and not preflight["production_live_verified"]
+        docker(
+            "exec",
+            name,
+            "python",
+            "scripts/backup_desk_db.py",
+            "backup",
+            "--output",
+            "/app/data/backups/operator-drill.db",
+        )
         # SIGKILL then remove/recreate the container, not just reopen a Python
         # object: the named volume is the sole source of recovered state.
-        docker("kill", "--signal=KILL", name)
+        with tempfile.TemporaryDirectory(prefix="tradeflow-backup-copy-") as folder:
+            copied = str(Path(folder) / "operator-drill.db")
+            docker("cp", name + ":/app/data/backups/operator-drill.db", copied)
+            docker("kill", "--signal=KILL", name)
+            docker("cp", copied, name + ":/app/data/backups/operator-copy.db")
+            # Docker cp can leave root-owned 0600 files. Restore offline as
+            # root, then explicitly give the runtime UID its new database.
+            docker(
+                "run",
+                "--rm",
+                "--user",
+                "root",
+                "-v",
+                volume + ":/app/data",
+                "-e",
+                "TRADEFLOW_CHAIN_KEY=" + chain_key,
+                "--entrypoint",
+                "python",
+                image,
+                "scripts/backup_desk_db.py",
+                "restore",
+                "--from",
+                "/app/data/backups/operator-copy.db",
+                "--target",
+                "/app/data/restored.db",
+                "--yes",
+            )
+            docker(
+                "run",
+                "--rm",
+                "--user",
+                "root",
+                "-v",
+                volume + ":/app/data",
+                "--entrypoint",
+                "chown",
+                image,
+                "10001:10001",
+                "/app/data/restored.db",
+            )
         stopped = json.loads(docker("inspect", name))[0]
         assert not stopped["State"]["OOMKilled"]
         docker("rm", name)
-        start()
+        start("/app/data/restored.db")
         restored = request(path)
         for field in ("suppliers", "events", "drafts"):
             assert restored[field] == snapshot[field], field
@@ -209,6 +267,9 @@ def audit(image: str, docker_host: str | None, expected_sha: str | None) -> dict
             "unsigned_approval_refused": True,
             "transmitted": False,
             "baked_runtime_databases": False,
+            "baked_private_key_files": False,
+            "operator_preflight_passed": True,
+            "backup_restore_recovered_state": True,
             "concurrent_quote_attempts": len(jobs),
             "unique_quotes": len(unique),
             "independent_decimal_invoice_checks": True,

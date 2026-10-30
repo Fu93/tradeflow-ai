@@ -1,9 +1,7 @@
 # Docker build context exclusions.
 #
-# The Dockerfile currently COPYs only src/, models/, data/, seed_data/ and
-# knowledge/, so this file changes nothing today. It exists to make a future
-# broad `COPY . .` safe: without it, that one-line change would bake the real
-# credentials in `.env` and the runtime session database into the image.
+# Runtime assets and selected operator tools are copied explicitly. Exclude
+# local state and private key material from those directories too.
 
 # ---- Secrets (never in an image) ----
 .env
@@ -12,6 +10,14 @@
 .env.tmp
 *.pem
 *.key
+**/*.pem
+**/*.key
+*.p8
+*.p12
+**/*.p8
+**/*.p12
+approval_keypair*.json
+**/approval_keypair*.json
 
 # ---- VCS / tooling ----
 .git

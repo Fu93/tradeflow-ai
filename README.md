@@ -6,7 +6,7 @@
 
 TradeFlow AI is a one-person supplier-negotiation desk for small cross-border sellers, entered in the **Nebius x NVIDIA Global AI Hackathon** (track Best Apps and Agents, plus the Best Use of Tavily bonus): a Nemotron model on Nebius Token Factory reads factory quotes, deterministic math prices the counter, and a person sends it.
 
-Links: [Devpost text, judge steps and demo script](docs/DEVPOST_SUBMISSION.md) · [feedback on the tools](docs/NEBIUS_NVIDIA_FEEDBACK.md) · [public demo](https://tradeflow-ai-demo.onrender.com/desk) · License: MIT <!-- DEMO_URL: final public demo URL -->
+Links: [Owner handoff / 接手手冊](docs/OWNER_HANDOFF.md) · [Devpost text, judge steps and demo script](docs/DEVPOST_SUBMISSION.md) · [feedback on the tools](docs/NEBIUS_NVIDIA_FEEDBACK.md) · [public demo](https://tradeflow-ai-demo.onrender.com/desk) · License: MIT <!-- DEMO_URL: final public demo URL -->
 
 [2-minute offline walkthrough (MP4)](docs/demo/tradeflow-demo.mp4) · [Submission handoff and final English copy](docs/SUBMISSION_READY.md) · [Concise Devpost description](docs/DEVPOST_FINAL.md)
 

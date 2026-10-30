@@ -22,7 +22,7 @@ KEY = "journey-test-key"
 
 
 @pytest.fixture(scope="module")
-def desk_server(tmp_path_factory):
+def desk_server(tmp_path_factory, request):
     folder = tmp_path_factory.mktemp("buyer-journeys")
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -35,6 +35,11 @@ def desk_server(tmp_path_factory):
                TRADEFLOW_REQUIRE_SIGNED_APPROVAL="0", TRADEFLOW_LLM_DAILY_CALLS="0",
                TRADEFLOW_WEB_EVIDENCE_OFFLINE="1", TRADEFLOW_MARKET_OFFLINE="1",
                TRADEFLOW_DESK_DB=str(folder / "desk.db"))
+    # Opt-in strict approval fixture; existing journeys keep their demo mode.
+    for key, value in getattr(request, "param", {}).items():
+        if key not in {"TRADEFLOW_REQUIRE_SIGNED_APPROVAL", "TRADEFLOW_APPROVAL_PUBKEY"}:
+            raise ValueError("Unsupported fixture override")
+        env[key] = value
     base = f"http://127.0.0.1:{port}"
     with (folder / "server.log").open("w") as log:
         proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "src.app.main:app",

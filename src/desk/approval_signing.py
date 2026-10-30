@@ -279,7 +279,7 @@ def _cli(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     keygen = sub.add_parser("keygen", help="Generate a keypair and print it. Keep the private half secret.")
-    keygen.add_argument("--out", default="-", help="Write the private key to a file (0600) instead of stdout.")
+    keygen.add_argument("--out", default="-", help="Create a new private key file (0600); existing files are refused.")
 
     sign = sub.add_parser("sign", help="Sign one approval payload read from a JSON file.")
     sign.add_argument("--key", required=True, help="Private key hex, or a file containing it.")
@@ -309,9 +309,11 @@ def _cli(argv: list[str] | None = None) -> int:
                 print(blob)
             else:
                 path = os.path.abspath(args.out)
-                with open(path, "w", encoding="utf-8") as handle:
+                descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                     handle.write(blob + "\n")
-                os.chmod(path, 0o600)
+                    handle.flush()
+                    os.fsync(handle.fileno())
                 print(f"keypair written to {path} (private key, mode 0600)", file=sys.stderr)
             return 0
         if args.cmd == "sign":
