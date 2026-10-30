@@ -34,10 +34,17 @@
     return common;
   }
 
+  function tradeflowVisibleNode(node) {
+    if (!node || !node.isConnected || !node.getClientRects().length ||
+        node.closest('[hidden], [aria-hidden="true"]')) return false;
+    const style = node.ownerDocument.defaultView.getComputedStyle(node);
+    return style.visibility !== "hidden" && style.visibility !== "collapse";
+  }
+
   function tradeflowVisibleChat(doc) {
     const root = roots(doc);
     return Array.from(root.querySelectorAll(tradeflowChatProfile(root).containers)).find((node) =>
-      node.getClientRects().length && !node.closest('[hidden], [aria-hidden="true"]')
+      tradeflowVisibleNode(node)
     ) || null;
   }
 
@@ -46,6 +53,13 @@
     const message = node && node.closest ? node.closest(profile.messages) : null;
     if (!message) return "unknown";
     if (message.closest('.msg-sent, .message-out, .outgoing, .sent, .self, .own-message, [data-message-direction="outgoing"], [data-message-direction="sent"]')) return "sent";
+    // Sender markers take precedence over received markers, including the
+    // prefixed classes already excluded by automatic capture.
+    for (let part = message; part; part = part.parentElement) {
+      if (Array.from(part.classList).some((token) =>
+        /^(?:msg-sent|message-out|chat-msg--out|outgoing|own-message|self|sent)(?:-|$)/i.test(token)
+      )) return "sent";
+    }
     if (profile.platform === "wechat") return message.classList.contains("me") ? "sent" : "received";
     if (message.matches('.msg-received, .message-in, [data-supplier-message="1"], [data-message-direction="incoming"], [data-message-direction="received"]')) return "received";
     return "unknown";
@@ -57,7 +71,8 @@
     const container = tradeflowVisibleChat(root);
     if (!container) return null;
     const nodes = Array.from(container.querySelectorAll(profile.messages)).filter((node) =>
-      !node.querySelector(profile.messages) && tradeflowChatDirection(node, root) === "received"
+      tradeflowVisibleNode(node) && !node.querySelector(profile.messages) &&
+      tradeflowChatDirection(node, root) === "received"
     );
     return nodes.length ? nodes[nodes.length - 1] : null;
   }
@@ -134,9 +149,9 @@
     if (!text) return {ok: false, reason: "empty"};
     const root = roots(doc);
     const profile = tradeflowChatProfile(root);
-    const shopNode = root.querySelector(profile.shop);
+    const shopNode = Array.from(root.querySelectorAll(profile.shop)).find(tradeflowVisibleNode);
     const shop = shopNode ? (shopNode.innerText || shopNode.textContent || shopNode.getAttribute("title") || "").trim() : "";
-    const contactNode = root.querySelector(profile.contact);
+    const contactNode = Array.from(root.querySelectorAll(profile.contact)).find(tradeflowVisibleNode);
     const contact = contactNode ? (contactNode.getAttribute("data-contact") || contactNode.innerText || contactNode.textContent || "").trim() : "";
     const title = (root.title || "").trim();
     const href = root.location && root.location.href ? root.location.href : "";
@@ -145,7 +160,7 @@
   }
 
   Object.assign(globalThis, {
-    tradeflowChatProfile, tradeflowVisibleChat, tradeflowChatDirection, tradeflowMessageId,
+    tradeflowChatProfile, tradeflowVisibleNode, tradeflowVisibleChat, tradeflowChatDirection, tradeflowMessageId,
     tradeflowChatIdentity, tradeflowLatestSupplierText, tradeflowCaptchaVisible,
     tradeflowImportPayload, tradeflowPayloadFor, tradeflowMatchSuppliers,
   });

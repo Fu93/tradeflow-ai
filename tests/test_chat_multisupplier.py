@@ -450,3 +450,79 @@ def test_buyer_message_burst_does_not_import_or_mask_the_supplier_quote(desk_ser
         await asyncio.sleep(.7)
         assert len(await events(context, desk_server, deal, 1)) == 1
     run_case(desk_server, tmp_path, case)
+
+
+def test_unmapped_captures_do_not_starve_later_mapped_supplier(desk_server, tmp_path):
+    async def case(context, worker, deal):
+        control = await controller(context, worker)
+        await control.evaluate("() => chrome.runtime.sendMessage({type:'RETRY_CHAT_IMPORTS'})")
+        await worker.evaluate("""value => {
+          const queue = {};
+          for (let i = 0; i < 12; i++) queue['a-unknown-' + i] = {
+            base:value.base, deal:value.deal, at:i, payload:{ok:true,
+              text:'单价 29.00 元。',url:value.base+'/chat?unknown='+i,shop:'Unknown Factory'}
+          };
+          queue['z-current'] = {base:value.base,deal:value.deal,at:20,payload:{
+            ok:true,text:'单价 28.00 元。',url:value.base+'/chat?alpha',shop:'Alpha Factory',simulated:true
+          }};
+          return chrome.storage.local.set({tfAutoQueue:queue});
+        }""", {"base": desk_server, "deal": deal})
+        for _ in range(2):
+            result = await control.evaluate("() => chrome.runtime.sendMessage({type:'RETRY_CHAT_IMPORTS'})")
+            assert result["ok"]
+        assert await events(context, desk_server, deal, 1, timeout=2) == [("Alpha Factory", "单价 28.00 元。")]
+        assert len(await wait_queue(worker, 12)) == 12
+    run_case(desk_server, tmp_path, case)
+
+
+def test_hidden_previous_chat_header_cannot_choose_supplier(desk_server, tmp_path):
+    async def case(context, worker, deal):
+        page = await page_for(context, desk_server + "/chat?beta", "Beta Factory", body=(
+            '<!doctype html><title>Simulated chat</title>'
+            '<section hidden><h1 class="supplier-name">Alpha Factory</h1></section>'
+            '<h1 class="supplier-name">Beta Factory</h1><div class="chat-messages"></div>'
+        ))
+        await add_message(page, "单价 27.50 元。")
+        assert await events(context, desk_server, deal, 1) == [("Beta Factory", "单价 27.50 元。")]
+    run_case(desk_server, tmp_path, case)
+
+
+def test_removed_transient_message_is_not_imported(desk_server, tmp_path):
+    async def case(context, worker, deal):
+        page = await page_for(context, desk_server + "/chat?alpha", "Alpha Factory")
+        await page.evaluate("""() => {
+          const root = document.querySelector('.chat-messages');
+          const stale = document.createElement('div');
+          stale.className='msg-bubble msg-received'; stale.textContent='旧报价 99.00 元。';
+          root.appendChild(stale); stale.remove();
+          const live = document.createElement('div');
+          live.className='msg-bubble msg-received'; live.textContent='单价 28.00 元。';
+          root.appendChild(live);
+        }""")
+        assert await events(context, desk_server, deal, 1) == [("Alpha Factory", "单价 28.00 元。")]
+        await asyncio.sleep(.5)
+        assert len(await events(context, desk_server, deal, 1)) == 1
+    run_case(desk_server, tmp_path, case)
+
+
+def test_manual_import_skips_hidden_and_outgoing_prefix_bubbles(desk_server, tmp_path):
+    async def case(context, worker, deal):
+        page = await page_for(context, desk_server + "/chat?alpha", "Alpha Factory")
+        await add_message(page, "单价 28.00 元。")
+        assert await events(context, desk_server, deal, 1) == [("Alpha Factory", "单价 28.00 元。")]
+        await page.evaluate("""() => {
+          const root = document.querySelector('.chat-messages');
+          const hidden = document.createElement('div');
+          hidden.className='msg-bubble msg-received'; hidden.hidden=true;
+          hidden.textContent='隐藏旧报价 99.00 元。'; root.appendChild(hidden);
+          const buyer = document.createElement('div');
+          buyer.className='msg-bubble msg-received outgoing-meta';
+          buyer.textContent='我方预算 20.00 元。'; root.appendChild(buyer);
+        }""")
+        control = await controller(context, worker)
+        await page.bring_to_front()
+        result = await control.evaluate("() => chrome.runtime.sendMessage({type:'IMPORT_DESK_QUOTE'})")
+        assert result["ok"] and result["duplicate"]
+        await asyncio.sleep(.6)
+        assert await events(context, desk_server, deal, 1) == [("Alpha Factory", "单价 28.00 元。")]
+    run_case(desk_server, tmp_path, case)

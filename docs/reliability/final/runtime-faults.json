@@ -1,0 +1,15 @@
+{
+  "checked_at_utc": "2026-10-30T10:56:35.602449+00:00",
+  "offline": true,
+  "checks": {
+    "crash_before_audit_rolls_back": true,
+    "retry_after_restart_confirms_once": true,
+    "crash_after_commit_rebuilds_snapshot": true,
+    "transport_failure_never_retries_implicitly": true,
+    "uncertain_delivery_blocks_repeat_approval": true,
+    "sqlite_integrity": true,
+    "invalid_restore_preserves_original_bytes": true,
+    "backup_restore_preserves_events_and_chain": true
+  },
+  "ok": true
+}

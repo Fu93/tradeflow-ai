@@ -1025,7 +1025,7 @@
           else mutation.addedNodes.forEach(collect);
         });
         candidates.forEach((node) => {
-          if (node.querySelector(selector)) return;
+          if (!tradeflowVisibleNode(node) || !container.contains(node) || node.querySelector(selector)) return;
           const own = ownDirection(node);
           const known = tradeflowChatDirection(node, document);
           const direction = own === "sent" ? "sent" : known === "unknown" ? own : known;
