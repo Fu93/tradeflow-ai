@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "scope": "actual Docker image; local fictional suppliers, not live integrations",
+  "image": "tradeflow-production-audit:latest",
+  "git_sha": "production-acceptance-worktree",
+  "limits": {
+    "cpu": 0.5,
+    "memory_mb": 512
+  },
+  "signed_approval_required": true,
+  "unsigned_approval_refused": true,
+  "transmitted": false,
+  "baked_runtime_databases": false,
+  "concurrent_quote_attempts": 12,
+  "unique_quotes": 4,
+  "independent_decimal_invoice_checks": true,
+  "container_recreation_preserved_state": true,
+  "audit_and_file_anchor_verify": true,
+  "oom_killed": false,
+  "memory_usage_after_recreation": "60.59MiB / 512MiB",
+  "requests": 28,
+  "max_request_seconds": 0.1742
+}

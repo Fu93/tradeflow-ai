@@ -1,0 +1,40 @@
+{
+  "checked": 100000,
+  "unsafe": [],
+  "conservative_cases": 11136,
+  "examples": [
+    {
+      "case": 4,
+      "ask": "28.06",
+      "rival_input": "2.328624",
+      "freight": "0.541",
+      "fees": "0.023",
+      "duty": "0.236",
+      "inverse": 1.3199999999999998,
+      "issued": "1.31",
+      "true_cap": "1.320"
+    },
+    {
+      "case": 45,
+      "ask": "19.38",
+      "rival_input": "33.30196",
+      "freight": "7.455",
+      "fees": "0.643",
+      "duty": "0.37",
+      "inverse": 16.209999999999997,
+      "issued": "16.2",
+      "true_cap": "16.210"
+    },
+    {
+      "case": 52,
+      "ask": "63.6",
+      "rival_input": "15.979678",
+      "freight": "9.595",
+      "fees": "0.036",
+      "duty": "0.298",
+      "inverse": 2.6799999999999993,
+      "issued": "2.67",
+      "true_cap": "2.680"
+    }
+  ]
+}

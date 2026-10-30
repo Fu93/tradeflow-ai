@@ -1,0 +1,14 @@
+{
+  "kind": "offline numerical cross-check, not a supplier benchmark",
+  "seed": 531026,
+  "cases": 2000,
+  "shape_exponents": [
+    -1,
+    2
+  ],
+  "compared": 1727,
+  "blocked": 273,
+  "unevaluable": 0,
+  "worst_objective_loss": 6.661338147750939e-15,
+  "failures": []
+}

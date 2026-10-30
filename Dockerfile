@@ -4,7 +4,14 @@ FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0
 
 WORKDIR /app
 COPY requirements.lock .
-RUN pip install --no-cache-dir --require-hashes -r requirements.lock
+# An optional corporate/session CA is mounted only during dependency download.
+# Normal hosting builds omit it and use the image's standard CA bundle.
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then \
+      PIP_CERT=/run/secrets/proxy_ca pip install --no-cache-dir --require-hashes -r requirements.lock; \
+    else \
+      pip install --no-cache-dir --require-hashes -r requirements.lock; \
+    fi
 
 # `src/engine/bilingual.py` imports `src.engine.onnx_classifier` at module level,
 # and that class loads `models/intent_classifier_v5.onnx` + `models/vocab.json`.

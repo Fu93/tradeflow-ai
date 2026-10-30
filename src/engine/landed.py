@@ -7,6 +7,7 @@ the figure is already in the base currency.
 """
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 
@@ -59,16 +60,21 @@ def landed_unit_cost(
             "currency": currency,
             "base_currency": base_currency,
         }
-    rate = 1.0 if same else float(fx_to_base)
-    pre_duty = (float(unit_price) + float(freight) + float(fees)) * rate
-    landed = pre_duty * (1.0 + float(duty_rate))
-    unit_base = float(unit_price) * rate
+    # Decimal input strings preserve submitted financial amounts at cent
+    # boundaries. A binary-float sum can otherwise shave a cent off a cap
+    # when the landed comparison is inverted and rounded down.
+    rate_decimal = Decimal(1) if same else Decimal(str(fx_to_base))
+    multiplier = rate_decimal * (Decimal(1) + Decimal(str(duty_rate)))
+    fixed = (Decimal(str(freight)) + Decimal(str(fees))) * multiplier
+    landed = float(Decimal(str(unit_price)) * multiplier + fixed)
+    rate = float(rate_decimal)
+    unit_base = float(Decimal(str(unit_price)) * rate_decimal)
     return {
         "unit_price_base": unit_base,
         "landed_cost": landed,
         "adder": landed - unit_base,
-        "unit_multiplier": rate * (1.0 + float(duty_rate)),
-        "fixed_cost": (float(freight) + float(fees)) * rate * (1.0 + float(duty_rate)),
+        "unit_multiplier": float(multiplier),
+        "fixed_cost": float(fixed),
         "status": "complete",
         "missing": [],
         "fx_to_base": rate,

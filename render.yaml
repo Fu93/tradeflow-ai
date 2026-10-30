@@ -13,7 +13,7 @@ services:
     branch: master
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    healthCheckPath: /health
+    healthCheckPath: /ready
     envVars:
       # Production fail-closed webhooks. Sandbox fail-open is not used on this service.
       - key: TRADEFLOW_ENV

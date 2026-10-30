@@ -32,6 +32,22 @@ data/sessions.db-wal
 data/sessions.db-shm
 data/sessions.db-journal
 data/sessions_json/
+# Desk databases, journals, backups and anchors are deployment state too.
+*.db
+*.db-*
+**/*.db
+**/*.db-*
+**/*.db.*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+**/*.sqlite
+**/*.sqlite-*
+**/*.sqlite3
+**/*.sqlite3-*
+data/backups/
+data/anchors/
 
 # ---- Demo build intermediates ----
 results/_frames/
